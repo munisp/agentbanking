@@ -160,9 +160,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
 
     if (token) {
       try {
-        const secret = new TextEncoder().encode(
-          getJwtSecret()
-        );
+        const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(token, secret);
         (socket as any).userId = String(payload.sub);
         (socket as any).userName = payload.name ?? "Unknown";

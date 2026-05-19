@@ -652,7 +652,9 @@ async function startServer() {
   app.get("/api/health/circuits", async (_req, res) => {
     const { getCircuitBreakerStatus } = await import("../lib/resilientFetch");
     const circuits = getCircuitBreakerStatus();
-    const openCount = Object.values(circuits).filter(c => c.state === "open").length;
+    const openCount = Object.values(circuits).filter(
+      c => c.state === "open"
+    ).length;
     res.json({
       status: openCount === 0 ? "healthy" : "degraded",
       openCircuits: openCount,

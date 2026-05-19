@@ -100,6 +100,7 @@ export const dataQualityRouter = router({
     return { data: [], total: 0 };
   }),
 
-  runProfile: publicProcedure.mutation(async () => { return { profileId: "PF-001", status: "completed", columns: 0, issues: 0 }; }),
-
+  runProfile: publicProcedure.mutation(async () => {
+    return { profileId: "PF-001", status: "completed", columns: 0, issues: 0 };
+  }),
 });

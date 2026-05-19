@@ -20,13 +20,48 @@ interface EnvRule {
 }
 
 const CRITICAL_ENV_VARS: EnvRule[] = [
-  { name: "JWT_SECRET", required: true, category: "security", description: "JWT signing secret (min 32 chars)" },
-  { name: "DATABASE_URL", required: true, category: "database", description: "PostgreSQL connection string" },
-  { name: "KAFKA_BROKERS", required: false, category: "service", description: "Kafka broker addresses" },
-  { name: "REDIS_URL", required: false, category: "service", description: "Redis connection URL" },
-  { name: "OTEL_EXPORTER_OTLP_ENDPOINT", required: false, category: "observability", description: "OpenTelemetry collector endpoint" },
-  { name: "KEYCLOAK_CLIENT_SECRET", required: false, category: "security", description: "Keycloak OIDC client secret" },
-  { name: "VAULT_ROLE_ID", required: false, category: "security", description: "HashiCorp Vault role ID" },
+  {
+    name: "JWT_SECRET",
+    required: true,
+    category: "security",
+    description: "JWT signing secret (min 32 chars)",
+  },
+  {
+    name: "DATABASE_URL",
+    required: true,
+    category: "database",
+    description: "PostgreSQL connection string",
+  },
+  {
+    name: "KAFKA_BROKERS",
+    required: false,
+    category: "service",
+    description: "Kafka broker addresses",
+  },
+  {
+    name: "REDIS_URL",
+    required: false,
+    category: "service",
+    description: "Redis connection URL",
+  },
+  {
+    name: "OTEL_EXPORTER_OTLP_ENDPOINT",
+    required: false,
+    category: "observability",
+    description: "OpenTelemetry collector endpoint",
+  },
+  {
+    name: "KEYCLOAK_CLIENT_SECRET",
+    required: false,
+    category: "security",
+    description: "Keycloak OIDC client secret",
+  },
+  {
+    name: "VAULT_ROLE_ID",
+    required: false,
+    category: "security",
+    description: "HashiCorp Vault role ID",
+  },
 ];
 
 export interface ValidationResult {
@@ -55,7 +90,9 @@ export function validateEnvironment(): ValidationResult {
 
     if (isEmpty && rule.required) {
       if (isProduction()) {
-        result.errors.push(`[${rule.category}] Missing required env var: ${rule.name} — ${rule.description}`);
+        result.errors.push(
+          `[${rule.category}] Missing required env var: ${rule.name} — ${rule.description}`
+        );
         result.valid = false;
       } else {
         // Generate ephemeral secret for development
@@ -63,16 +100,27 @@ export function validateEnvironment(): ValidationResult {
           const generated = crypto.randomBytes(32).toString("hex");
           result.generatedSecrets[rule.name] = generated;
           process.env[rule.name] = generated;
-          result.warnings.push(`[${rule.category}] ${rule.name} not set — generated ephemeral dev secret`);
+          result.warnings.push(
+            `[${rule.category}] ${rule.name} not set — generated ephemeral dev secret`
+          );
         } else {
-          result.warnings.push(`[${rule.category}] ${rule.name} not set — feature may be limited`);
+          result.warnings.push(
+            `[${rule.category}] ${rule.name} not set — feature may be limited`
+          );
         }
       }
     }
 
     // Validate JWT_SECRET minimum length
-    if (rule.name === "JWT_SECRET" && value && value.length < 32 && isProduction()) {
-      result.errors.push(`[security] JWT_SECRET must be at least 32 characters in production (got ${value.length})`);
+    if (
+      rule.name === "JWT_SECRET" &&
+      value &&
+      value.length < 32 &&
+      isProduction()
+    ) {
+      result.errors.push(
+        `[security] JWT_SECRET must be at least 32 characters in production (got ${value.length})`
+      );
       result.valid = false;
     }
   }
@@ -87,12 +135,19 @@ export function validateEnvironment(): ValidationResult {
   ];
 
   if (isProduction()) {
-    const secretVars = ["JWT_SECRET", "KEYCLOAK_CLIENT_SECRET", "PLATFORM_API_KEY", "APISIX_ADMIN_KEY"];
+    const secretVars = [
+      "JWT_SECRET",
+      "KEYCLOAK_CLIENT_SECRET",
+      "PLATFORM_API_KEY",
+      "APISIX_ADMIN_KEY",
+    ];
     for (const varName of secretVars) {
       const val = process.env[varName] ?? "";
       for (const pattern of HARDCODED_PATTERNS) {
         if (val.includes(pattern)) {
-          result.errors.push(`[security] ${varName} contains dev placeholder "${pattern}" — must use real secret in production`);
+          result.errors.push(
+            `[security] ${varName} contains dev placeholder "${pattern}" — must use real secret in production`
+          );
           result.valid = false;
         }
       }
@@ -117,16 +172,24 @@ export function enforceEnvironment(): void {
       logger.error(error);
     }
     if (isProduction()) {
-      logger.error("FATAL: Environment validation failed — refusing to start in production with insecure configuration");
+      logger.error(
+        "FATAL: Environment validation failed — refusing to start in production with insecure configuration"
+      );
       process.exit(1);
     }
   }
 
   if (Object.keys(result.generatedSecrets).length > 0) {
-    logger.info({ generated: Object.keys(result.generatedSecrets) }, "Dev mode: generated ephemeral secrets");
+    logger.info(
+      { generated: Object.keys(result.generatedSecrets) },
+      "Dev mode: generated ephemeral secrets"
+    );
   }
 
-  logger.info({ production: isProduction(), valid: result.valid }, "Environment validation complete");
+  logger.info(
+    { production: isProduction(), valid: result.valid },
+    "Environment validation complete"
+  );
 }
 
 /**

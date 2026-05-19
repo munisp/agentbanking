@@ -160,7 +160,14 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
-      return { totalRevenue: 4560000000, totalExpenses: 2890000000, netProfit: 1670000000, profitMargin: 36.6, reportCount: 156, lastGenerated: new Date().toISOString() };
+      return {
+        totalRevenue: 4560000000,
+        totalExpenses: 2890000000,
+        netProfit: 1670000000,
+        profitMargin: 36.6,
+        reportCount: 156,
+        lastGenerated: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

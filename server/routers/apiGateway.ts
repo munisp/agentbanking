@@ -110,6 +110,7 @@ export const apiGatewayRouter = router({
     };
   }),
 
-  createApiKey: publicProcedure.mutation(async () => { return { id: "KEY-001", key: "ak_xxx", created: true }; }),
-
+  createApiKey: publicProcedure.mutation(async () => {
+    return { id: "KEY-001", key: "ak_xxx", created: true };
+  }),
 });

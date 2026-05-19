@@ -15,7 +15,8 @@ describe("Critical Business Flows", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    process.env.JWT_SECRET = "test-jwt-secret-that-is-long-enough-for-validation";
+    process.env.JWT_SECRET =
+      "test-jwt-secret-that-is-long-enough-for-validation";
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     vi.resetModules();
   });
@@ -39,7 +40,9 @@ describe("Critical Business Flows", () => {
 
   describe("2. Circuit Breaker — prevents cascading failures", () => {
     it("should open after threshold failures and return fallback", async () => {
-      const { resilientFetch, getCircuitBreakerStatus } = await import("../resilientFetch");
+      const { resilientFetch, getCircuitBreakerStatus } = await import(
+        "../resilientFetch"
+      );
       const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
       vi.stubGlobal("fetch", mockFetch);
 
@@ -48,11 +51,17 @@ describe("Critical Business Flows", () => {
       // Trigger 5 failures (threshold)
       for (let i = 0; i < 5; i++) {
         try {
-          await resilientFetch("http://localhost:9999", { method: "GET" }, {
-            serviceName,
-            retry: { maxRetries: 0, baseDelayMs: 1, maxDelayMs: 10 },
-          });
-        } catch { /* expected */ }
+          await resilientFetch(
+            "http://localhost:9999",
+            { method: "GET" },
+            {
+              serviceName,
+              retry: { maxRetries: 0, baseDelayMs: 1, maxDelayMs: 10 },
+            }
+          );
+        } catch {
+          /* expected */
+        }
       }
 
       const status = getCircuitBreakerStatus();
@@ -60,10 +69,14 @@ describe("Critical Business Flows", () => {
 
       // Subsequent request returns fallback without hitting network
       mockFetch.mockClear();
-      const result = await resilientFetch("http://localhost:9999", { method: "GET" }, {
-        serviceName,
-        fallback: { transferId: "fallback-id" },
-      });
+      const result = await resilientFetch(
+        "http://localhost:9999",
+        { method: "GET" },
+        {
+          serviceName,
+          fallback: { transferId: "fallback-id" },
+        }
+      );
       expect(result).toEqual({ transferId: "fallback-id" });
       expect(mockFetch).not.toHaveBeenCalled();
 
@@ -105,7 +118,7 @@ describe("Critical Business Flows", () => {
       // Given: USD base rates
       const rates: Record<string, number> = {
         USD: 1,
-        NGN: 1580.50,
+        NGN: 1580.5,
         GBP: 0.79,
         EUR: 0.92,
         KES: 129.85,
@@ -146,7 +159,10 @@ describe("Critical Business Flows", () => {
 
   describe("5. KYC Tier Enforcement — regulatory compliance", () => {
     it("should enforce tier limits", () => {
-      const KYC_LIMITS: Record<number, { perTx: number; daily: number; monthly: number }> = {
+      const KYC_LIMITS: Record<
+        number,
+        { perTx: number; daily: number; monthly: number }
+      > = {
         0: { perTx: 50, daily: 100, monthly: 500 },
         1: { perTx: 500, daily: 2000, monthly: 10000 },
         2: { perTx: 5000, daily: 10000, monthly: 50000 },
@@ -170,7 +186,7 @@ describe("Critical Business Flows", () => {
 
     it("should flag AML threshold amounts", () => {
       const AML_THRESHOLDS = {
-        singleTx: 10000,      // USD equivalent — requires enhanced due diligence
+        singleTx: 10000, // USD equivalent — requires enhanced due diligence
         structuringWindow: 24, // hours
         structuringTotal: 9500, // suspicious if multiple txns sum near threshold
       };

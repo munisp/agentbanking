@@ -87,8 +87,24 @@ export const middlewareServiceManagerRouter = router({
       return results;
     }),
 
-  getStats: publicProcedure.query(async () => { return { total: 13, connected: 12, disconnected: 1, avgLatency: 45, services: [] }; }),
+  getStats: publicProcedure.query(async () => {
+    return {
+      total: 13,
+      connected: 12,
+      disconnected: 1,
+      avgLatency: 45,
+      services: [],
+    };
+  }),
 
-  testConnection: publicProcedure.input(z.object({ serviceId: z.string() })).mutation(async ({ input }) => { return { serviceId: input.serviceId, connected: true, latency: 12, testedAt: new Date().toISOString() }; }),
-
+  testConnection: publicProcedure
+    .input(z.object({ serviceId: z.string() }))
+    .mutation(async ({ input }) => {
+      return {
+        serviceId: input.serviceId,
+        connected: true,
+        latency: 12,
+        testedAt: new Date().toISOString(),
+      };
+    }),
 });

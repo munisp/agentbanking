@@ -94,7 +94,16 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
-      return { complianceScore: 94.5, totalReports: 456, cbnReports: 120, ndprReports: 85, pciDssReports: 95, amlReports: 100, cftReports: 56, lastAudit: new Date().toISOString() };
+      return {
+        complianceScore: 94.5,
+        totalReports: 456,
+        cbnReports: 120,
+        ndprReports: 85,
+        pciDssReports: 95,
+        amlReports: 100,
+        cftReports: 56,
+        lastAudit: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

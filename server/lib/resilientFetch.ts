@@ -42,7 +42,10 @@ class ServiceCircuitBreaker {
       if (Date.now() - this.lastFailureTime > this.config.resetTimeoutMs) {
         this.state = "half_open";
         this.halfOpenSuccesses = 0;
-        logger.info({ service: this.serviceName }, "Circuit breaker half-open, allowing probe request");
+        logger.info(
+          { service: this.serviceName },
+          "Circuit breaker half-open, allowing probe request"
+        );
         return true;
       }
       return false;
@@ -56,7 +59,10 @@ class ServiceCircuitBreaker {
       if (this.halfOpenSuccesses >= this.config.halfOpenMaxAttempts) {
         this.state = "closed";
         this.failures = 0;
-        logger.info({ service: this.serviceName }, "Circuit breaker closed (recovered)");
+        logger.info(
+          { service: this.serviceName },
+          "Circuit breaker closed (recovered)"
+        );
       }
     } else {
       this.failures = Math.max(0, this.failures - 1);
@@ -66,9 +72,15 @@ class ServiceCircuitBreaker {
   recordFailure(): void {
     this.failures++;
     this.lastFailureTime = Date.now();
-    if (this.failures >= this.config.failureThreshold && this.state !== "open") {
+    if (
+      this.failures >= this.config.failureThreshold &&
+      this.state !== "open"
+    ) {
       this.state = "open";
-      logger.warn({ service: this.serviceName, failures: this.failures }, "Circuit breaker OPEN — requests will be rejected");
+      logger.warn(
+        { service: this.serviceName, failures: this.failures },
+        "Circuit breaker OPEN — requests will be rejected"
+      );
     }
   }
 
@@ -103,7 +115,7 @@ const DEFAULT_RETRY: RetryConfig = {
 };
 
 async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function isRetryable(status: number): boolean {
@@ -129,10 +141,15 @@ export async function resilientFetch<T>(
 
   if (!breaker.canExecute()) {
     if (fallback !== undefined) {
-      logger.debug({ service: serviceName }, "Circuit open — returning fallback");
+      logger.debug(
+        { service: serviceName },
+        "Circuit open — returning fallback"
+      );
       return fallback as T;
     }
-    throw new Error(`[${serviceName}] Circuit breaker is OPEN — request rejected`);
+    throw new Error(
+      `[${serviceName}] Circuit breaker is OPEN — request rejected`
+    );
   }
 
   let lastError: Error | null = null;
@@ -152,24 +169,30 @@ export async function resilientFetch<T>(
       if (!response.ok) {
         if (isRetryable(response.status) && attempt < retryConfig.maxRetries) {
           const delay = Math.min(
-            retryConfig.baseDelayMs * Math.pow(2, attempt) + Math.random() * 100,
+            retryConfig.baseDelayMs * Math.pow(2, attempt) +
+              Math.random() * 100,
             retryConfig.maxDelayMs
           );
-          logger.debug({ service: serviceName, status: response.status, attempt, delay }, "Retrying request");
+          logger.debug(
+            { service: serviceName, status: response.status, attempt, delay },
+            "Retrying request"
+          );
           await sleep(delay);
           continue;
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json() as T;
+      const data = (await response.json()) as T;
       breaker.recordSuccess();
       return data;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
       if (lastError.name === "AbortError") {
-        lastError = new Error(`[${serviceName}] Request timed out after ${timeoutMs}ms`);
+        lastError = new Error(
+          `[${serviceName}] Request timed out after ${timeoutMs}ms`
+        );
       }
 
       if (attempt < retryConfig.maxRetries) {
@@ -186,7 +209,10 @@ export async function resilientFetch<T>(
   breaker.recordFailure();
 
   if (fallback !== undefined) {
-    logger.warn({ service: serviceName, error: lastError?.message }, "All retries exhausted — returning fallback");
+    logger.warn(
+      { service: serviceName, error: lastError?.message },
+      "All retries exhausted — returning fallback"
+    );
     return fallback as T;
   }
 
@@ -196,7 +222,10 @@ export async function resilientFetch<T>(
 /**
  * Get health status of all circuit breakers.
  */
-export function getCircuitBreakerStatus(): Record<string, { state: CircuitState; failures: number }> {
+export function getCircuitBreakerStatus(): Record<
+  string,
+  { state: CircuitState; failures: number }
+> {
   const status: Record<string, { state: CircuitState; failures: number }> = {};
   breakers.forEach((breaker, name) => {
     status[name] = breaker.getState();

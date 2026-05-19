@@ -98,9 +98,7 @@ export const agentRouter = router({
 
         // Store agent session in cookie (reuse JWT_SECRET)
         const { SignJWT } = await import("jose");
-        const secret = new TextEncoder().encode(
-          getJwtSecret()
-        );
+        const secret = new TextEncoder().encode(getJwtSecret());
         const token = await new SignJWT({
           sub: String(agent.id),
           agentCode: agent.agentCode,
@@ -165,9 +163,7 @@ export const agentRouter = router({
 
       try {
         const { jwtVerify } = await import("jose");
-        const secret = new TextEncoder().encode(
-          getJwtSecret()
-        );
+        const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(match[1], secret);
         const agentId = Number(payload.sub);
         const agent = await getAgentById(agentId);

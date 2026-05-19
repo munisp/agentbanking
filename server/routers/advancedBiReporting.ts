@@ -111,6 +111,7 @@ export const advancedBiReportingRouter = router({
       };
     }),
 
-  executiveKpis: publicProcedure.query(async () => { return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] }; }),
-
+  executiveKpis: publicProcedure.query(async () => {
+    return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] };
+  }),
 });

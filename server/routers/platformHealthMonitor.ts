@@ -133,7 +133,15 @@ const getStats = publicProcedure
         .from(platformSettings)
         .orderBy(desc(platformSettings.id))
         .limit(5);
-      return { overallHealth: 99.2, uptime30d: 99.95, services: 45, healthy: 43, degraded: 2, down: 0, avgResponseTime: 120 };
+      return {
+        overallHealth: 99.2,
+        uptime30d: 99.95,
+        services: 45,
+        healthy: 43,
+        degraded: 2,
+        down: 0,
+        avgResponseTime: 120,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

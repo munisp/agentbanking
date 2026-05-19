@@ -106,6 +106,7 @@ export const apiVersioningRouter = router({
     };
   }),
 
-  getVersion: publicProcedure.query(async () => { return { current: "v1", supported: ["v1"], deprecated: [] }; }),
-
+  getVersion: publicProcedure.query(async () => {
+    return { current: "v1", supported: ["v1"], deprecated: [] };
+  }),
 });

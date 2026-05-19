@@ -106,6 +106,12 @@ export const incidentManagementRouter = router({
     };
   }),
 
-  createIncident: publicProcedure.mutation(async () => { return { id: "INC-001", status: "open", severity: "medium", createdAt: new Date().toISOString() }; }),
-
+  createIncident: publicProcedure.mutation(async () => {
+    return {
+      id: "INC-001",
+      status: "open",
+      severity: "medium",
+      createdAt: new Date().toISOString(),
+    };
+  }),
 });

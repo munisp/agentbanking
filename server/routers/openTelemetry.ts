@@ -118,9 +118,11 @@ export const openTelemetryRouter = router({
     };
   }),
 
-  searchTraces: publicProcedure.query(async () => { return { traces: [], total: 0 }; }),
+  searchTraces: publicProcedure.query(async () => {
+    return { traces: [], total: 0 };
+  }),
 
-
-  serviceHealth: publicProcedure.query(async () => { return { services: [], healthy: 0, degraded: 0 }; }),
-
+  serviceHealth: publicProcedure.query(async () => {
+    return { services: [], healthy: 0, degraded: 0 };
+  }),
 });

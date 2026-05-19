@@ -127,7 +127,14 @@ const getStats = publicProcedure
         .from(webhookEndpoints)
         .orderBy(desc(webhookEndpoints.id))
         .limit(5);
-      return { successRate: 99.2, totalEndpoints: 45, totalDelivered: 125000, totalFailed: 1000, avgLatency: 230, retryQueue: 150 };
+      return {
+        successRate: 99.2,
+        totalEndpoints: 45,
+        totalDelivered: 125000,
+        totalFailed: 1000,
+        avgLatency: 230,
+        retryQueue: 150,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

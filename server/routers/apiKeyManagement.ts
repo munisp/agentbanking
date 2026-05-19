@@ -127,7 +127,14 @@ const getStats = publicProcedure
         .from(apiKeys)
         .orderBy(desc(apiKeys.id))
         .limit(5);
-      return { totalKeys: 350, activeKeys: 280, revokedKeys: 70, totalRequests24h: 1250000, avgRequestsPerKey: 4464, suspiciousActivity: 3 };
+      return {
+        totalKeys: 350,
+        activeKeys: 280,
+        revokedKeys: 70,
+        totalRequests24h: 1250000,
+        avgRequestsPerKey: 4464,
+        suspiciousActivity: 3,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

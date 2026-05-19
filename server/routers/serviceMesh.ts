@@ -96,9 +96,11 @@ export const serviceMeshRouter = router({
     };
   }),
 
-  toggleCircuitBreaker: publicProcedure.mutation(async () => { return { service: "default", enabled: true, state: "closed" }; }),
+  toggleCircuitBreaker: publicProcedure.mutation(async () => {
+    return { service: "default", enabled: true, state: "closed" };
+  }),
 
-
-  healthCheck: publicProcedure.query(async () => { return { services: [], healthy: 0, total: 0 }; }),
-
+  healthCheck: publicProcedure.query(async () => {
+    return { services: [], healthy: 0, total: 0 };
+  }),
 });

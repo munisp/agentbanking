@@ -127,7 +127,15 @@ const getStats = publicProcedure
         .from(agents)
         .orderBy(desc(agents.id))
         .limit(5);
-      return { totalAgents: 15000, superAgents: 500, masterAgents: 2500, subAgents: 12000, territories: 156, regions: 6, avgAgentsPerTerritory: 96 };
+      return {
+        totalAgents: 15000,
+        superAgents: 500,
+        masterAgents: 2500,
+        subAgents: 12000,
+        territories: 156,
+        regions: 6,
+        avgAgentsPerTerritory: 96,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

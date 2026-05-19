@@ -160,7 +160,14 @@ const getStats = publicProcedure
         .from(merchantPayouts)
         .orderBy(desc(merchantPayouts.id))
         .limit(5);
-      return { totalBatches: 890, processed: 750, failed: 40, pending: 100, totalAmount: 15600000000, avgProcessingTime: "4.5 min" };
+      return {
+        totalBatches: 890,
+        processed: 750,
+        failed: 40,
+        pending: 100,
+        totalAmount: 15600000000,
+        avgProcessingTime: "4.5 min",
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

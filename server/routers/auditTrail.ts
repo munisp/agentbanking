@@ -110,11 +110,14 @@ export const auditTrailRouter = router({
     };
   }),
   dashboard: publicProcedure.query(async () => {
-
-    return { totalRecords: 0, activeRecords: 0, lastUpdated: new Date().toISOString(), uptime: 99.9, version: "1.0.0" };
-
+    return {
+      totalRecords: 0,
+      activeRecords: 0,
+      lastUpdated: new Date().toISOString(),
+      uptime: 99.9,
+      version: "1.0.0",
+    };
   }),
-
 
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -139,6 +142,7 @@ export const auditTrailRouter = router({
     };
   }),
 
-  search: publicProcedure.query(async () => { return { entries: [], total: 0, page: 1 }; }),
-
+  search: publicProcedure.query(async () => {
+    return { entries: [], total: 0, page: 1 };
+  }),
 });

@@ -28,8 +28,15 @@ describe("resilientFetch", () => {
 
   it("should retry on 503 and succeed", async () => {
     mockFetch
-      .mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable" })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ recovered: true }) });
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ recovered: true }),
+      });
 
     const result = await resilientFetch<{ recovered: boolean }>(
       "http://localhost:8090/api",
@@ -42,12 +49,20 @@ describe("resilientFetch", () => {
   });
 
   it("should return fallback when all retries fail", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 500, statusText: "Internal Server Error" });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+    });
 
     const result = await resilientFetch<{ fallback: boolean }>(
       "http://localhost:8090/api",
       { method: "GET" },
-      { serviceName: "test-service-3", retry: { maxRetries: 1, baseDelayMs: 10 }, fallback: { fallback: true } }
+      {
+        serviceName: "test-service-3",
+        retry: { maxRetries: 1, baseDelayMs: 10 },
+        fallback: { fallback: true },
+      }
     );
 
     expect(result).toEqual({ fallback: true });
@@ -89,7 +104,10 @@ describe("resilientFetch", () => {
   it("should respect timeout", async () => {
     mockFetch.mockImplementation((_url: string, init: any) => {
       return new Promise((_, reject) => {
-        const timer = setTimeout(() => reject(new Error("network timeout")), 10000);
+        const timer = setTimeout(
+          () => reject(new Error("network timeout")),
+          10000
+        );
         // Listen to abort signal
         if (init?.signal) {
           init.signal.addEventListener("abort", () => {

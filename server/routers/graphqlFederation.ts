@@ -106,9 +106,11 @@ export const graphqlFederationRouter = router({
     };
   }),
 
-  getSchema: publicProcedure.query(async () => { return { schema: "", services: [], version: "1.0" }; }),
+  getSchema: publicProcedure.query(async () => {
+    return { schema: "", services: [], version: "1.0" };
+  }),
 
-
-  executeQuery: publicProcedure.mutation(async () => { return { data: null, errors: [] }; }),
-
+  executeQuery: publicProcedure.mutation(async () => {
+    return { data: null, errors: [] };
+  }),
 });

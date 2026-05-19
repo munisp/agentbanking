@@ -106,6 +106,12 @@ export const multiTenancyRouter = router({
     };
   }),
 
-  getTenant: publicProcedure.query(async () => { return { id: "T-001", name: "Default", status: "active", plan: "enterprise" }; }),
-
+  getTenant: publicProcedure.query(async () => {
+    return {
+      id: "T-001",
+      name: "Default",
+      status: "active",
+      plan: "enterprise",
+    };
+  }),
 });

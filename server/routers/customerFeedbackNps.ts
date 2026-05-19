@@ -127,7 +127,15 @@ const getStats = publicProcedure
         .from(tenantFeeOverrides)
         .orderBy(desc(tenantFeeOverrides.id))
         .limit(5);
-      return { npsScore: 72, avgRating: 4.3, totalResponses: 12500, promoters: 8750, passives: 2500, detractors: 1250, responseRate: 34.5 };
+      return {
+        npsScore: 72,
+        avgRating: 4.3,
+        totalResponses: 12500,
+        promoters: 8750,
+        passives: 2500,
+        detractors: 1250,
+        responseRate: 34.5,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

@@ -145,9 +145,7 @@ export function initSocketIO(httpServer: HttpServer) {
     const match = cookie.match(/agent_session=([^;]+)/);
     if (match) {
       try {
-        const secret = new TextEncoder().encode(
-          getJwtSecret()
-        );
+        const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(match[1], secret);
         (socket as any).agentId = Number(payload.sub);
         (socket as any).agentName = payload.name;

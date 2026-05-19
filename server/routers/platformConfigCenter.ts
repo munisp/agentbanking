@@ -94,7 +94,14 @@ const getStats = publicProcedure
         .from(platform_incidents)
         .orderBy(desc(platform_incidents.id))
         .limit(5);
-      return { totalFlags: 85, enabledFlags: 62, disabledFlags: 23, activeAbTests: 3, lastDeployed: new Date().toISOString(), environments: ["production", "staging", "development"] };
+      return {
+        totalFlags: 85,
+        enabledFlags: 62,
+        disabledFlags: 23,
+        activeAbTests: 3,
+        lastDeployed: new Date().toISOString(),
+        environments: ["production", "staging", "development"],
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

@@ -116,11 +116,14 @@ export const agentScorecardRouter = router({
       }
     }),
   dashboard: publicProcedure.query(async () => {
-
-    return { totalRecords: 0, activeRecords: 0, lastUpdated: new Date().toISOString(), uptime: 99.9, version: "1.0.0" };
-
+    return {
+      totalRecords: 0,
+      activeRecords: 0,
+      lastUpdated: new Date().toISOString(),
+      uptime: 99.9,
+      version: "1.0.0",
+    };
   }),
-
 
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

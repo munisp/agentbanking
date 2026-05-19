@@ -61,7 +61,14 @@ const getStats = publicProcedure
         .from(notificationDispatchLog)
         .orderBy(desc(notificationDispatchLog.id))
         .limit(5);
-      return { totalSent: 45892, deliveryRate: 96.14, channels: { email: 12340, sms: 18560, push: 10200, inApp: 4792 }, failedDeliveries: 1768, retryQueue: 234, lastUpdated: new Date().toISOString() };
+      return {
+        totalSent: 45892,
+        deliveryRate: 96.14,
+        channels: { email: 12340, sms: 18560, push: 10200, inApp: 4792 },
+        failedDeliveries: 1768,
+        retryQueue: 234,
+        lastUpdated: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

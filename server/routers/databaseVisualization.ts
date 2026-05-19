@@ -127,7 +127,14 @@ const getStats = publicProcedure
         .from(deviceLocations)
         .orderBy(desc(deviceLocations.id))
         .limit(5);
-      return { totalTables: 78, totalRows: 2450000, uptime: "99.97%", avgQueryTime: "12ms", activeConnections: 45, maxConnections: 200 };
+      return {
+        totalTables: 78,
+        totalRows: 2450000,
+        uptime: "99.97%",
+        avgQueryTime: "12ms",
+        activeConnections: 45,
+        maxConnections: 200,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

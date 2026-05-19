@@ -56,12 +56,15 @@ describe("envValidation", () => {
       const result = validateEnvironment();
 
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("at least 32 characters"))).toBe(true);
+      expect(
+        result.errors.some(e => e.includes("at least 32 characters"))
+      ).toBe(true);
     });
 
     it("should pass in production with all required vars properly set", () => {
       process.env.NODE_ENV = "production";
-      process.env.JWT_SECRET = "a-properly-long-production-secret-that-is-more-than-32-chars";
+      process.env.JWT_SECRET =
+        "a-properly-long-production-secret-that-is-more-than-32-chars";
       process.env.DATABASE_URL = "postgresql://user:pass@host:5432/db";
 
       const result = validateEnvironment();
@@ -92,7 +95,9 @@ describe("envValidation", () => {
       process.env.NODE_ENV = "production";
       delete process.env.JWT_SECRET;
 
-      expect(() => getJwtSecret()).toThrow("JWT_SECRET is required in production");
+      expect(() => getJwtSecret()).toThrow(
+        "JWT_SECRET is required in production"
+      );
     });
   });
 });

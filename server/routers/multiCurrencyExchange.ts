@@ -127,7 +127,13 @@ const getStats = publicProcedure
         .from(agentPushSubscriptions)
         .orderBy(desc(agentPushSubscriptions.id))
         .limit(5);
-      return { supportedCurrencies: 15, activePairs: 42, corridors: ["NGN-USD", "NGN-GBP", "NGN-EUR", "USD-GBP", "EUR-GBP"], dailyVolume: 125000000, lastRateUpdate: new Date().toISOString() };
+      return {
+        supportedCurrencies: 15,
+        activePairs: 42,
+        corridors: ["NGN-USD", "NGN-GBP", "NGN-EUR", "USD-GBP", "EUR-GBP"],
+        dailyVolume: 125000000,
+        lastRateUpdate: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

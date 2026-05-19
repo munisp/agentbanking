@@ -3,6 +3,7 @@ import type { Request } from "express";
 import { jwtVerify } from "jose";
 import { getAgentById } from "../db";
 import type { Agent } from "../../drizzle/schema";
+import { getJwtSecret } from "../lib/envValidation";
 
 export interface AgentSession {
   id: number;
@@ -20,9 +21,7 @@ export async function getAgentFromCookie(
   if (!match) return null;
 
   try {
-    const secret = new TextEncoder().encode(
-      process.env.JWT_SECRET ?? "pos54link-secret"
-    );
+    const secret = new TextEncoder().encode(getJwtSecret());
     const { payload } = await jwtVerify(match[1], secret);
     return {
       id: Number(payload.sub),

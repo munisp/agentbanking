@@ -24,6 +24,7 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { agents } from "../../drizzle/schema";
+import { getJwtSecret } from "../lib/envValidation";
 import {
   eq,
   ilike,
@@ -98,7 +99,7 @@ export const agentRouter = router({
         // Store agent session in cookie (reuse JWT_SECRET)
         const { SignJWT } = await import("jose");
         const secret = new TextEncoder().encode(
-          process.env.JWT_SECRET ?? "pos54link-secret"
+          getJwtSecret()
         );
         const token = await new SignJWT({
           sub: String(agent.id),
@@ -165,7 +166,7 @@ export const agentRouter = router({
       try {
         const { jwtVerify } = await import("jose");
         const secret = new TextEncoder().encode(
-          process.env.JWT_SECRET ?? "pos54link-secret"
+          getJwtSecret()
         );
         const { payload } = await jwtVerify(match[1], secret);
         const agentId = Number(payload.sub);

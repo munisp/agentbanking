@@ -1,0 +1,148 @@
+/**
+ * Environment Validation — Production Readiness Guard
+ *
+ * Validates that critical environment variables are set in production.
+ * In development mode, generates ephemeral secrets and logs warnings.
+ * This prevents deploying with hardcoded/default credentials.
+ */
+import crypto from "crypto";
+import logger from "../_core/logger";
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+interface EnvRule {
+  name: string;
+  required: boolean;
+  category: "security" | "database" | "service" | "observability";
+  description: string;
+}
+
+const CRITICAL_ENV_VARS: EnvRule[] = [
+  { name: "JWT_SECRET", required: true, category: "security", description: "JWT signing secret (min 32 chars)" },
+  { name: "DATABASE_URL", required: true, category: "database", description: "PostgreSQL connection string" },
+  { name: "KAFKA_BROKERS", required: false, category: "service", description: "Kafka broker addresses" },
+  { name: "REDIS_URL", required: false, category: "service", description: "Redis connection URL" },
+  { name: "OTEL_EXPORTER_OTLP_ENDPOINT", required: false, category: "observability", description: "OpenTelemetry collector endpoint" },
+  { name: "KEYCLOAK_CLIENT_SECRET", required: false, category: "security", description: "Keycloak OIDC client secret" },
+  { name: "VAULT_ROLE_ID", required: false, category: "security", description: "HashiCorp Vault role ID" },
+];
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  generatedSecrets: Record<string, string>;
+}
+
+/**
+ * Validate environment variables at startup.
+ * In production: throws if critical vars are missing.
+ * In development: generates ephemeral secrets and warns.
+ */
+export function validateEnvironment(): ValidationResult {
+  const result: ValidationResult = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    generatedSecrets: {},
+  };
+
+  for (const rule of CRITICAL_ENV_VARS) {
+    const value = process.env[rule.name];
+    const isEmpty = !value || value.trim() === "";
+
+    if (isEmpty && rule.required) {
+      if (isProduction()) {
+        result.errors.push(`[${rule.category}] Missing required env var: ${rule.name} — ${rule.description}`);
+        result.valid = false;
+      } else {
+        // Generate ephemeral secret for development
+        if (rule.category === "security") {
+          const generated = crypto.randomBytes(32).toString("hex");
+          result.generatedSecrets[rule.name] = generated;
+          process.env[rule.name] = generated;
+          result.warnings.push(`[${rule.category}] ${rule.name} not set — generated ephemeral dev secret`);
+        } else {
+          result.warnings.push(`[${rule.category}] ${rule.name} not set — feature may be limited`);
+        }
+      }
+    }
+
+    // Validate JWT_SECRET minimum length
+    if (rule.name === "JWT_SECRET" && value && value.length < 32 && isProduction()) {
+      result.errors.push(`[security] JWT_SECRET must be at least 32 characters in production (got ${value.length})`);
+      result.valid = false;
+    }
+  }
+
+  // Check for known hardcoded dev secrets that should NOT be in production
+  const HARDCODED_PATTERNS = [
+    "pos54link-secret",
+    "pos54link-dev-secret",
+    "54link-dev",
+    "change-in-prod",
+    "change-in-production",
+  ];
+
+  if (isProduction()) {
+    const secretVars = ["JWT_SECRET", "KEYCLOAK_CLIENT_SECRET", "PLATFORM_API_KEY", "APISIX_ADMIN_KEY"];
+    for (const varName of secretVars) {
+      const val = process.env[varName] ?? "";
+      for (const pattern of HARDCODED_PATTERNS) {
+        if (val.includes(pattern)) {
+          result.errors.push(`[security] ${varName} contains dev placeholder "${pattern}" — must use real secret in production`);
+          result.valid = false;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Run validation and log results. Call at server startup.
+ */
+export function enforceEnvironment(): void {
+  const result = validateEnvironment();
+
+  for (const warning of result.warnings) {
+    logger.warn(warning);
+  }
+
+  if (!result.valid) {
+    for (const error of result.errors) {
+      logger.error(error);
+    }
+    if (isProduction()) {
+      logger.error("FATAL: Environment validation failed — refusing to start in production with insecure configuration");
+      process.exit(1);
+    }
+  }
+
+  if (Object.keys(result.generatedSecrets).length > 0) {
+    logger.info({ generated: Object.keys(result.generatedSecrets) }, "Dev mode: generated ephemeral secrets");
+  }
+
+  logger.info({ production: isProduction(), valid: result.valid }, "Environment validation complete");
+}
+
+/**
+ * Get JWT secret — never returns hardcoded default in production.
+ * In dev, returns generated ephemeral secret if JWT_SECRET env var is empty.
+ */
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim() === "") {
+    if (isProduction()) {
+      throw new Error("JWT_SECRET is required in production");
+    }
+    // Dev fallback: generate and cache
+    const ephemeral = crypto.randomBytes(32).toString("hex");
+    process.env.JWT_SECRET = ephemeral;
+    return ephemeral;
+  }
+  return secret;
+}

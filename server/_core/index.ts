@@ -42,6 +42,10 @@ import {
 import { restBridgeRouter } from "../restBridge";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
+import { enforceEnvironment } from "../lib/envValidation";
+
+// ── Environment validation (must run before any service initialization) ────────
+enforceEnvironment();
 
 // ── OpenTelemetry (must be imported before any instrumented modules) ───────────
 // Tracing is enabled when OTEL_EXPORTER_OTLP_ENDPOINT is set.
@@ -426,9 +430,8 @@ async function startServer() {
   // ── DEV-ONLY: Auto-login bypass for testing (no Keycloak required) ──────────
   if (process.env.NODE_ENV === "development") {
     app.get("/api/dev-login", async (req, res) => {
-      const jwtSecret = new TextEncoder().encode(
-        process.env.JWT_SECRET ?? "pos54link-secret-change-in-production"
-      );
+      const { getJwtSecret } = await import("../lib/envValidation");
+      const jwtSecret = new TextEncoder().encode(getJwtSecret());
       const sessionJwt = await new SignJWT({
         sub: "dev-admin-001",
         name: "Dev Admin",
@@ -642,6 +645,18 @@ async function startServer() {
       kafka: checks.kafka,
       keycloak: checks.keycloak,
       tbSidecar: checks.tbSidecar,
+    });
+  });
+
+  // ── Circuit Breaker Status ────────────────────────────────────────────────
+  app.get("/api/health/circuits", async (_req, res) => {
+    const { getCircuitBreakerStatus } = await import("../lib/resilientFetch");
+    const circuits = getCircuitBreakerStatus();
+    const openCount = Object.values(circuits).filter(c => c.state === "open").length;
+    res.json({
+      status: openCount === 0 ? "healthy" : "degraded",
+      openCircuits: openCount,
+      circuits,
     });
   });
 

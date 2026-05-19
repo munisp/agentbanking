@@ -29,6 +29,7 @@ import {
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -41,9 +42,7 @@ const RETURN_PATH_COOKIE = "kc_return";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
 function getJwtSecret(): Uint8Array {
-  const secret =
-    process.env.JWT_SECRET ?? "pos54link-secret-change-in-production";
-  return new TextEncoder().encode(secret);
+  return new TextEncoder().encode(getJwtSecretString());
 }
 
 // ── Session JWT ───────────────────────────────────────────────────────────────

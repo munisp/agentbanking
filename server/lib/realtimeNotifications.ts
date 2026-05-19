@@ -8,6 +8,7 @@
  */
 import type { Server as SocketIOServer, Socket } from "socket.io";
 import { jwtVerify } from "jose";
+import { getJwtSecret } from "./envValidation";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Event Types
@@ -160,7 +161,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
     if (token) {
       try {
         const secret = new TextEncoder().encode(
-          process.env.JWT_SECRET ?? "pos54link-secret"
+          getJwtSecret()
         );
         const { payload } = await jwtVerify(token, secret);
         (socket as any).userId = String(payload.sub);

@@ -14,6 +14,7 @@ import { setIO } from "./socketSingleton";
 import { initRealtimeNotifications } from "./lib/realtimeNotifications";
 import { invokeLLM } from "./_core/llm";
 import { fraudAlerts } from "../drizzle/schema";
+import { getJwtSecret } from "./lib/envValidation";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(
@@ -145,7 +146,7 @@ export function initSocketIO(httpServer: HttpServer) {
     if (match) {
       try {
         const secret = new TextEncoder().encode(
-          process.env.JWT_SECRET ?? "pos54link-secret"
+          getJwtSecret()
         );
         const { payload } = await jwtVerify(match[1], secret);
         (socket as any).agentId = Number(payload.sub);

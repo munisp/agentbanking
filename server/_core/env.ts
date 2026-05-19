@@ -14,7 +14,7 @@
 export const ENV = {
   // ── Manus Platform ──────────────────────────────────────────────────────────
   appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "pos54link-dev-secret-change-in-prod",
+  cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   postgresUrl: process.env.POSTGRES_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",

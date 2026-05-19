@@ -1,0 +1,36 @@
+replicaCount: 3
+
+image:
+  repository: redis
+  pullPolicy: IfNotPresent
+  tag: "7.0"
+
+sentinel:
+  quorum: 2
+
+config:
+  maxmemory: "2gb"
+  appendonly: "yes"
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 3Gi
+
+service:
+  type: ClusterIP
+  redisPort: 6379
+  sentinelPort: 26379
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70

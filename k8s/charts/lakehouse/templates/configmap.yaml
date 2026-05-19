@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    app.kubernetes.io/name: lakehouse
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  core-site.xml: |
+    <configuration>
+      <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://{{ .Release.Name }}-minio:9000</value>
+      </property>
+      <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+      </property>
+    </configuration>
+  hive-site.xml: |
+    <configuration>
+      <property>
+        <name>hive.metastore.uris</name>
+        <value>thrift://{{ .Release.Name }}-hive-metastore:9083</value>
+      </property>
+    </configuration>

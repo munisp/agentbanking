@@ -1,0 +1,198 @@
+# APISIX API Versioning & Rate Limiting for 54Link POS Shell
+# Implements v1/v2 routing, rate limiting, and API key management
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: billing-api-v1
+  namespace: pos-shell
+spec:
+  http:
+  - name: billing-ledger-v1
+    match:
+      hosts:
+      - api.54link.io
+      paths:
+      - /v1/billing/ledger/*
+    backends:
+    - serviceName: billing-aggregation-engine
+      servicePort: 8080
+    plugins:
+    - name: api-breaker
+      enable: true
+      config:
+        break_response_code: 503
+        max_breaker_sec: 60
+        unhealthy:
+          http_statuses: [500, 502, 503]
+          failures: 3
+        healthy:
+          http_statuses: [200, 201]
+          successes: 1
+    - name: limit-req
+      enable: true
+      config:
+        rate: 100
+        burst: 50
+        key: remote_addr
+        rejected_code: 429
+    - name: limit-count
+      enable: true
+      config:
+        count: 10000
+        time_window: 3600
+        key: consumer_name
+        rejected_code: 429
+        policy: redis
+        redis_host: redis.pos-shell.svc
+        redis_port: 6379
+    - name: response-rewrite
+      enable: true
+      config:
+        headers:
+          X-API-Version: "v1"
+          X-RateLimit-Limit: "$limit_count"
+          X-RateLimit-Remaining: "$remaining_count"
+  - name: billing-invoices-v1
+    match:
+      hosts:
+      - api.54link.io
+      paths:
+      - /v1/billing/invoices/*
+    backends:
+    - serviceName: invoice-generator
+      servicePort: 8080
+    plugins:
+    - name: limit-req
+      enable: true
+      config:
+        rate: 50
+        burst: 20
+        key: remote_addr
+    - name: response-rewrite
+      enable: true
+      config:
+        headers:
+          X-API-Version: "v1"
+  - name: billing-settlement-v1
+    match:
+      hosts:
+      - api.54link.io
+      paths:
+      - /v1/billing/settlement/*
+    backends:
+    - serviceName: settlement-gateway
+      servicePort: 8080
+    plugins:
+    - name: limit-req
+      enable: true
+      config:
+        rate: 30
+        burst: 10
+        key: remote_addr
+    - name: response-rewrite
+      enable: true
+      config:
+        headers:
+          X-API-Version: "v1"
+  - name: billing-analytics-v1
+    match:
+      hosts:
+      - api.54link.io
+      paths:
+      - /v1/billing/analytics/*
+    backends:
+    - serviceName: billing-analytics-pipeline
+      servicePort: 8080
+    plugins:
+    - name: limit-req
+      enable: true
+      config:
+        rate: 20
+        burst: 5
+        key: remote_addr
+    - name: proxy-cache
+      enable: true
+      config:
+        cache_ttl: 300
+        cache_zone: billing-analytics
+        cache_key: "$uri$args"
+    - name: response-rewrite
+      enable: true
+      config:
+        headers:
+          X-API-Version: "v1"
+---
+# API v2 routes (future version with breaking changes)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: billing-api-v2
+  namespace: pos-shell
+spec:
+  http:
+  - name: billing-ledger-v2
+    match:
+      hosts:
+      - api.54link.io
+      paths:
+      - /v2/billing/ledger/*
+    backends:
+    - serviceName: billing-aggregation-engine
+      servicePort: 8081
+    plugins:
+    - name: response-rewrite
+      enable: true
+      config:
+        headers:
+          X-API-Version: "v2"
+          Deprecation: "false"
+    - name: limit-req
+      enable: true
+      config:
+        rate: 200
+        burst: 100
+        key: remote_addr
+---
+# Consumer authentication for billing API
+apiVersion: apisix.apache.org/v2
+kind: ApisixConsumer
+metadata:
+  name: billing-tenant-consumer
+  namespace: pos-shell
+spec:
+  authParameter:
+    jwtAuth:
+      value:
+        key: billing-jwt-key
+        secret: "${JWT_SECRET}"
+        algorithm: HS256
+        exp: 86400
+        base64_secret: false
+---
+# Global plugin for all billing routes
+apiVersion: apisix.apache.org/v2
+kind: ApisixGlobalRule
+metadata:
+  name: billing-global-security
+  namespace: pos-shell
+spec:
+  plugins:
+  - name: cors
+    enable: true
+    config:
+      allow_origins: "https://app.54link.io,https://admin.54link.io"
+      allow_methods: "GET,POST,PUT,DELETE,PATCH,OPTIONS"
+      allow_headers: "Authorization,Content-Type,X-Tenant-ID,X-API-Key"
+      expose_headers: "X-API-Version,X-RateLimit-Limit,X-RateLimit-Remaining"
+      max_age: 3600
+  - name: ip-restriction
+    enable: true
+    config:
+      blacklist:
+      - "0.0.0.0/8"
+      message: "Access denied by IP restriction policy"
+  - name: request-id
+    enable: true
+    config:
+      header_name: X-Request-ID
+      include_in_response: true

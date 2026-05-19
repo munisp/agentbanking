@@ -1,0 +1,51 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dapr.fullname" . }}-operator
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dapr.fullname" . }}-placement
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: placement
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dapr.fullname" . }}-sentry
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sentry
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dapr.fullname" . }}-sidecar-injector
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sidecar-injector

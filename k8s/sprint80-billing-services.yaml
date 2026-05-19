@@ -1,0 +1,951 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sprint 80 — Billing Engine Kubernetes Deployments
+# 10 microservices: 3 Go, 3 Rust, 4 Python
+# All services connect to: Kafka, Redis, PostgreSQL, TigerBeetle, OpenSearch
+# RBAC enforced via Permify sidecar, audit via Kafka billing.audit.* topics
+# ═══════════════════════════════════════════════════════════════════════════════
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: billing
+  labels:
+    app.kubernetes.io/part-of: 54link
+    istio-injection: enabled
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# ConfigMap: Shared billing service configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-config
+  namespace: billing
+data:
+  KAFKA_BROKERS: "kafka-headless.kafka.svc.cluster.local:9092"
+  REDIS_URL: "redis://redis-master.redis.svc.cluster.local:6379/3"
+  POSTGRES_HOST: "postgresql-primary.postgresql.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "pos54link"
+  TIGERBEETLE_ADDRESSES: "tigerbeetle-0.tigerbeetle.tigerbeetle.svc.cluster.local:3001,tigerbeetle-1.tigerbeetle.tigerbeetle.svc.cluster.local:3001,tigerbeetle-2.tigerbeetle.tigerbeetle.svc.cluster.local:3001"
+  OPENSEARCH_URL: "https://opensearch-cluster.opensearch.svc.cluster.local:9200"
+  TEMPORAL_ADDRESS: "temporal-frontend.temporal.svc.cluster.local:7233"
+  PERMIFY_URL: "http://permify.permify.svc.cluster.local:3476"
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+  FLUVIO_ENDPOINT: "fluvio-sc.fluvio.svc.cluster.local:9003"
+  LAKEHOUSE_S3_ENDPOINT: "http://minio.lakehouse.svc.cluster.local:9000"
+  LAKEHOUSE_CATALOG_URL: "http://iceberg-rest.lakehouse.svc.cluster.local:8181"
+  MOJALOOP_HUB_URL: "http://central-ledger.mojaloop.svc.cluster.local:3001"
+  APISIX_ADMIN_URL: "http://apisix-admin.apisix.svc.cluster.local:9180"
+  KEYCLOAK_URL: "http://keycloak.keycloak.svc.cluster.local:8080"
+  OPENAPPSEC_AGENT_URL: "http://openappsec-agent.security.svc.cluster.local:8090"
+  LOG_LEVEL: "info"
+  BILLING_AUDIT_TOPIC: "billing.audit.events"
+  BILLING_LEDGER_TOPIC: "billing.ledger.splits"
+  BILLING_RECONCILIATION_TOPIC: "billing.reconciliation.results"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: billing-secrets
+  namespace: billing
+type: Opaque
+stringData:
+  POSTGRES_USER: "posadmin"
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  OPENSEARCH_USER: "billing-svc"
+  OPENSEARCH_PASSWORD: "${OPENSEARCH_PASSWORD}"
+  PERMIFY_API_KEY: "${PERMIFY_API_KEY}"
+  KEYCLOAK_CLIENT_SECRET: "${KC_BILLING_SECRET}"
+  TIGERBEETLE_CLUSTER_ID: "0"
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Go Service 1: billing-aggregator
+# Aggregates transaction fees into billing ledger entries
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-aggregator
+  namespace: billing
+  labels:
+    app: billing-aggregator
+    language: go
+    sprint: "80"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: billing-aggregator
+  template:
+    metadata:
+      labels:
+        app: billing-aggregator
+        language: go
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-aggregator"
+        dapr.io/app-port: "8080"
+        dapr.io/config: "billing-dapr-config"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: billing-aggregator
+          image: registry.54link.io/billing/billing-aggregator:latest
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: billing-tls
+              mountPath: /etc/tls
+              readOnly: true
+      volumes:
+        - name: billing-tls
+          secret:
+            secretName: billing-tls-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-aggregator
+  namespace: billing
+spec:
+  selector:
+    app: billing-aggregator
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+    - port: 9090
+      targetPort: 9090
+      name: metrics
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Go Service 2: billing-reconciliation-engine
+# Runs reconciliation between billing sources
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-reconciliation-engine
+  namespace: billing
+  labels:
+    app: billing-reconciliation-engine
+    language: go
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: billing-reconciliation-engine
+  template:
+    metadata:
+      labels:
+        app: billing-reconciliation-engine
+        language: go
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-reconciliation-engine"
+        dapr.io/app-port: "8080"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: billing-reconciliation-engine
+          image: registry.54link.io/billing/billing-reconciliation-engine:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-reconciliation-engine
+  namespace: billing
+spec:
+  selector:
+    app: billing-reconciliation-engine
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Go Service 3: sla-billing-reporter
+# Generates SLA compliance reports for billing
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sla-billing-reporter
+  namespace: billing
+  labels:
+    app: sla-billing-reporter
+    language: go
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sla-billing-reporter
+  template:
+    metadata:
+      labels:
+        app: sla-billing-reporter
+        language: go
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "sla-billing-reporter"
+        dapr.io/app-port: "8080"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: sla-billing-reporter
+          image: registry.54link.io/billing/sla-billing-reporter:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sla-billing-reporter
+  namespace: billing
+spec:
+  selector:
+    app: sla-billing-reporter
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rust Service 1: billing-stream-processor
+# High-throughput Kafka stream processor for billing events
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-stream-processor
+  namespace: billing
+  labels:
+    app: billing-stream-processor
+    language: rust
+    sprint: "80"
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: billing-stream-processor
+  template:
+    metadata:
+      labels:
+        app: billing-stream-processor
+        language: rust
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-stream-processor"
+        dapr.io/app-port: "8080"
+        dapr.io/app-protocol: "grpc"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: billing-stream-processor
+          image: registry.54link.io/billing/billing-stream-processor:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          env:
+            - name: RUST_LOG
+              value: "info,billing_stream_processor=debug"
+            - name: KAFKA_CONSUMER_GROUP
+              value: "billing-stream-processor-group"
+            - name: KAFKA_TOPICS
+              value: "billing.ledger.splits,billing.reconciliation.results"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: 2000m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-stream-processor
+  namespace: billing
+spec:
+  selector:
+    app: billing-stream-processor
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rust Service 2: ledger-integrity-validator
+# Validates double-entry ledger integrity with TigerBeetle
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-integrity-validator
+  namespace: billing
+  labels:
+    app: ledger-integrity-validator
+    language: rust
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ledger-integrity-validator
+  template:
+    metadata:
+      labels:
+        app: ledger-integrity-validator
+        language: rust
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "ledger-integrity-validator"
+        dapr.io/app-port: "8080"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: ledger-integrity-validator
+          image: registry.54link.io/billing/ledger-integrity-validator:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: VALIDATION_INTERVAL_SECS
+              value: "300"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-integrity-validator
+  namespace: billing
+spec:
+  selector:
+    app: ledger-integrity-validator
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rust Service 3: fee-split-calculator
+# Calculates fee splits based on billing model rules
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fee-split-calculator
+  namespace: billing
+  labels:
+    app: fee-split-calculator
+    language: rust
+    sprint: "80"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fee-split-calculator
+  template:
+    metadata:
+      labels:
+        app: fee-split-calculator
+        language: rust
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "fee-split-calculator"
+        dapr.io/app-port: "8080"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: fee-split-calculator
+          image: registry.54link.io/billing/fee-split-calculator:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          env:
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fee-split-calculator
+  namespace: billing
+spec:
+  selector:
+    app: fee-split-calculator
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python Service 1: billing-event-processor
+# Processes billing events from Kafka and updates state
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-event-processor
+  namespace: billing
+  labels:
+    app: billing-event-processor
+    language: python
+    sprint: "80"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: billing-event-processor
+  template:
+    metadata:
+      labels:
+        app: billing-event-processor
+        language: python
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-event-processor"
+        dapr.io/app-port: "8000"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: billing-event-processor
+          image: registry.54link.io/billing/billing-event-processor:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-event-processor
+  namespace: billing
+spec:
+  selector:
+    app: billing-event-processor
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python Service 2: billing-anomaly-detector
+# ML-based anomaly detection on billing patterns
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-anomaly-detector
+  namespace: billing
+  labels:
+    app: billing-anomaly-detector
+    language: python
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: billing-anomaly-detector
+  template:
+    metadata:
+      labels:
+        app: billing-anomaly-detector
+        language: python
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-anomaly-detector"
+        dapr.io/app-port: "8000"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: billing-anomaly-detector
+          image: registry.54link.io/billing/billing-anomaly-detector:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          env:
+            - name: MODEL_PATH
+              value: "/models/billing-anomaly-v2.onnx"
+            - name: ANOMALY_THRESHOLD
+              value: "0.95"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-anomaly-detector
+  namespace: billing
+spec:
+  selector:
+    app: billing-anomaly-detector
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python Service 3: carrier-billing
+# Carrier billing integration for USSD/mobile money
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carrier-billing
+  namespace: billing
+  labels:
+    app: carrier-billing
+    language: python
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: carrier-billing
+  template:
+    metadata:
+      labels:
+        app: carrier-billing
+        language: python
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "carrier-billing"
+        dapr.io/app-port: "8000"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: carrier-billing
+          image: registry.54link.io/billing/carrier-billing:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carrier-billing
+  namespace: billing
+spec:
+  selector:
+    app: carrier-billing
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python Service 4: revenue-forecaster
+# Revenue forecasting and projection service
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: revenue-forecaster
+  namespace: billing
+  labels:
+    app: revenue-forecaster
+    language: python
+    sprint: "80"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: revenue-forecaster
+  template:
+    metadata:
+      labels:
+        app: revenue-forecaster
+        language: python
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "revenue-forecaster"
+        dapr.io/app-port: "8000"
+    spec:
+      serviceAccountName: billing-svc
+      containers:
+        - name: revenue-forecaster
+          image: registry.54link.io/billing/revenue-forecaster:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: revenue-forecaster
+  namespace: billing
+spec:
+  selector:
+    app: revenue-forecaster
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# HorizontalPodAutoscaler for high-throughput services
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: billing-stream-processor-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: billing-stream-processor
+  minReplicas: 4
+  maxReplicas: 16
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: kafka_consumer_lag
+        target:
+          type: AverageValue
+          averageValue: "1000"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: billing-aggregator-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: billing-aggregator
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fee-split-calculator-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fee-split-calculator
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# NetworkPolicy: Billing namespace isolation
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-network-policy
+  namespace: billing
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: 54link
+        - podSelector: {}
+      ports:
+        - port: 8080
+        - port: 8000
+        - port: 9090
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: 54link
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - port: 443
+        - port: 9092
+        - port: 5432
+        - port: 6379
+        - port: 3001
+        - port: 9200
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# ServiceAccount & RBAC
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: billing-svc
+  namespace: billing
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/billing-service-role"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: billing-role
+  namespace: billing
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: billing-role-binding
+  namespace: billing
+subjects:
+  - kind: ServiceAccount
+    name: billing-svc
+    namespace: billing
+roleRef:
+  kind: Role
+  name: billing-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# PodDisruptionBudget for critical services
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: billing-stream-processor-pdb
+  namespace: billing
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: billing-stream-processor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: billing-aggregator-pdb
+  namespace: billing
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: billing-aggregator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fee-split-calculator-pdb
+  namespace: billing
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: fee-split-calculator

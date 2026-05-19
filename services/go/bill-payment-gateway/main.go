@@ -1,0 +1,118 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+)
+
+type Biller struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Active   bool   `json:"active"`
+}
+
+type PaymentResult struct {
+	Reference string    `json:"reference"`
+	BillerID  string    `json:"billerId"`
+	Amount    float64   `json:"amount"`
+	Status    string    `json:"status"`
+	Token     string    `json:"token,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+var billers = []Biller{
+	{ID: "DSTV", Name: "DSTV", Category: "cable_tv", Active: true},
+	{ID: "GOTV", Name: "GOtv", Category: "cable_tv", Active: true},
+	{ID: "IKEDC", Name: "Ikeja Electric", Category: "electricity", Active: true},
+	{ID: "EKEDC", Name: "Eko Electric", Category: "electricity", Active: true},
+	{ID: "AEDC", Name: "Abuja Electric", Category: "electricity", Active: true},
+	{ID: "LWC", Name: "Lagos Water Corporation", Category: "water", Active: true},
+	{ID: "FIRS", Name: "Federal Inland Revenue", Category: "government", Active: true},
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "bill-payment-gateway"})
+}
+
+func billersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"billers": billers})
+}
+
+func validateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		BillerID    string `json:"billerId"`
+		CustomerRef string `json:"customerReference"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"valid":             true,
+		"billerId":          req.BillerID,
+		"customerReference": req.CustomerRef,
+		"customerName":      "Customer " + req.CustomerRef,
+	})
+}
+
+func payHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		BillerID    string  `json:"billerId"`
+		CustomerRef string  `json:"customerReference"`
+		Amount      float64 `json:"amount"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result := PaymentResult{
+		Reference: fmt.Sprintf("BPG-%d", time.Now().UnixNano()),
+		BillerID:  req.BillerID,
+		Amount:    req.Amount,
+		Status:    "success",
+		Timestamp: time.Now(),
+	}
+
+	if req.BillerID == "IKEDC" || req.BillerID == "EKEDC" || req.BillerID == "AEDC" {
+		result.Token = fmt.Sprintf("%04d-%04d-%04d-%04d-%04d",
+			time.Now().UnixNano()%10000, time.Now().UnixNano()%9999,
+			time.Now().UnixNano()%8888, time.Now().UnixNano()%7777,
+			time.Now().UnixNano()%6666)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8141"
+	}
+
+	http.HandleFunc("/health", healthHandler)
+	http.HandleFunc("/api/v1/billers", billersHandler)
+	http.HandleFunc("/api/v1/validate", validateHandler)
+	http.HandleFunc("/api/v1/pay", payHandler)
+
+	log.Printf("Bill Payment Gateway starting on port %s", port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
+}

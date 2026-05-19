@@ -1,0 +1,194 @@
+name: CodeQL Analysis
+
+# GitHub Advanced Security — Static Application Security Testing (SAST)
+# Scans JavaScript/TypeScript, Go, and Python source code for security vulnerabilities.
+# Results appear in GitHub Security → Code scanning alerts.
+#
+# Requires: GitHub Advanced Security (free for public repos, paid for private)
+# Docs: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors
+
+on:
+  push:
+    branches: [main, develop, "release/**"]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly on Monday at 02:00 WAT (01:00 UTC) to catch new CVEs in unchanged code
+    - cron: "0 1 * * 1"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JavaScript / TypeScript (Node.js server + React client)
+  # ─────────────────────────────────────────────────────────────────────────────
+  analyze-javascript:
+    name: CodeQL — JavaScript/TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # Use the security-extended query suite for broader coverage
+          queries: security-extended,security-and-quality
+          config: |
+            paths:
+              - server/
+              - client/src/
+              - shared/
+            paths-ignore:
+              - node_modules/
+              - dist/
+              - "**/*.test.ts"
+              - "**/*.spec.ts"
+              - "client/src/components/ui/"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build for analysis
+        run: pnpm build
+        continue-on-error: true
+        env:
+          NODE_ENV: production
+          JWT_SECRET: codeql-analysis-placeholder-secret-32chars
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+          upload: true
+          output: codeql-results-js
+
+      - name: Upload CodeQL results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-javascript-results
+          path: codeql-results-js/
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Go (MDM compliance engine, geofence service, OTA service)
+  # ─────────────────────────────────────────────────────────────────────────────
+  analyze-go:
+    name: CodeQL — Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended,security-and-quality
+          config: |
+            paths:
+              - services/go/
+              - server/ota-service/
+            paths-ignore:
+              - "**/*_test.go"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Build Go services for analysis
+        run: |
+          for svc in services/go/*/; do
+            if [ -f "$svc/go.mod" ]; then
+              echo "Building $svc..."
+              cd "$svc" && go build ./... 2>/dev/null || true && cd -
+            fi
+          done
+          if [ -f "server/ota-service/go.mod" ]; then
+            cd server/ota-service && go build ./... 2>/dev/null || true && cd -
+          fi
+        continue-on-error: true
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+          upload: true
+          output: codeql-results-go
+
+      - name: Upload CodeQL results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-go-results
+          path: codeql-results-go/
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Python (CBN reporting engine, payment gateway, compliance services)
+  # ─────────────────────────────────────────────────────────────────────────────
+  analyze-python:
+    name: CodeQL — Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended,security-and-quality
+          config: |
+            paths:
+              - services/python/
+            paths-ignore:
+              - "services/python/**/tests/"
+              - "**/*_test.py"
+              - "**/*.test.py"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          for req in services/python/*/requirements.txt; do
+            pip install -r "$req" 2>/dev/null || true
+          done
+        continue-on-error: true
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+          upload: true
+          output: codeql-results-python
+
+      - name: Upload CodeQL results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-python-results
+          path: codeql-results-python/
+          retention-days: 30

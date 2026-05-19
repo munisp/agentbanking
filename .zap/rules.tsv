@@ -1,0 +1,286 @@
+# OWASP ZAP Alert Rules Configuration
+# Format: AlertID	Action	Comment
+# Actions: IGNORE, WARN, FAIL
+# Reference: https://www.zaproxy.org/docs/alerts/
+
+# ── Informational / Low risk — WARN only ─────────────────────────────────────
+
+# 10015 - Incomplete or No Cache-control Header Set
+10015	WARN	Cache-control headers should be reviewed
+
+# 10016 - Web Browser XSS Protection Not Enabled
+10016	WARN	X-XSS-Protection is deprecated; CSP is preferred
+
+# 10017 - Cross-Domain JavaScript Source File Inclusion
+10017	WARN	Review third-party JS inclusions
+
+# 10019 - Content-Type Header Missing
+10019	WARN	Ensure all responses have Content-Type
+
+# 10020 - Anti-clickjacking Header
+10020	WARN	X-Frame-Options or CSP frame-ancestors should be set
+
+# 10021 - X-Content-Type-Options Header Missing
+10021	WARN	Add X-Content-Type-Options: nosniff
+
+# 10023 - Information Disclosure - Debug Error Messages
+10023	WARN	Debug error messages should not be exposed
+
+# 10024 - Information Disclosure - Sensitive Information in URL
+10024	WARN	Sensitive data should not appear in URLs
+
+# 10025 - Information Disclosure - Sensitive Information in HTTP Referrer Header
+10025	WARN	Sensitive data should not appear in Referer headers
+
+# 10027 - Information Disclosure - Suspicious Comments
+10027	WARN	Remove TODO/FIXME comments from production code
+
+# 10036 - Server Leaks Version Information via "Server" HTTP Response Header Field
+10036	WARN	Remove or obscure the Server header
+
+# 10037 - Server Leaks Information via "X-Powered-By" HTTP Response Header Field
+10037	WARN	Remove X-Powered-By header
+
+# 10038 - Content Security Policy (CSP) Header Not Set
+10038	WARN	CSP header should be configured
+
+# 10039 - X-Backend-Server Header Information Leak
+10039	WARN	Remove X-Backend-Server header
+
+# 10040 - Secure Pages Include Mixed Content
+10040	WARN	Mixed content should be resolved
+
+# 10049 - Storable and Cacheable Content
+10049	WARN	Review caching of sensitive content
+
+# 10050 - Retrieved from Cache
+10050	IGNORE	Expected behavior for cached responses
+
+# 10052 - X-ChromeLogger-Data Header Information Leak
+10052	WARN	Remove ChromeLogger headers from production
+
+# 10054 - Cookie Without SameSite Attribute
+10054	WARN	All cookies should have SameSite attribute
+
+# 10055 - CSP Scanner
+10055	WARN	Review CSP policy
+
+# 10056 - X-Debug-Token Information Leak
+10056	WARN	Remove debug tokens from production
+
+# 10057 - Username Hash Found
+10057	WARN	Review username exposure
+
+# 10061 - X-AspNet-Version Response Header
+10061	WARN	Remove ASP.NET version headers
+
+# 10062 - PII Disclosure
+10062	WARN	Review PII exposure in responses
+
+# 10063 - Permissions Policy Header Not Set
+10063	WARN	Add Permissions-Policy header
+
+# 10094 - Base64 Disclosure
+10094	WARN	Review base64 encoded data in responses
+
+# 10095 - Backup File Disclosure
+10095	FAIL	Backup files must not be accessible
+
+# 10096 - Timestamp Disclosure
+10096	WARN	Review timestamp disclosure
+
+# 10097 - Hash Disclosure
+10097	WARN	Review hash disclosure
+
+# 10098 - Cross-Domain Misconfiguration
+10098	WARN	Review CORS configuration
+
+# 10104 - User Agent Fuzzer
+10104	IGNORE	Not applicable for API-first application
+
+# 10105 - Weak Authentication Method
+10105	FAIL	Weak authentication must be fixed
+
+# 10106 - HTTP Only Site
+10106	WARN	Ensure HTTPS is enforced
+
+# 10107 - Httpoxy - Proxy Header Misuse
+10107	FAIL	Httpoxy vulnerability must be fixed
+
+# 10108 - Reverse Tabnabbing
+10108	WARN	Add rel="noopener noreferrer" to external links
+
+# 10109 - Modern Web Application
+10109	IGNORE	Expected for React SPA
+
+# 10110 - Dangerous JS Functions
+10110	WARN	Review dangerous JS function usage
+
+# 10111 - Authentication Request Identified
+10111	IGNORE	Expected for login endpoints
+
+# 10112 - Session Management Response Identified
+10112	IGNORE	Expected for session endpoints
+
+# ── Medium risk — FAIL ───────────────────────────────────────────────────────
+
+# 40012 - Cross Site Scripting (Reflected)
+40012	FAIL	XSS vulnerabilities must be fixed
+
+# 40014 - Cross Site Scripting (Persistent)
+40014	FAIL	Persistent XSS must be fixed
+
+# 40016 - Cross Site Scripting (Persistent) - Prime
+40016	FAIL	Persistent XSS must be fixed
+
+# 40017 - Cross Site Scripting (Persistent) - Spider
+40017	FAIL	Persistent XSS must be fixed
+
+# 40018 - SQL Injection
+40018	FAIL	SQL injection must be fixed
+
+# 40019 - SQL Injection - MySQL
+40019	FAIL	MySQL injection must be fixed
+
+# 40020 - SQL Injection - Hypersonic SQL
+40020	FAIL	SQL injection must be fixed
+
+# 40021 - SQL Injection - Oracle
+40021	FAIL	Oracle SQL injection must be fixed
+
+# 40022 - SQL Injection - PostgreSQL
+40022	FAIL	PostgreSQL injection must be fixed
+
+# 40023 - Possible Username Enumeration
+40023	WARN	Review username enumeration resistance
+
+# 40024 - SQL Injection - SQLite
+40024	FAIL	SQLite injection must be fixed
+
+# 40025 - Proxy Disclosure
+40025	WARN	Review proxy information disclosure
+
+# 40026 - Cross Site Scripting (DOM Based)
+40026	FAIL	DOM XSS must be fixed
+
+# 40027 - SQL Injection - MsSQL
+40027	FAIL	MSSQL injection must be fixed
+
+# 40028 - CSRF
+40028	FAIL	CSRF vulnerabilities must be fixed
+
+# 40029 - Trace.axd Information Leak
+40029	IGNORE	Not applicable (not .NET)
+
+# 40031 - Loosely Scoped Cookie
+40031	WARN	Review cookie scope
+
+# 40032 - .htaccess Information Leak
+40032	IGNORE	Not applicable (not Apache)
+
+# 40034 - .env Information Leak
+40034	FAIL	.env files must not be accessible
+
+# 40035 - Hidden File Finder
+40035	WARN	Review hidden file accessibility
+
+# ── High risk — FAIL ─────────────────────────────────────────────────────────
+
+# 6 - Path Traversal
+6	FAIL	Path traversal must be fixed
+
+# 7 - Remote File Inclusion
+7	FAIL	RFI must be fixed
+
+# 20012 - Anti-CSRF Tokens Check
+20012	WARN	Review CSRF token implementation
+
+# 20014 - HTTP Parameter Pollution
+20014	WARN	Review parameter pollution resistance
+
+# 20015 - Heartbleed OpenSSL Vulnerability
+20015	FAIL	Heartbleed must be fixed
+
+# 20016 - Cross-Domain Misconfiguration
+20016	WARN	Review CORS configuration
+
+# 20017 - Source Code Disclosure - CVE-2012-1823
+20017	FAIL	Source code disclosure must be fixed
+
+# 20018 - Remote Code Execution - CVE-2012-1823
+20018	FAIL	RCE must be fixed
+
+# 20019 - External Redirect
+20019	FAIL	Open redirects must be fixed
+
+# 30001 - Buffer Overflow
+30001	FAIL	Buffer overflow must be fixed
+
+# 30002 - Format String Error
+30002	FAIL	Format string errors must be fixed
+
+# 30003 - Integer Overflow Error
+30003	FAIL	Integer overflow must be fixed
+
+# 40003 - CRLF Injection
+40003	FAIL	CRLF injection must be fixed
+
+# 40008 - Parameter Tampering
+40008	WARN	Review parameter tampering resistance
+
+# 40009 - Server Side Include
+40009	FAIL	SSI injection must be fixed
+
+# 40010 - SQL Injection Fingerprinting
+40010	WARN	Review SQL injection fingerprinting
+
+# 40011 - XML External Entity Attack
+40011	FAIL	XXE must be fixed
+
+# 40013 - Session Fixation
+40013	FAIL	Session fixation must be fixed
+
+# 90001 - Insecure JSF ViewState
+90001	IGNORE	Not applicable (not JSF)
+
+# 90011 - Charset Mismatch
+90011	WARN	Review charset consistency
+
+# 90017 - XSLT Injection
+90017	FAIL	XSLT injection must be fixed
+
+# 90019 - Server Side Code Injection
+90019	FAIL	Server-side code injection must be fixed
+
+# 90020 - Remote OS Command Injection
+90020	FAIL	OS command injection must be fixed
+
+# 90021 - XPath Injection
+90021	FAIL	XPath injection must be fixed
+
+# 90022 - Application Error Disclosure
+90022	WARN	Review error message disclosure
+
+# 90023 - XML External Entity Attack
+90023	FAIL	XXE must be fixed
+
+# 90024 - Generic Padding Oracle
+90024	FAIL	Padding oracle must be fixed
+
+# 90025 - Expression Language Injection
+90025	FAIL	EL injection must be fixed
+
+# 90026 - SOAP Action Spoofing
+90026	IGNORE	Not applicable (no SOAP)
+
+# 90028 - Insecure HTTP Method
+90028	WARN	Review HTTP method exposure
+
+# 90029 - SOAP XML Injection
+90029	IGNORE	Not applicable (no SOAP)
+
+# 90030 - WSDL File Detection
+90030	IGNORE	Not applicable (no SOAP)
+
+# 90033 - Loosely Scoped Cookie
+90033	WARN	Review cookie scope

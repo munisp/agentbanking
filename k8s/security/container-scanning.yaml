@@ -1,0 +1,130 @@
+# Container Security Scanning Pipeline for 54Link POS Shell
+# Trivy + Falco runtime security
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-scan-config
+  namespace: pos-shell
+data:
+  trivy-config.yaml: |
+    # Trivy vulnerability scanning configuration
+    scan:
+      severity: CRITICAL,HIGH,MEDIUM
+      ignore-unfixed: false
+      timeout: 10m
+      
+    # Image registries to scan
+    registries:
+      - name: pos-shell-registry
+        images:
+          # Go services
+          - 54link/billing-aggregation-engine:*
+          - 54link/settlement-gateway:*
+          - 54link/telemetry-api-gateway:*
+          - 54link/billing-provisioning-workflow:*
+          # Rust services
+          - 54link/billing-stream-processor:*
+          - 54link/ledger-integrity-validator:*
+          - 54link/billing-event-processor:*
+          - 54link/fee-splitter-realtime:*
+          # Python services
+          - 54link/billing-analytics-pipeline:*
+          - 54link/invoice-generator:*
+          - 54link/billing-webhook-dispatcher:*
+          - 54link/billing-sla-monitor:*
+          
+    # Compliance checks
+    compliance:
+      - nsa
+      - pci-dss
+      - cis-benchmark
+      
+    # Secret scanning
+    secret:
+      enabled: true
+      config:
+        enable-builtin-rules: true
+        
+    # License scanning
+    license:
+      enabled: true
+      forbidden:
+        - AGPL-3.0
+        - GPL-3.0
+---
+# Falco Runtime Security Rules for Billing Services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-billing-rules
+  namespace: pos-shell
+data:
+  billing-rules.yaml: |
+    - rule: Billing Service Unexpected Outbound Connection
+      desc: Detect billing service connecting to unexpected external hosts
+      condition: >
+        evt.type=connect and
+        container.name startswith "billing-" and
+        not (fd.sip in (
+          rfc_1918_addresses,
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ))
+      output: >
+        Billing service unexpected outbound connection
+        (container=%container.name command=%proc.cmdline connection=%fd.name)
+      priority: WARNING
+      tags: [billing, network, security]
+
+    - rule: Billing Service Shell Spawned
+      desc: Detect shell execution in billing containers
+      condition: >
+        spawned_process and
+        container.name startswith "billing-" and
+        proc.name in (bash, sh, zsh, dash, csh)
+      output: >
+        Shell spawned in billing container
+        (container=%container.name user=%user.name command=%proc.cmdline)
+      priority: CRITICAL
+      tags: [billing, process, security]
+
+    - rule: Billing Service Sensitive File Access
+      desc: Detect access to sensitive files in billing containers
+      condition: >
+        open_read and
+        container.name startswith "billing-" and
+        (fd.name startswith "/etc/shadow" or
+         fd.name startswith "/etc/passwd" or
+         fd.name contains "private_key" or
+         fd.name contains ".env")
+      output: >
+        Sensitive file accessed in billing container
+        (container=%container.name file=%fd.name command=%proc.cmdline)
+      priority: CRITICAL
+      tags: [billing, filesystem, security]
+
+    - rule: Billing Database Credential Exfiltration
+      desc: Detect attempts to read database credentials
+      condition: >
+        open_read and
+        container.name startswith "billing-" and
+        (fd.name contains "POSTGRES" or
+         fd.name contains "REDIS" or
+         fd.name contains "TIGERBEETLE") and
+        not proc.name in (node, python3, billing-)
+      output: >
+        Database credential access attempt
+        (container=%container.name file=%fd.name process=%proc.name)
+      priority: CRITICAL
+      tags: [billing, credentials, security]
+---
+# Pod Security Standards for billing namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pos-shell
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

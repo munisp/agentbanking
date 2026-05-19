@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dapr.fullname" . }}-placement
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: placement
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.placementPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "dapr.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: placement
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dapr.fullname" . }}-sentry
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentry
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.sentryPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dapr.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sentry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dapr.fullname" . }}-operator
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.operatorPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dapr.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dapr.fullname" . }}-sidecar-injector
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sidecar-injector
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.sidecarInjectorPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dapr.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sidecar-injector

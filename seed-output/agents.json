@@ -1,0 +1,92 @@
+[
+  {
+    "id": 1,
+    "code": "AGT-001",
+    "name": "Chioma Eze",
+    "phone": "08012345001",
+    "tier": "gold",
+    "region": "Lagos - Ikeja",
+    "role": "admin"
+  },
+  {
+    "id": 2,
+    "code": "AGT-002",
+    "name": "Emeka Obi",
+    "phone": "08012345002",
+    "tier": "silver",
+    "region": "Abuja - Wuse",
+    "role": "agent"
+  },
+  {
+    "id": 3,
+    "code": "AGT-003",
+    "name": "Fatima Bello",
+    "phone": "08012345003",
+    "tier": "platinum",
+    "region": "Kano - Nassarawa",
+    "role": "agent"
+  },
+  {
+    "id": 4,
+    "code": "AGT-004",
+    "name": "Adamu Yusuf",
+    "phone": "08012345004",
+    "tier": "bronze",
+    "region": "Port Harcourt",
+    "role": "agent"
+  },
+  {
+    "id": 5,
+    "code": "AGT-005",
+    "name": "Grace Okonkwo",
+    "phone": "08012345005",
+    "tier": "gold",
+    "region": "Enugu - New Haven",
+    "role": "agent"
+  },
+  {
+    "id": 6,
+    "code": "AGT-006",
+    "name": "Ibrahim Musa",
+    "phone": "08012345006",
+    "tier": "silver",
+    "region": "Kaduna - Barnawa",
+    "role": "agent"
+  },
+  {
+    "id": 7,
+    "code": "AGT-007",
+    "name": "Joy Nwosu",
+    "phone": "08012345007",
+    "tier": "gold",
+    "region": "Lagos - Lekki",
+    "role": "agent"
+  },
+  {
+    "id": 8,
+    "code": "AGT-008",
+    "name": "Kemi Ade",
+    "phone": "08012345008",
+    "tier": "bronze",
+    "region": "Ibadan - Bodija",
+    "role": "agent"
+  },
+  {
+    "id": 9,
+    "code": "AGT-009",
+    "name": "Ladi Bako",
+    "phone": "08012345009",
+    "tier": "silver",
+    "region": "Jos - Bukuru",
+    "role": "agent"
+  },
+  {
+    "id": 10,
+    "code": "AGT-010",
+    "name": "Musa Dan",
+    "phone": "08012345010",
+    "tier": "platinum",
+    "region": "Abuja - Garki",
+    "role": "supervisor"
+  }
+]

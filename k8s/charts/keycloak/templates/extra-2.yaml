@@ -1,0 +1,17 @@
+{{- if .Values.realmImport.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.realmImport.configMapName }}
+  labels:
+    app.kubernetes.io/name: {{ include "keycloak.name" . }}
+    helm.sh/chart: {{ include "keycloak.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  realm.json: |
+    {
+      "realm": "myrealm",
+      "enabled": true
+    }
+{{- end }}

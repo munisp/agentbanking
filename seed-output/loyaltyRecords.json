@@ -1,0 +1,502 @@
+[
+  {
+    "id": 1,
+    "agentId": 10,
+    "points": 47910,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Monthly target",
+    "balanceAfter": 41828,
+    "createdAt": "2026-04-01T13:43:08.340Z"
+  },
+  {
+    "id": 2,
+    "agentId": 3,
+    "points": 39481,
+    "tier": "silver",
+    "action": "tier_upgrade",
+    "description": "Monthly target",
+    "balanceAfter": 8237,
+    "createdAt": "2026-03-09T01:37:09.494Z"
+  },
+  {
+    "id": 3,
+    "agentId": 5,
+    "points": 16018,
+    "tier": "bronze",
+    "action": "bonus",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 59720,
+    "createdAt": "2026-04-15T22:31:07.540Z"
+  },
+  {
+    "id": 4,
+    "agentId": 10,
+    "points": 9722,
+    "tier": "platinum",
+    "action": "bonus",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 2759,
+    "createdAt": "2026-01-22T06:52:35.958Z"
+  },
+  {
+    "id": 5,
+    "agentId": 9,
+    "points": 12014,
+    "tier": "silver",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 98675,
+    "createdAt": "2026-03-12T14:09:03.931Z"
+  },
+  {
+    "id": 6,
+    "agentId": 10,
+    "points": 7596,
+    "tier": "platinum",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 33018,
+    "createdAt": "2026-02-28T06:32:41.478Z"
+  },
+  {
+    "id": 7,
+    "agentId": 3,
+    "points": 19441,
+    "tier": "platinum",
+    "action": "redeem",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 80055,
+    "createdAt": "2026-02-14T13:22:32.708Z"
+  },
+  {
+    "id": 8,
+    "agentId": 5,
+    "points": 10673,
+    "tier": "gold",
+    "action": "earn",
+    "description": "Referral reward",
+    "balanceAfter": 83438,
+    "createdAt": "2026-03-21T20:02:28.710Z"
+  },
+  {
+    "id": 9,
+    "agentId": 5,
+    "points": 41458,
+    "tier": "gold",
+    "action": "bonus",
+    "description": "Referral reward",
+    "balanceAfter": 59424,
+    "createdAt": "2026-02-13T00:15:58.007Z"
+  },
+  {
+    "id": 10,
+    "agentId": 9,
+    "points": 25087,
+    "tier": "silver",
+    "action": "bonus",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 61414,
+    "createdAt": "2026-02-20T17:47:19.469Z"
+  },
+  {
+    "id": 11,
+    "agentId": 6,
+    "points": 23208,
+    "tier": "platinum",
+    "action": "redeem",
+    "description": "Referral reward",
+    "balanceAfter": 49794,
+    "createdAt": "2026-02-03T10:42:13.596Z"
+  },
+  {
+    "id": 12,
+    "agentId": 2,
+    "points": 6377,
+    "tier": "gold",
+    "action": "tier_upgrade",
+    "description": "Transaction bonus",
+    "balanceAfter": 3250,
+    "createdAt": "2026-02-21T16:31:44.236Z"
+  },
+  {
+    "id": 13,
+    "agentId": 9,
+    "points": 46254,
+    "tier": "bronze",
+    "action": "redeem",
+    "description": "Monthly target",
+    "balanceAfter": 45342,
+    "createdAt": "2026-01-26T01:31:06.436Z"
+  },
+  {
+    "id": 14,
+    "agentId": 3,
+    "points": 6262,
+    "tier": "gold",
+    "action": "earn",
+    "description": "Monthly target",
+    "balanceAfter": 91506,
+    "createdAt": "2026-01-24T11:03:22.420Z"
+  },
+  {
+    "id": 15,
+    "agentId": 7,
+    "points": 33150,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Transaction bonus",
+    "balanceAfter": 96438,
+    "createdAt": "2026-02-13T16:47:52.224Z"
+  },
+  {
+    "id": 16,
+    "agentId": 3,
+    "points": 8098,
+    "tier": "bronze",
+    "action": "earn",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 94330,
+    "createdAt": "2026-03-18T14:57:16.056Z"
+  },
+  {
+    "id": 17,
+    "agentId": 4,
+    "points": 33289,
+    "tier": "gold",
+    "action": "redeem",
+    "description": "Referral reward",
+    "balanceAfter": 63972,
+    "createdAt": "2026-03-03T20:25:15.160Z"
+  },
+  {
+    "id": 18,
+    "agentId": 7,
+    "points": 14929,
+    "tier": "platinum",
+    "action": "earn",
+    "description": "Referral reward",
+    "balanceAfter": 53696,
+    "createdAt": "2026-03-12T23:05:10.089Z"
+  },
+  {
+    "id": 19,
+    "agentId": 6,
+    "points": 24550,
+    "tier": "bronze",
+    "action": "bonus",
+    "description": "Transaction bonus",
+    "balanceAfter": 99150,
+    "createdAt": "2026-02-01T21:18:07.962Z"
+  },
+  {
+    "id": 20,
+    "agentId": 1,
+    "points": 26462,
+    "tier": "gold",
+    "action": "tier_upgrade",
+    "description": "Transaction bonus",
+    "balanceAfter": 57512,
+    "createdAt": "2026-02-15T20:53:23.377Z"
+  },
+  {
+    "id": 21,
+    "agentId": 3,
+    "points": 34119,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 59738,
+    "createdAt": "2026-03-31T15:37:00.999Z"
+  },
+  {
+    "id": 22,
+    "agentId": 4,
+    "points": 37882,
+    "tier": "silver",
+    "action": "bonus",
+    "description": "Monthly target",
+    "balanceAfter": 38284,
+    "createdAt": "2026-02-15T14:02:00.611Z"
+  },
+  {
+    "id": 23,
+    "agentId": 3,
+    "points": 33845,
+    "tier": "gold",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 68951,
+    "createdAt": "2026-03-03T09:21:04.683Z"
+  },
+  {
+    "id": 24,
+    "agentId": 9,
+    "points": 23549,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Monthly target",
+    "balanceAfter": 21306,
+    "createdAt": "2026-04-16T17:18:08.901Z"
+  },
+  {
+    "id": 25,
+    "agentId": 6,
+    "points": 20462,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Monthly target",
+    "balanceAfter": 15925,
+    "createdAt": "2026-02-08T04:10:18.912Z"
+  },
+  {
+    "id": 26,
+    "agentId": 6,
+    "points": 35271,
+    "tier": "platinum",
+    "action": "tier_upgrade",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 41937,
+    "createdAt": "2026-02-17T01:04:24.224Z"
+  },
+  {
+    "id": 27,
+    "agentId": 7,
+    "points": 41100,
+    "tier": "platinum",
+    "action": "earn",
+    "description": "Referral reward",
+    "balanceAfter": 77723,
+    "createdAt": "2026-03-10T12:15:31.259Z"
+  },
+  {
+    "id": 28,
+    "agentId": 8,
+    "points": 23957,
+    "tier": "platinum",
+    "action": "redeem",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 22316,
+    "createdAt": "2026-03-09T03:50:14.707Z"
+  },
+  {
+    "id": 29,
+    "agentId": 9,
+    "points": 4876,
+    "tier": "bronze",
+    "action": "redeem",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 52983,
+    "createdAt": "2026-04-01T09:32:05.557Z"
+  },
+  {
+    "id": 30,
+    "agentId": 1,
+    "points": 25730,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 61953,
+    "createdAt": "2026-03-12T07:26:26.842Z"
+  },
+  {
+    "id": 31,
+    "agentId": 8,
+    "points": 49882,
+    "tier": "bronze",
+    "action": "bonus",
+    "description": "Transaction bonus",
+    "balanceAfter": 38716,
+    "createdAt": "2026-02-19T00:31:24.000Z"
+  },
+  {
+    "id": 32,
+    "agentId": 3,
+    "points": 10905,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Transaction bonus",
+    "balanceAfter": 64032,
+    "createdAt": "2026-02-22T22:46:29.570Z"
+  },
+  {
+    "id": 33,
+    "agentId": 5,
+    "points": 28277,
+    "tier": "silver",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 17879,
+    "createdAt": "2026-02-24T20:57:05.286Z"
+  },
+  {
+    "id": 34,
+    "agentId": 7,
+    "points": 3082,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Monthly target",
+    "balanceAfter": 14037,
+    "createdAt": "2026-04-19T09:42:52.857Z"
+  },
+  {
+    "id": 35,
+    "agentId": 2,
+    "points": 49988,
+    "tier": "platinum",
+    "action": "earn",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 11924,
+    "createdAt": "2026-04-15T17:06:20.256Z"
+  },
+  {
+    "id": 36,
+    "agentId": 7,
+    "points": 41374,
+    "tier": "gold",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 99186,
+    "createdAt": "2026-04-15T17:21:39.167Z"
+  },
+  {
+    "id": 37,
+    "agentId": 5,
+    "points": 43010,
+    "tier": "bronze",
+    "action": "redeem",
+    "description": "Monthly target",
+    "balanceAfter": 88755,
+    "createdAt": "2026-04-09T16:38:30.788Z"
+  },
+  {
+    "id": 38,
+    "agentId": 3,
+    "points": 13390,
+    "tier": "silver",
+    "action": "bonus",
+    "description": "Referral reward",
+    "balanceAfter": 97885,
+    "createdAt": "2026-02-09T14:56:59.362Z"
+  },
+  {
+    "id": 39,
+    "agentId": 10,
+    "points": 3078,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Referral reward",
+    "balanceAfter": 12568,
+    "createdAt": "2026-03-25T14:46:25.444Z"
+  },
+  {
+    "id": 40,
+    "agentId": 3,
+    "points": 26997,
+    "tier": "platinum",
+    "action": "tier_upgrade",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 54410,
+    "createdAt": "2026-03-21T22:25:03.413Z"
+  },
+  {
+    "id": 41,
+    "agentId": 2,
+    "points": 542,
+    "tier": "bronze",
+    "action": "bonus",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 71611,
+    "createdAt": "2026-03-10T15:38:53.672Z"
+  },
+  {
+    "id": 42,
+    "agentId": 10,
+    "points": 49160,
+    "tier": "platinum",
+    "action": "tier_upgrade",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 75045,
+    "createdAt": "2026-03-18T21:58:12.711Z"
+  },
+  {
+    "id": 43,
+    "agentId": 9,
+    "points": 30054,
+    "tier": "silver",
+    "action": "redeem",
+    "description": "Transaction bonus",
+    "balanceAfter": 16895,
+    "createdAt": "2026-03-10T11:54:34.682Z"
+  },
+  {
+    "id": 44,
+    "agentId": 5,
+    "points": 20821,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Tier upgrade bonus",
+    "balanceAfter": 49405,
+    "createdAt": "2026-03-24T15:01:10.583Z"
+  },
+  {
+    "id": 45,
+    "agentId": 8,
+    "points": 26655,
+    "tier": "gold",
+    "action": "bonus",
+    "description": "Transaction bonus",
+    "balanceAfter": 10492,
+    "createdAt": "2026-02-02T01:27:45.322Z"
+  },
+  {
+    "id": 46,
+    "agentId": 7,
+    "points": 46698,
+    "tier": "platinum",
+    "action": "bonus",
+    "description": "Referral reward",
+    "balanceAfter": 12511,
+    "createdAt": "2026-03-15T06:45:56.174Z"
+  },
+  {
+    "id": 47,
+    "agentId": 9,
+    "points": 2249,
+    "tier": "silver",
+    "action": "earn",
+    "description": "Monthly target",
+    "balanceAfter": 27918,
+    "createdAt": "2026-03-11T22:48:50.029Z"
+  },
+  {
+    "id": 48,
+    "agentId": 2,
+    "points": 235,
+    "tier": "bronze",
+    "action": "tier_upgrade",
+    "description": "Monthly target",
+    "balanceAfter": 74555,
+    "createdAt": "2026-03-03T22:51:59.238Z"
+  },
+  {
+    "id": 49,
+    "agentId": 1,
+    "points": 42385,
+    "tier": "gold",
+    "action": "earn",
+    "description": "Monthly target",
+    "balanceAfter": 19442,
+    "createdAt": "2026-01-27T20:51:34.159Z"
+  },
+  {
+    "id": 50,
+    "agentId": 8,
+    "points": 22802,
+    "tier": "platinum",
+    "action": "tier_upgrade",
+    "description": "Transaction bonus",
+    "balanceAfter": 14962,
+    "createdAt": "2026-04-17T22:20:31.495Z"
+  }
+]

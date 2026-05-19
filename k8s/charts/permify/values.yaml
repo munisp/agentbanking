@@ -1,0 +1,87 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/permify/permify
+  pullPolicy: IfNotPresent
+  tag: "v0.9.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  grpcPort: 3476
+  httpPort: 3478
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - permify
+        topologyKey: kubernetes.io/hostname
+
+config:
+  PERMIFY_DB_URI: "postgres://user:password@postgres:5432/permify?sslmode=disable"
+  PERMIFY_HTTP_PORT: "3478"
+  PERMIFY_GRPC_PORT: "3476"
+
+initContainers:
+  enabled: true
+  image:
+    repository: ghcr.io/permify/permify
+    tag: "v0.9.0"
+  command: ["permify", "migrate"]

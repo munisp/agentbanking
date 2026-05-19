@@ -1,0 +1,31 @@
+# Snyk (https://snyk.io) policy file — 54Link POS Shell
+# This file is used by Snyk to define ignore rules for specific vulnerabilities.
+# Each entry requires a reason and an expiry date.
+#
+# To add an ignore:
+#   snyk ignore --id=SNYK-JS-EXAMPLE-12345 --reason="Not exploitable" --expiry=2027-01-01
+#
+# Or edit this file directly following the format below.
+
+version: v1.25.0
+
+# ── Ignores ───────────────────────────────────────────────────────────────────
+# Format:
+# SNYK-VULN-ID:
+#   - '*':
+#       reason: "Justification"
+#       expires: "YYYY-MM-DDTHH:MM:SS.000Z"
+#       created: "YYYY-MM-DDTHH:MM:SS.000Z"
+#
+# No ignores currently active — all vulnerabilities must be remediated.
+ignore: {}
+
+# ── Patches ───────────────────────────────────────────────────────────────────
+# Snyk patches are applied when a fix is not yet available upstream.
+# No patches currently active.
+patch: {}
+
+# ── Language settings ─────────────────────────────────────────────────────────
+language-settings:
+  javascript:
+    packageManager: pnpm

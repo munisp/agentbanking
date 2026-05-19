@@ -1,0 +1,16 @@
+{
+  "query": "SELECT table_name FROM information_schema.tables WHERE table_schema = '8HPhiZd2Eco6WRGckejsZr' ORDER BY table_name;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2t5rixfHAYLQmtB.82d4504e1c85 --database 8HPhiZd2Eco6WRGckejsZr --execute SELECT table_name FROM information_schema.tables WHERE table_schema = '8HPhiZd2Eco6WRGckejsZr' ORDER BY table_name;",
+  "rows": [
+    {
+      "table_name": "__drizzle_migrations"
+    },
+    {
+      "table_name": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "table_name\n__drizzle_migrations\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 580
+}

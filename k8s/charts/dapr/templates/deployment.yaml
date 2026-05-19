@@ -1,0 +1,168 @@
+{{- $fullName := include "dapr.fullname" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-operator
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      labels:
+        {{- include "dapr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: operator
+    spec:
+      serviceAccountName: {{ include "dapr.serviceAccountName" . }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/operator"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.operatorPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-placement
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: placement
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: placement
+  template:
+    metadata:
+      labels:
+        {{- include "dapr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: placement
+    spec:
+      serviceAccountName: {{ include "dapr.serviceAccountName" . }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+        - name: placement
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/placement"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.placementPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: grpc
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: grpc
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-sentry
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentry
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sentry
+  template:
+    metadata:
+      labels:
+        {{- include "dapr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sentry
+    spec:
+      serviceAccountName: {{ include "dapr.serviceAccountName" . }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+        - name: sentry
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/sentry"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.sentryPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-sidecar-injector
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sidecar-injector
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sidecar-injector
+  template:
+    metadata:
+      labels:
+        {{- include "dapr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sidecar-injector
+    spec:
+      serviceAccountName: {{ include "dapr.serviceAccountName" . }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+        - name: sidecar-injector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/injector"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.sidecarInjectorPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

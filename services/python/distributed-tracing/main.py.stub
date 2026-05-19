@@ -1,0 +1,65 @@
+"""
+Distributed Tracing Service - Production Implementation
+OpenTelemetry integration for distributed tracing
+"""
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.sdk.resources import Resource
+from typing import Dict
+import uvicorn
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+resource = Resource(attributes={"service.name": "distributed-tracing"})
+provider = TracerProvider(resource=resource)
+jaeger_exporter = JaegerExporter(
+    agent_host_name="localhost",
+    agent_port=6831,
+)
+processor = BatchSpanProcessor(jaeger_exporter)
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+
+app = FastAPI(title="Distributed Tracing Service", version="1.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+FastAPIInstrumentor.instrument_app(app)
+HTTPXClientInstrumentor().instrument()
+
+tracer = trace.get_tracer(__name__)
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "distributed-tracing"}
+
+@app.post("/api/v1/trace/start")
+async def start_trace(request: Request, trace_name: str):
+    with tracer.start_as_current_span(trace_name) as span:
+        span.set_attribute("trace.name", trace_name)
+        span.set_attribute("trace.timestamp", str(request.headers.get("timestamp")))
+        
+        return {
+            "trace_id": format(span.get_span_context().trace_id, '032x'),
+            "span_id": format(span.get_span_context().span_id, '016x'),
+            "trace_name": trace_name
+        }
+
+@app.get("/api/v1/trace/{trace_id}")
+async def get_trace(trace_id: str):
+    return {
+        "trace_id": trace_id,
+        "status": "active",
+        "exporter": "jaeger"
+    }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8020)

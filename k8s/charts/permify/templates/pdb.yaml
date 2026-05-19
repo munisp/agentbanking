@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "permify.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "permify.name" . }}
+    helm.sh/chart: {{ include "permify.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "permify.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}

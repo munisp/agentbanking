@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: papss-integration
+  namespace: remittance-platform
+  labels:
+    app: papss-integration
+    tier: backend
+    payment-system: papss
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: papss-integration
+  template:
+    metadata:
+      labels:
+        app: papss-integration
+        tier: backend
+        payment-system: papss
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: papss-service-account
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: papss-integration
+        image: remittance-platform/papss-integration:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: SERVICE_NAME
+          value: "papss-integration"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: TIGERBEETLE_CLUSTER_ID
+          value: "1"
+        - name: TIGERBEETLE_ADDRESSES
+          value: "tigerbeetle-0.tigerbeetle:3000,tigerbeetle-1.tigerbeetle:3000,tigerbeetle-2.tigerbeetle:3000"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: database-url
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: postgres-host
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "papss_payments"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: postgres-password
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: redis-url
+        - name: PAPSS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: api-key
+        - name: PAPSS_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: api-secret
+        - name: PAPSS_PARTICIPANT_CODE
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: participant-code
+        - name: MOBILE_MONEY_MPESA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: mpesa-api-key
+        - name: MOBILE_MONEY_OPAY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: opay-api-key
+        - name: FX_PROVIDER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: papss-secrets
+              key: fx-provider-api-key
+        - name: PROMETHEUS_METRICS_PORT
+          value: "8081"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: papss-config
+      - name: tmp
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - papss-integration
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "payment-system"
+        operator: "Equal"
+        value: "papss"
+        effect: "NoSchedule"
+

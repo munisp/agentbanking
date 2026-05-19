@@ -1,0 +1,185 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# 54Link POS Shell — Umbrella Chart Default Values
+# Toggle each component on/off and override sub-chart values here.
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  namespace: pos-54link
+  environment: production
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "gp3"
+  monitoring:
+    enabled: true
+    namespace: monitoring
+
+# ── Kafka ─────────────────────────────────────────────────────────────────────
+kafka:
+  enabled: true
+  replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 50Gi
+  jmx:
+    enabled: true
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  replicaCount: 3
+  sentinel:
+    enabled: true
+    replicaCount: 3
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+  persistence:
+    size: 5Gi
+  maxmemory: "2gb"
+
+# ── Temporal ──────────────────────────────────────────────────────────────────
+temporal:
+  enabled: true
+  frontend:
+    replicaCount: 2
+  history:
+    replicaCount: 2
+  matching:
+    replicaCount: 2
+  worker:
+    replicaCount: 2
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+
+# ── Keycloak ──────────────────────────────────────────────────────────────────
+keycloak:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  ingress:
+    enabled: true
+    hostname: auth.54link.io
+    tls: true
+
+# ── OpenSearch ────────────────────────────────────────────────────────────────
+opensearch:
+  enabled: true
+  replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 50Gi
+  dashboards:
+    enabled: true
+    replicaCount: 1
+
+# ── APISIX ────────────────────────────────────────────────────────────────────
+apisix:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
+  dashboard:
+    enabled: true
+  etcd:
+    replicaCount: 3
+
+# ── Mojaloop ──────────────────────────────────────────────────────────────────
+mojaloop:
+  enabled: true
+  centralLedger:
+    replicaCount: 2
+  mlApiAdapter:
+    replicaCount: 2
+  accountLookup:
+    replicaCount: 2
+  quotingService:
+    replicaCount: 2
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+
+# ── Permify ───────────────────────────────────────────────────────────────────
+permify:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: { cpu: "250m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
+
+# ── Dapr ──────────────────────────────────────────────────────────────────────
+dapr:
+  enabled: true
+  sidecarInjector:
+    replicaCount: 2
+  placement:
+    replicaCount: 3
+  sentry:
+    replicaCount: 2
+
+# ── Fluvio ────────────────────────────────────────────────────────────────────
+fluvio:
+  enabled: true
+  sc:
+    replicaCount: 1
+  spu:
+    replicaCount: 3
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+  persistence:
+    size: 10Gi
+
+# ── Lakehouse ─────────────────────────────────────────────────────────────────
+lakehouse:
+  enabled: true
+  minio:
+    replicaCount: 4
+    persistence:
+      size: 100Gi
+  spark:
+    master:
+      replicaCount: 1
+    worker:
+      replicaCount: 2
+      resources:
+        requests: { cpu: "1", memory: "4Gi" }
+        limits: { cpu: "4", memory: "8Gi" }
+  hive:
+    replicaCount: 1
+
+# ── TigerBeetle ───────────────────────────────────────────────────────────────
+tigerbeetle:
+  enabled: true
+  replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 10Gi
+
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  primary:
+    replicaCount: 1
+  readReplicas:
+    replicaCount: 2
+  pgbouncer:
+    enabled: true
+    replicaCount: 2
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 50Gi
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"

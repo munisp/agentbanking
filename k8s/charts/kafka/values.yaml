@@ -1,0 +1,41 @@
+replicaCount: 3
+
+image:
+  repository: bitnami/kafka
+  pullPolicy: IfNotPresent
+  tag: "3.6.0"
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  clientPort: 9092
+  controllerPort: 9093
+  jmxPort: 9999
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+nodeId: 1
+controllerQuorumVoters: "1@kafka-0.kafka-headless:9093,2@kafka-1.kafka-headless:9093,3@kafka-2.kafka-headless:9093"

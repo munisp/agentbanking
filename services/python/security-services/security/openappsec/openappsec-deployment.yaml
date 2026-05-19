@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: open-appsec-agent
+  namespace: security
+  labels:
+    app: open-appsec
+spec:
+  selector:
+    matchLabels:
+      app: open-appsec
+  template:
+    metadata:
+      labels:
+        app: open-appsec
+    spec:
+      hostNetwork: true
+      containers:
+      - name: open-appsec-agent
+        image: ghcr.io/openappsec/agent:latest
+        env:
+        - name: AGENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: openappsec-secrets
+              key: agent-token
+        - name: AGENT_MODE
+          value: "inline"
+        - name: LOG_LEVEL
+          value: "info"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cp/conf
+        - name: logs
+          mountPath: /var/log/nano_agent
+      volumes:
+      - name: config
+        configMap:
+          name: openappsec-config
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openappsec-config
+  namespace: security
+data:
+  policy.yaml: |
+    version: "1.0"
+    name: "remittance-platform-policy"
+    practices:
+      - name: "api-protection"
+        enabled: true
+        rules:
+          - name: "rate-limiting"
+            action: "prevent"
+            limit: 1000
+            window: 60
+          - name: "sql-injection"
+            action: "prevent"
+          - name: "xss-protection"
+            action: "prevent"
+          - name: "authentication-bypass"
+            action: "prevent"

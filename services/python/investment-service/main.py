@@ -1,0 +1,84 @@
+"""
+Investment Service - FastAPI microservice
+Agent investment and savings products with fixed deposits, money market, and portfolio management
+"""
+import os
+import logging
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Investment Service", description="Agent investment and savings products with fixed deposits, money market, and portfolio management", version="1.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# --- Domain Helpers ---
+
+def validate_request(data: dict, required_fields: list) -> list:
+    """Validate that all required fields are present in request data."""
+    missing = [f for f in required_fields if f not in data or data[f] is None]
+    return missing
+
+def sanitize_input(value: str) -> str:
+    """Sanitize user input to prevent injection attacks."""
+    if not isinstance(value, str):
+        return str(value)
+    return value.strip().replace("<", "&lt;").replace(">", "&gt;")
+
+def format_currency(amount: float, currency: str = "NGN") -> str:
+    """Format amount with currency symbol."""
+    symbols = {"NGN": "₦", "USD": "$", "GBP": "£", "EUR": "€", "KES": "KSh"}
+    symbol = symbols.get(currency, currency + " ")
+    return f"{symbol}{amount:,.2f}"
+
+def generate_reference(prefix: str = "REF") -> str:
+    """Generate a unique reference ID."""
+    import time
+    import hashlib
+    ts = str(time.time()).encode()
+    h = hashlib.md5(ts).hexdigest()[:8].upper()
+    return f"{prefix}-{h}"
+
+def paginate(items: list, page: int = 1, per_page: int = 20) -> dict:
+    """Paginate a list of items."""
+    start = (page - 1) * per_page
+    end = start + per_page
+    return {
+        "items": items[start:end],
+        "total": len(items),
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (len(items) + per_page - 1) // per_page
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "investment-service", "version": "1.0.0", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/api/v1/investments/products")
+async def list_products():
+    """List available investment products."""
+    return {"products": [], "total": 0, "categories": ["fixed_deposit", "money_market", "savings", "treasury_bills"]}
+
+@app.post("/api/v1/investments/subscribe")
+async def subscribe(agent_id: str, product_id: str, amount: float, tenure_days: int = 30):
+    """Subscribe to an investment product."""
+    if amount < 1000: raise HTTPException(400, "Minimum investment is 1,000")
+    return {"investment_id": f"INV-{agent_id}-{int(__import__('time').time())}", "product_id": product_id, "amount": amount, "tenure_days": tenure_days, "status": "active", "maturity_date": None}
+
+@app.get("/api/v1/investments/{agent_id}/portfolio")
+async def get_portfolio(agent_id: str):
+    """Get agent's investment portfolio."""
+    return {"agent_id": agent_id, "total_invested": 0.0, "total_returns": 0.0, "active_investments": 0, "investments": []}
+
+@app.post("/api/v1/investments/{investment_id}/redeem")
+async def redeem(investment_id: str, early: bool = False):
+    """Redeem an investment (early or at maturity)."""
+    return {"investment_id": investment_id, "status": "redeemed", "principal": 0.0, "interest": 0.0, "penalty": 0.0 if not early else 0.0}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

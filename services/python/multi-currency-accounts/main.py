@@ -1,0 +1,93 @@
+from typing import Any, Dict, List, Optional, Union, Tuple
+
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+import database
+from config import settings
+from router import router
+from service import ServiceError, AccountNotFound, CurrencyBalanceNotFound, CurrencyBalanceAlreadyExists
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create database tables on startup
+database.create_db_and_tables()
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.VERSION,
+    description="API for managing multi-currency accounts and balances.",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# --- Middleware ---
+
+# CORS Middleware
+origins = [
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "*" # Allow all for development, restrict in production
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Exception Handlers ---
+
+@app.exception_handler(AccountNotFound)
+async def account_not_found_exception_handler(request: Request, exc: AccountNotFound) -> None:
+    logger.warning(f"Account not found: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": str(exc)},
+    )
+
+@app.exception_handler(CurrencyBalanceNotFound)
+async def currency_balance_not_found_exception_handler(request: Request, exc: CurrencyBalanceNotFound) -> None:
+    logger.warning(f"Currency balance not found: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": str(exc)},
+    )
+
+@app.exception_handler(CurrencyBalanceAlreadyExists)
+async def currency_balance_already_exists_exception_handler(request: Request, exc: CurrencyBalanceAlreadyExists) -> None:
+    logger.warning(f"Currency balance already exists: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": str(exc)},
+    )
+
+@app.exception_handler(ServiceError)
+async def service_error_exception_handler(request: Request, exc: ServiceError) -> None:
+    logger.error(f"Service error: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": str(exc)},
+    )
+
+# --- Router Inclusion ---
+
+app.include_router(router, prefix="/api/v1")
+
+# --- Root Endpoint ---
+
+@app.get("/", tags=["Health Check"])
+def read_root() -> Dict[str, Any]:
+    return {"message": f"{settings.APP_NAME} v{settings.VERSION} is running."}
+
+# Example of how to run the app (for local development)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

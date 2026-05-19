@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "postgresql.fullname" . }}-config
+  labels:
+    app.kubernetes.io/name: {{ include "postgresql.name" . }}
+    helm.sh/chart: {{ include "postgresql.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    max_connections = 200
+    {{- if .Values.walArchiving.enabled }}
+    archive_mode = on
+    archive_command = 'cp %p /var/lib/postgresql/data/archive/%f'
+    {{- end }}

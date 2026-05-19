@@ -1,0 +1,188 @@
+---
+# Sprint 47: Rust Middleware Bridge Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-rust-bridge
+  namespace: pos-shell
+  labels:
+    app: pos-rust-bridge
+    sprint: "47"
+    tier: sidecar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-rust-bridge
+  template:
+    metadata:
+      labels:
+        app: pos-rust-bridge
+        tier: sidecar
+    spec:
+      containers:
+        - name: rust-bridge
+          image: 54link/pos-rust-bridge:1.0.0
+          ports:
+            - containerPort: 9100
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: RUST_BRIDGE_PORT
+              value: "9100"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9100
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9100
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-rust-bridge
+  namespace: pos-shell
+spec:
+  selector:
+    app: pos-rust-bridge
+  ports:
+    - port: 9100
+      targetPort: 9100
+  type: ClusterIP
+---
+# Sprint 47: Go Ledger Sync Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-go-ledger
+  namespace: pos-shell
+  labels:
+    app: pos-go-ledger
+    sprint: "47"
+    tier: sidecar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-go-ledger
+  template:
+    metadata:
+      labels:
+        app: pos-go-ledger
+        tier: sidecar
+    spec:
+      containers:
+        - name: go-ledger
+          image: 54link/pos-go-ledger:1.0.0
+          ports:
+            - containerPort: 9200
+          env:
+            - name: GO_LEDGER_PORT
+              value: "9200"
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9200
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9200
+            initialDelaySeconds: 2
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-go-ledger
+  namespace: pos-shell
+spec:
+  selector:
+    app: pos-go-ledger
+  ports:
+    - port: 9200
+      targetPort: 9200
+  type: ClusterIP
+---
+# Sprint 47: Python ML Engine Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-python-ml
+  namespace: pos-shell
+  labels:
+    app: pos-python-ml
+    sprint: "47"
+    tier: sidecar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-python-ml
+  template:
+    metadata:
+      labels:
+        app: pos-python-ml
+        tier: sidecar
+    spec:
+      containers:
+        - name: python-ml
+          image: 54link/pos-python-ml:1.0.0
+          ports:
+            - containerPort: 9300
+          env:
+            - name: PYTHON_ML_PORT
+              value: "9300"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9300
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9300
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-python-ml
+  namespace: pos-shell
+spec:
+  selector:
+    app: pos-python-ml
+  ports:
+    - port: 9300
+      targetPort: 9300
+  type: ClusterIP

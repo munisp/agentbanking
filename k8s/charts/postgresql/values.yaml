@@ -1,0 +1,30 @@
+replicaCount: 3
+image:
+  repository: postgres
+  pullPolicy: IfNotPresent
+  tag: "15.0"
+pgbouncer:
+  enabled: true
+  image:
+    repository: edoburu/pgbouncer
+    tag: "1.19.0"
+  port: 6432
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: ""
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+walArchiving:
+  enabled: true
+serviceAccount:
+  create: true
+  name: ""

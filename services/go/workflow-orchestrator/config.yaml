@@ -1,0 +1,32 @@
+server:
+  port: 8080
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  database: workflow_orchestrator
+  pool_size: 100
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+fluvio:
+  brokers:
+    - localhost:9003
+
+kafka:
+  brokers:
+    - localhost:9092
+
+executor:
+  workers: 10
+  max_concurrent: 1000
+  max_retries: 3
+

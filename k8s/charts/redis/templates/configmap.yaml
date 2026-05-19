@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-redis-config
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    instance: {{ .Release.Name }}
+    version: {{ .Chart.AppVersion }}
+data:
+  redis.conf: |
+    maxmemory {{ .Values.config.maxmemory }}
+    appendonly {{ .Values.config.appendonly }}
+    dir /data
+    port {{ .Values.service.redisPort }}
+  sentinel.conf: |
+    port {{ .Values.service.sentinelPort }}
+    sentinel monitor mymaster {{ .Release.Name }}-redis-0.{{ .Release.Name }}-redis-headless {{ .Values.service.redisPort }} {{ .Values.sentinel.quorum }}
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 60000

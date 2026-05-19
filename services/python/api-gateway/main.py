@@ -1,0 +1,94 @@
+from typing import Any, Dict, List, Optional, Union, Tuple
+
+import logging
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
+from config import settings
+from database import init_db
+from router import router
+from service import RouteException
+
+# --- Configure Logging ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Application Lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> None:
+    """
+    Handles startup and shutdown events.
+    """
+    logger.info("Application startup: Initializing database...")
+    try:
+        init_db()
+        logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        # In a real production app, this might be a fatal error
+        # For this example, we log and continue
+    
+    yield
+    
+    logger.info("Application shutdown.")
+
+# --- FastAPI Application Initialization ---
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    debug=settings.DEBUG,
+    lifespan=lifespan
+)
+
+# --- Middleware ---
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=settings.CORS_METHODS,
+    allow_headers=settings.CORS_HEADERS,
+)
+
+# --- Custom Exception Handlers ---
+@app.exception_handler(RouteException)
+async def route_exception_handler(request: Request, exc: RouteException) -> None:
+    """
+    Handles custom RouteException and returns a standardized JSON response.
+    """
+    logger.warning(f"RouteException caught: {exc.message} (Status: {exc.status_code})")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message},
+    )
+
+# --- Root Endpoint ---
+@app.get("/", tags=["Status"])
+def read_root() -> Dict[str, Any]:
+    """
+    Root endpoint to check the service status.
+    """
+    return {
+        "message": "API Gateway Configuration Service is running", 
+        "version": settings.VERSION,
+        "status": "OK"
+    }
+
+# --- Include Routers ---
+app.include_router(router)
+
+# --- Security Note ---
+# For a production-ready API Gateway config service, security (authentication/authorization)
+# would be implemented here, likely using FastAPI's Depends with a security scheme
+# (e.g., OAuth2PasswordBearer) to protect the /routes endpoints.
+# This example omits the full security implementation for brevity but acknowledges the requirement.
+# A simple placeholder for security dependency would be:
+# from fastapi.security import OAuth2PasswordBearer
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# def get_current_user(token: str = Depends(oauth2_scheme)):
+#     # ... logic to decode token and return user ...
+#     pass
+# And then add `dependencies=[Depends(get_current_user)]` to the router.

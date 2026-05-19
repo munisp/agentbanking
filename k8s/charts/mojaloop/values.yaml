@@ -1,0 +1,88 @@
+global:
+  mysql:
+    host: "mysql"
+    port: 3306
+    user: "mojaloop"
+    database: "mojaloop"
+  kafka:
+    host: "kafka"
+    port: 9092
+
+mysql:
+  enabled: true
+  auth:
+    rootPassword: "rootpassword"
+    database: "mojaloop"
+    username: "mojaloop"
+    password: "password"
+
+kafka:
+  enabled: true
+
+centralLedger:
+  replicaCount: 2
+  image:
+    repository: mojaloop/central-ledger
+    pullPolicy: IfNotPresent
+    tag: "v17.0.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3001
+
+mlApiAdapter:
+  replicaCount: 2
+  image:
+    repository: mojaloop/ml-api-adapter
+    pullPolicy: IfNotPresent
+    tag: "v14.0.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3000
+
+accountLookup:
+  replicaCount: 2
+  image:
+    repository: mojaloop/account-lookup-service
+    pullPolicy: IfNotPresent
+    tag: "v15.0.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 4002
+
+quotingService:
+  replicaCount: 2
+  image:
+    repository: mojaloop/quoting-service
+    pullPolicy: IfNotPresent
+    tag: "v15.0.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3002

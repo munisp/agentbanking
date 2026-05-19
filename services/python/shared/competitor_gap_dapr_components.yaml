@@ -1,0 +1,134 @@
+---
+# Dapr Pub/Sub component — Kafka backend for all competitor-gap services
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: competitor-gap-pubsub
+  namespace: 54link
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: "kafka-cluster-kafka-bootstrap:9092"
+    - name: consumerGroup
+      value: "dapr-competitor-gap"
+    - name: authType
+      value: "scramSha512"
+    - name: saslUsername
+      secretKeyRef:
+        name: kafka-credentials
+        key: username
+    - name: saslPassword
+      secretKeyRef:
+        name: kafka-credentials
+        key: password
+    - name: maxMessageBytes
+      value: "1048576"
+    - name: initialOffset
+      value: "oldest"
+---
+# Dapr State Store — Redis Cluster for all competitor-gap services
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: competitor-gap-statestore
+  namespace: 54link
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: "redis-cluster:6379"
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-credentials
+        key: password
+    - name: enableTLS
+      value: "true"
+    - name: failover
+      value: "true"
+    - name: sentinelMasterName
+      value: "mymaster"
+    - name: ttlInSeconds
+      value: "3600"
+    - name: keyPrefix
+      value: "competitor-gap"
+---
+# Dapr Binding — PostgreSQL for audit log writes
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: competitor-gap-postgres
+  namespace: 54link
+spec:
+  type: bindings.postgresql
+  version: v1
+  metadata:
+    - name: url
+      secretKeyRef:
+        name: postgres-credentials
+        key: connection-string
+---
+# Dapr Configuration — tracing + resiliency
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: competitor-gap-config
+  namespace: 54link
+spec:
+  tracing:
+    samplingRate: "1"
+    zipkin:
+      endpointAddress: "http://jaeger-collector:9411/api/v2/spans"
+  metric:
+    enabled: true
+  features:
+    - name: ServiceInvocationStreaming
+      enabled: true
+---
+# Dapr Resiliency — retry + circuit breaker for all competitor-gap services
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: competitor-gap-resiliency
+  namespace: 54link
+spec:
+  policies:
+    retries:
+      defaultRetryPolicy:
+        policy: exponential
+        maxInterval: 10s
+        maxRetries: 5
+    circuitBreakers:
+      defaultCircuitBreaker:
+        maxRequests: 1
+        interval: 10s
+        timeout: 30s
+        trip: consecutiveFailures >= 3
+  targets:
+    apps:
+      multi-sim-failover:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      instant-reversal-engine:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      agent-wallet-transparency:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      cbn-reporting-engine:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      nfc-qr-payments:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      realtime-receipt-engine:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      agent-training-academy:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker
+      agent-liquidity-network:
+        retry: defaultRetryPolicy
+        circuitBreaker: defaultCircuitBreaker

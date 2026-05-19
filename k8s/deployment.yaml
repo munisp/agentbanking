@@ -1,0 +1,293 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# 54Link Agency Banking Platform — Kubernetes Deployment
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: 54link-app
+  namespace: 54link
+  labels:
+    app: 54link
+    component: web
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: 54link
+      component: web
+  template:
+    metadata:
+      labels:
+        app: 54link
+        component: web
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      serviceAccountName: 54link-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: app
+          image: registry.54link.ng/pos-shell:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: 54link-secrets
+                  key: database-url
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: 54link-secrets
+                  key: postgres-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: 54link-secrets
+                  key: jwt-secret
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: 54link-secrets
+                  key: redis-url
+            - name: KEYCLOAK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: 54link-config
+                  key: keycloak-url
+            - name: KEYCLOAK_REALM
+              valueFrom:
+                configMapKeyRef:
+                  name: 54link-config
+                  key: keycloak-realm
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: 54link-config
+                  key: keycloak-client-id
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: 54link-secrets
+                  key: keycloak-client-secret
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+      imagePullSecrets:
+        - name: registry-credentials
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: 54link
+              component: web
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: 54link-app
+  namespace: 54link
+  labels:
+    app: 54link
+    component: web
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: 54link
+    component: web
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: 54link-ingress
+  namespace: 54link
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - app.54link.ng
+        - api.54link.ng
+      secretName: 54link-tls
+  rules:
+    - host: app.54link.ng
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: 54link-app
+                port:
+                  name: http
+    - host: api.54link.ng
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: 54link-app
+                port:
+                  name: http
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: 54link-hpa
+  namespace: 54link
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: 54link-app
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: 54link-pdb
+  namespace: 54link
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: 54link
+      component: web
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: 54link-config
+  namespace: 54link
+data:
+  keycloak-url: "https://auth.54link.ng"
+  keycloak-realm: "54link"
+  keycloak-client-id: "pos-shell"
+  app-domain: "app.54link.ng"
+  api-domain: "api.54link.ng"
+  smtp-host: "smtp.54link.ng"
+  smtp-port: "587"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: 54link-secrets
+  namespace: 54link
+type: Opaque
+stringData:
+  database-url: "postgresql://54link:CHANGE_ME@postgres.54link.svc:5432/pos54link?sslmode=require"
+  postgres-url: "postgresql://54link:CHANGE_ME@postgres.54link.svc:5432/pos54link?sslmode=require"
+  jwt-secret: "CHANGE_ME_TO_A_256_BIT_RANDOM_SECRET"
+  redis-url: "redis://redis.54link.svc:6379"
+  keycloak-client-secret: "CHANGE_ME"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: 54link-sa
+  namespace: 54link
+  labels:
+    app: 54link
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 54link
+  labels:
+    name: 54link
+    istio-injection: enabled

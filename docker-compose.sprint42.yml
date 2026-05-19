@@ -1,0 +1,170 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# 54Link POS Shell — Sprint 42+ Docker Compose Overlay
+# Adds 3 middleware sidecars (Go, Rust, Python) from Sprint 43/44
+# Usage: docker compose -f docker-compose.production.yml -f docker-compose.sprint42.yml up
+# ═══════════════════════════════════════════════════════════════════════════════
+
+x-common: &restart-policy
+  restart: unless-stopped
+
+x-logging: &json-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+
+  # ── TigerBeetle Commission Sidecar (Go) ──────────────────────────────────
+  # Double-entry ledger bridge for commission, settlement, and refund accounting.
+  # Exposes HTTP API on port 8200 for the Node.js app to call tbCreateTransfer().
+  tb-commission-sidecar:
+    build:
+      context: ./tb-commission-sidecar
+      dockerfile: Dockerfile
+    container_name: 54link-tb-commission-sidecar
+    <<: *restart-policy
+    <<: *json-logging
+    profiles: [app, all]
+    networks: [54link-app, 54link-infra]
+    environment:
+      - PORT=8200
+      - TB_ADDRESSES=tigerbeetle:3001
+      - TB_CLUSTER_ID=0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://loki:3100
+    depends_on:
+      tigerbeetle:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8200/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
+  # ── Fluvio Event Producer Sidecar (Rust) ──────────────────────────────────
+  # High-throughput event streaming producer for real-time analytics.
+  # Accepts HTTP POST on port 8201, forwards to Fluvio cluster.
+  fluvio-producer-sidecar:
+    build:
+      context: ./fluvio-producer
+      dockerfile: Dockerfile
+    container_name: 54link-fluvio-producer-sidecar
+    <<: *restart-policy
+    <<: *json-logging
+    profiles: [app, all]
+    networks: [54link-app, 54link-infra]
+    environment:
+      - PORT=8201
+      - FLUVIO_ADDR=fluvio:9003
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - BATCH_SIZE=100
+      - FLUSH_INTERVAL_MS=500
+    depends_on:
+      fluvio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8201/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 64M
+        reservations:
+          cpus: '0.1'
+          memory: 16M
+
+  # ── Lakehouse + Mojaloop ILP Adapter Sidecar (Python) ─────────────────────
+  # Lakehouse: Periodic snapshots of commission/settlement/dispute data to Parquet.
+  # Mojaloop: ILP adapter for cross-border interoperability via Mojaloop Hub.
+  # Exposes HTTP API on port 8202.
+  lakehouse-mojaloop-sidecar:
+    build:
+      context: ./lakehouse-mojaloop
+      dockerfile: Dockerfile
+    container_name: 54link-lakehouse-mojaloop-sidecar
+    <<: *restart-policy
+    <<: *json-logging
+    profiles: [app, all]
+    networks: [54link-app, 54link-infra]
+    environment:
+      - PORT=8202
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}
+      - LAKEHOUSE_PATH=/data/lakehouse
+      - MOJALOOP_HUB_URL=${MOJALOOP_HUB_URL:-http://mojaloop-hub:4000}
+      - MOJALOOP_DFSP_ID=${MOJALOOP_DFSP_ID:-54link}
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/4
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SNAPSHOT_INTERVAL_HOURS=6
+    volumes:
+      - lakehouse_data:/data/lakehouse
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8202/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ── Seed Runner (one-shot) ────────────────────────────────────────────────
+  # Runs both seed scripts on first deploy, then exits.
+  seed-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 54link-seed-runner
+    profiles: [seed]
+    networks: [54link-infra]
+    environment:
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}
+    command: >
+      sh -c "
+        echo '=== Running production seed ===' &&
+        node scripts/seed-production.mjs &&
+        echo '=== Running Sprint 42 seed ===' &&
+        node scripts/seed-production-sprint42.mjs &&
+        echo '=== Seed complete ==='
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  lakehouse_data:
+    name: 54link-lakehouse-data
+
+networks:
+  54link-app:
+    external: true
+  54link-infra:
+    external: true

@@ -1,0 +1,131 @@
+# NetworkPolicy: Zero-Trust Billing Services Isolation
+# Default deny + explicit allow for inter-service, middleware, and external access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-services-default-deny
+  namespace: pos-shell
+spec:
+  podSelector:
+    matchLabels:
+      domain: billing
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-inter-service
+  namespace: pos-shell
+spec:
+  podSelector:
+    matchLabels:
+      domain: billing
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          domain: billing
+    - podSelector:
+        matchLabels:
+          app: apisix
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          domain: billing
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 50051
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tigerbeetle
+    ports:
+    - protocol: TCP
+      port: 3001
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-temporal-access
+  namespace: pos-shell
+spec:
+  podSelector:
+    matchLabels:
+      domain: billing
+      temporal-client: "true"
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: temporal
+    ports:
+    - protocol: TCP
+      port: 7233
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-mojaloop-access
+  namespace: pos-shell
+spec:
+  podSelector:
+    matchLabels:
+      domain: billing
+      mojaloop-client: "true"
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: mojaloop
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 4003

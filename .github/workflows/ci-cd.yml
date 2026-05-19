@@ -1,0 +1,357 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# POS-54Link — CI/CD Pipeline
+# Stages: Lint → Test → Build → Helm Lint → Docker → Deploy
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, "release/**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_NAME: pos-54link
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+jobs:
+  # ── Stage 1: Lint & Type Check ──────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Prettier format check
+        run: pnpm exec prettier --check "**/*.{ts,tsx,js,json,css,md}"
+
+      - name: ESLint (if configured)
+        run: |
+          if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ] || [ -f "eslint.config.js" ]; then
+            pnpm exec eslint . --max-warnings 0
+          else
+            echo "No ESLint config found, skipping"
+          fi
+
+  # ── Stage 2: Test ───────────────────────────────────────────────────────────
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run Vitest
+        run: pnpm test -- --reporter=verbose --coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          JWT_SECRET: test-jwt-secret-ci
+          BUILT_IN_FORGE_API_KEY: test-key
+          BUILT_IN_FORGE_API_URL: https://api.test.local
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+  # ── Stage 3: Build ──────────────────────────────────────────────────────────
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+          retention-days: 7
+
+  # ── Stage 4: Helm Lint ──────────────────────────────────────────────────────
+  helm-lint:
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Build Helm dependencies
+        run: |
+          for chart in k8s/charts/*/; do
+            if [ -f "$chart/Chart.yaml" ] && grep -q "dependencies:" "$chart/Chart.yaml"; then
+              echo "Building dependencies for $chart..."
+              helm dependency build "$chart" || true
+            fi
+          done
+
+      - name: Lint all Helm charts
+        run: |
+          for chart in k8s/charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              echo "Linting $chart..."
+              helm lint "$chart" --strict || exit 1
+            fi
+          done
+
+      - name: Template validation (umbrella)
+        run: |
+          helm template pos-54link k8s/charts/pos-54link-umbrella \
+            --values k8s/charts/pos-54link-umbrella/values.yaml \
+            --dry-run > /dev/null
+
+  # ── Stage 5: Terraform Validate ─────────────────────────────────────────────
+  terraform-validate:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive infra/terraform/
+
+      - name: Terraform init (no backend)
+        run: terraform -chdir=infra/terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=infra/terraform validate
+
+  # ── Stage 6: Docker Build & Push ────────────────────────────────────────────
+  docker:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, helm-lint, terraform-validate]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build-push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+
+  # ── Stage 7: Deploy to Staging ──────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: docker
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.pos-54link.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name pos-54link-staging-eks --region ${{ env.AWS_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Deploy to staging
+        run: |
+          helm upgrade --install pos-54link \
+            k8s/charts/pos-54link-umbrella \
+            --namespace pos-54link-staging \
+            --create-namespace \
+            --values k8s/charts/pos-54link-umbrella/values.yaml \
+            --set global.image.tag=${{ github.sha }} \
+            --set global.environment=staging \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl -n pos-54link-staging rollout status deployment/pos-54link-app --timeout=300s
+          kubectl -n pos-54link-staging get pods
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL=$(kubectl -n pos-54link-staging get svc pos-54link-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "http://$STAGING_URL/api/health" || exit 1
+          echo "Smoke test passed"
+
+  # ── Stage 8: Deploy to Production ───────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://pos-54link.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name pos-54link-production-eks --region ${{ env.AWS_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Deploy to production (canary 10%)
+        run: |
+          helm upgrade --install pos-54link \
+            k8s/charts/pos-54link-umbrella \
+            --namespace pos-54link-production \
+            --create-namespace \
+            --values k8s/charts/pos-54link-umbrella/values.yaml \
+            --values k8s/charts/pos-54link-umbrella/values-production.yaml \
+            --set global.image.tag=${{ github.sha }} \
+            --set global.environment=production \
+            --set app.canary.enabled=true \
+            --set app.canary.weight=10 \
+            --wait \
+            --timeout 15m
+
+      - name: Canary health check (5 min)
+        run: |
+          for i in $(seq 1 30); do
+            PROD_URL=$(kubectl -n pos-54link-production get svc pos-54link-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$PROD_URL/api/health" || echo "000")
+            echo "Health check $i/30: HTTP $STATUS"
+            if [ "$STATUS" != "200" ]; then
+              echo "Canary failed, rolling back..."
+              helm rollback pos-54link 0 -n pos-54link-production
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Canary passed, promoting to 100%"
+
+      - name: Promote to full production
+        run: |
+          helm upgrade --install pos-54link \
+            k8s/charts/pos-54link-umbrella \
+            --namespace pos-54link-production \
+            --values k8s/charts/pos-54link-umbrella/values.yaml \
+            --values k8s/charts/pos-54link-umbrella/values-production.yaml \
+            --set global.image.tag=${{ github.sha }} \
+            --set global.environment=production \
+            --set app.canary.enabled=false \
+            --wait \
+            --timeout 15m
+
+      - name: Post-deploy verification
+        run: |
+          kubectl -n pos-54link-production rollout status deployment/pos-54link-app --timeout=300s
+          kubectl -n pos-54link-production get pods
+          echo "Production deployment complete"

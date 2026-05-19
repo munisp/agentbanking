@@ -1,0 +1,72 @@
+[
+  {
+    "pair": "NGN-USD",
+    "rate": 0.000625,
+    "bid": 0.00062,
+    "ask": 0.00063,
+    "change24h": -0.12
+  },
+  {
+    "pair": "NGN-GBP",
+    "rate": 0.000495,
+    "bid": 0.00049,
+    "ask": 0.0005,
+    "change24h": 0.08
+  },
+  {
+    "pair": "NGN-EUR",
+    "rate": 0.000575,
+    "bid": 0.00057,
+    "ask": 0.00058,
+    "change24h": -0.05
+  },
+  {
+    "pair": "NGN-GHS",
+    "rate": 0.0075,
+    "bid": 0.0074,
+    "ask": 0.0076,
+    "change24h": 0.15
+  },
+  {
+    "pair": "NGN-KES",
+    "rate": 0.0806,
+    "bid": 0.08,
+    "ask": 0.0812,
+    "change24h": -0.22
+  },
+  {
+    "pair": "NGN-ZAR",
+    "rate": 0.0113,
+    "bid": 0.0112,
+    "ask": 0.0114,
+    "change24h": 0.03
+  },
+  {
+    "pair": "NGN-XOF",
+    "rate": 0.366,
+    "bid": 0.365,
+    "ask": 0.367,
+    "change24h": 0
+  },
+  {
+    "pair": "USD-NGN",
+    "rate": 1600,
+    "bid": 1598,
+    "ask": 1602,
+    "change24h": 0.12
+  },
+  {
+    "pair": "GBP-NGN",
+    "rate": 2020,
+    "bid": 2018,
+    "ask": 2022,
+    "change24h": -0.08
+  },
+  {
+    "pair": "EUR-NGN",
+    "rate": 1739,
+    "bid": 1737,
+    "ask": 1741,
+    "change24h": 0.05
+  }
+]

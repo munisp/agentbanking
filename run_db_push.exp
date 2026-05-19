@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+set timeout 120
+log_user 1
+
+spawn npx drizzle-kit generate --config=drizzle.config.ts
+
+# Handle any interactive prompts by pressing Enter (accept defaults)
+expect {
+    "?" {
+        send "\r"
+        exp_continue
+    }
+    "rename" {
+        send "2\r"
+        exp_continue
+    }
+    "create" {
+        send "1\r"
+        exp_continue
+    }
+    eof {
+        puts "Generation done"
+    }
+    timeout {
+        puts "Timeout"
+        exit 1
+    }
+}

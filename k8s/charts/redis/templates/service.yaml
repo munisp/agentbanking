@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    instance: {{ .Release.Name }}
+    version: {{ .Chart.AppVersion }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.redisPort }}
+      targetPort: redis
+      name: redis
+    - port: {{ .Values.service.sentinelPort }}
+      targetPort: sentinel
+      name: sentinel
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-headless
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    instance: {{ .Release.Name }}
+    version: {{ .Chart.AppVersion }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.redisPort }}
+      targetPort: redis
+      name: redis
+    - port: {{ .Values.service.sentinelPort }}
+      targetPort: sentinel
+      name: sentinel
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    instance: {{ .Release.Name }}

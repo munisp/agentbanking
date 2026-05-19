@@ -1,0 +1,120 @@
+# Sprint 76 — Docker Compose for all Sprint 76 microservices
+version: "3.9"
+
+services:
+  # ── Go Services ──
+  ussd-receipt-printer:
+    build: ./services/go/ussd-receipt-printer
+    ports: ["9101:8080"]
+    environment: { SERVICE_NAME: ussd-receipt-printer }
+    restart: unless-stopped
+
+  carrier-cost-engine:
+    build: ./services/go/carrier-cost-engine
+    ports: ["9102:8080"]
+    environment: { SERVICE_NAME: carrier-cost-engine }
+    restart: unless-stopped
+
+  carrier-failover-proxy:
+    build: ./services/go/carrier-failover-proxy
+    ports: ["9103:8080"]
+    environment: { SERVICE_NAME: carrier-failover-proxy }
+    restart: unless-stopped
+
+  pbac-enforcer:
+    build: ./services/go/pbac-enforcer
+    ports: ["9104:8080"]
+    environment: { SERVICE_NAME: pbac-enforcer }
+    restart: unless-stopped
+
+  network-diagnostic:
+    build: ./services/go/network-diagnostic
+    ports: ["9105:8080"]
+    environment: { SERVICE_NAME: network-diagnostic }
+    restart: unless-stopped
+
+  resilience-proxy:
+    build: ./services/go/resilience-proxy
+    ports: ["9106:8080"]
+    environment: { SERVICE_NAME: resilience-proxy }
+    restart: unless-stopped
+
+  # ── Python Services ──
+  ussd-analytics:
+    build: ./services/python/ussd-analytics
+    ports: ["9107:8080"]
+    environment: { SERVICE_NAME: ussd-analytics }
+    restart: unless-stopped
+
+  carrier-sla-monitor:
+    build: ./services/python/carrier-sla-monitor
+    ports: ["9108:8080"]
+    environment: { SERVICE_NAME: carrier-sla-monitor }
+    restart: unless-stopped
+
+  security-scanner:
+    build: ./services/python/security-scanner
+    ports: ["9109:8080"]
+    environment: { SERVICE_NAME: security-scanner }
+    restart: unless-stopped
+
+  ussd-localization:
+    build: ./services/python/ussd-localization
+    ports: ["9110:8080"]
+    environment: { SERVICE_NAME: ussd-localization }
+    restart: unless-stopped
+
+  carrier-billing:
+    build: ./services/python/carrier-billing
+    ports: ["9115:8080"]
+    environment: { SERVICE_NAME: carrier-billing }
+    restart: unless-stopped
+
+  network-coverage-export:
+    build: ./services/python/network-coverage-export
+    ports: ["9116:8080"]
+    environment: { SERVICE_NAME: network-coverage-export }
+    restart: unless-stopped
+
+  # ── Rust Services ──
+  audit-chain:
+    build: ./services/rust/audit-chain
+    ports: ["9111:8080"]
+    environment: { SERVICE_NAME: audit-chain }
+    restart: unless-stopped
+
+  connection-quality-monitor:
+    build: ./services/rust/connection-quality-monitor
+    ports: ["9112:8080"]
+    environment: { SERVICE_NAME: connection-quality-monitor }
+    restart: unless-stopped
+
+  carrier-performance-reporter:
+    build: ./services/rust/carrier-performance-reporter
+    ports: ["9113:8080"]
+    environment: { SERVICE_NAME: carrier-performance-reporter }
+    restart: unless-stopped
+
+  ransomware-guard:
+    build: ./services/rust/ransomware-guard
+    ports: ["9114:8080"]
+    environment: { SERVICE_NAME: ransomware-guard }
+    restart: unless-stopped
+
+  ddos-shield:
+    build: ./services/rust/ddos-shield
+    ports: ["9117:8080"]
+    environment: { SERVICE_NAME: ddos-shield }
+    restart: unless-stopped
+
+  carrier-ranking-engine:
+    build: ./services/rust/carrier-ranking-engine
+    ports: ["9118:8080"]
+    environment: { SERVICE_NAME: carrier-ranking-engine }
+    restart: unless-stopped
+
+  ussd-session-cache:
+    build: ./services/rust/ussd-session-cache
+    ports: ["9119:8080"]
+    environment: { SERVICE_NAME: ussd-session-cache }
+    restart: unless-stopped

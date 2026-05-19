@@ -1,0 +1,311 @@
+# Sprint 46: Kubernetes Deployments for Production Features
+# Apply: kubectl apply -f k8s/sprint46-deployments.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-notification-worker
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: notification-worker
+    sprint: "46"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-notification-worker
+  template:
+    metadata:
+      labels:
+        app: pos-notification-worker
+    spec:
+      containers:
+        - name: notification-worker
+          image: pos-shell:latest
+          command: ["node", "scripts/notification-worker.mjs"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "process.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-reconciliation-worker
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: reconciliation-worker
+    sprint: "46"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pos-reconciliation-worker
+  template:
+    metadata:
+      labels:
+        app: pos-reconciliation-worker
+    spec:
+      containers:
+        - name: reconciliation-worker
+          image: pos-shell:latest
+          command: ["node", "scripts/reconciliation-worker.mjs"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-bulk-payment-worker
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: bulk-payment-worker
+    sprint: "46"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-bulk-payment-worker
+  template:
+    metadata:
+      labels:
+        app: pos-bulk-payment-worker
+    spec:
+      containers:
+        - name: bulk-payment-worker
+          image: pos-shell:latest
+          command: ["node", "scripts/bulk-payment-worker.mjs"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-dispute-worker
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: dispute-worker
+    sprint: "46"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pos-dispute-worker
+  template:
+    metadata:
+      labels:
+        app: pos-dispute-worker
+    spec:
+      containers:
+        - name: dispute-worker
+          image: pos-shell:latest
+          command: ["node", "scripts/dispute-worker.mjs"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-health-monitor
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: health-monitor
+    sprint: "46"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pos-health-monitor
+  template:
+    metadata:
+      labels:
+        app: pos-health-monitor
+    spec:
+      containers:
+        - name: health-monitor
+          image: pos-shell:latest
+          command: ["node", "scripts/health-monitor.mjs"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-webhook-delivery
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: webhook-delivery
+    sprint: "46"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-webhook-delivery
+  template:
+    metadata:
+      labels:
+        app: pos-webhook-delivery
+    spec:
+      containers:
+        - name: webhook-delivery
+          image: pos-shell:latest
+          command: ["node", "scripts/webhook-delivery-worker.mjs"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          envFrom:
+            - secretRef:
+                name: pos-shell-secrets
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pos-compliance-report
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: compliance-cron
+    sprint: "46"
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: compliance-report
+              image: pos-shell:latest
+              command: ["node", "scripts/compliance-report-generator.mjs"]
+              envFrom:
+                - secretRef:
+                    name: pos-shell-secrets
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pos-exchange-rate-updater
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: exchange-rate-updater
+    sprint: "46"
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: exchange-rate-updater
+              image: pos-shell:latest
+              command: ["node", "scripts/exchange-rate-updater.mjs"]
+              envFrom:
+                - secretRef:
+                    name: pos-shell-secrets
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-notification-worker
+  namespace: pos-shell
+spec:
+  selector:
+    app: pos-notification-worker
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pos-notification-worker-hpa
+  namespace: pos-shell
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pos-notification-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pos-bulk-payment-worker-hpa
+  namespace: pos-shell
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pos-bulk-payment-worker
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

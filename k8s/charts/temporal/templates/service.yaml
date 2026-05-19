@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "temporal.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "temporal.name" . }}
+    helm.sh/chart: {{ include "temporal.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.frontendPort }}
+      targetPort: frontend
+      protocol: TCP
+      name: frontend
+    - port: {{ .Values.service.historyPort }}
+      targetPort: history
+      protocol: TCP
+      name: history
+    - port: {{ .Values.service.matchingPort }}
+      targetPort: matching
+      protocol: TCP
+      name: matching
+    - port: {{ .Values.service.workerPort }}
+      targetPort: worker
+      protocol: TCP
+      name: worker
+  selector:
+    app.kubernetes.io/name: {{ include "temporal.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}

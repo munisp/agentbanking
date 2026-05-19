@@ -1,0 +1,98 @@
+[
+  {
+    "id": "CR-001",
+    "name": "Cash Withdrawal Base",
+    "transactionType": "cash_withdrawal",
+    "tierRates": {
+      "super_agent": 1.5,
+      "agent": 1,
+      "sub_agent": 0.5
+    },
+    "minAmount": 100,
+    "maxAmount": 500000,
+    "flatFee": 0,
+    "capPerTransaction": 2500,
+    "dailyCap": 50000,
+    "status": "active"
+  },
+  {
+    "id": "CR-002",
+    "name": "Cash Deposit Base",
+    "transactionType": "cash_deposit",
+    "tierRates": {
+      "super_agent": 1.2,
+      "agent": 0.8,
+      "sub_agent": 0.4
+    },
+    "minAmount": 100,
+    "maxAmount": 1000000,
+    "flatFee": 0,
+    "capPerTransaction": 3000,
+    "dailyCap": 75000,
+    "status": "active"
+  },
+  {
+    "id": "CR-003",
+    "name": "Transfer Commission",
+    "transactionType": "transfer",
+    "tierRates": {
+      "super_agent": 0.8,
+      "agent": 0.5,
+      "sub_agent": 0.3
+    },
+    "minAmount": 100,
+    "maxAmount": 5000000,
+    "flatFee": 50,
+    "capPerTransaction": 5000,
+    "dailyCap": 100000,
+    "status": "active"
+  },
+  {
+    "id": "CR-004",
+    "name": "Bill Payment",
+    "transactionType": "bill_payment",
+    "tierRates": {
+      "super_agent": 2,
+      "agent": 1.5,
+      "sub_agent": 1
+    },
+    "minAmount": 500,
+    "maxAmount": 200000,
+    "flatFee": 0,
+    "capPerTransaction": 1000,
+    "dailyCap": 25000,
+    "status": "active"
+  },
+  {
+    "id": "CR-005",
+    "name": "Airtime Sales",
+    "transactionType": "airtime_purchase",
+    "tierRates": {
+      "super_agent": 3,
+      "agent": 2.5,
+      "sub_agent": 2
+    },
+    "minAmount": 50,
+    "maxAmount": 50000,
+    "flatFee": 0,
+    "capPerTransaction": 500,
+    "dailyCap": 10000,
+    "status": "active"
+  },
+  {
+    "id": "CR-006",
+    "name": "Weekend Bonus",
+    "transactionType": "all",
+    "tierRates": {
+      "super_agent": 0.5,
+      "agent": 0.3,
+      "sub_agent": 0.2
+    },
+    "minAmount": 0,
+    "maxAmount": 999999999,
+    "flatFee": 0,
+    "capPerTransaction": 1000,
+    "dailyCap": 20000,
+    "status": "active"
+  }
+]

@@ -1,0 +1,36 @@
+# 54Link POS Shell — Code Owners
+# These owners are automatically requested for review on PRs.
+
+# Global owners (required for all PRs)
+*                           @54link/platform-team
+
+# Security-sensitive files require security team review
+server/_core/               @54link/security-team @54link/platform-team
+.github/workflows/          @54link/security-team @54link/platform-team
+.gitleaks.toml              @54link/security-team
+scripts/rotate-secrets.sh   @54link/security-team
+scripts/bootstrap-production.sh @54link/security-team
+
+# Financial logic requires fintech team review
+server/routers/transactions.ts  @54link/fintech-team @54link/platform-team
+server/routers/settlement.ts    @54link/fintech-team @54link/platform-team
+server/routers/agentManagement.ts @54link/fintech-team
+
+# CBN compliance requires compliance team review
+services/python/cbn-reporting-engine/ @54link/compliance-team @54link/platform-team
+server/routers/cbnReporting.ts        @54link/compliance-team
+
+# MDM requires device team review
+server/routers/mdm.ts              @54link/device-team @54link/platform-team
+services/go/mdm-compliance-engine/ @54link/device-team
+android-native/                    @54link/device-team
+
+# Database schema changes require DBA review
+drizzle/schema.ts   @54link/dba-team @54link/platform-team
+drizzle/            @54link/dba-team
+
+# Infrastructure changes require DevOps review
+docker-compose*.yml     @54link/devops-team
+infra/                  @54link/devops-team
+monitoring/             @54link/devops-team
+nginx.conf              @54link/devops-team

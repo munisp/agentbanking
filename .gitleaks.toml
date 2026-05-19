@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Gitleaks Configuration — 54Link Agency Banking Platform
+#
+# Gitleaks scans every commit in CI to prevent secrets from reaching the repo.
+# This file configures:
+#   1. Custom rules for 54Link-specific secret patterns
+#   2. Allow-list entries for known-safe test values and documentation examples
+#
+# Docs: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+# ─────────────────────────────────────────────────────────────────────────────
+
+title = "54Link Gitleaks Configuration"
+
+# ── Extend the default ruleset ────────────────────────────────────────────────
+[extend]
+useDefault = true
+
+# ── Custom rules for 54Link-specific patterns ─────────────────────────────────
+
+[[rules]]
+id = "54link-jwt-secret"
+description = "54Link JWT secret in source code"
+regex = '''JWT_SECRET\s*=\s*["']?[A-Za-z0-9+/=]{32,}["']?'''
+tags = ["secret", "jwt", "54link"]
+[rules.allowlist]
+description = "Allow test JWT secrets in test files"
+paths = [
+  '''.*\.test\.ts$''',
+  '''.*\.spec\.ts$''',
+  '''.*vitest\.config.*''',
+  '''.*\.env\.example$''',
+  '''.*\.env\.production\.example$''',
+]
+
+[[rules]]
+id = "54link-termii-key"
+description = "Termii API key"
+regex = '''TERMII_API_KEY\s*=\s*["']?TL[A-Za-z0-9]{20,}["']?'''
+tags = ["secret", "api-key", "termii"]
+
+[[rules]]
+id = "54link-tigerbeetle-cluster"
+description = "TigerBeetle cluster ID in source"
+regex = '''cluster_id\s*[:=]\s*[0-9]{6,}'''
+tags = ["config", "tigerbeetle"]
+[rules.allowlist]
+description = "Allow in provisioning scripts and docs"
+paths = [
+  '''infra/tigerbeetle/.*''',
+  '''.*\.md$''',
+  '''.*RUNBOOK.*''',
+]
+
+# ── Global allow-list ─────────────────────────────────────────────────────────
+# Entries here are never flagged regardless of which rule matches them.
+
+[allowlist]
+description = "54Link global allow-list"
+
+# Allow test/example credential values that are intentionally non-secret
+regexes = [
+  # Test JWT secret used in vitest
+  '''JWT_SECRET=test-secret''',
+  # Example/placeholder values in documentation
+  '''your[-_]secret[-_]here''',
+  '''CHANGE_ME''',
+  '''example\.com''',
+  # VAPID key format examples in docs (base64url, not real keys)
+  '''BExample''',
+  # APISix well-known default key (documented in APISix README, not a real secret)
+  '''edd1c9f034335f136f87ad84b625c8f1''',
+  # bcrypt hash examples in tests (not real passwords)
+  '''\$2[ab]\$[0-9]+\$[A-Za-z0-9./]{53}''',
+]
+
+# Allow these file paths entirely (generated files, lock files, docs)
+paths = [
+  '''pnpm-lock\.yaml''',
+  '''package-lock\.json''',
+  '''\.pnpm-store/.*''',
+  '''node_modules/.*''',
+  '''dist/.*''',
+  '''\.git/.*''',
+  # Env example files are intentionally non-secret
+  '''\.env\.example$''',
+  '''\.env\.production\.example$''',
+  # Security audit report contains redacted examples
+  '''SECURITY_AUDIT_REPORT\.md''',
+  '''PRODUCTION_READINESS_FINAL\.md''',
+  # Test fixtures and test files
+  '''server/.*\.test\.ts$''',
+  '''tests/.*\.test\.ts$''',
+  '''e2e/.*\.spec\.ts$''',
+  '''.*tests?/.*''',
+  # Seed data contains generated placeholder API keys (not real secrets)
+  '''data/seed.*\.json$''',
+  '''data/.*seed.*''',
+  # Docker compose and infrastructure configs with placeholder values
+  '''docker-compose.*\.yml$''',
+  # Shared defaults with placeholder config values
+  '''shared/production-defaults\.ts$''',
+  # Infrastructure provisioning scripts (vault, terraform) with placeholder tokens
+  '''infra/vault/.*''',
+  '''infra/terraform/.*''',
+  # Server Stripe integration (uses env vars at runtime, gitleaks flags the import pattern)
+  '''server/stripe/.*''',
+  '''server/routers/billingInvoice\.ts''',
+  '''server/scheduled/monthlyInvoiceCron\.ts''',
+  # Python microservices contain placeholder/test API keys for payment gateways
+  '''services/python/.*''',
+  # Rust services contain placeholder config values
+  '''services/rust/.*''',
+  # Kubernetes deployment manifests with placeholder secrets
+  '''.*kubernetes/.*\.yaml$''',
+  '''.*\.ya?ml$''',
+]
+
+# Commits to skip (use sparingly — only for bootstrap commits with known-safe defaults)
+commits = []

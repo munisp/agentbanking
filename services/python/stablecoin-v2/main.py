@@ -1,0 +1,83 @@
+from typing import Any, Dict, List, Optional, Union, Tuple
+
+import logging
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+
+from config import settings
+from database import init_db
+from router import router
+from service import NotFoundException, ConflictException, VaultOperationError
+
+# --- Logging Configuration ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Application Lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> None:
+    # Startup: Initialize database
+    logger.info("Application startup: Initializing database...")
+    init_db()
+    logger.info("Database initialized.")
+    yield
+    # Shutdown: Clean up resources if necessary
+    logger.info("Application shutdown.")
+
+# --- FastAPI Application Instance ---
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="A production-ready FastAPI service for Stablecoin V2 management, including users, vaults, and transactions.",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# --- CORS Middleware ---
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# --- Custom Exception Handlers ---
+@app.exception_handler(NotFoundException)
+async def not_found_exception_handler(request: Request, exc: NotFoundException) -> None:
+    logger.warning(f"NotFoundException: {exc.detail}")
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"message": exc.detail},
+    )
+
+@app.exception_handler(ConflictException)
+async def conflict_exception_handler(request: Request, exc: ConflictException) -> None:
+    logger.warning(f"ConflictException: {exc.detail}")
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"message": exc.detail},
+    )
+
+@app.exception_handler(VaultOperationError)
+async def vault_operation_error_handler(request: Request, exc: VaultOperationError) -> None:
+    logger.warning(f"VaultOperationError: {exc.detail}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"message": exc.detail},
+    )
+
+# --- Include Router ---
+app.include_router(router)
+
+# --- Root Endpoint (Optional Health Check) ---
+@app.get("/", tags=["Health Check"])
+async def root() -> Dict[str, Any]:
+    return {"message": f"{settings.APP_NAME} is running!", "version": app.version}
+
+# Example of how to run the application (for documentation purposes)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

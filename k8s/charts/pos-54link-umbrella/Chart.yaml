@@ -1,0 +1,72 @@
+apiVersion: v2
+name: pos-54link-umbrella
+description: >-
+  Umbrella Helm chart for the 54Link POS Shell platform.
+  Orchestrates all 13 middleware components as sub-charts with
+  production-grade HA, monitoring, and auto-scaling.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - pos
+  - fintech
+  - agency-banking
+  - middleware
+  - ha
+maintainers:
+  - name: 54Link Platform Team
+    email: platform@54link.io
+
+dependencies:
+  - name: kafka
+    version: "1.0.0"
+    repository: "file://../kafka"
+    condition: kafka.enabled
+  - name: redis
+    version: "1.0.0"
+    repository: "file://../redis"
+    condition: redis.enabled
+  - name: temporal
+    version: "1.0.0"
+    repository: "file://../temporal"
+    condition: temporal.enabled
+  - name: keycloak
+    version: "1.0.0"
+    repository: "file://../keycloak"
+    condition: keycloak.enabled
+  - name: opensearch
+    version: "1.0.0"
+    repository: "file://../opensearch"
+    condition: opensearch.enabled
+  - name: apisix
+    version: "1.0.0"
+    repository: "file://../apisix"
+    condition: apisix.enabled
+  - name: mojaloop
+    version: "1.0.0"
+    repository: "file://../mojaloop"
+    condition: mojaloop.enabled
+  - name: permify
+    version: "1.0.0"
+    repository: "file://../permify"
+    condition: permify.enabled
+  - name: dapr
+    version: "1.0.0"
+    repository: "file://../dapr"
+    condition: dapr.enabled
+  - name: fluvio
+    version: "1.0.0"
+    repository: "file://../fluvio"
+    condition: fluvio.enabled
+  - name: lakehouse
+    version: "1.0.0"
+    repository: "file://../lakehouse"
+    condition: lakehouse.enabled
+  - name: tigerbeetle
+    version: "1.0.0"
+    repository: "file://../tigerbeetle"
+    condition: tigerbeetle.enabled
+  - name: postgresql
+    version: "1.0.0"
+    repository: "file://../postgresql"
+    condition: postgresql.enabled

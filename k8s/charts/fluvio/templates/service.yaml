@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fluvio.fullname" . }}-sc
+  labels:
+    app.kubernetes.io/name: {{ include "fluvio.name" . }}
+    helm.sh/chart: {{ include "fluvio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: sc
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.scPort }}
+      targetPort: sc
+      protocol: TCP
+      name: sc
+  selector:
+    app.kubernetes.io/name: {{ include "fluvio.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: sc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fluvio.fullname" . }}-spu
+  labels:
+    app.kubernetes.io/name: {{ include "fluvio.name" . }}
+    helm.sh/chart: {{ include "fluvio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: spu
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.spuPublicPort }}
+      targetPort: public
+      protocol: TCP
+      name: public
+    - port: {{ .Values.service.spuPrivatePort }}
+      targetPort: private
+      protocol: TCP
+      name: private
+  selector:
+    app.kubernetes.io/name: {{ include "fluvio.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: spu

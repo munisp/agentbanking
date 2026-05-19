@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dapr
+description: A Helm chart for Dapr (Distributed Application Runtime) control plane
+type: application
+version: 1.0.0
+appVersion: "1.11.0"

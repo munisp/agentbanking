@@ -1,0 +1,6 @@
+apiVersion: v2
+name: redis
+description: A Helm chart for Redis Sentinel HA (3 Redis + 3 Sentinel)
+type: application
+version: 1.0.0
+appVersion: "7.0"

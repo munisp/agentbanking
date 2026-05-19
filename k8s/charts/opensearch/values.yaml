@@ -1,0 +1,93 @@
+replicaCount: 3
+image:
+  repository: opensearchproject/opensearch
+  pullPolicy: IfNotPresent
+  tag: "2.11.0"
+
+dashboards:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: opensearchproject/opensearch-dashboards
+    pullPolicy: IfNotPresent
+    tag: "2.11.0"
+  service:
+    type: ClusterIP
+    port: 5601
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 9200
+  transportPort: 9300
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 20Gi
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - opensearch
+        topologyKey: kubernetes.io/hostname
+
+config:
+  opensearch.yml: |
+    cluster.name: opensearch-cluster
+    network.host: 0.0.0.0
+    plugins.security.disabled: true
+    discovery.seed_hosts: opensearch-headless
+    cluster.initial_master_nodes: opensearch-0,opensearch-1,opensearch-2

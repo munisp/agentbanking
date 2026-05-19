@@ -1,0 +1,6 @@
+apiVersion: v2
+name: permify
+description: A Helm chart for Permify Authorization Service
+type: application
+version: 1.0.0
+appVersion: "0.9.0"

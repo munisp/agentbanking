@@ -1,0 +1,82 @@
+[
+  {
+    "id": 1,
+    "title": "Agent Onboarding Fundamentals",
+    "category": "mandatory",
+    "modules": 8,
+    "duration": "4 hours",
+    "passingScore": 70
+  },
+  {
+    "id": 2,
+    "title": "AML/CFT Compliance Training",
+    "category": "compliance",
+    "modules": 6,
+    "duration": "3 hours",
+    "passingScore": 80
+  },
+  {
+    "id": 3,
+    "title": "POS Terminal Operations",
+    "category": "technical",
+    "modules": 10,
+    "duration": "5 hours",
+    "passingScore": 75
+  },
+  {
+    "id": 4,
+    "title": "Customer Service Excellence",
+    "category": "soft_skills",
+    "modules": 5,
+    "duration": "2.5 hours",
+    "passingScore": 70
+  },
+  {
+    "id": 5,
+    "title": "Fraud Detection & Prevention",
+    "category": "compliance",
+    "modules": 7,
+    "duration": "3.5 hours",
+    "passingScore": 85
+  },
+  {
+    "id": 6,
+    "title": "Float Management Best Practices",
+    "category": "operations",
+    "modules": 4,
+    "duration": "2 hours",
+    "passingScore": 75
+  },
+  {
+    "id": 7,
+    "title": "NDPR Data Privacy Awareness",
+    "category": "compliance",
+    "modules": 3,
+    "duration": "1.5 hours",
+    "passingScore": 80
+  },
+  {
+    "id": 8,
+    "title": "Mobile Money Operations",
+    "category": "technical",
+    "modules": 6,
+    "duration": "3 hours",
+    "passingScore": 75
+  },
+  {
+    "id": 9,
+    "title": "CBN Regulatory Requirements",
+    "category": "compliance",
+    "modules": 5,
+    "duration": "2.5 hours",
+    "passingScore": 85
+  },
+  {
+    "id": 10,
+    "title": "Advanced Commission Optimization",
+    "category": "business",
+    "modules": 4,
+    "duration": "2 hours",
+    "passingScore": 70
+  }
+]

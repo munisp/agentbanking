@@ -1,0 +1,60 @@
+{{- range $component, $config := dict "central-ledger" .Values.centralLedger "ml-api-adapter" .Values.mlApiAdapter "account-lookup" .Values.accountLookup "quoting-service" .Values.quotingService }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    app.kubernetes.io/name: {{ $component }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/version: {{ $config.image.tag | quote }}
+spec:
+  replicas: {{ $config.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $component }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $component }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - {{ $component }}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: {{ $component }}
+          image: "{{ $config.image.repository }}:{{ $config.image.tag }}"
+          imagePullPolicy: {{ $config.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ $.Release.Name }}-config
+{{- end }}

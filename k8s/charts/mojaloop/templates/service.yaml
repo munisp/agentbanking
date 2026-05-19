@@ -1,0 +1,20 @@
+{{- range $component, $config := dict "central-ledger" .Values.centralLedger "ml-api-adapter" .Values.mlApiAdapter "account-lookup" .Values.accountLookup "quoting-service" .Values.quotingService }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    app.kubernetes.io/name: {{ $component }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  type: {{ $config.service.type }}
+  ports:
+    - port: {{ $config.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ $component }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}

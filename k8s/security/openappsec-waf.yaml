@@ -1,0 +1,96 @@
+# OpenAppSec WAF Policy for 54Link POS Shell
+# ML-based threat detection protecting APISIX API Gateway
+apiVersion: openappsec.io/v1beta1
+kind: Policy
+metadata:
+  name: pos-shell-waf-policy
+  namespace: pos-shell
+  labels:
+    app.kubernetes.io/part-of: 54link-pos-shell
+    security.54link.io/tier: critical
+spec:
+  default:
+    mode: prevent-learn
+    practiceRef:
+    - name: pos-shell-web-app-practice
+    triggerRef:
+    - name: pos-shell-log-trigger
+    exceptionRef:
+    - name: pos-shell-health-exceptions
+---
+apiVersion: openappsec.io/v1beta1
+kind: Practice
+metadata:
+  name: pos-shell-web-app-practice
+  namespace: pos-shell
+spec:
+  webAttacks:
+    override-mode: prevent-learn
+    minimum-confidence: critical
+    max-body-size-kb: 1024
+    max-header-size-bytes: 8192
+    max-object-depth: 40
+    max-url-size-bytes: 32768
+    protections:
+      csrf-enabled: enforce
+      error-disclosure-enabled: enforce
+      open-redirect-enabled: enforce
+      non-valid-http-methods: true
+  antiBot:
+    override-mode: prevent-learn
+    injected-URIs:
+    - "/api/trpc/*"
+    - "/api/stripe/webhook"
+    validated-URIs:
+    - "/api/trpc/*"
+  snortSignatures:
+    override-mode: detect
+    configmap:
+    - pos-shell-custom-snort-rules
+  openApiSchemaValidation:
+    override-mode: prevent-learn
+    configmap:
+    - pos-shell-openapi-spec
+  intrusionPrevention:
+    override-mode: prevent-learn
+    max-performance-impact: low
+    min-severity-level: medium
+---
+apiVersion: openappsec.io/v1beta1
+kind: Trigger
+metadata:
+  name: pos-shell-log-trigger
+  namespace: pos-shell
+spec:
+  log:
+    appsecClassName: pos-shell
+    verbosity: extended
+    cefSeverity: true
+    extendedLogging:
+      urlPath: true
+      urlQuery: true
+      httpHeaders: true
+      requestBody: true
+      responseCode: true
+    logDestination:
+      cloud: true
+      syslog:
+      - address: opensearch-ingest.pos-shell.svc:5140
+        protocol: tcp
+---
+apiVersion: openappsec.io/v1beta1
+kind: Exception
+metadata:
+  name: pos-shell-health-exceptions
+  namespace: pos-shell
+spec:
+  exception:
+  - action: skip
+    match:
+      sourceIp: "10.0.0.0/8"
+      url: "/api/health"
+  - action: skip
+    match:
+      sourceIp: "10.0.0.0/8"
+      url: "/api/stripe/webhook"
+      httpMethod: POST

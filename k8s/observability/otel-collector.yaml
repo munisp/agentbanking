@@ -1,0 +1,189 @@
+# OpenTelemetry Collector for 54Link POS Shell
+# Collects traces, metrics, and logs from all services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: pos-shell
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: billing-services
+            scrape_interval: 15s
+            kubernetes_sd_configs:
+            - role: pod
+              namespaces:
+                names: [pos-shell]
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_domain]
+              regex: billing
+              action: keep
+          - job_name: middleware-services
+            scrape_interval: 30s
+            static_configs:
+            - targets:
+              - kafka:9092
+              - redis:6379
+              - postgresql:5432
+              - temporal:7233
+              - tigerbeetle:3001
+      hostmetrics:
+        collection_interval: 30s
+        scrapers:
+          cpu: {}
+          memory: {}
+          disk: {}
+          network: {}
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+        spike_limit_mib: 128
+      attributes:
+        actions:
+        - key: service.namespace
+          value: pos-shell
+          action: upsert
+        - key: deployment.environment
+          value: production
+          action: upsert
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 100000
+        policies:
+        - name: error-traces
+          type: status_code
+          status_code: {status_codes: [ERROR]}
+        - name: slow-traces
+          type: latency
+          latency: {threshold_ms: 2000}
+        - name: billing-traces
+          type: string_attribute
+          string_attribute: {key: service.name, values: [billing-*]}
+        - name: probabilistic-sampling
+          type: probabilistic
+          probabilistic: {sampling_percentage: 10}
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger-collector.pos-shell.svc:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        namespace: pos_shell
+        resource_to_telemetry_conversion:
+          enabled: true
+      opensearch:
+        http:
+          endpoint: https://opensearch.pos-shell.svc:9200
+          tls:
+            insecure_skip_verify: true
+        logs_index: pos-shell-logs
+        traces_index: pos-shell-traces
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      zpages:
+        endpoint: 0.0.0.0:55679
+    service:
+      extensions: [health_check, zpages]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, tail_sampling, batch, attributes]
+          exporters: [otlp/jaeger, opensearch]
+        metrics:
+          receivers: [otlp, prometheus, hostmetrics]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, attributes]
+          exporters: [opensearch]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: pos-shell
+  labels:
+    app: otel-collector
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      serviceAccountName: otel-collector
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.96.0
+        args: ["--config=/etc/otel/config.yaml"]
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 8889
+          name: prometheus
+        - containerPort: 13133
+          name: health
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: pos-shell
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+  - name: prometheus
+    port: 8889
+    targetPort: 8889

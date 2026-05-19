@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fluvio.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "fluvio.name" . }}
+    helm.sh/chart: {{ include "fluvio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "fluvio.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}

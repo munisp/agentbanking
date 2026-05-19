@@ -1,0 +1,208 @@
+---
+# 54Link POS Shell — Kubernetes Deployment Manifests
+# Sprint 65 F19
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-shell-app
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+    component: app
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pos-shell
+      component: app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: pos-shell
+        component: app
+        version: v1
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: pos-shell:latest
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pos-shell-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pos-shell-secrets
+                  key: redis-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pos-shell-secrets
+                  key: jwt-secret
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pos-shell-secrets
+                  key: stripe-secret-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pos-shell-secrets
+                  key: stripe-webhook-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-shell-service
+  namespace: pos-shell
+  labels:
+    app: pos-shell
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: pos-shell
+    component: app
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pos-shell-ingress
+  namespace: pos-shell
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/websocket-services: pos-shell-service
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pos-shell.54link.ng
+      secretName: pos-shell-tls
+  rules:
+    - host: pos-shell.54link.ng
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pos-shell-service
+                port:
+                  number: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pos-shell-hpa
+  namespace: pos-shell
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pos-shell-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pos-shell-pdb
+  namespace: pos-shell
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: pos-shell
+      component: app
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pos-shell-secrets
+  namespace: pos-shell
+type: Opaque
+stringData:
+  database-url: "postgresql://pos:pos_secret@postgres:5432/pos_shell"
+  redis-url: "redis://redis:6379"
+  jwt-secret: "change-this-in-production"
+  stripe-secret-key: "sk_test_default"
+  stripe-webhook-secret: "whsec_default"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pos-shell
+  labels:
+    name: pos-shell

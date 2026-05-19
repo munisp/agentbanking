@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database for Communication Services
+  postgres-communication:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: communication
+      POSTGRES_USER: communication_user
+      POSTGRES_PASSWORD: communication_pass
+    volumes:
+      - postgres_communication_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - communication-network
+
+  # Redis for caching, rate limiting, and Celery
+  redis-communication:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_communication_data:/data
+    networks:
+      - communication-network
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://communication_user:communication_pass@postgres-communication:5432/communication
+      - REDIS_URL=redis://redis-communication:6379
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - FIREBASE_CONFIG_PATH=/app/firebase-config.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./notification-service/firebase-config.json:/app/firebase-config.json:ro
+    depends_on:
+      - postgres-communication
+      - redis-communication
+    networks:
+      - communication-network
+
+  # Communication Gateway
+  communication-gateway:
+    build:
+      context: ./communication-gateway
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://communication_user:communication_pass@postgres-communication:5432/communication
+      - REDIS_URL=redis://redis-communication:6379
+      - CELERY_BROKER_URL=redis://redis-communication:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-communication:6379/0
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+      - EMAIL_SERVICE_URL=http://notification-service:8004
+      - SMS_SERVICE_URL=http://notification-service:8004
+      - PUSH_SERVICE_URL=http://notification-service:8004
+      - WEBSOCKET_SERVICE_URL=http://notification-service:8004
+    ports:
+      - "8009:8009"
+    depends_on:
+      - postgres-communication
+      - redis-communication
+      - notification-service
+    networks:
+      - communication-network
+
+  # Celery Worker for Communication Gateway
+  celery-worker-communication:
+    build:
+      context: ./communication-gateway
+      dockerfile: Dockerfile
+    command: celery -A gateway worker --loglevel=info --queues=default,notifications,bulk_notifications,scheduled,high_priority
+    environment:
+      - DATABASE_URL=postgresql://communication_user:communication_pass@postgres-communication:5432/communication
+      - REDIS_URL=redis://redis-communication:6379
+      - CELERY_BROKER_URL=redis://redis-communication:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-communication:6379/0
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+    depends_on:
+      - postgres-communication
+      - redis-communication
+      - notification-service
+    networks:
+      - communication-network
+
+  # Celery Beat for Scheduled Tasks
+  celery-beat-communication:
+    build:
+      context: ./communication-gateway
+      dockerfile: Dockerfile
+    command: celery -A gateway beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://communication_user:communication_pass@postgres-communication:5432/communication
+      - REDIS_URL=redis://redis-communication:6379
+      - CELERY_BROKER_URL=redis://redis-communication:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-communication:6379/0
+    depends_on:
+      - postgres-communication
+      - redis-communication
+    networks:
+      - communication-network
+
+  # Flower for Celery Monitoring
+  flower-communication:
+    build:
+      context: ./communication-gateway
+      dockerfile: Dockerfile
+    command: celery -A gateway flower --port=5555
+    environment:
+      - CELERY_BROKER_URL=redis://redis-communication:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-communication:6379/0
+    ports:
+      - "5556:5555"
+    depends_on:
+      - redis-communication
+    networks:
+      - communication-network
+
+  # Nginx Load Balancer for Communication Services
+  nginx-communication:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - communication-gateway
+      - notification-service
+    networks:
+      - communication-network
+
+volumes:
+  postgres_communication_data:
+  redis_communication_data:
+
+networks:
+  communication-network:
+    driver: bridge

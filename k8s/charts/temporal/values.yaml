@@ -1,0 +1,74 @@
+replicaCount: 2
+
+image:
+  repository: temporalio/auto-setup
+  pullPolicy: IfNotPresent
+  tag: "1.21.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  frontendPort: 7233
+  historyPort: 7234
+  matchingPort: 7235
+  workerPort: 7239
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - temporal
+        topologyKey: kubernetes.io/hostname
+
+env:
+  DB: postgresql
+  DB_PORT: "5432"
+  USER: temporal
+  POSTGRES_USER: temporal
+  POSTGRES_PWD: password
+  POSTGRES_SEEDS: postgresql

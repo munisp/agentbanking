@@ -1,0 +1,48 @@
+replicaCount: 2
+
+image:
+  repository: daprio/dapr
+  pullPolicy: IfNotPresent
+  tag: "1.11.0"
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+service:
+  type: ClusterIP
+  placementPort: 50001
+  sentryPort: 80
+  operatorPort: 6500
+  sidecarInjectorPort: 4000
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - dapr
+        topologyKey: kubernetes.io/hostname

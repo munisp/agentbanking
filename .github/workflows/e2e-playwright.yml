@@ -1,0 +1,149 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# POS-54Link — Playwright E2E Test Pipeline
+# Spins up full Docker stack, seeds database, runs Playwright tests
+# ─────────────────────────────────────────────────────────────────────────────
+name: E2E Playwright Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-tests:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pos54link
+          POSTGRES_PASSWORD: pos54link_e2e_pass
+          POSTGRES_DB: pos54link_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pos54link"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_URL: postgresql://pos54link:pos54link_e2e_pass@localhost:5432/pos54link_e2e
+      DATABASE_URL: postgresql://pos54link:pos54link_e2e_pass@localhost:5432/pos54link_e2e
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: e2e-test-jwt-secret-do-not-use-in-production
+      VITE_APP_ID: e2e-test-app
+      OAUTH_SERVER_URL: http://localhost:8080
+      VITE_OAUTH_PORTAL_URL: http://localhost:8080/login
+      OWNER_OPEN_ID: e2e-owner-id
+      OWNER_NAME: E2E Test Owner
+      BUILT_IN_FORGE_API_URL: http://localhost:3001/api
+      BUILT_IN_FORGE_API_KEY: e2e-forge-key
+      VITE_FRONTEND_FORGE_API_KEY: e2e-frontend-forge-key
+      VITE_FRONTEND_FORGE_API_URL: http://localhost:3001/api
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Push database schema
+        run: pnpm db:push
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_URL }}
+
+      - name: Seed database
+        run: node scripts/seed-comprehensive.mjs
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_URL }}
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          node dist/index.js &
+          echo "Waiting for server to start..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000/api/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting..."
+            sleep 2
+          done
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test --reporter=html
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.sha }}
+          path: test-results/
+          retention-days: 7
+
+      - name: Post test summary
+        if: always()
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f playwright-report/index.html ]; then
+            echo "✅ Playwright report generated successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No Playwright report found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY

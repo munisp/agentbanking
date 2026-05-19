@@ -1,0 +1,157 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# 54Link POS Shell — Production Overrides
+# Apply with: helm install pos-54link . -f values-production.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  namespace: pos-54link-prod
+  environment: production
+  storageClass: "gp3-encrypted"
+  monitoring:
+    enabled: true
+
+# ── Kafka — Higher replication for durability ─────────────────────────────────
+kafka:
+  replicaCount: 5
+  resources:
+    requests: { cpu: "1", memory: "4Gi" }
+    limits: { cpu: "4", memory: "8Gi" }
+  persistence:
+    size: 200Gi
+  config:
+    minInsyncReplicas: 2
+    defaultReplicationFactor: 3
+    logRetentionHours: 168
+
+# ── Redis — Larger memory for production workloads ────────────────────────────
+redis:
+  replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 20Gi
+  maxmemory: "3gb"
+
+# ── Temporal — Scale for high-throughput workflows ────────────────────────────
+temporal:
+  frontend:
+    replicaCount: 3
+  history:
+    replicaCount: 4
+  matching:
+    replicaCount: 3
+  worker:
+    replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+
+# ── Keycloak — HA with session replication ────────────────────────────────────
+keycloak:
+  replicaCount: 3
+  resources:
+    requests: { cpu: "1", memory: "2Gi" }
+    limits: { cpu: "4", memory: "8Gi" }
+  ingress:
+    hostname: auth.54link.io
+    tls: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+
+# ── OpenSearch — Larger cluster for production logs ───────────────────────────
+opensearch:
+  replicaCount: 5
+  resources:
+    requests: { cpu: "1", memory: "4Gi" }
+    limits: { cpu: "4", memory: "8Gi" }
+  persistence:
+    size: 200Gi
+  dashboards:
+    replicaCount: 2
+
+# ── APISIX — More gateways for traffic ───────────────────────────────────────
+apisix:
+  replicaCount: 4
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits: { cpu: "2", memory: "2Gi" }
+  etcd:
+    replicaCount: 3
+
+# ── Mojaloop — Scale financial switch ─────────────────────────────────────────
+mojaloop:
+  centralLedger:
+    replicaCount: 3
+  mlApiAdapter:
+    replicaCount: 3
+  accountLookup:
+    replicaCount: 3
+  quotingService:
+    replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+
+# ── Permify — Scale authorization ────────────────────────────────────────────
+permify:
+  replicaCount: 3
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits: { cpu: "2", memory: "2Gi" }
+
+# ── Dapr — HA sidecar infrastructure ─────────────────────────────────────────
+dapr:
+  sidecarInjector:
+    replicaCount: 3
+  placement:
+    replicaCount: 5
+  sentry:
+    replicaCount: 3
+
+# ── Fluvio — More SPUs for throughput ─────────────────────────────────────────
+fluvio:
+  spu:
+    replicaCount: 5
+  persistence:
+    size: 50Gi
+
+# ── Lakehouse — Production data lake ─────────────────────────────────────────
+lakehouse:
+  minio:
+    replicaCount: 4
+    persistence:
+      size: 500Gi
+  spark:
+    worker:
+      replicaCount: 4
+      resources:
+        requests: { cpu: "2", memory: "8Gi" }
+        limits: { cpu: "8", memory: "16Gi" }
+
+# ── TigerBeetle — Financial ledger ───────────────────────────────────────────
+tigerbeetle:
+  replicaCount: 3
+  resources:
+    requests: { cpu: "1", memory: "2Gi" }
+    limits: { cpu: "4", memory: "8Gi" }
+  persistence:
+    size: 50Gi
+
+# ── PostgreSQL — Production database ─────────────────────────────────────────
+postgresql:
+  readReplicas:
+    replicaCount: 3
+  pgbouncer:
+    replicaCount: 3
+    maxClientConnections: 2000
+    defaultPoolSize: 50
+  resources:
+    requests: { cpu: "1", memory: "4Gi" }
+    limits: { cpu: "4", memory: "16Gi" }
+  persistence:
+    size: 200Gi
+  backup:
+    enabled: true
+    schedule: "0 */6 * * *"
+    retention: 30

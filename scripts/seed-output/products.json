@@ -1,0 +1,122 @@
+[
+  {
+    "id": "PROD-001",
+    "name": "Cash Withdrawal",
+    "category": "banking",
+    "fee": "1% (min ₦100)",
+    "description": "POS cash withdrawal service",
+    "status": "active"
+  },
+  {
+    "id": "PROD-002",
+    "name": "Cash Deposit",
+    "category": "banking",
+    "fee": "Free",
+    "description": "Cash deposit to bank account",
+    "status": "active"
+  },
+  {
+    "id": "PROD-003",
+    "name": "Fund Transfer",
+    "category": "banking",
+    "fee": "₦50 flat",
+    "description": "Inter-bank fund transfer",
+    "status": "active"
+  },
+  {
+    "id": "PROD-004",
+    "name": "MTN Airtime",
+    "category": "airtime",
+    "fee": "3% commission",
+    "description": "MTN airtime vending",
+    "status": "active"
+  },
+  {
+    "id": "PROD-005",
+    "name": "Glo Airtime",
+    "category": "airtime",
+    "fee": "3% commission",
+    "description": "Glo airtime vending",
+    "status": "active"
+  },
+  {
+    "id": "PROD-006",
+    "name": "Airtel Airtime",
+    "category": "airtime",
+    "fee": "3% commission",
+    "description": "Airtel airtime vending",
+    "status": "active"
+  },
+  {
+    "id": "PROD-007",
+    "name": "9mobile Airtime",
+    "category": "airtime",
+    "fee": "3% commission",
+    "description": "9mobile airtime vending",
+    "status": "active"
+  },
+  {
+    "id": "PROD-008",
+    "name": "DSTV Payment",
+    "category": "bills",
+    "fee": "₦100 flat",
+    "description": "DSTV subscription payment",
+    "status": "active"
+  },
+  {
+    "id": "PROD-009",
+    "name": "GOTV Payment",
+    "category": "bills",
+    "fee": "₦100 flat",
+    "description": "GOTV subscription payment",
+    "status": "active"
+  },
+  {
+    "id": "PROD-010",
+    "name": "PHCN Electricity",
+    "category": "bills",
+    "fee": "₦100 flat",
+    "description": "Electricity bill payment",
+    "status": "active"
+  },
+  {
+    "id": "PROD-011",
+    "name": "LIRS Tax Payment",
+    "category": "tax",
+    "fee": "Free",
+    "description": "Lagos state tax collection",
+    "status": "active"
+  },
+  {
+    "id": "PROD-012",
+    "name": "Pension Collection",
+    "category": "pension",
+    "fee": "Free",
+    "description": "Pension contribution collection",
+    "status": "active"
+  },
+  {
+    "id": "PROD-013",
+    "name": "Insurance Premium",
+    "category": "insurance",
+    "fee": "2% commission",
+    "description": "Insurance premium collection",
+    "status": "active"
+  },
+  {
+    "id": "PROD-014",
+    "name": "Savings Account",
+    "category": "savings",
+    "fee": "Free",
+    "description": "Agent-assisted savings account",
+    "status": "active"
+  },
+  {
+    "id": "PROD-015",
+    "name": "Micro Loan",
+    "category": "lending",
+    "fee": "Processing fee",
+    "description": "Micro loan disbursement",
+    "status": "active"
+  }
+]

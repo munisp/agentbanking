@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 /**
  * DDoS Protection & Circuit Breaker Middleware
  * Provides adaptive rate limiting, connection throttling, IP reputation,
@@ -204,7 +204,7 @@ export function circuitBreaker(serviceName: string) {
 
     // Intercept response to track success/failure
     const originalEnd = res.end;
-    res.end = function (...args: any[]) {
+    (res as any).end = function (...args: any[]) {
       if (res.statusCode >= 500) {
         circuit.failures++;
         circuit.lastFailure = Date.now();
@@ -220,7 +220,7 @@ export function circuitBreaker(serviceName: string) {
         if (circuit.state === "closed")
           circuit.failures = Math.max(0, circuit.failures - 1);
       }
-      return originalEnd.apply(res, args);
+      return originalEnd.apply(res, args as any);
     };
 
     next();

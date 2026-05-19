@@ -556,7 +556,7 @@ async function startServer() {
     try {
       const { Pool } = await import("pg");
       const pool = new Pool({
-        connectionString: process.env.POSTGRES_URL,
+        connectionString: process.env.POSTGRES_URL ?? process.env.DATABASE_URL,
         max: 1,
         connectionTimeoutMillis: 3000,
       });
@@ -651,7 +651,11 @@ async function startServer() {
   // ── Circuit Breaker Status ────────────────────────────────────────────────
   app.get("/api/health/circuits", async (_req, res) => {
     const { getCircuitBreakerStatus } = await import("../lib/resilientFetch");
+    const { getDistributedStateStatus } = await import(
+      "../lib/distributedState"
+    );
     const circuits = getCircuitBreakerStatus();
+    const stateStore = getDistributedStateStatus();
     const openCount = Object.values(circuits).filter(
       c => c.state === "open"
     ).length;
@@ -659,6 +663,7 @@ async function startServer() {
       status: openCount === 0 ? "healthy" : "degraded",
       openCircuits: openCount,
       circuits,
+      stateStore,
     });
   });
 

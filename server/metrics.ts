@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * metrics.ts — Prometheus metrics registry for the 54Link POS Shell
  * ─────────────────────────────────────────────────────────────────────────────

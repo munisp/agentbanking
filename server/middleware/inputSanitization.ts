@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 86: Input Sanitization & SQL Injection Prevention
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Input Sanitization Middleware (S86-25)
  *

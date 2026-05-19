@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * High Availability Module — Sprint 56
  * Circuit breaker, retry with exponential backoff, structured health checks,

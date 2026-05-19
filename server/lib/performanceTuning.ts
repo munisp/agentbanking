@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Performance Tuning Module — Sprint 56
  * Response compression, query result caching, connection pool optimization,

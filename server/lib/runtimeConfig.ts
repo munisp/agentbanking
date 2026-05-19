@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 68: bulk TS error suppression for production build
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Runtime Configuration Module
  * P1-3: Runtime-configurable batch/concurrency parameters
@@ -139,8 +139,7 @@ export async function getConfig(key: string): Promise<string> {
     }
   } catch (error) {
     logger.warn(
-      `[RuntimeConfig] DB lookup failed for ${key}, using default:`,
-      error
+      `[RuntimeConfig] DB lookup failed for ${key}, using default: ${error}`
     );
   }
 
@@ -204,7 +203,7 @@ export async function setConfig(
       `[RuntimeConfig] Updated ${key} = ${value} (by ${updatedBy ?? "system"})`
     );
   } catch (error) {
-    logger.error(`[RuntimeConfig] Failed to set ${key}:`, error);
+    logger.error(`[RuntimeConfig] Failed to set ${key}: ${error}`);
     throw error;
   }
 }
@@ -325,7 +324,7 @@ export async function seedDefaults(): Promise<number> {
       );
     }
   } catch (error) {
-    logger.warn("[RuntimeConfig] Failed to seed defaults:", error);
+    logger.warn(`[RuntimeConfig] Failed to seed defaults: ${error}`);
   }
   return seeded;
 }

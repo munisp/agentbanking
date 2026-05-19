@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — schema alignment pending (not request-path security code)
 import { getDb } from "../db";
 import { disputes } from "../../drizzle/schema";
 import { eq, and, lt, isNull } from "drizzle-orm";

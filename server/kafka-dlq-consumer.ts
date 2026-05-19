@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * 54Link — Kafka Dead-Letter Queue (DLQ) Consumer
  *

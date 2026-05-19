@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 
@@ -54,7 +54,7 @@ export async function writeEnhancedAuditLog(
       action: entry.action,
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,
-      status: entry.status,
+      status: entry.status as "success" | "warning" | "failure",
       metadata: changeDetails,
       ipAddress: entry.ipAddress ?? null,
       userAgent: entry.userAgent ?? null,

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 64 — Chat System Completion Module
  * F1: Typing indicators via Socket.IO

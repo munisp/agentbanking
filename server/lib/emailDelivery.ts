@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Email Delivery Service — Nodemailer with SMTP configuration
  * Supports weekly report delivery, notification emails, and transactional emails.

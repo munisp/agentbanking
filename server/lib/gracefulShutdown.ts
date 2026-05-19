@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 import { Server } from "http";
 
 let isShuttingDown = false;
@@ -34,18 +34,24 @@ export function setupGracefulShutdown(server: Server) {
 
     // 3. Close Redis
     try {
-      const { closeRedis } = await import("../../redisClient");
-      await closeRedis?.();
-      console.log("[Shutdown] Redis connection closed");
+      const redisModule = await import("../redisClient").catch(() => null);
+      if (redisModule && "closeRedis" in redisModule) {
+        await (redisModule as any).closeRedis?.();
+        console.log("[Shutdown] Redis connection closed");
+      }
     } catch {
       /* Redis may not be available */
     }
 
     // 4. Close Kafka producer
     try {
-      const { closeKafka } = await import("../../kafkaClient");
-      await closeKafka?.();
-      console.log("[Shutdown] Kafka producer closed");
+      const kafkaModule = await import("../kafka-event-consumer").catch(
+        () => null
+      );
+      if (kafkaModule && "closeKafka" in kafkaModule) {
+        await (kafkaModule as any).closeKafka?.();
+        console.log("[Shutdown] Kafka producer closed");
+      }
     } catch {
       /* Kafka may not be available */
     }

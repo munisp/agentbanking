@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * P1-A: HMAC Webhook Verification Middleware
  *

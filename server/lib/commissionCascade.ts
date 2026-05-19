@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 68: bulk TS error suppression
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Hierarchical Commission Cascade Engine
  *
@@ -131,6 +131,7 @@ export interface CascadeEntry {
 export interface CascadeResult {
   success: boolean;
   entries: CascadeEntry[];
+  cascadeEntries: CascadeEntry[];
   totalDistributed: number;
   platformShare: number;
   error?: string;
@@ -176,7 +177,14 @@ export async function resolveHierarchyChain(agentId: number): Promise<
     if (visited.has(currentId)) break; // circular reference guard
     visited.add(currentId);
 
-    const rows = await db
+    const rows: Array<{
+      id: number;
+      agentCode: string;
+      hierarchyRole: string | null;
+      hierarchyLevel: number | null;
+      parentAgentId: number | null;
+      commissionSplitOverride: string | null;
+    }> = await db
       .select({
         id: agents.id,
         agentCode: agents.agentCode,
@@ -190,7 +198,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
       .limit(1);
 
     if (rows.length === 0) break;
-    const row = rows[0];
+    const row: (typeof rows)[0] = rows[0];
 
     chain.push({
       id: row.id,
@@ -356,8 +364,7 @@ export async function executeCommissionCascade(params: {
         }
       } catch (dbErr) {
         logger.warn(
-          "[CommissionCascade] Failed to write cascade history:",
-          dbErr
+          `[CommissionCascade] Failed to write cascade history: ${dbErr}`
         );
       }
     }
@@ -387,7 +394,9 @@ export async function executeCommissionCascade(params: {
         agentCode: entry.recipientAgentCode,
         amount: entry.commissionAmount,
         entryType:
-          entry.recipientAgentId === originAgentId ? "direct" : "cascade",
+          entry.recipientAgentId === originAgentId
+            ? "direct"
+            : "hierarchy_split",
         hierarchyLevel: entry.recipientHierarchyLevel,
       });
     }
@@ -412,7 +421,7 @@ export async function executeCommissionCascade(params: {
       platformShare,
     };
   } catch (err) {
-    logger.error("[CommissionCascade] Error:", err);
+    logger.error(`[CommissionCascade] Error: ${err}`);
     // Fallback: credit full commission to origin agent
     await updateAgentCommission(originAgentId, totalCommission);
     const fallbackEntries = [

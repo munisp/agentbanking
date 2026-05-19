@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Observability Module — OpenTelemetry Spans + eBPF-Ready Hooks
  * P3-1: Add structured tracing to all 3 engine routers

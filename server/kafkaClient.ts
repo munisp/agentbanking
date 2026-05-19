@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * kafkaClient.ts — Kafka integration for 54Link POS Shell
  * ─────────────────────────────────────────────────────────────────────────────

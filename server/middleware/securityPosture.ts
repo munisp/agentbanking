@@ -39,8 +39,7 @@ export function auditApiKeyAge(keyId: string, createdAt: number): ApiKeyAudit {
 // ─── 2. Transaction Signing ─────────────────────────────────────────────────
 import crypto from "crypto";
 
-const TX_SIGNING_SECRET =
-  process.env.TX_SIGNING_SECRET || "default-tx-signing-key-change-in-prod";
+const TX_SIGNING_SECRET = process.env.TX_SIGNING_SECRET || "";
 
 export function signTransaction(payload: Record<string, unknown>): string {
   const canonical = JSON.stringify(payload, Object.keys(payload).sort());

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * redisClient.ts — Shared ioredis client for the 54Link POS Shell
  *

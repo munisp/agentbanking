@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * observabilityMiddleware.ts — tRPC middleware that automatically instruments
  * ALL procedures with Kafka event publishing, Redis caching, Fluvio streaming,
@@ -106,42 +106,52 @@ export async function emitObservabilityEvent(
  * Create the observability tRPC middleware.
  * This can be chained onto any procedure base.
  */
-export function createObservabilityMiddleware(
-  t: ReturnType<(typeof initTRPC.context<TrpcContext>)["create"]>
-) {
-  return t.middleware(async ({ ctx, next, path, type }) => {
-    const startMs = Date.now();
-    const userId = ctx.user ? String(ctx.user.id) : "anonymous";
+export function createObservabilityMiddleware(t: any) {
+  return t.middleware(
+    async ({
+      ctx,
+      next,
+      path,
+      type,
+    }: {
+      ctx: any;
+      next: any;
+      path: string;
+      type: string;
+    }) => {
+      const startMs = Date.now();
+      const userId = ctx.user ? String(ctx.user.id) : "anonymous";
 
-    try {
-      const result = await next({ ctx });
-      const durationMs = Date.now() - startMs;
+      try {
+        const result = await next({ ctx });
+        const durationMs = Date.now() - startMs;
 
-      // Fire-and-forget: don't await, don't block the response
-      emitObservabilityEvent({
-        path,
-        type,
-        userId,
-        startMs,
-        durationMs,
-        success: true,
-      }).catch(() => {}); // swallow any unhandled rejection
+        // Fire-and-forget: don't await, don't block the response
+        emitObservabilityEvent({
+          path,
+          type,
+          userId,
+          startMs,
+          durationMs,
+          success: true,
+        }).catch(() => {}); // swallow any unhandled rejection
 
-      return result;
-    } catch (error) {
-      const durationMs = Date.now() - startMs;
+        return result;
+      } catch (error) {
+        const durationMs = Date.now() - startMs;
 
-      emitObservabilityEvent({
-        path,
-        type,
-        userId,
-        startMs,
-        durationMs,
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }).catch(() => {});
+        emitObservabilityEvent({
+          path,
+          type,
+          userId,
+          startMs,
+          durationMs,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }).catch(() => {});
 
-      throw error; // re-throw to preserve tRPC error handling
+        throw error; // re-throw to preserve tRPC error handling
+      }
     }
-  });
+  );
 }

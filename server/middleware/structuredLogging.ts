@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 

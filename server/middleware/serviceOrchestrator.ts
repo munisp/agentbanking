@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 91 — Service Orchestrator
  *
@@ -256,10 +256,9 @@ export async function publishEvent(
     event.type.startsWith("permission.")
   ) {
     await permify
-      .check({
-        entity: event.source,
-        relation: "can_execute",
-        subject: event.metadata?.userId ?? "system",
+      .check("default", { type: "service", id: event.source }, "can_execute", {
+        type: "user",
+        id: event.metadata?.userId ?? "system",
       })
       .catch(() => {});
   }

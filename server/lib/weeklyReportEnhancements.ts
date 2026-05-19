@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 22: Weekly Report Enhancements
  *
@@ -387,7 +387,7 @@ export function buildWeeklyReportEmail(
 </html>`;
 
   return {
-    to: emailConfig.recipients.map(r => r.email),
+    to: emailConfig.recipients.map(r => r.email).join(","),
     subject: `Weekly Health Report — ${scoreLabel}: ${report.score}/100 (${m.period.start} → ${m.period.end})`,
     html,
     text: report.summary,

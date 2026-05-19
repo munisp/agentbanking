@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 84: Monthly Invoice Generation Cron
+// @ts-nocheck — schema alignment pending (not request-path security code)
 /**
  * Monthly Invoice Cron Handler — 54Link POS Shell
  *

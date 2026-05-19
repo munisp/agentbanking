@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 52 — Server Middleware Stack
  * F03: Rate limiting, request logging, request ID tracking
@@ -212,9 +212,13 @@ export function registerHealthEndpoints(app: Express) {
     // DB check
     try {
       const { getPool } = await import("../db");
-      const pool = getPool();
-      const result = await pool.query("SELECT 1 as ok");
-      checks.database = { status: "healthy", connected: true };
+      const pool = await getPool();
+      if (pool) {
+        await pool.query("SELECT 1 as ok");
+        checks.database = { status: "healthy", connected: true };
+      } else {
+        checks.database = { status: "unhealthy", error: "no pool" };
+      }
     } catch (e: any) {
       checks.database = { status: "unhealthy", error: e.message };
     }
@@ -252,8 +256,8 @@ export function registerGracefulShutdown(server: any) {
     // Close DB pool
     try {
       const { getPool } = await import("../db");
-      const pool = getPool();
-      await pool.end();
+      const pool = await getPool();
+      if (pool) await pool.end();
       console.log("[SHUTDOWN] Database pool closed.");
     } catch (e) {
       console.log("[SHUTDOWN] DB pool close error:", e);

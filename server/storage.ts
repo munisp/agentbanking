@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 // Preconfigured storage helpers for Manus WebDev templates
 // Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
 

@@ -66,6 +66,12 @@ describe("envValidation", () => {
       process.env.JWT_SECRET =
         "a-properly-long-production-secret-that-is-more-than-32-chars";
       process.env.DATABASE_URL = "postgresql://user:pass@host:5432/db";
+      process.env.CRON_SECRET =
+        "a-properly-long-cron-secret-that-is-more-than-32-chars-long";
+      process.env.INTERNAL_API_KEY =
+        "a-properly-long-internal-api-key-more-than-32-chars-long";
+      process.env.TX_SIGNING_SECRET =
+        "a-properly-long-tx-signing-secret-more-than-32-chars-long";
 
       const result = validateEnvironment();
 

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * 54Link Lakehouse Client
  * Uses MinIO (S3-compatible) as the object store for Parquet-format data exports.

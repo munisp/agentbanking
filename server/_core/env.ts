@@ -160,9 +160,7 @@ export const ENV = {
   // ── Internal security ────────────────────────────────────────────────────────
   // CRON_SECRET: shared secret for internal cron/scheduler → API calls.
   // INTERNAL_API_KEY: service-to-service auth header (X-Internal-Key).
-  // Both MUST be overridden in production via Secrets panel.
-  cronSecret:
-    process.env.CRON_SECRET ?? "54link-cron-dev-secret-change-in-prod",
-  internalApiKey:
-    process.env.INTERNAL_API_KEY ?? "54link-internal-dev-key-change-in-prod",
+  // Both are validated at startup by envValidation.ts — no hardcoded fallbacks.
+  cronSecret: process.env.CRON_SECRET ?? "",
+  internalApiKey: process.env.INTERNAL_API_KEY ?? "",
 };

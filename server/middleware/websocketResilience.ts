@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 86: WebSocket Resilience Layer
+// TypeScript enabled — Sprint 96 security audit
 /**
  * WebSocket Resilience Middleware (S86-26)
  *

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
 /**
  * termii.ts — Shared Termii SMS helper for the 54Link platform.

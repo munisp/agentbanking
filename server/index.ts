@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 import express from "express";
 import { createServer } from "http";
 import path from "path";

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * settlementMiddleware.ts — Full middleware integration for Settlement System
  *

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Financial Attack Prevention Middleware
  * Protects against: card testing, account takeover, replay attacks,

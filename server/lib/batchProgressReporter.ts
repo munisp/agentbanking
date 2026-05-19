@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Batch Progress Reporter
  * P2-3: Emit progress events every N settlements via Redis pub/sub

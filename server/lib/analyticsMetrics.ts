@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 68: bulk TS error suppression
+// TypeScript enabled — Sprint 96 security audit
 /**
  * analyticsMetrics.ts
  * Rolling 1-minute bucket analytics for MQTT throughput and ERP sync rates.

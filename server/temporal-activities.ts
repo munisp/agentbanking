@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// @ts-nocheck — schema alignment pending (not request-path security code)
 /**
  * 54Link POS — Temporal Activities
  * All activities run in the worker process with full access to DB, Redis, and external APIs.

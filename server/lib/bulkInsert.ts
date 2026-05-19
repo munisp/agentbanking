@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 68: bulk TS error suppression for production build
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Bulk Insert Module — PostgreSQL COPY Protocol
  * P1-2: 10-50x faster than individual INSERTs for batch settlement recording
@@ -180,8 +180,7 @@ export async function bulkInsertCopy(
     return { ...result, duration };
   } catch (error) {
     logger.warn(
-      `[BulkInsert/COPY] COPY protocol failed, falling back to multi-row VALUES:`,
-      error
+      `[BulkInsert/COPY] COPY protocol failed, falling back to multi-row VALUES: ${error}`
     );
     return bulkInsertValues(opts);
   }

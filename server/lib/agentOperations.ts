@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 64 — Agent Operations Module
  * F11: Agent availability/presence tracking

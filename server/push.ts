@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * VAPID Web Push Notification Service
  * Sends push notifications to agents and admins via the Web Push Protocol.

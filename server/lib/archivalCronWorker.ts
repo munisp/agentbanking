@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * archivalCronWorker.ts
  * S60-3: Background cron worker that checks the archival schedule config
@@ -113,8 +113,7 @@ async function checkAndRunArchival(): Promise<void> {
       });
 
       const duration = Math.round(performance.now() - startTime);
-      const totalArchived =
-        result.transactions.archivedCount + result.settlements.archivedCount;
+      const totalArchived = result.totalArchived;
 
       // Update last run timestamp
       await setConfig("archival_last_run", new Date().toISOString());
@@ -133,8 +132,8 @@ async function checkAndRunArchival(): Promise<void> {
           `Retention: ${retentionDays} days`,
           `Delete after archive: ${deleteAfterArchive}`,
           ``,
-          `Transactions archived: ${result.transactions.archivedCount}`,
-          `Settlements archived: ${result.settlements.archivedCount}`,
+          `Total archived: ${result.totalArchived}`,
+          `Total deleted: ${result.totalDeleted}`,
           `Duration: ${duration}ms`,
         ].join("\n"),
       }).catch((e: unknown) =>

@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 64 — Chat Security Audit & Fixes
  * F24: Chat XSS prevention, message sanitization, rate limiting, CSRF

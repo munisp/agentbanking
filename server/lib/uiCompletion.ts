@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F11-F15: UI/UX Completion Backend Support
  * - F11: Global notification center with bell icon and unread count

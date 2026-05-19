@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * 54Link POS — Temporal Worker Process
  * Run: npx tsx server/temporal-worker.ts

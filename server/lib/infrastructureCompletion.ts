@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69: production build compatibility
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F1-F5: Infrastructure Completion Module
  * - F1: /api/scheduled endpoint for Manus periodic task integration

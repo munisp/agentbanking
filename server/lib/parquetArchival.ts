@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 68: bulk TS error suppression for production build
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Parquet Cold-Tier Archival Module
  * P2-1: Archive settlements/disputes older than N days to S3 as Parquet with zstd(3) compression
@@ -344,7 +344,7 @@ export async function runArchivalJob(options?: {
     results.push(await archiveSettlements(options));
     results.push(await archiveReconciliationBatches(options));
   } catch (error) {
-    logger.error("[Archival] Archival job failed:", error);
+    logger.error(`[Archival] Archival job failed: ${error}`);
   }
 
   const completedAt = new Date();

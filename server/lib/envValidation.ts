@@ -33,6 +33,24 @@ const CRITICAL_ENV_VARS: EnvRule[] = [
     description: "PostgreSQL connection string",
   },
   {
+    name: "CRON_SECRET",
+    required: true,
+    category: "security",
+    description: "Shared secret for cron/scheduler API calls (min 32 chars)",
+  },
+  {
+    name: "INTERNAL_API_KEY",
+    required: true,
+    category: "security",
+    description: "Service-to-service auth key (X-Internal-Key header)",
+  },
+  {
+    name: "TX_SIGNING_SECRET",
+    required: true,
+    category: "security",
+    description: "HMAC secret for transaction payload signing",
+  },
+  {
     name: "KAFKA_BROKERS",
     required: false,
     category: "service",
@@ -140,6 +158,9 @@ export function validateEnvironment(): ValidationResult {
       "KEYCLOAK_CLIENT_SECRET",
       "PLATFORM_API_KEY",
       "APISIX_ADMIN_KEY",
+      "CRON_SECRET",
+      "INTERNAL_API_KEY",
+      "TX_SIGNING_SECRET",
     ];
     for (const varName of secretVars) {
       const val = process.env[varName] ?? "";
@@ -205,6 +226,54 @@ export function getJwtSecret(): string {
     // Dev fallback: generate and cache
     const ephemeral = crypto.randomBytes(32).toString("hex");
     process.env.JWT_SECRET = ephemeral;
+    return ephemeral;
+  }
+  return secret;
+}
+
+/**
+ * Get cron/scheduler secret — never returns hardcoded default in production.
+ */
+export function getCronSecret(): string {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.trim() === "") {
+    if (isProduction()) {
+      throw new Error("CRON_SECRET is required in production");
+    }
+    const ephemeral = crypto.randomBytes(32).toString("hex");
+    process.env.CRON_SECRET = ephemeral;
+    return ephemeral;
+  }
+  return secret;
+}
+
+/**
+ * Get internal API key — never returns hardcoded default in production.
+ */
+export function getInternalApiKey(): string {
+  const secret = process.env.INTERNAL_API_KEY;
+  if (!secret || secret.trim() === "") {
+    if (isProduction()) {
+      throw new Error("INTERNAL_API_KEY is required in production");
+    }
+    const ephemeral = crypto.randomBytes(32).toString("hex");
+    process.env.INTERNAL_API_KEY = ephemeral;
+    return ephemeral;
+  }
+  return secret;
+}
+
+/**
+ * Get transaction signing secret — never returns hardcoded default in production.
+ */
+export function getTxSigningSecret(): string {
+  const secret = process.env.TX_SIGNING_SECRET;
+  if (!secret || secret.trim() === "") {
+    if (isProduction()) {
+      throw new Error("TX_SIGNING_SECRET is required in production");
+    }
+    const ephemeral = crypto.randomBytes(32).toString("hex");
+    process.env.TX_SIGNING_SECRET = ephemeral;
     return ephemeral;
   }
   return secret;

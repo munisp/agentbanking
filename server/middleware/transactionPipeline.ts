@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Transaction Processing Pipeline
  *
@@ -272,12 +272,38 @@ function calculateRiskScore(ctx: PipelineContext): void {
   }
 }
 
-function screenCompliance(ctx: PipelineContext): void {
-  // Sanctions screening placeholder
-  // In production, this would call an external sanctions list API
+async function screenCompliance(ctx: PipelineContext): Promise<void> {
+  // Real sanctions/PEP screening via complianceScreening module
+  try {
+    const { screenTransaction } = await import("../lib/complianceScreening");
+    const result = await screenTransaction(
+      {
+        fullName: ctx.request.senderAgentCode || "",
+        nationality: ctx.request.corridor?.split("-")[0],
+      },
+      {
+        fullName:
+          ctx.request.recipientPhone || ctx.request.recipientAccountId || "",
+        nationality: ctx.request.corridor?.split("-")[1],
+      },
+      ctx.request.amount,
+      ctx.request.currency
+    );
 
-  // PEP screening placeholder
-  // In production, this would check Politically Exposed Persons database
+    if (!result.transactionCleared) {
+      ctx.complianceFlags.push(...result.flags);
+      throw new Error(
+        `SANCTIONS_BLOCKED: Transaction blocked by compliance screening. ` +
+          `Flags: ${result.flags.join(", ")}`
+      );
+    }
+  } catch (err: any) {
+    if (err.message?.startsWith("SANCTIONS_BLOCKED")) throw err;
+    // Log screening failure but don't block — regulatory requirement is to screen,
+    // temporary unavailability should not halt all transactions
+    console.warn("[Compliance] Screening service unavailable:", err.message);
+    ctx.complianceFlags.push("SCREENING_UNAVAILABLE");
+  }
 
   // If any critical compliance flags, require manual approval
   const criticalFlags = ctx.complianceFlags.filter(

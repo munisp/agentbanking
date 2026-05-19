@@ -1,4 +1,4 @@
-// @ts-nocheck
+// TypeScript enabled — Sprint 96 security audit
 /**
  * Security Orchestrator — TypeScript Integration Layer
  * Wires Rust DDoS Shield, Go PBAC Engine, and Python Fraud ML Service
@@ -23,7 +23,10 @@ const FRAUD_ML_URL = process.env.FRAUD_ML_URL || "http://localhost:8092";
 const SERVICE_TIMEOUT_MS = parseInt(
   process.env.SECURITY_SERVICE_TIMEOUT || "3000"
 );
-const FAIL_OPEN = process.env.SECURITY_FAIL_OPEN !== "false"; // default: fail-open when sidecar services not deployed
+const FAIL_OPEN =
+  process.env.NODE_ENV === "production"
+    ? process.env.SECURITY_FAIL_OPEN === "true" // Production: fail-closed by default (must explicitly opt in to fail-open)
+    : process.env.SECURITY_FAIL_OPEN !== "false"; // Dev: fail-open by default (sidecars may not be deployed)
 
 // ── HTTP Client with Timeout ─────────────────────────────────────────
 
@@ -206,8 +209,10 @@ async function scoreFraud(
       user_agent: req.headers["user-agent"] || "",
       geo_country: req.headers["x-geo-country"] || "",
       timestamp: Date.now(),
-      session_age_seconds: parseInt(req.headers["x-session-age"] || "0"),
-      kyc_level: parseInt(req.headers["x-kyc-level"] || "0"),
+      session_age_seconds: parseInt(
+        String(req.headers["x-session-age"] || "0")
+      ),
+      kyc_level: parseInt(String(req.headers["x-kyc-level"] || "0")),
       is_new_recipient: req.headers["x-new-recipient"] === "true",
       is_international: req.headers["x-international"] === "true",
     }),

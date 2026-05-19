@@ -1,4 +1,4 @@
-// @ts-nocheck — Sprint 69
+// TypeScript enabled — Sprint 96 security audit
 /**
  * compliancePdf.ts
  * Generates a weekly security compliance report PDF using pdfkit,

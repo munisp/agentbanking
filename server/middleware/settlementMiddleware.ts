@@ -47,7 +47,7 @@ export async function publishSettlementEvent(params: {
   metadata?: Record<string, unknown>;
 }): Promise<void> {
   try {
-    await publishEvent(
+    const published = await publishEvent(
       SETTLEMENT_KAFKA_TOPIC,
       params.batchId ?? params.agentCode ?? "system",
       {
@@ -60,6 +60,9 @@ export async function publishSettlementEvent(params: {
       },
       { agentCode: params.agentCode }
     );
+    if (!published) {
+      throw new Error("Kafka publishEvent returned false");
+    }
     logger.info(`[Kafka] Settlement event: ${params.eventType}`);
   } catch (e) {
     logger.error(
@@ -140,7 +143,9 @@ export async function tbRecordSettlementTransfer(params: {
     if (result && result.id) {
       return { transferId: result.id, syncStatus: result.syncStatus };
     }
-    return null;
+    throw new Error(
+      "TigerBeetle returned null — sidecar unreachable or transfer rejected"
+    );
   } catch (e) {
     logger.error(
       `[TB-Settlement] Transfer failed (fail-closed): ${(e as Error).message}`

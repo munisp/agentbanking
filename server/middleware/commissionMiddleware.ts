@@ -47,7 +47,7 @@ export async function publishCommissionEvent(params: {
 }): Promise<void> {
   try {
     // publishEvent(topic, key, payload, metadata) — positional args
-    await publishEvent(
+    const published = await publishEvent(
       COMMISSION_KAFKA_TOPIC,
       params.agentCode,
       {
@@ -63,6 +63,9 @@ export async function publishCommissionEvent(params: {
       },
       { agentCode: params.agentCode }
     );
+    if (!published) {
+      throw new Error("Kafka publishEvent returned false");
+    }
     logger.info(
       `[Kafka] Commission event published: ${params.eventType} for agent ${params.agentCode}`
     );
@@ -186,7 +189,9 @@ export async function tbRecordCommissionCredit(params: {
     if (result && result.id) {
       return { transferId: result.id, syncStatus: result.syncStatus };
     }
-    return null;
+    throw new Error(
+      "TigerBeetle returned null — sidecar unreachable or transfer rejected"
+    );
   } catch (e) {
     logger.error(
       `[TB-Commission] Transfer failed (fail-closed): ${(e as Error).message}`

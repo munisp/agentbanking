@@ -78,18 +78,19 @@ describe("Commission Middleware Integration", () => {
     ).resolves.not.toThrow();
   });
 
-  it("TigerBeetle commission credit returns null when sidecar unavailable", async () => {
+  it("TigerBeetle commission credit throws when sidecar unavailable (fail-closed)", async () => {
     const mod = await import("./middleware/commissionMiddleware");
-    const result = await mod.tbRecordCommissionCredit({
-      transactionId: 1,
-      transactionRef: "TX-TEST",
-      agentId: 1,
-      agentCode: "AGT001",
-      amount: 500,
-      entryType: "direct",
-      hierarchyLevel: 0,
-    });
-    expect(result).toBeNull();
+    await expect(
+      mod.tbRecordCommissionCredit({
+        transactionId: 1,
+        transactionRef: "TX-TEST",
+        agentId: 1,
+        agentCode: "AGT001",
+        amount: 500,
+        entryType: "direct",
+        hierarchyLevel: 0,
+      })
+    ).rejects.toThrow("Commission ledger entry failed");
   });
 
   it("Lakehouse snapshot returns false when sidecar unavailable", async () => {
@@ -162,16 +163,17 @@ describe("Settlement Middleware Integration", () => {
     expect(await mod.canTriggerSettlement("AGT001", "agent")).toBe(true);
   });
 
-  it("TigerBeetle settlement transfer returns null when sidecar unavailable", async () => {
+  it("TigerBeetle settlement transfer throws when sidecar unavailable (fail-closed)", async () => {
     const mod = await import("./middleware/settlementMiddleware");
-    const result = await mod.tbRecordSettlementTransfer({
-      batchId: "SETTLE-TEST",
-      agentId: 1,
-      agentCode: "AGT001",
-      amount: 10000,
-      transactionCount: 50,
-    });
-    expect(result).toBeNull();
+    await expect(
+      mod.tbRecordSettlementTransfer({
+        batchId: "SETTLE-TEST",
+        agentId: 1,
+        agentCode: "AGT001",
+        amount: 10000,
+        transactionCount: 50,
+      })
+    ).rejects.toThrow("Settlement ledger entry failed");
   });
 });
 

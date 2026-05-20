@@ -4660,3 +4660,246 @@ export const guideFeedback = pgTable(
   })
 );
 export type GuideFeedback = typeof guideFeedback.$inferSelect;
+
+// ─── E-Commerce: Product Categories ──────────────────────────────────────────
+export const ecommerceCategories = pgTable(
+  "ecommerce_categories",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    slug: varchar("slug", { length: 128 }).notNull().unique(),
+    description: text("description"),
+    parentId: integer("parent_id"),
+    imageUrl: varchar("image_url", { length: 512 }),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    slugIdx: uniqueIndex("ecom_cat_slug_idx").on(t.slug),
+    parentIdx: index("ecom_cat_parent_idx").on(t.parentId),
+  })
+);
+export type EcommerceCategory = typeof ecommerceCategories.$inferSelect;
+
+// ─── E-Commerce: Products ────────────────────────────────────────────────────
+export const ecommerceProductStatusEnum = pgEnum("ecommerce_product_status", [
+  "active",
+  "draft",
+  "archived",
+  "out_of_stock",
+]);
+
+export const ecommerceProducts = pgTable(
+  "ecommerce_products",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 64 }).notNull().unique(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    categoryId: integer("category_id").notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    imageUrl: varchar("image_url", { length: 512 }),
+    isActive: boolean("is_active").default(true).notNull(),
+    status: ecommerceProductStatusEnum("status").default("active").notNull(),
+    merchantId: integer("merchant_id").notNull(),
+    agentId: integer("agent_id"),
+    weight: numeric("weight", { precision: 8, scale: 2 }),
+    dimensions: varchar("dimensions", { length: 64 }),
+    tags: json("tags").$type<string[]>().default([]),
+    attributes: json("attributes").$type<Record<string, string>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    skuIdx: uniqueIndex("ecom_prod_sku_idx").on(t.sku),
+    categoryIdx: index("ecom_prod_category_idx").on(t.categoryId),
+    merchantIdx: index("ecom_prod_merchant_idx").on(t.merchantId),
+    activeIdx: index("ecom_prod_active_idx").on(t.isActive),
+  })
+);
+export type EcommerceProduct = typeof ecommerceProducts.$inferSelect;
+
+// ─── E-Commerce: Inventory ───────────────────────────────────────────────────
+export const ecommerceInventory = pgTable(
+  "ecommerce_inventory",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 64 }).notNull().unique(),
+    productId: integer("product_id").notNull(),
+    quantity: integer("quantity").default(0).notNull(),
+    reserved: integer("reserved").default(0).notNull(),
+    reorderPoint: integer("reorder_point").default(10).notNull(),
+    warehouseId: varchar("warehouse_id", { length: 64 }).default("default").notNull(),
+    lastRestocked: timestamp("last_restocked").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    skuIdx: uniqueIndex("ecom_inv_sku_idx").on(t.sku),
+    productIdx: index("ecom_inv_product_idx").on(t.productId),
+    lowStockIdx: index("ecom_inv_low_stock_idx").on(t.quantity, t.reorderPoint),
+  })
+);
+export type EcommerceInventoryRecord = typeof ecommerceInventory.$inferSelect;
+
+// ─── E-Commerce: Inventory Reservations ──────────────────────────────────────
+export const ecommerceInventoryReservations = pgTable(
+  "ecommerce_inventory_reservations",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 64 }).notNull(),
+    orderId: integer("order_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    skuIdx: index("ecom_res_sku_idx").on(t.sku),
+    orderIdx: index("ecom_res_order_idx").on(t.orderId),
+    expiryIdx: index("ecom_res_expiry_idx").on(t.expiresAt),
+  })
+);
+
+// ─── E-Commerce: Orders ──────────────────────────────────────────────────────
+export const ecommerceOrderStatusEnum = pgEnum("ecommerce_order_status", [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+  "refunded",
+]);
+
+export const ecommerceOrders = pgTable(
+  "ecommerce_orders",
+  {
+    id: serial("id").primaryKey(),
+    orderNumber: varchar("order_number", { length: 32 }).notNull().unique(),
+    customerId: integer("customer_id").notNull(),
+    merchantId: integer("merchant_id").notNull(),
+    agentId: integer("agent_id"),
+    status: ecommerceOrderStatusEnum("status").default("pending").notNull(),
+    subTotal: numeric("sub_total", { precision: 12, scale: 2 }).notNull(),
+    tax: numeric("tax", { precision: 12, scale: 2 }).default("0").notNull(),
+    shippingFee: numeric("shipping_fee", { precision: 12, scale: 2 }).default("0").notNull(),
+    discount: numeric("discount", { precision: 12, scale: 2 }).default("0").notNull(),
+    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    paymentMethod: varchar("payment_method", { length: 32 }).notNull(),
+    paymentRef: varchar("payment_ref", { length: 128 }),
+    shippingAddress: json("shipping_address").$type<{
+      street: string;
+      city: string;
+      state: string;
+      country: string;
+      zipCode: string;
+      phone: string;
+    }>(),
+    notes: text("notes"),
+    offlineCreated: boolean("offline_created").default(false).notNull(),
+    syncedAt: timestamp("synced_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    fulfilledAt: timestamp("fulfilled_at"),
+    cancelledAt: timestamp("cancelled_at"),
+  },
+  (t) => ({
+    orderNumIdx: uniqueIndex("ecom_order_num_idx").on(t.orderNumber),
+    customerIdx: index("ecom_order_customer_idx").on(t.customerId),
+    merchantIdx: index("ecom_order_merchant_idx").on(t.merchantId),
+    statusIdx: index("ecom_order_status_idx").on(t.status),
+    offlineIdx: index("ecom_order_offline_idx").on(t.offlineCreated),
+  })
+);
+export type EcommerceOrder = typeof ecommerceOrders.$inferSelect;
+
+// ─── E-Commerce: Order Items ─────────────────────────────────────────────────
+export const ecommerceOrderItems = pgTable(
+  "ecommerce_order_items",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").notNull(),
+    productId: integer("product_id").notNull(),
+    sku: varchar("sku", { length: 64 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+  },
+  (t) => ({
+    orderIdx: index("ecom_oi_order_idx").on(t.orderId),
+    productIdx: index("ecom_oi_product_idx").on(t.productId),
+  })
+);
+export type EcommerceOrderItem = typeof ecommerceOrderItems.$inferSelect;
+
+// ─── E-Commerce: Shopping Carts ──────────────────────────────────────────────
+export const ecommerceCarts = pgTable(
+  "ecommerce_carts",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customer_id").notNull(),
+    couponCode: varchar("coupon_code", { length: 32 }),
+    discountAmount: numeric("discount_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    offlineCreated: boolean("offline_created").default(false).notNull(),
+    deviceId: varchar("device_id", { length: 128 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"),
+  },
+  (t) => ({
+    customerIdx: uniqueIndex("ecom_cart_customer_idx").on(t.customerId),
+  })
+);
+export type EcommerceCart = typeof ecommerceCarts.$inferSelect;
+
+// ─── E-Commerce: Cart Items ──────────────────────────────────────────────────
+export const ecommerceCartItems = pgTable(
+  "ecommerce_cart_items",
+  {
+    id: serial("id").primaryKey(),
+    cartId: integer("cart_id").notNull(),
+    productId: integer("product_id").notNull(),
+    sku: varchar("sku", { length: 64 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    merchantId: integer("merchant_id").notNull(),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    cartIdx: index("ecom_ci_cart_idx").on(t.cartId),
+    skuIdx: index("ecom_ci_sku_idx").on(t.sku),
+  })
+);
+export type EcommerceCartItem = typeof ecommerceCartItems.$inferSelect;
+
+// ─── E-Commerce: Customer Interactions (for recommendations) ─────────────────
+export const ecommerceInteractionTypeEnum = pgEnum("ecommerce_interaction_type", [
+  "view",
+  "add_to_cart",
+  "purchase",
+  "review",
+  "wishlist",
+]);
+
+export const ecommerceInteractions = pgTable(
+  "ecommerce_interactions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    customerId: integer("customer_id").notNull(),
+    productId: integer("product_id").notNull(),
+    interactionType: ecommerceInteractionTypeEnum("interaction_type").notNull(),
+    metadata: json("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    customerIdx: index("ecom_interact_customer_idx").on(t.customerId),
+    productIdx: index("ecom_interact_product_idx").on(t.productId),
+    typeIdx: index("ecom_interact_type_idx").on(t.interactionType),
+  })
+);
+export type EcommerceInteraction = typeof ecommerceInteractions.$inferSelect;

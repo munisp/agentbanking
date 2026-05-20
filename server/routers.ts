@@ -482,6 +482,12 @@ import { transactionMonitoringRouter } from "./routers/transactionMonitoring";
 import { transactionReversalWorkflowRouter } from "./routers/transactionReversalWorkflow";
 import { ussdLocalizationRouter } from "./routers/ussdLocalization";
 import { geoFenceDedicatedRouter } from "./routers/geoFenceDedicated";
+import { ecommerceCatalogRouter } from "./routers/ecommerceCatalog";
+import { ecommerceCartRouter } from "./routers/ecommerceCart";
+import { ecommerceOrdersRouter } from "./routers/ecommerceOrders";
+import { supplyChainRouter } from "./routers/supplyChain";
+import { marketplaceRouter } from "./routers/marketplace";
+import { promotionsRouter } from "./routers/promotions";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1068,6 +1074,13 @@ export const appRouter = router({
   webhookManagement: webhookManagementRouter, // re-uses import from line 139
   amlScreening: amlScreeningRouter,
   receiptTemplates: receiptTemplatesRouter,
+  // E-commerce & Supply Chain
+  ecommerceCatalog: ecommerceCatalogRouter,
+  ecommerceCart: ecommerceCartRouter,
+  ecommerceOrders: ecommerceOrdersRouter,
+  supplyChain: supplyChainRouter,
+  marketplace: marketplaceRouter,
+  promotions: promotionsRouter,
 });
 
 export type AppRouter = typeof appRouter;

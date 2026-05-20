@@ -26,8 +26,11 @@ export const receiptTemplatesRouter = router({
         .orderBy(desc(receiptTemplates.createdAt))
         .limit(input.limit)
         .offset(input.offset);
-      const [tot] = await db.select({ value: count() }).from(receiptTemplates);
-      return { items, total: Number(tot.value) };
+      const totResult = await db
+        .select({ value: count() })
+        .from(receiptTemplates);
+      const tot = totResult[0];
+      return { items, total: tot ? Number(tot.value) : items.length };
     }),
 
   getById: protectedProcedure

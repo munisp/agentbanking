@@ -19,7 +19,6 @@ import { resilienceRouter } from "./routers/resilience";
 import { mdmRouter } from "./routers/mdm";
 import { supervisorRouter } from "./routers/supervisor";
 import { disputesRouter } from "./routers/disputes";
-import { geofencingRouter } from "./routers/geofencing";
 import { kycRouter } from "./routers/kyc";
 import { managementRouter } from "./routers/management";
 import { agentBankingRouter } from "./routers/agentBanking";
@@ -551,7 +550,7 @@ export const appRouter = router({
   mdm: mdmRouter,
   supervisor: supervisorRouter,
   disputes: disputesRouter,
-  geofencing: geofencingRouter,
+  geofencing: geoFencingRouter,
   kyc: kycRouter,
   kyb: kybRouter,
   deepface: deepfaceRouter,

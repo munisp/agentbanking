@@ -7,7 +7,7 @@
 #    docker compose --profile dev up -d        # + Mailhog SMTP UI
 #    docker compose --profile monitoring up -d # + Prometheus/Grafana
 # =============================================================================
-version: '3.9'
+version: "3.9"
 
 x-common-env: &common-env
   DATABASE_URL: ${DATABASE_URL}
@@ -21,7 +21,6 @@ x-python-healthcheck: &python-healthcheck
   start_period: 30s
 
 services:
-
   # ── Main Node.js / tRPC Application ────────────────────────────────────────
   app:
     build:
@@ -311,8 +310,8 @@ services:
   mailhog:
     image: mailhog/mailhog:v1.0.1
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     restart: unless-stopped
     profiles:
       - dev
@@ -328,10 +327,10 @@ services:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
     restart: unless-stopped
     profiles:
       - monitoring
@@ -402,7 +401,8 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -686,7 +686,82 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8103/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8103/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - 54link-network
+
+  # ─── Supply Chain Service (Go) ───────────────────────────────────────────
+  supply-chain:
+    build:
+      context: ./server/supply-chain-go
+      dockerfile: Dockerfile
+    container_name: 54link-supply-chain
+    ports:
+      - "8200:8200"
+    environment:
+      - PORT=8200
+      - DATABASE_URL=${DATABASE_URL}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8200/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - 54link-network
+
+  # ─── Marketplace Integrations Service (Go) ─────────────────────────────
+  marketplace-integrations:
+    build:
+      context: ./server/marketplace-integrations-go
+      dockerfile: Dockerfile
+    container_name: 54link-marketplace
+    ports:
+      - "8201:8201"
+    environment:
+      - PORT=8201
+      - JUMIA_API_KEY=${JUMIA_API_KEY:-}
+      - KONGA_API_KEY=${KONGA_API_KEY:-}
+      - AMAZON_SP_CLIENT_ID=${AMAZON_SP_CLIENT_ID:-}
+      - EBAY_APP_ID=${EBAY_APP_ID:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8201/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - 54link-network
+
+  # ─── Demand Forecasting Service (Python) ───────────────────────────────
+  demand-forecasting:
+    build:
+      context: ./server/demand-forecasting-py
+      dockerfile: Dockerfile
+    container_name: 54link-demand-forecasting
+    ports:
+      - "8202:8202"
+    environment:
+      - PORT=8202
+      - DATABASE_URL=${DATABASE_URL}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8202/health')",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

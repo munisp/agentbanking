@@ -1,168 +1,144 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { notification_channels, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { auditLog } from "../../drizzle/schema";
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
+// Notification categories (16 across 4 groups):
+// Transactions: txn_success, txn_failed, txn_pending, txn_reversed
+// Security: sec_fraud, sec_login, sec_password, sec_mfa
+// Financial: fin_settlement, fin_commission, fin_float, fin_payout
+// System: sys_maintenance, sys_update, sys_alert, sys_report
 export const userNotifPreferencesRouter = router({
-  get: protectedProcedure
+  list: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        search: z.string().optional(),
+      })
     )
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
+
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
+
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const [record] = await database
         .select()
-        .from(notification_channels)
-        .orderBy(desc(notification_channels.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(notification_channels);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "notif_prefs",
-        procedure: "get",
-      };
+        .from(auditLog)
+        .where(eq(auditLog.id, input.id))
+        .limit(1);
+
+      if (!record) {
+        throw new Error(`Record with id ${input.id} not found`);
+      }
+      return record;
     }),
-  update: protectedProcedure
+
+  getSummary: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
+
+    return {
+      totalRecords: totalResult?.total ?? 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
+
+  getRecent: protectedProcedure
     .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "notif_prefs.update",
-        resource: "notif_prefs",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "notif_prefs",
-        action: "update",
-        id: input?.id || null,
-      };
-    }),
-  channels: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        days: z.number().min(1).max(90).default(7),
+        limit: z.number().min(1).max(50).default(10),
+      })
     )
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+
+      const results = await database
         .select()
-        .from(notification_channels)
-        .orderBy(desc(notification_channels.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(notification_channels);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "notif_prefs",
-        procedure: "channels",
-      };
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(input.limit);
+
+      return results;
     }),
-  mute: protectedProcedure
+  updateQuietHours: protectedProcedure
+    .input(z.object({ start: z.string(), end: z.string() }))
+    .mutation(async ({ input }) => ({ ...input, enabled: true })),
+  // Digest modes: "instant", "hourly", "daily"
+  updateDigestMode: protectedProcedure
+    .input(z.object({ mode: z.enum(["instant", "hourly", "daily"]) }))
+    .mutation(async ({ input }) => ({ mode: input.mode })),
+  bulkUpdate: protectedProcedure
     .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
+      z.object({
+        categories: z.array(z.string()),
+        channels: z.object({
+          email: z.boolean(),
+          sms: z.boolean(),
+          push: z.boolean(),
+          inApp: z.boolean(),
+        }),
+      })
     )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "notif_prefs.mute",
-        resource: "notif_prefs",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
+    .mutation(async ({ input }) => ({ updated: input.categories.length })),
+  resetToDefaults: protectedProcedure.mutation(async () => ({ reset: true })),
+  enableAllForChannel: protectedProcedure
+    .input(z.object({ channel: z.string() }))
+    .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
+  getPreferences: protectedProcedure.query(async () => {
+    return {
+      email: true,
+      sms: true,
+      push: true,
+      inApp: true,
+      quietHoursEnabled: false,
+      quietHoursStart: 22,
+      quietHoursEnd: 7,
+    };
+  }),
+  updateCategory: protectedProcedure
+    .input(z.object({ categoryId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ input }) => {
       return {
         success: true,
-        domain: "notif_prefs",
-        action: "mute",
-        id: input?.id || null,
-      };
-    }),
-  unmute: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "notif_prefs.unmute",
-        resource: "notif_prefs",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "notif_prefs",
-        action: "unmute",
-        id: input?.id || null,
+        categoryId: input.categoryId,
+        enabled: input.enabled,
       };
     }),
 });

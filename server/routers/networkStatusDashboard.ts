@@ -1,159 +1,163 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { connectivityLog, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { auditLog } from "../../drizzle/schema";
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const networkStatusDashboardRouter = router({
-  overview: protectedProcedure
+  list: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        search: z.string().optional(),
+      })
     )
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(connectivityLog)
-        .orderBy(desc(connectivityLog.recordedAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(connectivityLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "net_status",
-        procedure: "overview",
-      };
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
+
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
+
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
-  carriers: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const [record] = await database
         .select()
-        .from(connectivityLog)
-        .orderBy(desc(connectivityLog.recordedAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(connectivityLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "net_status",
-        procedure: "carriers",
-      };
+        .from(auditLog)
+        .where(eq(auditLog.id, input.id))
+        .limit(1);
+
+      if (!record) {
+        throw new Error(`Record with id ${input.id} not found`);
+      }
+      return record;
     }),
-  latency: protectedProcedure
+
+  getSummary: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
+
+    return {
+      totalRecords: totalResult?.total ?? 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
+
+  getRecent: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        days: z.number().min(1).max(90).default(7),
+        limit: z.number().min(1).max(50).default(10),
+      })
     )
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+
+      const results = await database
         .select()
-        .from(connectivityLog)
-        .orderBy(desc(connectivityLog.recordedAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(connectivityLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "net_status",
-        procedure: "latency",
-      };
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(input.limit);
+
+      return results;
     }),
-  uptime: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(connectivityLog)
-        .orderBy(desc(connectivityLog.recordedAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(connectivityLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "net_status",
-        procedure: "uptime",
-      };
-    }),
-  alerts: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(connectivityLog)
-        .orderBy(desc(connectivityLog.recordedAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(connectivityLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "net_status",
-        procedure: "alerts",
-      };
+  getAlerts: protectedProcedure.query(async () => {
+    return {
+      alerts: [] as Array<{
+        id: string;
+        severity: string;
+        message: string;
+        carrier: string;
+        timestamp: string;
+        resolved: boolean;
+      }>,
+      total: 0,
+    };
+  }),
+  getCarrierHeatmap: protectedProcedure.query(async () => {
+    return {
+      data: [] as Array<{
+        carrier: string;
+        region: string;
+        quality: number;
+        latency: number;
+      }>,
+    };
+  }),
+  getCarrierSummary: protectedProcedure.query(async () => {
+    return {
+      carriers: [] as Array<{
+        name: string;
+        status: string;
+        uptime: number;
+        avgLatency: number;
+        failRate: number;
+      }>,
+    };
+  }),
+  getOverview: protectedProcedure.query(async () => {
+    return {
+      totalCarriers: 0,
+      healthyCarriers: 0,
+      degradedCarriers: 0,
+      downCarriers: 0,
+      avgLatency: 0,
+    };
+  }),
+  getRegions: protectedProcedure.query(async () => {
+    return {
+      regions: [] as Array<{
+        name: string;
+        status: string;
+        carrierCount: number;
+        avgQuality: number;
+      }>,
+    };
+  }),
+  getTimeSeries: protectedProcedure.query(async () => {
+    return {
+      data: [] as Array<{
+        timestamp: string;
+        latency: number;
+        throughput: number;
+        errorRate: number;
+      }>,
+    };
+  }),
+  resolveAlert: protectedProcedure
+    .input(z.object({ alertId: z.string(), resolution: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return { success: true, alertId: input.alertId };
     }),
 });

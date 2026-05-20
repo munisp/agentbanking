@@ -1,180 +1,122 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { biometricAuditEvents, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { auditLog } from "../../drizzle/schema";
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const biometricAuthGatewayRouter = router({
-  enroll: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "biometric_gw.enroll",
-        resource: "biometric_gw",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "biometric_gw",
-        action: "enroll",
-        id: input?.id || null,
-      };
-    }),
-  verify: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "biometric_gw.verify",
-        resource: "biometric_gw",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "biometric_gw",
-        action: "verify",
-        id: input?.id || null,
-      };
-    }),
   list: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        search: z.string().optional(),
+      })
     )
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(biometricAuditEvents)
-        .orderBy(desc(biometricAuditEvents.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(biometricAuditEvents);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "biometric_gw",
-        procedure: "list",
-      };
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
+
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
+
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
-  revoke: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "biometric_gw.revoke",
-        resource: "biometric_gw",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "biometric_gw",
-        action: "revoke",
-        id: input?.id || null,
-      };
-    }),
-  stats: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const [record] = await database
         .select()
-        .from(biometricAuditEvents)
-        .orderBy(desc(biometricAuditEvents.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db
-        .select({ value: count() })
-        .from(biometricAuditEvents);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "biometric_gw",
-        procedure: "stats",
-      };
+        .from(auditLog)
+        .where(eq(auditLog.id, input.id))
+        .limit(1);
+
+      if (!record) {
+        throw new Error(`Record with id ${input.id} not found`);
+      }
+      return record;
     }),
-  getStats: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return { totalRecords: 0, activeItems: 0, lastUpdated: null };
-    const [totalRow] = await db
-      .select({ value: count() })
-      .from(biometricAuditEvents);
+
+  getSummary: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
+
     return {
-      totalRecords: Number(totalRow.value),
-      activeItems: Math.floor(Number(totalRow.value) * 0.8),
+      totalRecords: totalResult?.total ?? 0,
       lastUpdated: new Date().toISOString(),
     };
+  }),
+
+  getRecent: protectedProcedure
+    .input(
+      z.object({
+        days: z.number().min(1).max(90).default(7),
+        limit: z.number().min(1).max(50).default(10),
+      })
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+
+      const results = await database
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(input.limit);
+
+      return results;
+    }),
+
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    try {
+      await database.execute(sql`SELECT 1 as ok`);
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 });

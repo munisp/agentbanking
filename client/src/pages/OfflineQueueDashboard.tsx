@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Sprint 92 — Offline Queue Status Dashboard
  *
@@ -112,13 +111,16 @@ export default function OfflineQueueDashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // tRPC queries
-  const queueStatus = trpc.offlineQueue.getQueueStatus.useQuery({});
+  // @ts-expect-error — type inference mismatch
+  const queueStatus = trpc.offlineQueue.getQueueStatus.useQuery({}) as any;
+  // @ts-expect-error — type inference mismatch
   const syncHistory = trpc.offlineQueue.getSyncHistory.useQuery({
     status: statusFilter as any,
     page,
     pageSize: 15,
-  });
-  const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery({});
+  }) as any;
+  // @ts-expect-error — type inference mismatch
+  const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery({}) as any;
   const retryMutation = trpc.offlineQueue.retryFailed.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Retry initiated: ${data.retried} items queued for retry`);
@@ -128,14 +130,14 @@ export default function OfflineQueueDashboard() {
     onError: () => {
       toast.error("Retry failed: Could not retry failed items");
     },
-  });
+  }) as any;
   const clearMutation = trpc.offlineQueue.clearSynced.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Cleanup complete: ${data.cleared} synced items removed`);
       queueStatus.refetch();
       syncHistory.refetch();
     },
-  });
+  }) as any;
 
   // Auto-refresh every 10 seconds
   useEffect(() => {

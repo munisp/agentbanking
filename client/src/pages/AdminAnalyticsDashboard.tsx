@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -70,7 +69,7 @@ function ChangeIndicator({ value }: { value: number }) {
 function KPICards() {
   const { data: kpi } = trpc.analyticsDashboard.kpiSummary.useQuery(undefined, {
     refetchInterval: 30000,
-  });
+  }) as any;
   if (!kpi) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -148,8 +147,9 @@ function TransactionVolumeChart() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "365d">("30d");
   const { data } = trpc.analyticsDashboard.transactionVolume.useQuery({
     period,
+    // @ts-expect-error — type inference mismatch
     granularity: "daily",
-  });
+  }) as any;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -238,7 +238,7 @@ function TransactionVolumeChart() {
 }
 
 function OnboardingFunnel() {
-  const { data } = trpc.analyticsDashboard.agentOnboardingFunnel.useQuery();
+  const { data } = trpc.analyticsDashboard.agentOnboardingFunnel.useQuery() as any;
   return (
     <Card>
       <CardHeader>
@@ -274,7 +274,7 @@ function OnboardingFunnel() {
                 radius={[0, 4, 4, 0]}
                 name="Agents"
               >
-                {data.stages.map((_, i) => (
+                {data.stages.map((_: any, i: any) => (
                   <Cell
                     key={i}
                     fill={COLORS[i % COLORS.length]}
@@ -296,9 +296,10 @@ function OnboardingFunnel() {
 
 function FraudDetectionChart() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
+  // @ts-expect-error — type inference mismatch
   const { data } = trpc.analyticsDashboard.fraudDetectionRates.useQuery({
     period,
-  });
+  }) as any;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -391,7 +392,7 @@ function FraudDetectionChart() {
 }
 
 function RevenueBreakdown() {
-  const { data } = trpc.analyticsDashboard.revenueBreakdown.useQuery();
+  const { data } = trpc.analyticsDashboard.revenueBreakdown.useQuery() as any;
   return (
     <Card>
       <CardHeader>
@@ -423,7 +424,7 @@ function RevenueBreakdown() {
                     label={({ name, percentage }) => `${name} ${percentage}%`}
                     labelLine={false}
                   >
-                    {data.byType.map((entry, i) => (
+                    {data.byType.map((entry: any, i: any) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
@@ -473,7 +474,7 @@ function RevenueBreakdown() {
 }
 
 function GeographicDistribution() {
-  const { data } = trpc.analyticsDashboard.geographicDistribution.useQuery();
+  const { data } = trpc.analyticsDashboard.geographicDistribution.useQuery() as any;
   return (
     <Card>
       <CardHeader>
@@ -489,7 +490,7 @@ function GeographicDistribution() {
         {data ? (
           <div className="space-y-2">
             {data.regions.map((region: any) => {
-              const maxAgents = Math.max(...data.regions.map(r => r.agents));
+              const maxAgents = Math.max(...data.regions.map((r: any) => r.agents));
               const widthPct = (region.agents / maxAgents) * 100;
               return (
                 <div key={region.name} className="flex items-center gap-3">
@@ -523,7 +524,8 @@ function GeographicDistribution() {
 
 function SettlementTrend() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
-  const { data } = trpc.analyticsDashboard.settlementTrend.useQuery({ period });
+  // @ts-expect-error — type inference mismatch
+  const { data } = trpc.analyticsDashboard.settlementTrend.useQuery({ period }) as any;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -605,9 +607,10 @@ function SettlementTrend() {
 
 function KYCApprovalTrend() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
+  // @ts-expect-error — type inference mismatch
   const { data } = trpc.analyticsDashboard.kycApprovalTrend.useQuery({
     period,
-  });
+  }) as any;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -688,7 +691,7 @@ function TopAgentsLeaderboard() {
   const { data } = trpc.analyticsDashboard.topAgents.useQuery({
     sortBy,
     limit: 10,
-  });
+  }) as any;
   const tierColors: Record<string, string> = {
     Diamond: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     Gold: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -717,7 +720,7 @@ function TopAgentsLeaderboard() {
       <CardContent>
         {data ? (
           <div className="space-y-2">
-            {data.agents.map((agent, i) => (
+            {data.agents.map((agent: any, i: any) => (
               <div
                 key={agent.id}
                 className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"

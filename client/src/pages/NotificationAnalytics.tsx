@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,8 +5,10 @@ import { Badge } from "@/components/ui/badge";
 
 export default function NotificationAnalytics() {
   const [days, setDays] = useState(7);
-  const overviewQ = trpc.notifAnalytics.overview.useQuery({ days });
-  const trendQ = trpc.notifAnalytics.dailyTrend.useQuery({ days });
+  // @ts-expect-error — type inference mismatch
+  const overviewQ = trpc.notifAnalytics.overview.useQuery({ days }) as any;
+  // @ts-expect-error — type inference mismatch
+  const trendQ = trpc.notifAnalytics.dailyTrend.useQuery({ days }) as any;
 
   const channelColors: Record<string, string> = {
     email: "bg-blue-500",
@@ -19,7 +20,7 @@ export default function NotificationAnalytics() {
 
   const maxSent = useMemo(() => {
     if (!trendQ.data) return 1;
-    return Math.max(...trendQ.data.map(d => d.sent), 1);
+    return Math.max(...trendQ.data.map((d: any) => d.sent), 1);
   }, [trendQ.data]);
 
   return (
@@ -33,7 +34,7 @@ export default function NotificationAnalytics() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {[7, 14, 30].map(d => (
+            {[7, 14, 30].map((d: any) => (
               <button
                 key={d}
                 onClick={() => setDays(d)}
@@ -93,7 +94,7 @@ export default function NotificationAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {overviewQ.data?.channelStats.map(ch => (
+              {overviewQ.data?.channelStats.map((ch: any) => (
                 <div key={ch.channel} className="flex items-center gap-4">
                   <div className="w-20 text-sm font-medium text-gray-300 capitalize">
                     {ch.channel.replace(/_/g, " ")}
@@ -135,7 +136,7 @@ export default function NotificationAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="flex items-end gap-1 h-48">
-              {trendQ.data?.map((day, i) => (
+              {trendQ.data?.map((day: any, i: any) => (
                 <div
                   key={i}
                   className="flex-1 flex flex-col items-center gap-1"

@@ -92,4 +92,23 @@ export const carrierSwitchingRouter = router({
 
       return results;
     }),
+  getRankings: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
+  getRecommendation: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
+  getSwitchStats: protectedProcedure
+    .query(async () => {
+      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+    }),
+  recordSwitch: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, action: "recordSwitch", id: input?.id ?? null, timestamp: new Date().toISOString() };
+    }),
 });

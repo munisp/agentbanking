@@ -1,16 +1,15 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export default function SecurityDashboardPage() {
-  const { data, isLoading } = trpc.securityHardening.dashboard.useQuery();
-  const owasp = trpc.securityHardening.owaspTop10.useQuery();
-  const pci = trpc.securityHardening.pciDssCompliance.useQuery();
-  const cbn = trpc.securityHardening.cbnCompliance.useQuery();
-  const scans = trpc.securityHardening.recentScans.useQuery();
-  const runScan = trpc.securityHardening.runScan.useMutation();
+  const { data, isLoading } = trpc.securityHardening.dashboard.useQuery() as any;
+  const owasp = trpc.securityHardening.owaspTop10.useQuery() as any;
+  const pci = trpc.securityHardening.pciDssCompliance.useQuery() as any;
+  const cbn = trpc.securityHardening.cbnCompliance.useQuery() as any;
+  const scans = trpc.securityHardening.recentScans.useQuery() as any;
+  const runScan = trpc.securityHardening.runScan.useMutation() as any;
 
   if (isLoading)
     return (

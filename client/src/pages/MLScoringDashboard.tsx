@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,15 +24,16 @@ export default function MLScoringDashboard() {
   const [agentId, setAgentId] = useState("AGT-001");
   const analytics = trpc.mlScoring.analytics.useQuery(undefined, {
     refetchInterval: 10000,
-  });
+  }) as any;
   const history = trpc.mlScoring.scoringHistory.useQuery(
     { limit: 20 },
     { refetchInterval: 5000 }
-  );
+  ) as any;
 
-  const scoreMut = trpc.mlScoring.scoreTransaction.useMutation();
-  const batchMut = trpc.mlScoring.batchScore.useMutation();
-  const explainMut = trpc.mlScoring.explainScore.useMutation();
+  const scoreMut = trpc.mlScoring.scoreTransaction.useMutation() as any;
+  const batchMut = trpc.mlScoring.batchScore.useMutation() as any;
+  // @ts-expect-error — type inference mismatch
+  const explainMut = trpc.mlScoring.explainScore.useMutation() as any;
 
   const stats = analytics.data;
 
@@ -237,7 +237,7 @@ export default function MLScoringDashboard() {
                     <div>
                       <p className="text-sm font-medium mb-1">Risk Factors:</p>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        {scoreMut.data.result.topRiskFactors.map((f, i) => (
+                        {scoreMut.data.result.topRiskFactors.map((f: any, i: any) => (
                           <li key={i}>• {f}</li>
                         ))}
                       </ul>
@@ -341,7 +341,7 @@ export default function MLScoringDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.data?.records.map(r => (
+                  {history.data?.records.map((r: any) => (
                     <tr key={r.id} className="border-b">
                       <td className="p-2 font-mono text-xs">{r.id}</td>
                       <td className="p-2 text-xs">{r.transactionId}</td>
@@ -392,7 +392,7 @@ export default function MLScoringDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {stats?.featureImportance.map(f => (
+                  {stats?.featureImportance.map((f: any) => (
                     <div key={f.feature} className="flex items-center gap-3">
                       <span className="w-48 text-sm truncate">{f.feature}</span>
                       <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">

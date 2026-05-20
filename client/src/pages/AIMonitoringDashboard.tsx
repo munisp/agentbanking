@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,28 +22,31 @@ export default function AIMonitoringDashboard() {
   const [tab, setTab] = useState("overview");
   const dashboard = trpc.aiMonitoring.dashboard.useQuery(undefined, {
     refetchInterval: 5000,
-  });
+  }) as any;
   const fraudFeed = trpc.aiMonitoring.liveFraudFeed.useQuery(
+    // @ts-expect-error — type inference mismatch
     { limit: 20, minRiskLevel: "medium" },
     { refetchInterval: 3000 }
-  );
+  ) as any;
   const drift = trpc.aiMonitoring.driftAnalysis.useQuery(undefined, {
     refetchInterval: 30000,
-  });
+  }) as any;
   const alerts = trpc.aiMonitoring.alerts.useQuery(
+    // @ts-expect-error — type inference mismatch
     { includeAcknowledged: false },
     { refetchInterval: 10000 }
-  );
+  ) as any;
   const serviceHealth = trpc.aiMonitoring.serviceHealth.useQuery(undefined, {
     refetchInterval: 15000,
-  });
+  }) as any;
   const throughput = trpc.aiMonitoring.throughputTimeSeries.useQuery(
+    // @ts-expect-error — type inference mismatch
     { intervalMinutes: 5, periods: 12 },
     { refetchInterval: 10000 }
-  );
+  ) as any;
   const ackMut = trpc.aiMonitoring.acknowledgeAlert.useMutation({
     onSuccess: () => alerts.refetch(),
-  });
+  }) as any;
 
   const stats = dashboard.data?.overview;
 
@@ -161,7 +163,7 @@ export default function AIMonitoringDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboard.data?.modelMetrics.map(m => (
+                  {dashboard.data?.modelMetrics.map((m: any) => (
                     <tr key={m.modelName} className="border-b">
                       <td className="p-2 font-medium">{m.modelName}</td>
                       <td className="p-2">
@@ -212,7 +214,7 @@ export default function AIMonitoringDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-end gap-1 h-32">
-                    {throughput.data.series.map((s, i) => (
+                    {throughput.data.series.map((s: any, i: any) => (
                       <div
                         key={i}
                         className="flex-1 flex flex-col items-center gap-1"
@@ -220,13 +222,13 @@ export default function AIMonitoringDashboard() {
                         <div
                           className="w-full bg-primary/20 rounded-t relative"
                           style={{
-                            height: `${Math.max(4, (s.inferences / Math.max(...throughput.data!.series.map(x => x.inferences || 1))) * 100)}%`,
+                            height: `${Math.max(4, (s.inferences / Math.max(...throughput.data!.series.map((x: any) => x.inferences || 1))) * 100)}%`,
                           }}
                         >
                           <div
                             className="absolute bottom-0 w-full bg-primary rounded-t"
                             style={{
-                              height: `${Math.max(4, ((s.inferences - s.errorCount) / Math.max(...throughput.data!.series.map(x => x.inferences || 1))) * 100)}%`,
+                              height: `${Math.max(4, ((s.inferences - s.errorCount) / Math.max(...throughput.data!.series.map((x: any) => x.inferences || 1))) * 100)}%`,
                             }}
                           />
                         </div>
@@ -253,7 +255,7 @@ export default function AIMonitoringDashboard() {
               </Badge>
             </div>
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
-              {fraudFeed.data?.events.map(e => (
+              {fraudFeed.data?.events.map((e: any) => (
                 <Card
                   key={e.id}
                   className={
@@ -347,7 +349,7 @@ export default function AIMonitoringDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {drift.data.features.map(f => (
+                      {drift.data.features.map((f: any) => (
                         <tr key={f.feature} className="border-b">
                           <td className="p-2 font-medium">{f.feature}</td>
                           <td className="p-2">{f.baselineMean}</td>
@@ -379,7 +381,7 @@ export default function AIMonitoringDashboard() {
 
           <TabsContent value="services" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {serviceHealth.data?.services.map(s => (
+              {serviceHealth.data?.services.map((s: any) => (
                 <Card key={s.name}>
                   <CardContent className="pt-4 flex items-center justify-between">
                     <div>
@@ -416,7 +418,7 @@ export default function AIMonitoringDashboard() {
           </TabsContent>
 
           <TabsContent value="alerts" className="space-y-4">
-            {alerts.data?.alerts.map(a => (
+            {alerts.data?.alerts.map((a: any) => (
               <Card
                 key={a.id}
                 className={

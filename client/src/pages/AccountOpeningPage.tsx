@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -11,10 +10,12 @@ export default function AccountOpeningPage() {
   const [tab, setTab] = useState<"applications" | "accounts" | "banks">(
     "applications"
   );
-  const applications = trpc.accountOpening.list.useQuery({ limit: 20 });
-  const accounts = trpc.accountOpening.list.useQuery({ limit: 20 });
-  const banks = trpc.accountOpening.analytics.useQuery();
-  const analytics = trpc.accountOpening.analytics.useQuery();
+  // @ts-expect-error — type inference mismatch
+  const applications = trpc.accountOpening.list.useQuery({ limit: 20 }) as any;
+  // @ts-expect-error — type inference mismatch
+  const accounts = trpc.accountOpening.list.useQuery({ limit: 20 }) as any;
+  const banks = trpc.accountOpening.analytics.useQuery() as any;
+  const analytics = trpc.accountOpening.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

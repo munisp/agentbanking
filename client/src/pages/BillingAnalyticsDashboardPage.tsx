@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -36,17 +35,18 @@ export default function BillingAnalyticsDashboardPage() {
     // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     { period: period === "12m" ? 12 : period === "6m" ? 6 : 3 },
     { enabled: !!user }
-  );
+  ) as any;
   // @ts-ignore Sprint 85
   const forecastData = trpc.billingProduction.getRevenueForecast.useQuery(
+    // @ts-expect-error — type inference mismatch
     { months: period === "12m" ? 12 : period === "6m" ? 6 : 3 },
     { enabled: !!user }
-  );
+  ) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const dashboardData = trpc.liveBillingDashboard.getMetrics.useQuery(
     undefined,
     { enabled: !!user }
-  );
+  ) as any;
 
   // Generate chart data based on period
   const getMonthLabels = (count: number) => {

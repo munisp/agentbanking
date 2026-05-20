@@ -1,4 +1,3 @@
-// @ts-nocheck
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -115,7 +114,7 @@ function OverlayBarChart({
   colorB?: string;
 }) {
   const maxVal = Math.max(
-    ...data.map(d => Math.max(d[valueAKey] ?? 0, d[valueBKey] ?? 0)),
+    ...data.map((d: any) => Math.max(d[valueAKey] ?? 0, d[valueBKey] ?? 0)),
     1
   );
   return (
@@ -367,8 +366,8 @@ function exportComparisonCsv(data: any) {
   ];
 
   const csvContent = rows
-    .map(row =>
-      row.map(cell => `"${(cell ?? "").replace(/"/g, '""')}"`).join(",")
+    .map((row: any) =>
+      row.map((cell: any) => `"${(cell ?? "").replace(/"/g, '""')}"`).join(",")
     )
     .join("\n");
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -485,7 +484,7 @@ export default function LoadTestComparison() {
   const [runIdB, setRunIdB] = useState<string | null>(null);
 
   // @ts-ignore Sprint 85
-  const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 50 });
+  const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 50 }) as any;
   const runs = runsQuery.data ?? [];
 
   // Auto-select first two runs if available
@@ -496,7 +495,7 @@ export default function LoadTestComparison() {
   const comparisonQuery = trpc.loadTestMetrics.compareRuns.useQuery(
     { runIdA: effectiveA!, runIdB: effectiveB! },
     { enabled: !!effectiveA && !!effectiveB && effectiveA !== effectiveB }
-  );
+  ) as any;
 
   const data = comparisonQuery.data;
   const cmp = data?.comparison;
@@ -504,7 +503,7 @@ export default function LoadTestComparison() {
   const zipfData = useMemo(
     () =>
       // @ts-ignore Sprint 85
-      (cmp?.zipfComparison ?? []).map(d => ({
+      (cmp?.zipfComparison ?? []).map((d: any) => ({
         label: `#${d.rank}`,
         reqA: d.requestsA,
         reqB: d.requestsB,
@@ -514,22 +513,22 @@ export default function LoadTestComparison() {
 
   const timelineRpsA = useMemo(
     // @ts-ignore Sprint 85
-    () => (cmp?.timelineOverlay ?? []).map(t => t.rpsA),
+    () => (cmp?.timelineOverlay ?? []).map((t: any) => t.rpsA),
     [cmp]
   );
   const timelineRpsB = useMemo(
     // @ts-ignore Sprint 85
-    () => (cmp?.timelineOverlay ?? []).map(t => t.rpsB),
+    () => (cmp?.timelineOverlay ?? []).map((t: any) => t.rpsB),
     [cmp]
   );
   const timelineLatA = useMemo(
     // @ts-ignore Sprint 85
-    () => (cmp?.timelineOverlay ?? []).map(t => t.latencyA),
+    () => (cmp?.timelineOverlay ?? []).map((t: any) => t.latencyA),
     [cmp]
   );
   const timelineLatB = useMemo(
     // @ts-ignore Sprint 85
-    () => (cmp?.timelineOverlay ?? []).map(t => t.latencyB),
+    () => (cmp?.timelineOverlay ?? []).map((t: any) => t.latencyB),
     [cmp]
   );
 

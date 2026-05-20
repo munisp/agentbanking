@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { FileCheck } from "lucide-react";
@@ -10,7 +9,7 @@ export default function ComplianceCertManager() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } =
     // @ts-ignore Sprint 85
-    trpc.complianceCertManager.list.useQuery(undefined, { retry: 1 });
+    trpc.complianceCertManager.list.useQuery(undefined, { retry: 1 }) as any;
   const mockData =
     liveData ??
     Array.from({ length: 10 }, (_, i) => ({

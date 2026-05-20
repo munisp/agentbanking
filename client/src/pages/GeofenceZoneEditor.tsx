@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
  * Geofence Zone Editor — Create, edit, and manage geofence zones
@@ -50,7 +49,7 @@ export default function GeofenceZoneEditor() {
   });
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const zones = trpc.geofencing.listZones.useQuery(undefined, { retry: false });
+  const zones = trpc.geofencing.listZones.useQuery(undefined, { retry: false }) as any;
   const createZone = trpc.geofencing.createZone.useMutation({
     onSuccess: () => {
       toast.success("Zone created");
@@ -59,14 +58,14 @@ export default function GeofenceZoneEditor() {
       resetForm();
     },
     onError: e => toast.error("Failed: " + e.message),
-  });
+  }) as any;
   const deleteZone = trpc.geofencing.deleteZone.useMutation({
     onSuccess: () => {
       toast.success("Zone deleted");
       zones.refetch();
     },
     onError: e => toast.error("Failed: " + e.message),
-  });
+  }) as any;
 
   const resetForm = () =>
     setNewZone({

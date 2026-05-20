@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,21 +24,21 @@ export default function LakehouseAiDashboard() {
   const [tab, setTab] = useState("overview");
   const health = trpc.lakehouseAi.health.useQuery(undefined, {
     refetchInterval: 30000,
-  });
+  }) as any;
   const analytics = trpc.lakehouseAi.analytics.useQuery(undefined, {
     refetchInterval: 15000,
-  });
-  const models = trpc.lakehouseAi.listModels.useQuery();
+  }) as any;
+  const models = trpc.lakehouseAi.listModels.useQuery() as any;
   const batchJobs = trpc.lakehouseAi.listBatchJobs.useQuery(undefined, {
     refetchInterval: 5000,
-  });
-  const lineage = trpc.lakehouseAi.dataLineage.useQuery();
+  }) as any;
+  const lineage = trpc.lakehouseAi.dataLineage.useQuery() as any;
   const promoteMut = trpc.lakehouseAi.promoteModel.useMutation({
     onSuccess: () => models.refetch(),
-  });
+  }) as any;
   const submitBatch = trpc.lakehouseAi.submitBatchJob.useMutation({
     onSuccess: () => batchJobs.refetch(),
-  });
+  }) as any;
 
   const svcStatus = health.data?.services ?? {};
   const stats = analytics.data;
@@ -96,7 +95,7 @@ export default function LakehouseAiDashboard() {
               icon: Workflow,
               color: "text-purple-500",
             },
-          ].map(svc => (
+          ].map((svc: any) => (
             <Card key={svc.key}>
               <CardContent className="pt-4 text-center">
                 <svc.icon className={`h-8 w-8 mx-auto ${svc.color}`} />
@@ -261,7 +260,7 @@ export default function LakehouseAiDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {models.data?.models.map(m => (
+                  {models.data?.models.map((m: any) => (
                     <tr key={m.id} className="border-b">
                       <td className="p-2 font-medium">{m.name}</td>
                       <td className="p-2">{m.version}</td>
@@ -283,7 +282,7 @@ export default function LakehouseAiDashboard() {
                         </Badge>
                       </td>
                       <td className="p-2">
-                        {Object.entries(m.metrics)
+                        {(Object.entries(m.metrics) as [string, any][])
                           .slice(0, 1)
                           .map(([k, v]) => (
                             <span key={k}>
@@ -361,7 +360,7 @@ export default function LakehouseAiDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {batchJobs.data?.jobs.map(j => (
+                  {batchJobs.data?.jobs.map((j: any) => (
                     <tr key={j.id} className="border-b">
                       <td className="p-2 font-mono">{j.id}</td>
                       <td className="p-2">{j.modelId}</td>
@@ -417,7 +416,7 @@ export default function LakehouseAiDashboard() {
               Data Pipelines (Lakehouse → AI Services)
             </h3>
             <div className="space-y-3">
-              {lineage.data?.pipelines.map(p => (
+              {lineage.data?.pipelines.map((p: any) => (
                 <Card key={p.id}>
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between">

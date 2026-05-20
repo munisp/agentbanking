@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function AdvancedNotificationsPage() {
-  const { data, isLoading } = trpc.advancedNotifications.dashboard.useQuery();
-  const templates = trpc.advancedNotifications.listTemplates.useQuery();
+  const { data, isLoading } = trpc.advancedNotifications.dashboard.useQuery() as any;
+  const templates = trpc.advancedNotifications.listTemplates.useQuery() as any;
 
   if (isLoading)
     return (

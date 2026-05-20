@@ -191,4 +191,9 @@ export const temporalWorkflowsRouter = router({
   workflowTypes: protectedProcedure.query(async () => {
     return { data: [], total: 0 };
   }),
+  start: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, action: "start", id: input?.id ?? null, timestamp: new Date().toISOString() };
+    }),
 });

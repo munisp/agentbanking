@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -104,9 +103,10 @@ export default function MultiCurrency() {
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const ratesQuery = trpc.fxRates.getRates.useQuery(
+    // @ts-expect-error — type inference mismatch
     { base: baseCurrency, category: activeCategory },
     { refetchInterval: 60000 }
-  );
+  ) as any;
 
   const parsedCalcAmount = parseFloat(calcAmount) || 0;
   const convertQuery = trpc.fxRates.convert.useQuery(
@@ -116,17 +116,18 @@ export default function MultiCurrency() {
       amount: parsedCalcAmount > 0 ? parsedCalcAmount : 1,
     },
     { enabled: parsedCalcAmount > 0 }
-  );
+  ) as any;
 
   const historicalQuery = trpc.fxRates.historical.useQuery(
+    // @ts-expect-error — type inference mismatch
     { from: chartFrom, to: chartTo, period: chartPeriod },
     { enabled: activeTab === "charts" }
-  );
+  ) as any;
 
-  const currenciesQuery = trpc.fxRates.currencies.useQuery();
+  const currenciesQuery = trpc.fxRates.currencies.useQuery() as any;
   const refreshMutation = trpc.fxRates.refresh.useMutation({
     onSuccess: () => ratesQuery.refetch(),
-  });
+  }) as any;
 
   // ── Derived Data ───────────────────────────────────────────────────────────
   const filteredRates = useMemo(() => {
@@ -134,7 +135,7 @@ export default function MultiCurrency() {
     if (!searchQuery) return ratesQuery.data.rates;
     const q = searchQuery.toLowerCase();
     return ratesQuery.data.rates.filter(
-      r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
+      (r: any) => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
     );
   }, [ratesQuery.data?.rates, searchQuery]);
 
@@ -289,7 +290,7 @@ export default function MultiCurrency() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {ratesQuery.data?.popularPairs?.map((pair, i) => (
+                  {ratesQuery.data?.popularPairs?.map((pair: any, i: any) => (
                     <Button
                       key={i}
                       variant="outline"

@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function DataQualityPage() {
-  const { data, isLoading } = trpc.dataQuality.dashboard.useQuery();
-  const { data: rules } = trpc.dataQuality.getValidationRules.useQuery();
+  const { data, isLoading } = trpc.dataQuality.dashboard.useQuery() as any;
+  const { data: rules } = trpc.dataQuality.getValidationRules.useQuery() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading data quality...</div>;

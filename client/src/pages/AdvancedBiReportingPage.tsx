@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 
 export default function AdvancedBiReportingPage() {
-  const { data, isLoading } = trpc.advancedBiReporting.dashboard.useQuery();
-  const { data: kpis } = trpc.advancedBiReporting.executiveKpis.useQuery();
-  const reportBuilder = trpc.advancedBiReporting.reportBuilder.useMutation();
+  const { data, isLoading } = trpc.advancedBiReporting.dashboard.useQuery() as any;
+  const { data: kpis } = trpc.advancedBiReporting.executiveKpis.useQuery() as any;
+  const reportBuilder = trpc.advancedBiReporting.reportBuilder.useQuery() as any;
   const [dims] = useState(["region", "product"]);
   const [measures] = useState(["transaction_count", "total_amount"]);
 
@@ -73,7 +72,7 @@ export default function AdvancedBiReportingPage() {
         <div>
           <h2 className="text-lg font-semibold mb-3">Executive KPIs</h2>
           <div className="grid grid-cols-3 gap-4">
-            {Object.entries(kpis).map(([key, v]) => (
+            {Object.entries(kpis).map(([key, v]: [string, any]) => (
               <div key={key} className="border rounded p-4">
                 <p className="text-sm text-muted-foreground capitalize">
                   {key.replace(/([A-Z])/g, " $1")}
@@ -132,7 +131,7 @@ export default function AdvancedBiReportingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reportBuilder.data.rows.map((row, i) => (
+                  {reportBuilder.data.rows.map((row: any, i: any) => (
                     <tr key={i} className="border-b">
                       {reportBuilder.data!.columns.map((c: any) => (
                         <td key={c} className="p-2">

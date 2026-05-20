@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -6,7 +5,7 @@ export default function EcommerceCheckout() {
   const customerId = 1; // From auth context
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [submitting, setSubmitting] = useState(false);
-  const [orderResult, setOrderResult] = useState(null);
+  const [orderResult, setOrderResult] = useState<any>(null);
 
   const [address, setAddress] = useState({
     street: "",
@@ -17,14 +16,14 @@ export default function EcommerceCheckout() {
     phone: "",
   });
 
-  const { data: cart } = trpc.ecommerceCart.getCart.useQuery({ customerId });
+  const { data: cart } = trpc.ecommerceCart.getCart.useQuery({ customerId }) as any;
   const createOrder = trpc.ecommerceOrders.createFromCart.useMutation({
     onSuccess: data => {
       setSubmitting(false);
       setOrderResult(data);
     },
     onError: () => setSubmitting(false),
-  });
+  }) as any;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +128,7 @@ export default function EcommerceCheckout() {
               "ussd",
               "mobile_money",
               "cash_on_delivery",
-            ].map(method => (
+            ].map((method: any) => (
               <label
                 key={method}
                 className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
@@ -150,7 +149,7 @@ export default function EcommerceCheckout() {
         {/* Order Summary */}
         <div className="border rounded-lg p-6 h-fit space-y-3">
           <h2 className="text-lg font-bold">Order Summary</h2>
-          {cart?.items?.map(item => (
+          {cart?.items?.map((item: any) => (
             <div key={item.id} className="flex justify-between text-sm">
               <span>
                 {item.name} × {item.quantity}

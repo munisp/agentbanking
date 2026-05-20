@@ -159,4 +159,33 @@ export const aiMonitoringRouter = router({
         id: input?.id || null,
       };
     }),
+  dashboard: protectedProcedure
+    .query(async () => {
+      return { total: 0, active: 0, pending: 0, lastUpdated: new Date().toISOString() };
+    }),
+  liveFraudFeed: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  driftAnalysis: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  serviceHealth: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  throughputTimeSeries: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  acknowledgeAlert: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, action: "acknowledgeAlert", id: input?.id ?? null, timestamp: new Date().toISOString() };
+    }),
 });

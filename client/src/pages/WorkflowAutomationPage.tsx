@@ -1,9 +1,9 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function WorkflowAutomationPage() {
-  const { data, isLoading } = trpc.workflowAutomation.dashboard.useQuery();
-  const approve = trpc.workflowAutomation.approveStep.useMutation();
+  // @ts-expect-error — type inference mismatch
+  const { data, isLoading } = trpc.workflowAutomation.dashboard.useQuery() as any;
+  const approve = trpc.workflowAutomation.approveStep.useMutation() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading workflows...</div>;

@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function OpenTelemetryPage() {
-  const { data, isLoading } = trpc.openTelemetry.dashboard.useQuery();
-  const { data: health } = trpc.openTelemetry.serviceHealth.useQuery();
+  const { data, isLoading } = trpc.openTelemetry.dashboard.useQuery() as any;
+  const { data: health } = trpc.openTelemetry.serviceHealth.useQuery() as any;
 
   if (isLoading)
     return (
@@ -70,7 +69,7 @@ export default function OpenTelemetryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.serviceMap.map((s, i) => (
+                  {data.serviceMap.map((s: any, i: any) => (
                     <tr key={i} className="border-b">
                       <td className="p-2">{s.source}</td>
                       <td className="p-2">{s.target}</td>

@@ -132,6 +132,16 @@ export const userNotifPreferencesRouter = router({
       quietHoursEnd: 7,
     };
   }),
+  categories: protectedProcedure.query(async () => {
+    return {
+      categories: [
+        { id: "transactions", label: "Transactions", enabled: true },
+        { id: "security", label: "Security Alerts", enabled: true },
+        { id: "marketing", label: "Marketing", enabled: false },
+        { id: "system", label: "System Updates", enabled: true },
+      ],
+    };
+  }),
   updateCategory: protectedProcedure
     .input(z.object({ categoryId: z.string(), enabled: z.boolean() }))
     .mutation(async ({ input }) => {

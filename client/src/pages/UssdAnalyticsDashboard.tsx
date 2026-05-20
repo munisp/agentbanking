@@ -1,4 +1,3 @@
-// @ts-nocheck
 // UssdAnalyticsDashboard — Sprint 77
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -7,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Phone, TrendingUp, AlertTriangle, BarChart3 } from "lucide-react";
 
 export default function UssdAnalyticsDashboard() {
-  const summary = trpc.ussdAnalytics.getSummary.useQuery();
+  const summary = trpc.ussdAnalytics.getSummary.useQuery() as any;
 
   return (
     <DashboardLayout>

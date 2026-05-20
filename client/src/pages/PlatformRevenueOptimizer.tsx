@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +9,12 @@ import { trpc } from "@/lib/trpc";
 
 export default function PlatformRevenueOptimizer() {
   const [search, setSearch] = useState("");
-  const stats = trpc.platformRevenueOptimizer.getStats.useQuery();
-  const list = trpc.platformRevenueOptimizer.listExperiments.useQuery();
+  const stats = trpc.platformRevenueOptimizer.getStats.useQuery() as any;
+  const list = trpc.platformRevenueOptimizer.listExperiments.useQuery() as any;
   const action = trpc.platformRevenueOptimizer.createExperiment.useMutation({
     onSuccess: () => toast.success("Create Experiment completed successfully"),
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   return (
     <DashboardLayout>
@@ -46,7 +45,7 @@ export default function PlatformRevenueOptimizer() {
         {/* Stats Cards */}
         {stats.isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4].map((i: any) => (
               <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
             ))}
           </div>

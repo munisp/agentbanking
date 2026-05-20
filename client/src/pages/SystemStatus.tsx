@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -111,10 +110,7 @@ export default function SystemStatus() {
     runHealthChecks();
     const interval = setInterval(runHealthChecks, 30000);
     // Sprint 87: Wired to serviceHealth router
-    const { data, isLoading } = trpc.serviceHealth.getAll.useQuery({
-      page: 1,
-      limit: 10,
-    });
+    const { data, isLoading } = trpc.serviceHealth.getAll.useQuery() as any;
 
     return () => clearInterval(interval);
   }, []);
@@ -165,7 +161,7 @@ export default function SystemStatus() {
 
         {/* Overall Status Banner */}
         <div
-          className={`rounded-lg border p-6 text-center ${statusColors[overallStatus]}`}
+          className={`rounded-lg border p-6 text-center ${(statusColors as any)[overallStatus]}`}
         >
           {overallStatus === "healthy" ? (
             <CheckCircle className="h-10 w-10 mx-auto mb-2" />
@@ -202,7 +198,7 @@ export default function SystemStatus() {
                     <Clock className="h-3 w-3" />
                     {check.latency}ms
                   </div>
-                  <Badge className={statusColors[check.status]}>
+                  <Badge className={(statusColors as any)[check.status]}>
                     {check.status}
                   </Badge>
                 </div>

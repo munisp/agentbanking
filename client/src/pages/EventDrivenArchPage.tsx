@@ -1,13 +1,12 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function EventDrivenArchPage() {
   // @ts-ignore Sprint 85
-  const { data, isLoading } = trpc.eventDrivenArch.dashboard.useQuery();
+  const { data, isLoading } = trpc.eventDrivenArch.dashboard.useQuery() as any;
   // @ts-ignore Sprint 85
-  const dlq = trpc.eventDrivenArch.getDeadLetterQueue.useQuery({ limit: 20 });
+  const dlq = trpc.eventDrivenArch.getDeadLetterQueue.useQuery({ limit: 20 }) as any;
 
   if (isLoading)
     return (

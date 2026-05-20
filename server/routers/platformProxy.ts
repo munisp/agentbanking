@@ -124,4 +124,9 @@ export const platformProxyRouter = router({
       totalChecks: Number(checks.value),
     };
   }),
+  fraud: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Sprint 92 — Ransomware & Security Alert Dashboard
  *
@@ -151,12 +150,13 @@ export default function RansomwareAlertDashboard() {
     "resolved"
   );
 
-  const stats = trpc.ransomwareAlerts.getStats.useQuery();
+  const stats = trpc.ransomwareAlerts.getStats.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
   const alerts = trpc.ransomwareAlerts.getAlerts.useQuery({
     category: categoryFilter as any,
     severity: severityFilter as any,
     status: statusFilter as any,
-  });
+  }) as any;
 
   const acknowledgeMut = trpc.ransomwareAlerts.acknowledge.useMutation({
     onSuccess: () => {
@@ -166,8 +166,9 @@ export default function RansomwareAlertDashboard() {
       setActionDialog(null);
       setActionNote("");
     },
-  });
+  }) as any;
 
+  // @ts-expect-error — type inference mismatch
   const investigateMut = trpc.ransomwareAlerts.investigate.useMutation({
     onSuccess: () => {
       toast.success(
@@ -178,8 +179,9 @@ export default function RansomwareAlertDashboard() {
       setActionDialog(null);
       setActionNote("");
     },
-  });
+  }) as any;
 
+  // @ts-expect-error — type inference mismatch
   const resolveMut = trpc.ransomwareAlerts.resolve.useMutation({
     onSuccess: () => {
       toast.success("Alert resolved: The alert has been resolved.");
@@ -188,7 +190,7 @@ export default function RansomwareAlertDashboard() {
       setActionDialog(null);
       setActionNote("");
     },
-  });
+  }) as any;
 
   // Auto-refresh every 15 seconds
   useEffect(() => {

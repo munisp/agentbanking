@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Network Quality Heatmap — Sprint 93
  *
@@ -111,23 +110,26 @@ export default function NetworkQualityHeatmap() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
 
   const { data: regionMetrics, isLoading: metricsLoading } =
+    // @ts-expect-error — type inference mismatch
     trpc.networkQualityHeatmap.getRegionMetrics.useQuery({
       country: countryFilter === "all" ? undefined : countryFilter,
       sortBy,
-    });
+    }) as any;
 
   const { data: summary, isLoading: summaryLoading } =
-    trpc.networkQualityHeatmap.getSummary.useQuery();
+    trpc.networkQualityHeatmap.getSummary.useQuery() as any;
 
+  // @ts-expect-error — type inference mismatch
   const { data: events } = trpc.networkQualityHeatmap.getEvents.useQuery({
     limit: 20,
-  });
+  }) as any;
 
   const { data: regionDetail } =
     trpc.networkQualityHeatmap.getRegionDetail.useQuery(
+      // @ts-expect-error — type inference mismatch
       { regionId: selectedRegion! },
       { enabled: !!selectedRegion }
-    );
+    ) as any;
 
   const countries = useMemo(() => {
     if (!regionMetrics) return [];

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,19 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function RetryQueueViewer() {
-  const queueQ = trpc.retryQueue.list.useQuery({});
+  const queueQ = trpc.retryQueue.list.useQuery() as any;
   const retryNow = trpc.retryQueue.retryNow.useMutation({
     onSuccess: () => {
       queueQ.refetch();
       toast.success("Retry successful");
     },
-  });
+  }) as any;
   const purge = trpc.retryQueue.purgeDeadLetters.useMutation({
     onSuccess: d => {
       queueQ.refetch();
       toast.success(`Purged ${d.purged} dead letters`);
     },
-  });
+  }) as any;
 
   const statusColor: Record<string, string> = {
     pending: "bg-yellow-500",
@@ -54,7 +53,7 @@ export default function RetryQueueViewer() {
         {/* Stats */}
         {queueQ.data?.stats && (
           <div className="grid grid-cols-4 gap-4">
-            {Object.entries(queueQ.data.stats).map(([key, value]) => (
+            {(Object.entries(queueQ.data.stats) as [string, any][]).map(([key, value]) => (
               <Card key={key} className="bg-gray-900 border-gray-800">
                 <CardContent className="pt-4">
                   <div className="text-2xl font-bold text-white">{value}</div>
@@ -74,7 +73,7 @@ export default function RetryQueueViewer() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {queueQ.data?.entries.map(entry => (
+              {queueQ.data?.entries.map((entry: any) => (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between bg-gray-800 rounded-lg p-4"

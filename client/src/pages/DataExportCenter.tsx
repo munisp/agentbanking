@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,14 +9,14 @@ export default function DataExportCenter() {
   const [selectedTable, setSelectedTable] = useState("");
   const [format, setFormat] = useState<"csv" | "json" | "pdf">("csv");
 
-  const tablesQ = trpc.dataExport.availableTables.useQuery();
-  const jobsQ = trpc.dataExport.listJobs.useQuery();
+  const tablesQ = trpc.dataExport.availableTables.useQuery() as any;
+  const jobsQ = trpc.dataExport.listJobs.useQuery() as any;
   const createJob = trpc.dataExport.createJob.useMutation({
     onSuccess: () => {
       jobsQ.refetch();
       toast.success("Export job created");
     },
-  });
+  }) as any;
 
   const statusColor: Record<string, string> = {
     queued: "bg-gray-500",
@@ -58,7 +57,7 @@ export default function DataExportCenter() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-sm"
                 >
                   <option value="">Select table...</option>
-                  {tablesQ.data?.map(t => (
+                  {tablesQ.data?.map((t: any) => (
                     <option key={t.name} value={t.name}>
                       {t.label} (~{t.estimatedRows.toLocaleString()} rows)
                     </option>
@@ -70,7 +69,7 @@ export default function DataExportCenter() {
                   Format
                 </label>
                 <div className="flex gap-1">
-                  {(["csv", "json", "pdf"] as const).map(f => (
+                  {(["csv", "json", "pdf"] as const).map((f: any) => (
                     <button
                       key={f}
                       onClick={() => setFormat(f)}
@@ -101,7 +100,7 @@ export default function DataExportCenter() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {jobsQ.data?.jobs.map(job => (
+              {jobsQ.data?.jobs.map((job: any) => (
                 <div
                   key={job.id}
                   className="flex items-center justify-between bg-gray-800 rounded-lg p-3"

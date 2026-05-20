@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,10 +8,12 @@ import { Smartphone, Wallet, ArrowUpDown, TrendingUp } from "lucide-react";
 
 export default function MobileMoneyPage() {
   const [search, setSearch] = useState("");
-  const providers = trpc.mobileMoney.providers.useQuery();
-  const wallets = trpc.mobileMoney.wallets.useQuery({ search, limit: 20 });
-  const txns = trpc.mobileMoney.transactions.useQuery({ limit: 20 });
-  const analytics = trpc.mobileMoney.analytics.useQuery();
+  const providers = trpc.mobileMoney.providers.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const wallets = trpc.mobileMoney.wallets.useQuery({ search, limit: 20 }) as any;
+  // @ts-expect-error — type inference mismatch
+  const txns = trpc.mobileMoney.transactions.useQuery({ limit: 20 }) as any;
+  const analytics = trpc.mobileMoney.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

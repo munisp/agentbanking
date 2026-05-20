@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 
 export default function SlaManagementPage() {
-  const { data } = trpc.slaManagement.dashboard.useQuery();
+  const { data } = trpc.slaManagement.dashboard.useQuery() as any;
 
   const statusIcon = (s: string) =>
     s === "met" ? (

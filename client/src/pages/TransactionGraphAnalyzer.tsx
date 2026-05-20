@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,13 +9,13 @@ import { trpc } from "@/lib/trpc";
 
 export default function TransactionGraphAnalyzer() {
   const [search, setSearch] = useState("");
-  const stats = trpc.transactionGraphAnalyzer.getStats.useQuery();
-  const list = trpc.transactionGraphAnalyzer.listClusters.useQuery();
+  const stats = trpc.transactionGraphAnalyzer.getStats.useQuery() as any;
+  const list = trpc.transactionGraphAnalyzer.listClusters.useQuery() as any;
   const action = trpc.transactionGraphAnalyzer.analyzeTransaction.useMutation({
     onSuccess: () =>
       toast.success("Analyze Transaction completed successfully"),
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   return (
     <DashboardLayout>
@@ -47,7 +46,7 @@ export default function TransactionGraphAnalyzer() {
         {/* Stats Cards */}
         {stats.isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4].map((i: any) => (
               <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
             ))}
           </div>

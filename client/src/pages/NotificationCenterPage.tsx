@@ -1,8 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function NotificationCenterPage() {
-  const { data, isLoading } = trpc.notificationCenter.dashboard.useQuery();
+  // @ts-expect-error — type inference mismatch
+  const { data, isLoading } = trpc.notificationCenter.dashboard.useQuery() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading notifications...</div>;

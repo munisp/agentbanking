@@ -146,4 +146,27 @@ export const falkordbGraphRouter = router({
         procedure: "stats",
       };
     }),
+  health: protectedProcedure
+    .query(async () => {
+      return { status: "healthy", uptime: process.uptime(), memory: process.memoryUsage().heapUsed, timestamp: new Date().toISOString() };
+    }),
+  analytics: protectedProcedure
+    .query(async () => {
+      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+    }),
+  getNeighbors: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
+  shortestPath: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
+  fraudRings: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
 });

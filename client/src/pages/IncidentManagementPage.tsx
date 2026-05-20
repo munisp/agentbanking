@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Clock, BookOpen } from "lucide-react";
 
 export default function IncidentManagementPage() {
-  const { data } = trpc.incidentManagement.dashboard.useQuery();
+  const { data } = trpc.incidentManagement.dashboard.useQuery() as any;
 
   return (
     <div className="p-6 space-y-6">

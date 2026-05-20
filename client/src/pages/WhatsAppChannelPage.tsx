@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -11,10 +10,12 @@ export default function WhatsAppChannelPage() {
   const [tab, setTab] = useState<"messages" | "templates" | "contacts">(
     "messages"
   );
-  const messages = trpc.whatsappChannel.messages.useQuery({ limit: 20 });
-  const templates = trpc.whatsappChannel.templates.useQuery();
-  const contacts = trpc.whatsappChannel.messages.useQuery({ limit: 20 });
-  const analytics = trpc.whatsappChannel.analytics.useQuery();
+  // @ts-expect-error — type inference mismatch
+  const messages = trpc.whatsappChannel.messages.useQuery({ limit: 20 }) as any;
+  const templates = trpc.whatsappChannel.templates.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const contacts = trpc.whatsappChannel.messages.useQuery({ limit: 20 }) as any;
+  const analytics = trpc.whatsappChannel.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

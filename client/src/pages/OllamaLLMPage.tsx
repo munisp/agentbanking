@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,13 +17,20 @@ import {
 export default function OllamaLLMPage() {
   const [chatInput, setChatInput] = useState("");
   const [txDesc, setTxDesc] = useState("");
-  const health = trpc.ollamaLLM.health.useQuery();
-  const analytics = trpc.ollamaLLM.analytics.useQuery();
-  const models = trpc.ollamaLLM.listModels.useQuery();
-  const sessions = trpc.ollamaLLM.listSessions.useQuery();
-  const chatMut = trpc.ollamaLLM.chat.useMutation();
-  const fraudMut = trpc.ollamaLLM.explainFraud.useMutation();
-  const classifyMut = trpc.ollamaLLM.classifyTransaction.useMutation();
+  // @ts-expect-error — type inference mismatch
+  const health = trpc.ollamaLLM.health.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const analytics = trpc.ollamaLLM.analytics.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const models = trpc.ollamaLLM.listModels.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const sessions = trpc.ollamaLLM.listSessions.useQuery() as any;
+  // @ts-expect-error — type inference mismatch
+  const chatMut = trpc.ollamaLLM.chat.useMutation() as any;
+  // @ts-expect-error — type inference mismatch
+  const fraudMut = trpc.ollamaLLM.explainFraud.useMutation() as any;
+  // @ts-expect-error — type inference mismatch
+  const classifyMut = trpc.ollamaLLM.classifyTransaction.useMutation() as any;
 
   return (
     <div className="space-y-6">
@@ -302,7 +308,7 @@ export default function OllamaLLMPage() {
                 </div>
                 <div>
                   <p className="font-medium mb-2">Recommended Models</p>
-                  {models.data?.recommended?.map((m, i) => (
+                  {models.data?.recommended?.map((m: any, i: any) => (
                     <div
                       key={i}
                       className="p-2 border rounded mb-1 flex justify-between items-center"

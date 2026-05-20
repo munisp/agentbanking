@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
@@ -16,12 +15,12 @@ export default function EcommerceProductCatalog() {
       categoryId,
       search: search || undefined,
       active: true,
-    });
+    }) as any;
 
-  const { data: categories } = trpc.ecommerceCatalog.listCategories.useQuery();
+  const { data: categories } = trpc.ecommerceCatalog.listCategories.useQuery() as any;
   const { data: lowStock } = trpc.ecommerceCatalog.lowStockAlerts.useQuery({
     limit: 10,
-  });
+  }) as any;
 
   return (
     <div className="p-6 space-y-6">
@@ -43,7 +42,7 @@ export default function EcommerceProductCatalog() {
             className="px-3 py-2 border rounded-lg"
           >
             <option value="">All Categories</option>
-            {categories?.categories.map(cat => (
+            {categories?.categories.map((cat: any) => (
               <option key={cat.id} value={cat.id}>
                 {cat.name}
               </option>
@@ -59,7 +58,7 @@ export default function EcommerceProductCatalog() {
             ⚠️ Low Stock Alerts ({lowStock.count})
           </h3>
           <div className="mt-2 text-sm text-yellow-700">
-            {lowStock.alerts.slice(0, 5).map(item => (
+            {lowStock.alerts.slice(0, 5).map((item: any) => (
               <div key={item.id}>
                 {item.sku}: {item.quantity - item.reserved} units available
               </div>
@@ -74,7 +73,7 @@ export default function EcommerceProductCatalog() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {products?.products.map(product => (
+            {products?.products.map((product: any) => (
               <div
                 key={product.id}
                 className="border rounded-lg p-4 hover:shadow-md transition-shadow"

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -12,19 +11,19 @@ export default function EcommerceOrderManagement() {
     status: statusFilter || undefined,
     limit,
     offset: page * limit,
-  });
+  }) as any;
 
   const { data: orderDetail } = trpc.ecommerceOrders.getOrder.useQuery(
     { id: selectedOrder! },
     { enabled: !!selectedOrder }
-  );
+  ) as any;
 
   const updateStatus = trpc.ecommerceOrders.updateStatus.useMutation({
     onSuccess: () => {
       refetch();
       setSelectedOrder(null);
     },
-  });
+  }) as any;
 
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800",
@@ -85,7 +84,7 @@ export default function EcommerceOrderManagement() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {orders?.orders.map(order => (
+            {orders?.orders.map((order: any) => (
               <tr key={order.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-mono">
                   {order.orderNumber}
@@ -179,7 +178,7 @@ export default function EcommerceOrderManagement() {
               </div>
               <hr />
               <h3 className="font-medium">Items:</h3>
-              {orderDetail.items?.map(item => (
+              {orderDetail.items?.map((item: any) => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span>
                     {item.name} × {item.quantity}

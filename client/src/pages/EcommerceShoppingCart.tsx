@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -8,22 +7,22 @@ export default function EcommerceShoppingCart() {
 
   const { data: cart, refetch } = trpc.ecommerceCart.getCart.useQuery({
     customerId,
-  });
+  }) as any;
   const updateItem = trpc.ecommerceCart.updateItem.useMutation({
     onSuccess: () => refetch(),
-  });
+  }) as any;
   const removeItem = trpc.ecommerceCart.removeItem.useMutation({
     onSuccess: () => refetch(),
-  });
+  }) as any;
   const clearCart = trpc.ecommerceCart.clearCart.useMutation({
     onSuccess: () => refetch(),
-  });
+  }) as any;
   const syncOffline = trpc.ecommerceCart.syncOfflineCart.useMutation({
     onSuccess: () => {
       setSyncing(false);
       refetch();
     },
-  });
+  }) as any;
 
   const handleSyncOffline = () => {
     // Get offline cart from localStorage
@@ -78,7 +77,7 @@ export default function EcommerceShoppingCart() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
-            {cart.items.map(item => (
+            {cart.items.map((item: any) => (
               <div
                 key={item.id}
                 className="border rounded-lg p-4 flex justify-between items-center"

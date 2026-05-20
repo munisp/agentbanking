@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,8 +6,8 @@ import { ToggleLeft, ToggleRight, FlaskConical } from "lucide-react";
 
 export default function FeatureFlagsPage() {
   // @ts-ignore Sprint 85
-  const { data } = trpc.featureFlags.dashboard.useQuery();
-  const toggleMut = trpc.featureFlags.toggleFlag.useMutation();
+  const { data } = trpc.featureFlags.dashboard.useQuery() as any;
+  const toggleMut = trpc.featureFlags.toggleFlag.useMutation() as any;
   const utils = trpc.useUtils();
 
   return (

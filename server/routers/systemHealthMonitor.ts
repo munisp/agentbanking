@@ -156,4 +156,29 @@ export const systemHealthMonitorRouter = router({
         procedure: "config",
       };
     }),
+  transactionVolume: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional(), hours: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  userActivity: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional(), hours: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  apiLatency: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional(), hours: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  errorTracking: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional(), hours: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
+  securityEvents: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional(), hours: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, timestamp: new Date().toISOString() };
+    }),
 });

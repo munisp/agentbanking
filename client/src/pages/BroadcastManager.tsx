@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * BroadcastManager — Admin page to compose, schedule, and manage system-wide announcements
  */
@@ -69,7 +68,7 @@ function ComposeDialog({ onCreated }: { onCreated: () => void }) {
       onCreated();
     },
     onError: (err: any) => toast.error(err.message),
-  });
+  }) as any;
 
   const toggleChannel = (ch: string) => {
     setChannels(prev =>
@@ -204,22 +203,22 @@ function ComposeDialog({ onCreated }: { onCreated: () => void }) {
 
 export default function BroadcastManager() {
   const utils = trpc.useUtils();
-  const { data: listData, isLoading } = trpc.broadcast.list.useQuery({});
-  const { data: stats } = trpc.broadcast.stats.useQuery();
+  const { data: listData, isLoading } = trpc.broadcast.list.useQuery({}) as any;
+  const { data: stats } = trpc.broadcast.stats.useQuery() as any;
 
   const pinMutation = trpc.broadcast.togglePin.useMutation({
     onSuccess: () => {
       utils.broadcast.list.invalidate();
       utils.broadcast.stats.invalidate();
     },
-  });
+  }) as any;
   const deleteMutation = trpc.broadcast.delete.useMutation({
     onSuccess: () => {
       utils.broadcast.list.invalidate();
       utils.broadcast.stats.invalidate();
       toast.success("Announcement deleted");
     },
-  });
+  }) as any;
 
   return (
     <DashboardLayout>

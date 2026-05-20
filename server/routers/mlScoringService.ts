@@ -156,4 +156,28 @@ export const mlScoringServiceRouter = router({
         procedure: "config",
       };
     }),
+  analytics: protectedProcedure
+    .query(async () => {
+      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+    }),
+  scoringHistory: protectedProcedure
+    .input(z.object({ limit: z.number().default(20), offset: z.number().default(0) }).optional())
+    .query(async ({ input }) => {
+      return { items: [], total: 0 };
+    }),
+  scoreTransaction: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, action: "scoreTransaction", id: input?.id ?? null, timestamp: new Date().toISOString() };
+    }),
+  batchScore: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, action: "batchScore", id: input?.id ?? null, timestamp: new Date().toISOString() };
+    }),
+  explainScore: protectedProcedure
+    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return { data: null, id: input?.id ?? null };
+    }),
 });

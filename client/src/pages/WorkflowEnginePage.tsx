@@ -48,7 +48,7 @@ export default function WorkflowEnginePage() {
   const instancesQuery = trpc.workflowEngine.listInstances.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.workflowEngine.getStats.useQuery();
   const createMutation = trpc.workflowEngine.createDefinition.useMutation({
     onSuccess: () => {
@@ -58,7 +58,7 @@ export default function WorkflowEnginePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const triggerMutation = trpc.workflowEngine.triggerWorkflow.useMutation({
     onSuccess: () => {
       instancesQuery.refetch();
@@ -174,9 +174,9 @@ export default function WorkflowEnginePage() {
                         <div className="h-8 bg-zinc-700/50 rounded animate-pulse" />
                       </td>
                     </tr>
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                   ))
-                : // @ts-ignore
+                : // @ts-ignore Sprint 85
                   (defsQuery.data ?? []).map((d: any) => (
                     <tr
                       key={d.id}
@@ -244,9 +244,9 @@ export default function WorkflowEnginePage() {
                         <div className="h-8 bg-zinc-700/50 rounded animate-pulse" />
                       </td>
                     </tr>
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                   ))
-                : // @ts-ignore
+                : // @ts-ignore Sprint 85
                   (instancesQuery.data ?? []).map((inst: any) => (
                     <tr
                       key={inst.id}

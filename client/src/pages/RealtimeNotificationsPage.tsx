@@ -7,10 +7,10 @@ import { Bell, Send, Check, Trash2, Settings } from "lucide-react";
 
 export default function RealtimeNotificationsPage() {
   const { data: dashboard, isLoading } =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.realtimeNotifications.dashboard.useQuery();
   const markRead = trpc.realtimeNotifications.markRead.useMutation();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const send = trpc.realtimeNotifications.broadcast.useMutation();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -119,7 +119,7 @@ export default function RealtimeNotificationsPage() {
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        // @ts-ignore
+                        // @ts-ignore Sprint 85
                         markRead.mutate({ notificationIds: [n.id] })
                       }
                     >

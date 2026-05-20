@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 
 export const geoFenceDedicatedRouter = router({
-  zones: publicProcedure.query(async () => {
+  zones: protectedProcedure.query(async () => {
     return {
       zones: [
         {
@@ -26,7 +26,7 @@ export const geoFenceDedicatedRouter = router({
       ],
     };
   }),
-  agentLocations: publicProcedure.query(async () => {
+  agentLocations: protectedProcedure.query(async () => {
     return {
       locations: [
         {
@@ -39,7 +39,7 @@ export const geoFenceDedicatedRouter = router({
       ],
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalZones: 15,
       activeZones: 12,

@@ -35,9 +35,9 @@ export default function AgentLoanFacilityPage() {
     purpose: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const loansQuery = trpc.agentLoanFacility.listLoans.useQuery({ limit: 100 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.agentLoanFacility.getStats.useQuery();
   const applyMutation = trpc.agentLoanFacility.applyLoan.useMutation({
     onSuccess: () => {
@@ -47,7 +47,7 @@ export default function AgentLoanFacilityPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const approveMutation = trpc.agentLoanFacility.approveLoan.useMutation({
     onSuccess: () => {
       loansQuery.refetch();
@@ -55,7 +55,7 @@ export default function AgentLoanFacilityPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rejectMutation = trpc.agentLoanFacility.rejectLoan.useMutation({
     onSuccess: () => {
       loansQuery.refetch();
@@ -88,10 +88,10 @@ export default function AgentLoanFacilityPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Create Loan Application",
                   description: "Feature ready for integration",
                 });
@@ -101,10 +101,10 @@ export default function AgentLoanFacilityPage() {
               + Create Loan Application
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Loan",
                   description: "Select a loan to edit",
                 });
@@ -114,10 +114,10 @@ export default function AgentLoanFacilityPage() {
               ✏️ Edit Loan
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Loan",
                   description: "Select a loan to delete",
                 });
@@ -369,11 +369,11 @@ export default function AgentLoanFacilityPage() {
                 >
                   Cancel
                 </button>
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 <button
                   onClick={() =>
                     applyMutation.mutate({
-                      // @ts-ignore
+                      // @ts-ignore Sprint 85
                       agent_id: parseInt(applyForm.agent_id),
                       principal_amount: parseFloat(applyForm.principal_amount),
                       tenure_months: parseInt(applyForm.tenure_months),

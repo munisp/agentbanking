@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
+// Emoji types: "thumbsUp", "heart", "celebrate", "laugh", "sad"
 export const announcementReactionsRouter = router({
   list: protectedProcedure
     .input(
@@ -14,25 +15,32 @@ export const announcementReactionsRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +63,8 @@ export const announcementReactionsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,

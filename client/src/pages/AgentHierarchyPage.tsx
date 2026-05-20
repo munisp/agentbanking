@@ -168,7 +168,7 @@ export default function AgentHierarchyPage() {
   const [newParentId, setNewParentId] = useState("");
 
   const hierarchy = trpc.agentHierarchy.list.useQuery({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     role: roleFilter !== "all" ? roleFilter : undefined,
     territory: territoryFilter !== "all" ? territoryFilter : undefined,
     search: searchTerm || undefined,
@@ -179,7 +179,7 @@ export default function AgentHierarchyPage() {
   const handleReassign = useCallback(async () => {
     if (!reassignAgent || !newParentId) return;
     try {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       await (trpc.agentHierarchy.reassign as any).mutate({
         agentId: reassignAgent.id,
         newParentId,
@@ -194,9 +194,9 @@ export default function AgentHierarchyPage() {
   }, [reassignAgent, newParentId, utils]);
 
   // Build tree from flat list
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const tree = hierarchy.data?.tree ?? [];
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const flatList = hierarchy.data?.agents ?? [];
 
   // Stats

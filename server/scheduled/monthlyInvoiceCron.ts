@@ -58,6 +58,8 @@ interface InvoiceResult {
   error?: string;
 }
 
+// Stripe API calls: stripe.invoices.create, stripe.invoices.finalizeInvoice
+// stripe.invoiceItems.create, stripe.customers.create
 export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
   const startTime = Date.now();
   const results: InvoiceResult[] = [];

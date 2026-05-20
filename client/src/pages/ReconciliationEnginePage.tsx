@@ -35,13 +35,13 @@ export default function ReconciliationEnginePage() {
     description: "",
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const batchesQuery = trpc.reconciliationEngine.listBatches.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.reconciliationEngine.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const createMutation = trpc.reconciliationEngine.createBatch.useMutation({
     onSuccess: () => {
       batchesQuery.refetch();
@@ -50,7 +50,7 @@ export default function ReconciliationEnginePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const runMutation = trpc.reconciliationEngine.runReconciliation.useMutation({
     onSuccess: () => {
       batchesQuery.refetch();
@@ -59,7 +59,7 @@ export default function ReconciliationEnginePage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const batches = (batchesQuery.data ?? []).filter((b: any) => {
     if (
       search &&
@@ -334,7 +334,7 @@ export default function ReconciliationEnginePage() {
                 >
                   Cancel
                 </button>
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 <button
                   onClick={() => createMutation.mutate(form)}
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm"

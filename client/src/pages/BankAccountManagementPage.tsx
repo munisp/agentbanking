@@ -23,7 +23,7 @@ export default function BankAccountManagementPage() {
     routingNumber: "",
     accountType: "checking",
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.bankAccountManagement.list.useQuery();
   const addMut = trpc.bankAccountManagement.create.useMutation({
     onSuccess: () => {
@@ -31,14 +31,14 @@ export default function BankAccountManagementPage() {
       setShowAdd(false);
     },
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMut = trpc.bankAccountManagement.delete.useMutation({
     onSuccess: () => toast.success("Account removed"),
   });
   const verifyMut = trpc.bankAccountManagement.verify.useMutation({
     onSuccess: () => toast.success("Account verified"),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const accounts = (data?.accounts || []).filter(
     (a: any) =>
       !search ||
@@ -102,9 +102,9 @@ export default function BankAccountManagementPage() {
               <option value="savings">Savings</option>
               <option value="mobile_money">Mobile Money</option>
             </select>
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             <Button
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               onClick={() => addMut.mutate(form)}
               disabled={addMut.isPending}
             >

@@ -2,7 +2,7 @@
  * Sprint 52 — System Settings
  * F07: Centralized settings management with sections
  */
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -42,7 +42,7 @@ function SettingField({
   children: React.ReactNode;
 }) {
   // Sprint 87: Wired to sysConfig router
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data, isLoading } = trpc.sysConfig.getAll.useQuery({
     page: 1,
     limit: 10,

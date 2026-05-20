@@ -31,9 +31,9 @@ export default function DynamicFeeEnginePage() {
   });
 
   const rulesQuery = trpc.dynamicFeeEngine.listRules.useQuery({ limit: 100 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.dynamicFeeEngine.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const simulateQuery = trpc.dynamicFeeEngine.simulateFee.useQuery(
     { amount: parseFloat(simAmount) || 0, transaction_type: simTxType },
     { enabled: false }
@@ -54,7 +54,7 @@ export default function DynamicFeeEnginePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMutation = trpc.dynamicFeeEngine.deleteRule.useMutation({
     onSuccess: () => {
       rulesQuery.refetch();
@@ -63,7 +63,7 @@ export default function DynamicFeeEnginePage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rules = (rulesQuery.data ?? []).filter((r: any) => {
     if (search && !r.description?.toLowerCase().includes(search.toLowerCase()))
       return false;
@@ -459,10 +459,10 @@ export default function DynamicFeeEnginePage() {
                       min_amount: parseFloat(form.min_amount) || 0,
                       max_amount: parseFloat(form.max_amount) || 0,
                     };
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                     if (editRule)
                       updateMutation.mutate({ id: editRule.id, ...data });
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                     else createMutation.mutate(data);
                   }}
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm"

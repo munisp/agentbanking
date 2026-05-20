@@ -34,15 +34,15 @@ export default function NotificationOrchestratorPage() {
     variables: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const templatesQuery = trpc.notificationOrchestrator.listTemplates.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.notificationOrchestrator.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.notificationOrchestrator.createTemplate.useMutation({
       onSuccess: () => {
         templatesQuery.refetch();
@@ -52,9 +52,9 @@ export default function NotificationOrchestratorPage() {
       },
       onError: (e: any) => toast.error(e.message),
     });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const updateMutation =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.notificationOrchestrator.updateTemplate.useMutation({
       onSuccess: () => {
         templatesQuery.refetch();
@@ -64,9 +64,9 @@ export default function NotificationOrchestratorPage() {
       },
       onError: (e: any) => toast.error(e.message),
     });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMutation =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.notificationOrchestrator.deleteTemplate.useMutation({
       onSuccess: () => {
         templatesQuery.refetch();
@@ -74,9 +74,9 @@ export default function NotificationOrchestratorPage() {
       },
       onError: (e: any) => toast.error(e.message),
     });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const sendMutation =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.notificationOrchestrator.sendNotification.useMutation({
       onSuccess: () => toast.success("Notification sent"),
       onError: (e: any) => toast.error(e.message),

@@ -12,29 +12,29 @@ export default function PlatformConfigCenter() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.platformConfigCenter.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Flags",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalFlags != null ? String(stats.totalFlags) : "—",
     },
     {
       label: "Enabled Flags",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.enabledFlags != null ? String(stats.enabledFlags) : "—",
     },
     {
       label: "Disabled Flags",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.disabledFlags != null ? String(stats.disabledFlags) : "—",
     },
     {
       label: "System Params",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.systemParams != null ? String(stats.systemParams) : "—",
     },
   ];

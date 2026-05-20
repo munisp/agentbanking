@@ -26,17 +26,17 @@ export default function WebhookManagementPage() {
     secret: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const endpointsQuery = trpc.webhookManagement.listEndpoints.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deliveriesQuery = trpc.webhookManagement.listDeliveries.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.webhookManagement.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation = trpc.webhookManagement.createEndpoint.useMutation({
     onSuccess: () => {
       endpointsQuery.refetch();
@@ -45,7 +45,7 @@ export default function WebhookManagementPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const updateMutation = trpc.webhookManagement.updateEndpoint.useMutation({
     onSuccess: () => {
       endpointsQuery.refetch();
@@ -54,7 +54,7 @@ export default function WebhookManagementPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMutation = trpc.webhookManagement.deleteEndpoint.useMutation({
     onSuccess: () => {
       endpointsQuery.refetch();
@@ -62,7 +62,7 @@ export default function WebhookManagementPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const retryMutation = trpc.webhookManagement.retryDelivery.useMutation({
     onSuccess: () => {
       deliveriesQuery.refetch();
@@ -163,13 +163,13 @@ export default function WebhookManagementPage() {
                 <div className="h-12 bg-zinc-700/50 rounded animate-pulse" />
               </div>
             ))
-          ) : // @ts-ignore
+          ) : // @ts-ignore Sprint 85
           ((endpointsQuery.data ?? []) as any[]).length === 0 ? (
             <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-8 text-center text-zinc-500">
               No webhook endpoints configured
             </div>
           ) : (
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             ((endpointsQuery.data ?? []) as any[]).map((ep: any) => (
               <div
                 key={ep.id}
@@ -218,7 +218,7 @@ export default function WebhookManagementPage() {
                     <button
                       onClick={() => {
                         if (confirm("Delete?"))
-                          // @ts-ignore
+                          // @ts-ignore Sprint 85
                           deleteMutation.mutate({ id: ep.id });
                       }}
                       className="p-1.5 hover:bg-red-700/30 rounded-lg"
@@ -301,7 +301,7 @@ export default function WebhookManagementPage() {
                         {d.status_code &&
                           (d.status_code < 200 || d.status_code >= 300) && (
                             <button
-                              // @ts-ignore
+                              // @ts-ignore Sprint 85
                               onClick={() => retryMutation.mutate({ id: d.id })}
                               className="p-1.5 hover:bg-lime-700/30 rounded-lg"
                               title="Retry"
@@ -382,9 +382,9 @@ export default function WebhookManagementPage() {
                 <button
                   onClick={() => {
                     if (editEndpoint)
-                      // @ts-ignore
+                      // @ts-ignore Sprint 85
                       updateMutation.mutate({ id: editEndpoint.id, ...form });
-                    // @ts-ignore
+                    // @ts-ignore Sprint 85
                     else createMutation.mutate(form);
                   }}
                   className="px-4 py-2 bg-lime-600 hover:bg-lime-700 text-white rounded-lg text-sm"

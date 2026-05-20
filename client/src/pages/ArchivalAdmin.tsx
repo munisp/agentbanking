@@ -74,9 +74,9 @@ function formatDuration(ms: number): string {
 
 export default function ArchivalAdmin() {
   const utils = trpc.useUtils();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.archivalAdmin.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const historyQuery = trpc.archivalAdmin.getHistory.useQuery({ limit: 20 });
 
   const [triggerOpen, setTriggerOpen] = useState(false);
@@ -92,18 +92,18 @@ export default function ArchivalAdmin() {
   const [schedRetention, setSchedRetention] = useState(90);
   const [schedDelete, setSchedDelete] = useState(false);
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const triggerMutation = trpc.archivalAdmin.triggerArchival.useMutation({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onSuccess: data => {
       if (data.success) {
         toast.success(`Archival job ${data.jobId} started`);
         setTriggerOpen(false);
         // Poll for completion
         const poll = setInterval(() => {
-          // @ts-ignore
+          // @ts-ignore Sprint 85
           utils.archivalAdmin.getStats.invalidate();
-          // @ts-ignore
+          // @ts-ignore Sprint 85
           utils.archivalAdmin.getHistory.invalidate();
         }, 3000);
         setTimeout(() => clearInterval(poll), 120000);
@@ -111,19 +111,19 @@ export default function ArchivalAdmin() {
         toast.error(data.error ?? "Failed to start archival job");
       }
     },
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onError: err => toast.error(`Error: ${err.message}`),
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const scheduleMutation = trpc.archivalAdmin.updateSchedule.useMutation({
     onSuccess: () => {
       toast.success("Archival schedule updated");
       setScheduleOpen(false);
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.archivalAdmin.getStats.invalidate();
     },
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onError: err => toast.error(`Error: ${err.message}`),
   });
 
@@ -157,9 +157,9 @@ export default function ArchivalAdmin() {
               size="sm"
               variant="outline"
               onClick={() => {
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 utils.archivalAdmin.getStats.invalidate();
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 utils.archivalAdmin.getHistory.invalidate();
                 toast.success("Refreshed");
               }}

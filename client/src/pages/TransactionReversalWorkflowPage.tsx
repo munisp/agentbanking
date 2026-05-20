@@ -9,13 +9,13 @@ import { RotateCcw, Search, CheckCircle, Clock, XCircle } from "lucide-react";
 
 export default function TransactionReversalWorkflowPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.transactionReversalWorkflow.list.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const approveMut = trpc.transactionReversalWorkflow.approve.useMutation({
     onSuccess: () => toast.success("Reversal approved"),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rejectMut = trpc.transactionReversalWorkflow.reject.useMutation({
     onSuccess: () => toast.success("Reversal rejected"),
   });

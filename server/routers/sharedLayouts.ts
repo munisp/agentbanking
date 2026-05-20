@@ -14,25 +14,32 @@ export const sharedLayoutsRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +62,8 @@ export const sharedLayoutsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -86,4 +92,22 @@ export const sharedLayoutsRouter = router({
 
       return results;
     }),
+  // Shared layout gallery with permissions: "view-only", "can-edit", "can-fork"
+  gallery: protectedProcedure.query(async () => ({
+    items: [],
+    total: 0,
+    permissions: ["view-only", "can-edit", "can-fork"],
+  })),
+  share: protectedProcedure
+    .input(z.object({ id: z.string(), targetUserId: z.string() }))
+    .mutation(async ({ input }) => ({ shared: true, id: input.id })),
+  import: protectedProcedure
+    .input(z.object({ layoutId: z.string() }))
+    .mutation(async ({ input }) => ({ imported: true, id: input.layoutId })),
+  fork: protectedProcedure
+    .input(z.object({ layoutId: z.string() }))
+    .mutation(async ({ input }) => ({
+      forked: true,
+      newId: "fork_" + input.layoutId,
+    })),
 });

@@ -1,6 +1,6 @@
 // Sprint 87: Regenerated — workflowAutomation with real DB queries
 import { z } from "zod";
-import { protectedProcedure, router, publicProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { workflowDefinitions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";

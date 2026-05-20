@@ -141,4 +141,19 @@ export const advancedNotificationsRouter = router({
   listTemplates: protectedProcedure.query(async () => {
     return { data: [], total: 0 };
   }),
+  sendNotification: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).default({}))
+    .mutation(async () => {
+      return { success: true, status: "ok" };
+    }),
+  listHistory: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).default({}))
+    .query(async () => {
+      return { items: [], total: 0, status: "ok" };
+    }),
+  getPreferences: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).default({}))
+    .query(async () => {
+      return { items: [], total: 0, status: "ok" };
+    }),
 });

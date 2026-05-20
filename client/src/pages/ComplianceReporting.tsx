@@ -12,29 +12,29 @@ export default function ComplianceReporting() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.complianceReporting.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Reports",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalReports != null ? String(stats.totalReports) : "—",
     },
     {
       label: "Cbn Reports",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.cbnReports != null ? String(stats.cbnReports) : "—",
     },
     {
       label: "Ndpr Reports",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.ndprReports != null ? String(stats.ndprReports) : "—",
     },
     {
       label: "Pci Dss Reports",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.pciDssReports != null ? String(stats.pciDssReports) : "—",
     },
   ];

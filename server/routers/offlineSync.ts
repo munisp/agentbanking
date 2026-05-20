@@ -6,7 +6,7 @@
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
@@ -350,7 +350,7 @@ export const offlineSyncRouter = router({
     };
   }),
 
-  queue: publicProcedure.query(async () => {
+  queue: protectedProcedure.query(async () => {
     return {
       items: [
         {
@@ -364,7 +364,7 @@ export const offlineSyncRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return { total: 25, queued: 3, synced: 20, conflicts: 2, avgSyncTime: 5.2 };
   }),
 });

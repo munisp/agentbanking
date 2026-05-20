@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, sum, avg, gte } from "drizzle-orm";
 import {
@@ -115,7 +115,7 @@ export const agentScorecardRouter = router({
         });
       }
     }),
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,

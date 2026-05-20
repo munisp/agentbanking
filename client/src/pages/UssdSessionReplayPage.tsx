@@ -106,7 +106,7 @@ export default function UssdSessionReplayPage() {
   const currentReplay = selectedSession ? replayData[selectedSession] : null;
   // Sprint 87: Wired to ussdSessionReplay router
   const { data, isLoading } = trpc.ussdSessionReplay.list.useQuery({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     page: 1,
     limit: 10,
   });

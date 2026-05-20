@@ -17,7 +17,14 @@ import type { TrpcContext } from "./_core/context";
 
 function createCtx(): TrpcContext {
   return {
-    user: null,
+    user: {
+      id: 1,
+      username: "test-agent",
+      role: "admin" as const,
+      agentCode: "AGT001",
+      name: "Test Agent",
+      email: "test@54link.io",
+    },
     req: {
       headers: {},
       cookies: {},

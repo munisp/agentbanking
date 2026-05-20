@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SimOrchestratorTab — Admin Panel tab for the intelligent SIM Orchestrator
  *

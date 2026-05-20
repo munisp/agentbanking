@@ -12,30 +12,30 @@ export default function AgentTrainingPortal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.agentTrainingPortal.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Courses",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalCourses != null ? String(stats.totalCourses) : "—",
     },
     {
       label: "Total Enrollments",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.totalEnrollments != null ? String(stats.totalEnrollments) : "—",
     },
     {
       label: "Completion Rate",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.completionRate != null ? String(stats.completionRate) : "—",
     },
     {
       label: "Avg Quiz Score",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.avgQuizScore != null ? String(stats.avgQuizScore) : "—",
     },
   ];

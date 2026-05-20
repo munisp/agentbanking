@@ -14,25 +14,32 @@ export const ussdGatewayRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +62,8 @@ export const ussdGatewayRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -105,7 +111,7 @@ export const ussdGatewayRouter = router({
         end: false,
       };
     }),
-  activeSessions: publicProcedure.query(async () => {
+  activeSessions: protectedProcedure.query(async () => {
     return {
       sessions: [
         {
@@ -118,7 +124,7 @@ export const ussdGatewayRouter = router({
       total: 1,
     };
   }),
-  transactions: publicProcedure.query(async () => {
+  transactions: protectedProcedure.query(async () => {
     return {
       transactions: [
         {
@@ -132,7 +138,7 @@ export const ussdGatewayRouter = router({
       total: 1,
     };
   }),
-  menuTree: publicProcedure.query(async () => {
+  menuTree: protectedProcedure.query(async () => {
     return {
       menuTree: {
         id: "root",
@@ -145,7 +151,7 @@ export const ussdGatewayRouter = router({
       },
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalTransactions: 1250,
       totalAmount: 25000000,

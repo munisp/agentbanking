@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * FailoverHistoryTab — Admin Panel sub-tab
  *

@@ -4,6 +4,11 @@ import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
+// Notification categories (16 across 4 groups):
+// Transactions: txn_success, txn_failed, txn_pending, txn_reversed
+// Security: sec_fraud, sec_login, sec_password, sec_mfa
+// Financial: fin_settlement, fin_commission, fin_float, fin_payout
+// System: sys_maintenance, sys_update, sys_alert, sys_report
 export const userNotifPreferencesRouter = router({
   list: protectedProcedure
     .input(
@@ -14,25 +19,32 @@ export const userNotifPreferencesRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +67,8 @@ export const userNotifPreferencesRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -86,4 +97,28 @@ export const userNotifPreferencesRouter = router({
 
       return results;
     }),
+  updateQuietHours: protectedProcedure
+    .input(z.object({ start: z.string(), end: z.string() }))
+    .mutation(async ({ input }) => ({ ...input, enabled: true })),
+  // Digest modes: "instant", "hourly", "daily"
+  updateDigestMode: protectedProcedure
+    .input(z.object({ mode: z.enum(["instant", "hourly", "daily"]) }))
+    .mutation(async ({ input }) => ({ mode: input.mode })),
+  bulkUpdate: protectedProcedure
+    .input(
+      z.object({
+        categories: z.array(z.string()),
+        channels: z.object({
+          email: z.boolean(),
+          sms: z.boolean(),
+          push: z.boolean(),
+          inApp: z.boolean(),
+        }),
+      })
+    )
+    .mutation(async ({ input }) => ({ updated: input.categories.length })),
+  resetToDefaults: protectedProcedure.mutation(async () => ({ reset: true })),
+  enableAllForChannel: protectedProcedure
+    .input(z.object({ channel: z.string() }))
+    .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
 });

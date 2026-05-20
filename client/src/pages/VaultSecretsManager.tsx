@@ -10,16 +10,16 @@ export default function VaultSecretsManager() {
     "paths"
   );
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const healthQ = trpc.vault.health.useQuery(undefined, {
     retry: false,
     refetchInterval: 30000,
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const pathsQ = trpc.vault.listPaths.useQuery(undefined, { retry: false });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const summaryQ = trpc.vault.summary.useQuery(undefined, { retry: false });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const rotateMut = trpc.vault.rotateSecret.useMutation({
     onSuccess: () => {
       toast.success("Secret rotated");

@@ -12,29 +12,29 @@ export default function PaymentNotificationSystem() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.paymentNotificationSystem.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Sent",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalSent != null ? String(stats.totalSent) : "—",
     },
     {
       label: "Delivered",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.delivered != null ? String(stats.delivered) : "—",
     },
     {
       label: "Failed",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.failed != null ? String(stats.failed) : "—",
     },
     {
       label: "Delivery Rate",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.deliveryRate != null ? String(stats.deliveryRate) : "—",
     },
   ];

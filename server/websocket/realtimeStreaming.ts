@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Real-Time Streaming Module
  * Emits live transaction and reconciliation events via Socket.IO

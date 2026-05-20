@@ -58,34 +58,34 @@ export default function KycVerificationWorkflow() {
   const [reviewId, setReviewId] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const agentStatus = trpc.sprint23.kycVerification.agentStatus.useQuery({
     agentId,
   });
   const pendingReviews =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.sprint23.kycVerification.pendingReviews.useQuery();
   const utils = trpc.useUtils();
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const submitMutation = trpc.sprint23.kycVerification.submit.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.kycVerification.agentStatus.invalidate();
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.kycVerification.pendingReviews.invalidate();
       toast.success("Document submitted for verification");
       setDocUrl("");
     },
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const reviewMutation = trpc.sprint23.kycVerification.review.useMutation({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onSuccess: (_: any, vars) => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.kycVerification.agentStatus.invalidate();
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.kycVerification.pendingReviews.invalidate();
       toast.success(`Document ${vars.decision}`);
       setReviewId("");

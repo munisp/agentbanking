@@ -6,7 +6,7 @@ import { Clock } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function ReportScheduler() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } = trpc.reportScheduler.list.useQuery(
     undefined,
     { retry: 1 }
@@ -58,7 +58,7 @@ export default function ReportScheduler() {
   const columns = ["Report Name", "Schedule", "Last Run", "Status", "Actions"];
 
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

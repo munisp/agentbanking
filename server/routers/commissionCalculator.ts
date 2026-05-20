@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import {
+  publicProcedure as openProcedure,
+  protectedProcedure,
+  router,
+} from "../_core/trpc";
 import { getDb } from "../db";
 import { commissionRules } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -89,7 +93,7 @@ export const commissionCalculatorRouter = router({
     }),
 
   // ── Sprint 78 domain-specific procedures ──────────────────────────────────
-  getTiers: publicProcedure.query(async () => {
+  getTiers: openProcedure.query(async () => {
     const tiers = [
       {
         name: "Bronze",
@@ -142,7 +146,7 @@ export const commissionCalculatorRouter = router({
     return { tiers, multipliers };
   }),
 
-  calculate: publicProcedure
+  calculate: openProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -244,7 +248,7 @@ export const commissionCalculatorRouter = router({
       };
     }),
 
-  simulate: publicProcedure
+  simulate: openProcedure
     .input(
       z.object({ volume: z.number(), txCount: z.number(), txType: z.string() })
     )

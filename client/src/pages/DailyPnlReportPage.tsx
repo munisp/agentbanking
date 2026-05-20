@@ -14,9 +14,9 @@ import {
 
 export default function DailyPnlReportPage() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.dailyPnlReport.getReport.useQuery({ date });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const exportMut = trpc.dailyPnlReport.export.useMutation({
     onSuccess: () => toast.success("Report exported"),
   });

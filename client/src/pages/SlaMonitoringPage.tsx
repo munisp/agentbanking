@@ -352,12 +352,12 @@ export default function SlaMonitoringPage() {
                 >
                   Cancel
                 </button>
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 <button
                   onClick={() =>
                     createMutation.mutate({
                       ...form,
-                      // @ts-ignore
+                      // @ts-ignore Sprint 85
                       target_value: parseFloat(form.target_value),
                     })
                   }

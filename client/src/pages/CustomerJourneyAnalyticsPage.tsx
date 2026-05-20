@@ -16,13 +16,13 @@ export default function CustomerJourneyAnalyticsPage() {
   const [search, setSearch] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const eventsQuery = trpc.customerJourneyAnalytics.listEvents.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const funnelQuery = trpc.customerJourneyAnalytics.getFunnel.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.customerJourneyAnalytics.getStats.useQuery();
   const stats = statsQuery.data;
 
@@ -49,10 +49,10 @@ export default function CustomerJourneyAnalyticsPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Add Journey Event",
                   description: "Feature ready for integration",
                 });
@@ -62,10 +62,10 @@ export default function CustomerJourneyAnalyticsPage() {
               + Add Journey Event
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Event",
                   description: "Select a journey event to edit",
                 });
@@ -75,10 +75,10 @@ export default function CustomerJourneyAnalyticsPage() {
               ✏️ Edit Event
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Event",
                   description: "Select a journey event to delete",
                 });

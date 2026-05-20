@@ -12,29 +12,29 @@ export default function SkillCreatorIntegration() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.skillCreatorIntegration.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Skill Version",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.skillVersion != null ? String(stats.skillVersion) : "—",
     },
     {
       label: "Total Patterns",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalPatterns != null ? String(stats.totalPatterns) : "—",
     },
     {
       label: "Router Patterns",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.routerPatterns != null ? String(stats.routerPatterns) : "—",
     },
     {
       label: "Schema Patterns",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.schemaPatterns != null ? String(stats.schemaPatterns) : "—",
     },
   ];

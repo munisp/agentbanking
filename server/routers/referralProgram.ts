@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -55,7 +55,7 @@ export const referralProgramRouter = router({
       return results;
     }),
 
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       referrals: [
         {
@@ -70,7 +70,7 @@ export const referralProgramRouter = router({
       total: 1,
     };
   }),
-  tiers: publicProcedure.query(async () => {
+  tiers: protectedProcedure.query(async () => {
     return {
       tiers: [
         { name: "Starter", minReferrals: 0, reward: 2000 },
@@ -79,7 +79,7 @@ export const referralProgramRouter = router({
       ],
     };
   }),
-  leaderboard: publicProcedure.query(async () => {
+  leaderboard: protectedProcedure.query(async () => {
     return {
       leaderboard: [
         {
@@ -92,7 +92,7 @@ export const referralProgramRouter = router({
       ],
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalReferrals: 500,
       qualified: 400,

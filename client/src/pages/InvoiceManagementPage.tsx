@@ -12,7 +12,7 @@ export default function InvoiceManagementPage() {
 
   // Query invoices from billingInvoice router
   const invoiceList = trpc.billingInvoice.listInvoices.useQuery(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     { tenantId, page: 1, pageSize: 20 },
     { retry: false, enabled: false }
   );
@@ -93,11 +93,11 @@ export default function InvoiceManagementPage() {
           </p>
         </div>
         <button
-          // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+          // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
           onClick={() =>
             generateInvoice.mutate({
               tenantId,
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               billingModel,
               periodStart: new Date(
                 new Date().getFullYear(),

@@ -23,7 +23,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentCode: z.string() }))
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new Error("Database connection unavailable");
 
         const [agent] = await db
@@ -76,7 +76,7 @@ export const agentOnboardingRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
@@ -134,7 +134,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentCode: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
@@ -189,7 +189,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentCode: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
@@ -239,7 +239,7 @@ export const agentOnboardingRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         await db
@@ -278,7 +278,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentCode: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
@@ -355,8 +355,8 @@ export const agentOnboardingRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
-        if (!db) return { items: [], total: 0 };
+        const db = await getDb();
+        if (!db || (db as any)._isNoop) return { items: [], total: 0 };
         const offset = (input.page - 1) * input.limit;
         const where = input.step
           ? eq(agentOnboardingProgress.currentStep, input.step)
@@ -387,7 +387,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentCode: z.string(), note: z.string().max(1000) }))
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         await db
           .update(agentOnboardingProgress)
@@ -418,25 +418,13 @@ export const agentOnboardingRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
-        if (!db) return { items: [], total: 0 };
+        const db = await getDb();
+        if (!db || (db as any)._isNoop) return { items: [], total: 0 };
         const offset = (input.page - 1) * input.limit;
         const rows = await db
-          .select({
-            agentId: agentOnboardingProgress.agentId,
-            agentCode: agentOnboardingProgress.agentCode,
-            currentStep: agentOnboardingProgress.currentStep,
-            profileComplete: agentOnboardingProgress.profileComplete,
-            kycComplete: agentOnboardingProgress.kycComplete,
-            floatFunded: agentOnboardingProgress.floatFunded,
-            terminalAssigned: agentOnboardingProgress.terminalAssigned,
-            trainingComplete: agentOnboardingProgress.trainingComplete,
-            activatedAt: agentOnboardingProgress.activatedAt,
-            createdAt: agentOnboardingProgress.createdAt,
-            agentName: agents.name,
-          })
+          .select()
           .from(agentOnboardingProgress)
-          .leftJoin(agents, eq(agents.id, agentOnboardingProgress.agentId))
+          .orderBy(desc(agentOnboardingProgress.createdAt))
           .limit(input.limit)
           .offset(offset);
 
@@ -488,7 +476,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentId: z.number() }))
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new Error("Database connection unavailable");
         const [progress] = await db
           .select()
@@ -540,7 +528,7 @@ export const agentOnboardingRouter = router({
 
   // ── Stats ─────────────────────────────────────────────────────────────────
   stats: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
+    const db = await getDb();
     if (!db)
       return { total: 0, inProgress: 0, completed: 0, avgDaysToComplete: null };
     const rows = await db.select().from(agentOnboardingProgress).limit(100);
@@ -588,7 +576,7 @@ export const agentOnboardingRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const stepFields: Record<
           number,
@@ -629,7 +617,7 @@ export const agentOnboardingRouter = router({
     .input(z.object({ agentId: z.number() }))
     .mutation(async ({ input }) => {
       try {
-        const db = (await getDb())!;
+        const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const [agent] = await db
           .select()

@@ -88,7 +88,7 @@ export default function CommissionCalculatorPage() {
   };
   // Sprint 87: Wired to commissionCascadeHistory router
   const { data, isLoading } = trpc.commissionCascadeHistory.list.useQuery({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     page: 1,
     limit: 10,
   });

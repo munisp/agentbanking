@@ -110,7 +110,7 @@ export default function UssdLocalizationPage() {
   const [locale, setLocale] = useState("en");
   // Sprint 87: Wired to ussdLocalization router
   const { data, isLoading } = trpc.ussdLocalization.list.useQuery({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     page: 1,
     limit: 10,
   });

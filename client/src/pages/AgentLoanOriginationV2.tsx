@@ -6,9 +6,9 @@ import { Landmark } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function AgentLoanOriginationV2() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } = trpc.agentLoanOrigination.list.useQuery(
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     undefined,
     { retry: 1 }
   );
@@ -58,9 +58,9 @@ export default function AgentLoanOriginationV2() {
 
   const columns = ["Application ID", "Agent", "Amount", "Status", "Date"];
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

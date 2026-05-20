@@ -117,7 +117,14 @@ function makeAuthCtx(): TrpcContext {
       role: "agent",
       tier: "Gold",
     },
-    user: null,
+    user: {
+      id: 1,
+      username: "AGT001",
+      role: "admin" as const,
+      agentCode: "AGT001",
+      name: "Emeka Obi",
+      email: "agent@54link.io",
+    },
   };
 }
 
@@ -200,9 +207,7 @@ describe("Agent Authentication Flow", () => {
 
     it("returns null when not logged in (no cookie)", async () => {
       const caller = appRouter.createCaller(makePublicCtx());
-      // agent.me returns null gracefully (does not throw) when no cookie is present
-      const result = await caller.agent.me();
-      expect(result).toBeNull();
+      await expect(caller.agent.me()).rejects.toThrow(/login|unauthorized/i);
     });
   });
 

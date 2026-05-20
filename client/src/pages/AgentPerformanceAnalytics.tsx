@@ -12,29 +12,29 @@ export default function AgentPerformanceAnalytics() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.agentPerformanceAnalytics.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Agents",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalAgents != null ? String(stats.totalAgents) : "—",
     },
     {
       label: "Active Agents",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.activeAgents != null ? String(stats.activeAgents) : "—",
     },
     {
       label: "Avg Score",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.avgScore != null ? String(stats.avgScore) : "—",
     },
     {
       label: "Top Performer",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.topPerformer != null ? String(stats.topPerformer) : "—",
     },
   ];

@@ -25,11 +25,11 @@ export default function RateLimitEnginePage() {
   });
 
   const rulesQuery = trpc.rateLimitEngine.listRules.useQuery({ limit: 100 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const violationsQuery = trpc.rateLimitEngine.listViolations.useQuery({
     limit: 50,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.rateLimitEngine.getStats.useQuery();
   const createMutation = trpc.rateLimitEngine.createRule.useMutation({
     onSuccess: () => {
@@ -55,7 +55,7 @@ export default function RateLimitEnginePage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rules = (rulesQuery.data ?? []).filter((r: any) => {
     if (search && !r.endpoint?.toLowerCase().includes(search.toLowerCase()))
       return false;
@@ -224,11 +224,11 @@ export default function RateLimitEnginePage() {
                       >
                         <Edit className="h-4 w-4 text-zinc-400" />
                       </button>
-                      // @ts-ignore
+                      // @ts-ignore Sprint 85
                       <button
                         onClick={() => {
                           if (confirm("Delete?"))
-                            // @ts-ignore
+                            // @ts-ignore Sprint 85
                             deleteMutation.mutate({ id: r.id });
                         }}
                         className="p-1.5 hover:bg-red-700/30 rounded-lg"
@@ -377,11 +377,11 @@ export default function RateLimitEnginePage() {
                       max_requests: parseInt(form.max_requests),
                       window_seconds: parseInt(form.window_seconds),
                     };
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                     if (editRule)
-                      // @ts-ignore
+                      // @ts-ignore Sprint 85
                       updateMutation.mutate({ id: editRule.id, ...data });
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                     else createMutation.mutate(data);
                   }}
                   className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm"

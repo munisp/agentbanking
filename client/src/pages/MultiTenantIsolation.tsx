@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 
 export default function MultiTenantIsolation() {
   const [tab, setTab] = useState("overview");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: _liveData } = trpc.multiTenantIsolation.list.useQuery(
     undefined,
     { retry: 1 }

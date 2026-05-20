@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
+import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count } from "drizzle-orm";
 import { biReportDefinitions, auditLog } from "../../drizzle/schema";
@@ -159,11 +159,16 @@ export const dragDropReportBuilderRouter = router({
       return { id: "RPT-001", name: input.name, saved: true };
     }),
 
-  executeReport: publicProcedure.query(async () => {
+  executeReport: protectedProcedure.query(async () => {
     return { data: [], columns: [], rowCount: 0 };
   }),
 
-  exportReport: publicProcedure.query(async () => {
+  exportReport: protectedProcedure.query(async () => {
     return { url: "/exports/report.pdf", format: "pdf" };
   }),
+  dashboard: protectedProcedure.query(async () => ({
+    reports: [],
+    recentActivity: [],
+    stats: { totalReports: 0, sharedReports: 0 },
+  })),
 });

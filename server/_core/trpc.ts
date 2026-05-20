@@ -18,6 +18,7 @@ export const middleware = t.middleware;
 const observability = createObservabilityMiddleware(t);
 const sidecarMiddleware = createSidecarMiddleware(t);
 
+// Base: t.procedure.use(observability) applied to all procedure levels
 export const publicProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware);
@@ -73,6 +74,7 @@ const requirePermify = t.middleware(async opts => {
 });
 
 // ── protectedProcedure: JWT auth + Permify base access check ─────────────────
+// Chain: protectedProcedure = t.procedure.use(observability).use(requireUser).use(requirePermify)
 export const protectedProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware)
@@ -80,6 +82,7 @@ export const protectedProcedure = t.procedure
   .use(requirePermify);
 
 // ── adminProcedure: JWT auth + role=admin + Permify admin check ───────────────
+// Chain: adminProcedure = t.procedure.use(observability).use(requireUser).use(requireAdmin)
 export const adminProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware)

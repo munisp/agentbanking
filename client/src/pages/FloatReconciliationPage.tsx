@@ -9,12 +9,12 @@ import { RefreshCw, Search, AlertTriangle, CheckCircle } from "lucide-react";
 
 export default function FloatReconciliationPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.floatReconciliation.list.useQuery();
   const reconcileMut = trpc.floatReconciliation.reconcile.useMutation({
     onSuccess: () => toast.success("Reconciliation complete"),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const records = (data?.records || []).filter(
     (r: any) =>
       !search || r.agentName?.toLowerCase().includes(search.toLowerCase())

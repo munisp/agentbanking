@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Dispute Notifications — DB-backed notification management for dispute status changes
  * Sprint 54: Full PostgreSQL + middleware integration

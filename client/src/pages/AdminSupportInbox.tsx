@@ -14,7 +14,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,11 +152,11 @@ export default function AdminSupportInbox() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── Queries ─────────────────────────────────────────────────────────────
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.chat.adminStats.useQuery(undefined, {
     refetchInterval: 15000,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch
   const sessionsQuery = trpc.chat.adminListSessions.useQuery(
     statusFilter === "all"
       ? { limit: 100 }
@@ -164,14 +164,14 @@ export default function AdminSupportInbox() {
     { refetchInterval: 10000 }
   );
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const messagesQuery = trpc.chat.adminGetMessages.useQuery(
     { sessionId: selectedSession?.id ?? 0 },
     { enabled: !!selectedSession, refetchInterval: 5000 }
   );
 
   // ── Mutations ───────────────────────────────────────────────────────────
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const replyMutation = trpc.chat.adminReply.useMutation({
     onSuccess: () => {
       setReplyText("");
@@ -181,7 +181,7 @@ export default function AdminSupportInbox() {
     onError: () => toast.error("Failed to send reply"),
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const assignMutation = trpc.chat.adminAssignSession.useMutation({
     onSuccess: () => {
       setShowAssignDialog(false);
@@ -192,7 +192,7 @@ export default function AdminSupportInbox() {
     onError: () => toast.error("Failed to assign session"),
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const escalateMutation = trpc.chat.adminEscalate.useMutation({
     onSuccess: () => {
       setShowEscalateDialog(false);
@@ -204,7 +204,7 @@ export default function AdminSupportInbox() {
     onError: () => toast.error("Failed to escalate"),
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const resolveMutation = trpc.chat.adminResolve.useMutation({
     onSuccess: () => {
       sessionsQuery.refetch();
@@ -214,7 +214,7 @@ export default function AdminSupportInbox() {
     onError: () => toast.error("Failed to resolve"),
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const deleteMutation = trpc.chat.adminDeleteSession.useMutation({
     onSuccess: () => {
       setSelectedSession(null);
@@ -246,7 +246,7 @@ export default function AdminSupportInbox() {
   };
 
   // ── Filter sessions ─────────────────────────────────────────────────────
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const filteredSessions = (sessionsQuery.data?.sessions ?? []).filter(
     (s: ChatSession) => {
       if (!searchQuery) return true;
@@ -389,7 +389,7 @@ export default function AdminSupportInbox() {
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   {filteredSessions.map((session: ChatSession) => {
                     const statusCfg =
                       STATUS_CONFIG[session.status] ?? STATUS_CONFIG.open;
@@ -519,7 +519,7 @@ export default function AdminSupportInbox() {
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
                   <div className="space-y-3">
-                    // @ts-ignore
+                    // @ts-ignore Sprint 85
                     {(messagesQuery.data ?? []).map((msg: ChatMessage) => {
                       const isSupport = msg.senderType === "support";
                       const isSystem = msg.senderType === "system";

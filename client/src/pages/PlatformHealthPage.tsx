@@ -25,13 +25,13 @@ export default function PlatformHealthPage() {
     "overview"
   );
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const healthQuery = trpc.platformHealth.getOverview.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const servicesQuery = trpc.platformHealth.listServices.useQuery({
     limit: 50,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const metricsQuery = trpc.platformHealth.getMetrics.useQuery();
   const health = healthQuery.data as any;
   const services = (servicesQuery.data ?? []) as any[];
@@ -49,10 +49,10 @@ export default function PlatformHealthPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Add Health Check",
                   description: "Feature ready for integration",
                 });
@@ -62,10 +62,10 @@ export default function PlatformHealthPage() {
               + Add Health Check
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Check",
                   description: "Select a health check to edit",
                 });
@@ -75,10 +75,10 @@ export default function PlatformHealthPage() {
               ✏️ Edit Check
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Check",
                   description: "Select a health check to delete",
                 });

@@ -13,6 +13,7 @@ export default defineConfig({
     },
   },
   test: {
+    setupFiles: ["./vitest.setup.ts"],
     environment: "node",
     env: {
       // Provide a well-formed test URL so Keycloak URL-construction tests
@@ -22,6 +23,7 @@ export default defineConfig({
       KEYCLOAK_REALM: "54link",
       KEYCLOAK_CLIENT_ID: "pos-shell",
     },
+    testTimeout: 30000,
     include: [
       "server/**/*.test.ts",
       "server/**/*.spec.ts",

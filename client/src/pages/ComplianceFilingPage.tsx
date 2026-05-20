@@ -34,11 +34,11 @@ export default function ComplianceFilingPage() {
     description: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const filingsQuery = trpc.complianceFiling.listFilings.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.complianceFiling.getStats.useQuery();
   const createMutation = trpc.complianceFiling.createFiling.useMutation({
     onSuccess: () => {
@@ -315,9 +315,9 @@ export default function ComplianceFilingPage() {
                 >
                   Cancel
                 </button>
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 <button
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   onClick={() => createMutation.mutate(form)}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
                 >

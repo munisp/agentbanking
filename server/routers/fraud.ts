@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { sql, gte, eq } from "drizzle-orm";

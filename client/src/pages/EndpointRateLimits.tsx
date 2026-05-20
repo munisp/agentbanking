@@ -21,14 +21,14 @@ export default function EndpointRateLimits() {
   const [newMaxReqs, setNewMaxReqs] = useState("100");
   const [newWindowMs, setNewWindowMs] = useState("60000");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const limits = trpc.sprint23.rateLimits.list.useQuery();
   const utils = trpc.useUtils();
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const setMutation = trpc.sprint23.rateLimits.set.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.rateLimits.list.invalidate();
       toast.success("Rate limit configured");
       setDialogOpen(false);

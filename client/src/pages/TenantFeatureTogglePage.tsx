@@ -24,13 +24,13 @@ export default function TenantFeatureTogglePage() {
     rollout_percentage: "100",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const togglesQuery = trpc.tenantFeatureToggle.listToggles.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.tenantFeatureToggle.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation = trpc.tenantFeatureToggle.createToggle.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();
@@ -39,7 +39,7 @@ export default function TenantFeatureTogglePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const updateMutation = trpc.tenantFeatureToggle.updateToggle.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();
@@ -48,7 +48,7 @@ export default function TenantFeatureTogglePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMutation = trpc.tenantFeatureToggle.deleteToggle.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();
@@ -56,7 +56,7 @@ export default function TenantFeatureTogglePage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const flipMutation = trpc.tenantFeatureToggle.flipToggle.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();

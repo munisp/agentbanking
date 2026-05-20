@@ -12,29 +12,29 @@ export default function PlatformHealthMonitor() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.platformHealthMonitor.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Overall Health",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.overallHealth != null ? String(stats.overallHealth) : "—",
     },
     {
       label: "Uptime30d",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.uptime30d != null ? String(stats.uptime30d) : "—",
     },
     {
       label: "Avg Latency",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.avgLatency != null ? String(stats.avgLatency) : "—",
     },
     {
       label: "P99 Latency",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.p99Latency != null ? String(stats.p99Latency) : "—",
     },
   ];

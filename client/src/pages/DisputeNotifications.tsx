@@ -36,7 +36,7 @@ export default function DisputeNotifications() {
     limit: 20,
     search: search || undefined,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.disputeNotifications.getStats.useQuery();
 
   const notifications = (listQuery.data as any)?.notifications ?? [];

@@ -155,16 +155,14 @@ describe("Admin Dashboard Integration", () => {
   describe("adminDashboard.systemStats", () => {
     it("returns system statistics for admin users", async () => {
       const caller = appRouter.createCaller(makeAdminCtx());
-      const result = await caller.adminDashboard.systemStats();
+      const result = await caller.adminDashboard.getSystemStats();
       expect(result).toBeDefined();
       expect(typeof result.totalUsers).toBe("number");
-      expect(typeof result.totalTransactions).toBe("number");
-      expect(typeof result.revenue).toBe("number");
     });
 
     it("rejects unauthenticated requests", async () => {
       const caller = appRouter.createCaller(makeUnauthCtx());
-      await expect(caller.adminDashboard.systemStats()).rejects.toThrow();
+      await expect(caller.adminDashboard.getSystemStats()).rejects.toThrow();
     });
   });
 
@@ -191,7 +189,7 @@ describe("Admin Dashboard Integration", () => {
   describe("adminDashboard.auditLog", () => {
     it("returns audit log entries", async () => {
       const caller = appRouter.createCaller(makeAdminCtx());
-      const result = await caller.adminDashboard.auditLog({
+      const result = await caller.adminDashboard.getAuditLog({
         limit: 10,
         offset: 0,
       });

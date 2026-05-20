@@ -745,7 +745,7 @@ export function calculateBackoff(
     baseMs * Math.pow(multiplier, attempt - 1),
     maxBackoffMs
   );
-  const jitter = Math.floor(Math.random() * 1000);
+  const jitter = Date.now() % 1000;
   return backoff + jitter;
 }
 

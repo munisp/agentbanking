@@ -14,25 +14,32 @@ export const advancedBiReportingRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(transactions)
-        .orderBy(desc(transactions.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(transactions);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(transactions);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +62,10 @@ export const advancedBiReportingRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
+    const _totalRows = await database
       .select({ total: count() })
       .from(transactions);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -87,7 +95,7 @@ export const advancedBiReportingRouter = router({
       return results;
     }),
 
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       reports: 25,
       scheduledReports: 5,
@@ -95,7 +103,7 @@ export const advancedBiReportingRouter = router({
       dataPoints: 50000,
     };
   }),
-  reportBuilder: publicProcedure.query(async () => {
+  reportBuilder: protectedProcedure.query(async () => {
     return {
       templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],
       dataSources: ["postgres", "opensearch"],
@@ -111,7 +119,7 @@ export const advancedBiReportingRouter = router({
       };
     }),
 
-  executiveKpis: publicProcedure.query(async () => {
+  executiveKpis: protectedProcedure.query(async () => {
     return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] };
   }),
 });

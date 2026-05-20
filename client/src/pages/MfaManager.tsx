@@ -6,7 +6,7 @@ import { Shield } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function MfaManager() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } = trpc.mfaManager.list.useQuery(
     undefined,
     { retry: 1 }
@@ -58,7 +58,7 @@ export default function MfaManager() {
   const columns = ["User", "MFA Type", "Enabled", "Last Used", "Actions"];
 
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

@@ -14,32 +14,52 @@ export const platformMaturityScorecardRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(transactions)
-        .orderBy(desc(transactions.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database)
+          return {
+            data: [],
+            items: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
+        const results = await database
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(transactions);
+        const totalRows = await database
+          .select({ total: count() })
+          .from(transactions);
+        const totalResult = Array.isArray(totalRows) ? totalRows[0] : totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: Array.isArray(results) ? results : [],
+          items: Array.isArray(results) ? results : [],
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return {
+          data: [],
+          items: [],
+          total: 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      }
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database)
+        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
         .from(transactions)
@@ -54,10 +74,12 @@ export const platformMaturityScorecardRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
+    if (!database)
+      return { data: [], items: [], total: 0, limit: 0, offset: 0 };
+    const _totalRows = await database
       .select({ total: count() })
       .from(transactions);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -74,7 +96,8 @@ export const platformMaturityScorecardRouter = router({
     )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database)
+        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 

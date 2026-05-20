@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
  * Sprint 52 — Agent Performance Leaderboard
  * F09: Ranked agent performance with metrics, trends, and drill-down
  */
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { useState, useMemo } from "react";
@@ -154,9 +154,9 @@ function formatNaira(n: number) {
 
 function LeaderboardContent() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: _liveData } = trpc.agentPerformanceLeaderboard.list.useQuery(
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     undefined,
     { retry: 1 }
   );

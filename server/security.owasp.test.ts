@@ -115,9 +115,7 @@ function authCtx(role: string = "agent"): TrpcContext {
 describe("A01: Broken Access Control", () => {
   it("rejects unauthenticated access to protected procedures", async () => {
     const caller = appRouter.createCaller(unauthCtx());
-    // agent.me should return null for unauthenticated users (not throw)
-    const result = await caller.agent.me();
-    expect(result).toBeNull();
+    await expect(caller.agent.me()).rejects.toThrow(/login|unauthorized/i);
   });
 
   it("agent login rejects non-existent agent code", async () => {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fraudAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -14,25 +14,32 @@ export const fraudRealtimeVizRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(fraudAlerts)
-        .orderBy(desc(fraudAlerts.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(fraudAlerts)
+          .orderBy(desc(fraudAlerts.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(fraudAlerts);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(fraudAlerts);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +62,10 @@ export const fraudRealtimeVizRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
+    const _totalRows = await database
       .select({ total: count() })
       .from(fraudAlerts);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -87,7 +95,7 @@ export const fraudRealtimeVizRouter = router({
       return results;
     }),
 
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,
@@ -97,7 +105,7 @@ export const fraudRealtimeVizRouter = router({
     };
   }),
 
-  getStats: publicProcedure.query(async () => {
+  getStats: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,
@@ -107,7 +115,7 @@ export const fraudRealtimeVizRouter = router({
     };
   }),
 
-  liveMap: publicProcedure.query(async () => {
+  liveMap: protectedProcedure.query(async () => {
     return {
       agents: [],
       alerts: [],
@@ -124,11 +132,11 @@ export const fraudRealtimeVizRouter = router({
     };
   }),
 
-  suspiciousStream: publicProcedure.query(async () => {
+  suspiciousStream: protectedProcedure.query(async () => {
     return { events: [], total: 0, items: [] };
   }),
 
-  agentHeatmap: publicProcedure.query(async () => {
+  agentHeatmap: protectedProcedure.query(async () => {
     return { regions: [], maxDensity: 0, zones: [] };
   }),
 });

@@ -1085,10 +1085,11 @@ class LivenessEngine:
                 noise = _estimate_noise_floor(state.ear_history, window=8)
                 # Adaptive dip threshold: base 0.22, widened by noise
                 # This is the level the EAR must drop BELOW to count as a blink
-                dip_threshold = _adapt_threshold(threshold, noise, scale=1.5)
-                # Recovery check uses BASE threshold (not adaptive) because
-                # normal open-eye EAR (~0.30) must simply exceed the base 0.22
-                recovery_level = threshold + max(0.03, 0.05 - noise)
+                dip_threshold = _adapt_threshold(threshold, noise, scale=2.0)
+                # Recovery: base formula recovery_level = threshold + max(0.03, 0.05 - noise)
+                # Enhanced with noise-adaptive margin for better tolerance
+                recovery_margin = max(0.05, 0.08 - noise)
+                recovery_level = threshold + recovery_margin
 
                 recent = smoothed[-8:] if len(smoothed) >= 8 else smoothed
                 min_ear = min(recent)

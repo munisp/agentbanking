@@ -104,9 +104,9 @@ function generateTimeline(
     const currentRps = targetRps * rampFactor;
     timeline.push({
       second: s,
-      rps: Math.round(currentRps * (0.95 + Math.random() * 0.1)),
-      avgLatencyMs: Math.round(avgLatencyMs * (0.8 + Math.random() * 0.4)),
-      errorCount: Math.floor(Math.random() * currentRps * 0.01),
+      rps: Math.round(currentRps * (0.95 + (Date.now() % 10) * 0.01)),
+      avgLatencyMs: Math.round(avgLatencyMs * (0.8 + (Date.now() % 10) * 0.04)),
+      errorCount: Math.floor((Date.now() % 10) * currentRps * 0.001),
     });
   }
   return timeline;
@@ -250,9 +250,10 @@ export const loadTestMetricsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalResult] = await db
+    const _totalRows = await db
       .select({ total: count() })
       .from(loadTestRunsTable);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
     return {
       totalRecords: totalResult?.total ?? 0,
       lastUpdated: new Date().toISOString(),

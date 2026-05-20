@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * DisputesAdminTab — Admin/Supervisor view of all transaction disputes
  *

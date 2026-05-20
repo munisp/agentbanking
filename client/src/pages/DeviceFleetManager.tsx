@@ -6,7 +6,7 @@ import { Smartphone } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function DeviceFleetManager() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } = trpc.deviceFleetManager.list.useQuery(
     undefined,
     { retry: 1 }
@@ -58,7 +58,7 @@ export default function DeviceFleetManager() {
   const columns = ["Serial", "Model", "Agent", "Firmware", "Status"];
 
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

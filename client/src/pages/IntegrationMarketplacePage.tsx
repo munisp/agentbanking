@@ -9,7 +9,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 export default function IntegrationMarketplacePage() {
   const [search, setSearch] = useState("");
   const { data, isLoading, refetch } =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.integrationMarketplace.dashboard.useQuery();
   if (isLoading)
     return (

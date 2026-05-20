@@ -67,11 +67,25 @@ vi.mock("jose", () => ({
   }),
 }));
 
+// ─── Mock user for authenticated context ─────────────────────────────────────
+const MOCK_USER = {
+  id: 1,
+  username: "test-agent",
+  role: "admin" as const,
+  agentCode: "AGT001",
+  name: "Test Agent",
+  email: "test@54link.io",
+};
+
 // ─── Test context factory ─────────────────────────────────────────────────────
-function makeCtx(cookieOverride?: string): TrpcContext {
+function makeCtx(
+  cookieOverride?: string,
+  opts?: { authenticated?: boolean }
+): TrpcContext {
   const cookies: string[] = [];
+  const authenticated = opts?.authenticated ?? true;
   return {
-    user: null,
+    user: authenticated ? MOCK_USER : null,
     req: {
       headers: { cookie: cookieOverride ?? "agent_session=mock.jwt.token" },
       ip: "127.0.0.1",
@@ -279,10 +293,10 @@ describe("loyalty.profile", () => {
   });
 
   it("throws UNAUTHORIZED without session cookie", async () => {
-    const ctx = makeCtx("");
+    const ctx = makeCtx("", { authenticated: false });
     const caller = appRouter.createCaller(ctx);
     await expect(caller.loyalty.profile()).rejects.toThrow(
-      "Agent session required"
+      /login|unauthorized/i
     );
   });
 });

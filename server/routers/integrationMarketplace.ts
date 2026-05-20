@@ -1,6 +1,6 @@
 // Sprint 87: Regenerated — integrationMarketplace with real DB queries
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { webhookEndpoints } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
@@ -180,7 +180,7 @@ export const integrationMarketplaceRouter = router({
   installIntegration,
   getApiCatalog,
 
-  getStats: publicProcedure.query(async () => {
+  getStats: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,

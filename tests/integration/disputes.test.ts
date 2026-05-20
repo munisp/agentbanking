@@ -107,7 +107,14 @@ function makeAgentCtx(): TrpcContext {
       role: "agent",
       tier: "Gold",
     },
-    user: null,
+    user: {
+      id: 1,
+      username: "AGT001",
+      role: "admin" as const,
+      agentCode: "AGT001",
+      name: "Emeka Obi",
+      email: "agent@54link.io",
+    },
   };
 }
 

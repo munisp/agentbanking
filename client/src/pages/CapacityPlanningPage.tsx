@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp, Server, HardDrive } from "lucide-react";
 
 export default function CapacityPlanningPage() {
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data } = trpc.capacityPlanning.dashboard.useQuery();
 
   return (

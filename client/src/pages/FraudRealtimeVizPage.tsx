@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, MapPin, Activity, Eye } from "lucide-react";
 
 export default function FraudRealtimeVizPage() {
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data: live } = trpc.fraudRealtimeViz.liveMap.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data: stream } = trpc.fraudRealtimeViz.suspiciousStream.useQuery({
     limit: 20,
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data: heatmap } = trpc.fraudRealtimeViz.agentHeatmap.useQuery();
 
   const summary = live?.summary;

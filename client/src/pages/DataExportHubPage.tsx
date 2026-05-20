@@ -29,11 +29,11 @@ export default function DataExportHubPage() {
     filters: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const exportsQuery = trpc.dataExportHub.listExports.useQuery({ limit: 50 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.dataExportHub.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation = trpc.dataExportHub.createExport.useMutation({
     onSuccess: () => {
       exportsQuery.refetch();
@@ -301,7 +301,7 @@ export default function DataExportHubPage() {
                   Cancel
                 </button>
                 <button
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   onClick={() => createMutation.mutate(form)}
                   className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-lg text-sm"
                 >

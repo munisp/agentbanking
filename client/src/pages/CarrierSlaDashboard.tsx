@@ -9,9 +9,9 @@ import { Activity, CheckCircle, XCircle, Clock } from "lucide-react";
 
 export default function CarrierSlaDashboard() {
   const targets = trpc.carrierSla.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const violations = trpc.carrierSla.getViolations.useQuery({ hours: 24 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const compliance = trpc.carrierSla.getComplianceReport.useQuery({
     period: "weekly",
   });

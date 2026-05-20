@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure, publicProcedure } from "../_core/trpc";
+import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { notification_logs, auditLog } from "../../drizzle/schema";
@@ -99,7 +99,7 @@ export const realtimeNotificationsRouter = router({
         });
       }
     }),
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,

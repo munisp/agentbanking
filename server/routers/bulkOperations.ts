@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -25,9 +25,8 @@ export const bulkOperationsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -58,7 +57,7 @@ export const bulkOperationsRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       jobs: [
         {
@@ -74,7 +73,7 @@ export const bulkOperationsRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalJobs: 45,
       totalProcessed: 22500,

@@ -8,13 +8,13 @@ import { Receipt, Building2, FileText, BarChart3 } from "lucide-react";
 
 export default function TaxCollectionPage() {
   const [tab, setTab] = useState<"payments" | "types" | "agents">("payments");
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const payments = trpc.taxCollection.history.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const taxTypes = trpc.taxCollection.taxTypes.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const agentPerformance = trpc.taxCollection.history.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const analytics = trpc.taxCollection.analytics.useQuery();
 
   return (

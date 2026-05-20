@@ -1,9 +1,13 @@
+// Seed announcements: ann_001 (Welcome), ann_002 (Update), ann_003 (Maintenance), ann_004 (Feature), ann_005 (Policy)
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
+// Announcement types: "info", "warning", "critical", "maintenance", "feature"
+// Targets: "all", "agents", "admins", "merchants"
+// Channels: "banner", "inbox", "push", "email", "sms"
 export const broadcastAnnouncementsRouter = router({
   list: protectedProcedure
     .input(
@@ -14,25 +18,32 @@ export const broadcastAnnouncementsRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +66,8 @@ export const broadcastAnnouncementsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -114,4 +124,7 @@ export const broadcastAnnouncementsRouter = router({
     .mutation(async () => {
       return { success: true };
     }),
+  dismiss: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => ({ id: input.id, dismissed: true })),
 });

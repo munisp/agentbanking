@@ -123,6 +123,7 @@ const API_SPEC = {
 } as const;
 
 export const apiDocsRouter = router({
+  getSpec: protectedProcedure.query(() => API_SPEC),
   openapi: protectedProcedure.query(() => API_SPEC),
 
   endpoints: protectedProcedure.query(() => {

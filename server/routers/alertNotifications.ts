@@ -112,4 +112,18 @@ export const alertNotificationsRouter = router({
         });
       }
     }),
+  listPreferences: protectedProcedure.query(async () => ({
+    preferences: [],
+    total: 0,
+  })),
+  getPreference: protectedProcedure
+    .input(z.object({ key: z.string() }))
+    .query(async ({ input }) => ({ key: input.key, value: true })),
+  updatePreference: protectedProcedure
+    .input(z.object({ key: z.string(), value: z.boolean() }))
+    .mutation(async ({ input }) => ({
+      key: input.key,
+      value: input.value,
+      updated: true,
+    })),
 });

@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -32,9 +32,12 @@ export const pensionCollectionRouter = router({
           .limit(input.limit)
           .offset(input.offset);
 
-        const [totalResult] = await database
+        const _totalRows = await database
           .select({ total: count() })
           .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
         return {
           data: results,
@@ -80,9 +83,12 @@ export const pensionCollectionRouter = router({
     try {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [totalResult] = await database
+      const _totalRows = await database
         .select({ total: count() })
         .from(auditLog);
+      const totalResult = Array.isArray(_totalRows)
+        ? _totalRows[0]
+        : _totalRows;
 
       return {
         totalRecords: totalResult?.total ?? 0,
@@ -128,7 +134,7 @@ export const pensionCollectionRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
-  pfas: publicProcedure.query(async () => {
+  pfas: protectedProcedure.query(async () => {
     return {
       pfas: [
         { id: "PFA-001", name: "ARM Pension", code: "ARM", status: "active" },
@@ -141,7 +147,7 @@ export const pensionCollectionRouter = router({
       ],
     };
   }),
-  history: publicProcedure.query(async () => {
+  history: protectedProcedure.query(async () => {
     return {
       contributions: [
         {
@@ -155,7 +161,7 @@ export const pensionCollectionRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalContributions: 5000,
       totalVolume: 25000000,

@@ -134,7 +134,7 @@ export async function tbRecordSettlementTransfer(params: {
       agentCode: params.agentCode,
     };
     const result = await tbCreateTransfer(req);
-    if (result) {
+    if (result && result.id) {
       return { transferId: result.id, syncStatus: result.syncStatus };
     }
     return null;

@@ -8,9 +8,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 export default function AgentScorecardPage() {
   const [agentId, setAgentId] = useState("");
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data, isLoading } = trpc.agentScorecard.dashboard.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const agentScore = trpc.agentScorecard.getAgentScore.useQuery(
     { agentId: agentId || "AGT-001" },
     { enabled: !!agentId }

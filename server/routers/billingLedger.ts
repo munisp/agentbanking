@@ -2,7 +2,7 @@
  * Billing Ledger tRPC Router — Sprint 81 + Sprint 79 test-compatible
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   platformBillingLedger,

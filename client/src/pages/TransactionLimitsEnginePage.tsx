@@ -17,9 +17,9 @@ export default function TransactionLimitsEnginePage() {
     dailyLimit: "50000",
     monthlyLimit: "500000",
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.transactionLimitsEngine.list.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const addMut = trpc.transactionLimitsEngine.create.useMutation({
     onSuccess: () => {
       toast.success("Limit rule added");

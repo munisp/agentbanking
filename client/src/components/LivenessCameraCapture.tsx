@@ -1014,6 +1014,10 @@ export default function LivenessCameraCapture({
               device steadier.
             </p>
           )}
+        {/* Camera quality guidance */}
+        <p className="text-xs text-muted-foreground text-center mt-2">
+          Tip: Use good lighting and hold device steady
+        </p>
       </CardContent>
     </Card>
   );

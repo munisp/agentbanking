@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * transactions router — all transaction operations for the 54Link POS platform.
  *
@@ -315,7 +316,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent) {
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -938,7 +939,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -977,7 +978,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1013,7 +1014,7 @@ export const transactionsRouter = router({
     .input(z.object({ ref: z.string() }))
     .query(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1048,7 +1049,7 @@ export const transactionsRouter = router({
     .input(z.object({ ref: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1166,7 +1167,7 @@ export const transactionsRouter = router({
   // ── List pending reversals (admin/supervisor) ─────────────────────────────
   pendingReversals: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -1217,7 +1218,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1307,7 +1308,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1377,7 +1378,7 @@ export const transactionsRouter = router({
   // ── Velocity Limits CRUD (admin) ──────────────────────────────────────────
   getVelocityLimits: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1413,7 +1414,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || agent.role !== "admin") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1463,7 +1464,7 @@ export const transactionsRouter = router({
   // ── Platform Settings CRUD (admin) ────────────────────────────────────────
   getPlatformSettings: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1492,7 +1493,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || agent.role !== "admin") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1545,7 +1546,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1632,7 +1633,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1686,7 +1687,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1800,7 +1801,7 @@ export const transactionsRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1852,7 +1853,7 @@ export const transactionsRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1972,7 +1973,7 @@ export const transactionsRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: "DB unavailable",
         });
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -2083,7 +2084,7 @@ export const transactionsRouter = router({
   // ── Analytics: hourly cashIn/cashOut for current agent today ─────────────
   hourlyStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return [];
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2135,7 +2136,7 @@ export const transactionsRouter = router({
   // ── Analytics: weekly commission per day for current agent ───────────────
   commissionStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return [];
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2180,7 +2181,7 @@ export const transactionsRouter = router({
   // ── Analytics: agent day summary for ticker ───────────────────────────────
   agentDayStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return null;
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2338,7 +2339,7 @@ export const transactionsRouter = router({
    */
   getFloatBalance: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = await getAgentFromCookie(ctx.req);
+      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -2399,7 +2400,7 @@ export const transactionsRouter = router({
     .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }))
     .query(async ({ ctx, input }) => {
       try {
-        const agent = await getAgentFromCookie(ctx.req);
+        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",

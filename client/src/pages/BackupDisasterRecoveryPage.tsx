@@ -23,13 +23,13 @@ const STATUS_COLORS: Record<string, string> = {
 export default function BackupDisasterRecoveryPage() {
   const [selectedBackup, setSelectedBackup] = useState<any>(null);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const snapshotsQuery = trpc.backupDisasterRecovery.listSnapshots.useQuery({
     limit: 50,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.backupDisasterRecovery.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation = trpc.backupDisasterRecovery.createSnapshot.useMutation(
     {
       onSuccess: () => {
@@ -39,7 +39,7 @@ export default function BackupDisasterRecoveryPage() {
       onError: (e: any) => toast.error(e.message),
     }
   );
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const restoreMutation =
     trpc.backupDisasterRecovery.restoreSnapshot.useMutation({
       onSuccess: () => {
@@ -77,7 +77,7 @@ export default function BackupDisasterRecoveryPage() {
           <button
             onClick={() =>
               createMutation.mutate({
-                // @ts-ignore
+                // @ts-ignore Sprint 85
                 type: "full",
                 description: "Manual backup",
               })
@@ -93,28 +93,28 @@ export default function BackupDisasterRecoveryPage() {
         {[
           {
             label: "Total Snapshots",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.totalSnapshots ?? 0,
             icon: Database,
             color: "text-violet-400",
           },
           {
             label: "Successful",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.successful ?? 0,
             icon: CheckCircle,
             color: "text-emerald-400",
           },
           {
             label: "Total Size",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.totalSize || "0 GB",
             icon: HardDrive,
             color: "text-blue-400",
           },
           {
             label: "Last Backup",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.lastBackup || "Never",
             icon: Clock,
             color: "text-yellow-400",
@@ -155,7 +155,7 @@ export default function BackupDisasterRecoveryPage() {
                   </td>
                 </tr>
               ))
-            ) : // @ts-ignore
+            ) : // @ts-ignore Sprint 85
             snapshots.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-8 text-center text-zinc-500">
@@ -163,7 +163,7 @@ export default function BackupDisasterRecoveryPage() {
                 </td>
               </tr>
             ) : (
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               snapshots.map((s: any) => (
                 <tr
                   key={s.id}
@@ -213,7 +213,7 @@ export default function BackupDisasterRecoveryPage() {
                                 "Restore from this backup? This will overwrite current data."
                               )
                             )
-                              // @ts-ignore
+                              // @ts-ignore Sprint 85
                               restoreMutation.mutate({ id: s.id });
                           }}
                           className="p-1.5 hover:bg-violet-700/30 rounded-lg"

@@ -109,7 +109,14 @@ vi.mock("jose", () => ({
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeCtx(): TrpcContext {
   return {
-    user: null,
+    user: {
+      id: 1,
+      username: "test-agent",
+      role: "admin" as const,
+      agentCode: "AGT001",
+      name: "Test Agent",
+      email: "test@54link.io",
+    },
     req: { headers: { cookie: "agent_session=mock.jwt.token" } } as any,
     res: { cookie: vi.fn(), clearCookie: vi.fn() } as any,
   };

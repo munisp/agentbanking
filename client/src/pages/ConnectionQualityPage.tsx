@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Signal, Gauge, Waves } from "lucide-react";
 
 export default function ConnectionQualityPage() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const metrics = trpc.networkResilience.getConnectionMetrics.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const config = trpc.networkResilience.getBandwidthConfig.useQuery();
 
   return (

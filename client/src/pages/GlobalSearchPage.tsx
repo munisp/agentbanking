@@ -161,7 +161,7 @@ export default function GlobalSearchPage() {
     filteredAgents.length + filteredTx.length + filteredCustomers.length;
   // Sprint 87: Wired to advancedSearchFiltering router
   const { data, isLoading } =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.advancedSearchFiltering.globalSearch.useQuery({ page: 1, limit: 10 });
 
   return (

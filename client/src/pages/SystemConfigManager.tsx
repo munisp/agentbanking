@@ -6,7 +6,7 @@ import { Settings } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function SystemConfigManager() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } = trpc.systemConfigManager.list.useQuery(
     undefined,
     { retry: 1 }
@@ -58,7 +58,7 @@ export default function SystemConfigManager() {
   const columns = ["Key", "Value", "Type", "Updated", "Actions"];
 
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

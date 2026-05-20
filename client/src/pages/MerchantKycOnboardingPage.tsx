@@ -33,13 +33,13 @@ export default function MerchantKycOnboardingPage() {
     expiry_date: "",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const docsQuery = trpc.merchantKycOnboarding.listDocuments.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.merchantKycOnboarding.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const uploadMutation = trpc.merchantKycOnboarding.uploadDocument.useMutation({
     onSuccess: () => {
       docsQuery.refetch();
@@ -48,7 +48,7 @@ export default function MerchantKycOnboardingPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const verifyMutation = trpc.merchantKycOnboarding.verifyDocument.useMutation({
     onSuccess: () => {
       docsQuery.refetch();
@@ -56,7 +56,7 @@ export default function MerchantKycOnboardingPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rejectMutation = trpc.merchantKycOnboarding.rejectDocument.useMutation({
     onSuccess: () => {
       docsQuery.refetch();
@@ -89,10 +89,10 @@ export default function MerchantKycOnboardingPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Add KYC Document",
                   description: "Feature ready for integration",
                 });
@@ -102,10 +102,10 @@ export default function MerchantKycOnboardingPage() {
               + Add KYC Document
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Document",
                   description: "Select a kyc document to edit",
                 });
@@ -115,10 +115,10 @@ export default function MerchantKycOnboardingPage() {
               ✏️ Edit Document
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Document",
                   description: "Select a kyc document to delete",
                 });

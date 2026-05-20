@@ -105,11 +105,11 @@ export default function NotificationPreferenceMatrix() {
     new Map()
   );
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const matrixQuery = trpc.production.prefMatrix.getMatrix.useQuery({
     agentId,
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const bulkUpdate = trpc.production.prefMatrix.bulkUpdate.useMutation({
     onSuccess: () => {
       toast.success("Preferences saved");
@@ -118,7 +118,7 @@ export default function NotificationPreferenceMatrix() {
     },
     onError: () => toast.error("Failed to save preferences"),
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const resetMut = trpc.production.prefMatrix.resetToDefaults.useMutation({
     onSuccess: () => {
       toast.success("Reset to defaults");

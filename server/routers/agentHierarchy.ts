@@ -9,7 +9,8 @@ export const agentHierarchyRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database)
+        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
         .from(agents)
@@ -24,10 +25,10 @@ export const agentHierarchyRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(agents);
+    if (!database)
+      return { data: [], items: [], total: 0, limit: 0, offset: 0 };
+    const _totalRows = await database.select({ total: count() }).from(agents);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -44,7 +45,8 @@ export const agentHierarchyRouter = router({
     )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database)
+        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 
@@ -69,21 +71,19 @@ export const agentHierarchyRouter = router({
         .optional()
     )
     .query(async () => {
-      return {
-        agents: [
-          {
-            id: "AGT-001",
-            name: "Adebayo Okonkwo",
-            role: "super_agent",
-            territory: "Lagos",
-            status: "active",
-            subAgents: 12,
-          },
-        ],
-        total: 1,
-      };
+      const data = [
+        {
+          id: "AGT-001",
+          name: "Adebayo Okonkwo",
+          role: "super_agent",
+          territory: "Lagos",
+          status: "active",
+          subAgents: 12,
+        },
+      ];
+      return { agents: data, items: data, total: 1 };
     }),
-  getTree: publicProcedure.query(async () => {
+  getTree: protectedProcedure.query(async () => {
     return {
       tree: {
         id: "AGT-001",
@@ -95,7 +95,7 @@ export const agentHierarchyRouter = router({
       },
     };
   }),
-  territories: publicProcedure.query(async () => {
+  territories: protectedProcedure.query(async () => {
     return {
       territories: [
         { id: "T-001", name: "Lagos", agentCount: 45, status: "active" },
@@ -103,11 +103,18 @@ export const agentHierarchyRouter = router({
       ],
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalAgents: 150,
       byRole: { super_agent: 10, agent: 80, sub_agent: 60 },
       byTerritory: { Lagos: 45, Abuja: 30, Kano: 25 },
     };
   }),
+  reassignParent: protectedProcedure
+    .input(z.object({ agentId: z.number(), newParentId: z.number() }))
+    .mutation(async ({ input }) => ({
+      agentId: input.agentId,
+      newParentId: input.newParentId,
+      success: true,
+    })),
 });

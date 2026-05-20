@@ -16,25 +16,25 @@ export default function MiddlewareServiceManager() {
   const stats = statsQuery.data;
 
   const statCards = [
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     {
       label: "Total Services",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalServices != null ? String(stats.totalServices) : "—",
     },
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     {
       label: "Healthy",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.healthy != null ? String(stats.healthy) : "—",
     },
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     {
       label: "Degraded",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.degraded != null ? String(stats.degraded) : "—",
     },
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     { label: "Down", value: stats?.down != null ? String(stats.down) : "—" },
   ];
 

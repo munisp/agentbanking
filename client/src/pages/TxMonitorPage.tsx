@@ -128,7 +128,7 @@ export default function TxMonitorPage() {
       : alerts.filter(a => a.severity === severityFilter);
   // Sprint 87: Wired to transactionMonitoring router
   const { data, isLoading } = trpc.transactionMonitoring.list.useQuery({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     page: 1,
     limit: 10,
   });

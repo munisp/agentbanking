@@ -32,9 +32,12 @@ export const transactionReversalManagerRouter = router({
           .limit(input.limit)
           .offset(input.offset);
 
-        const [totalResult] = await database
+        const _totalRows = await database
           .select({ total: count() })
           .from(transactions);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
         return {
           data: results,
@@ -80,9 +83,12 @@ export const transactionReversalManagerRouter = router({
     try {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [totalResult] = await database
+      const _totalRows = await database
         .select({ total: count() })
         .from(transactions);
+      const totalResult = Array.isArray(_totalRows)
+        ? _totalRows[0]
+        : _totalRows;
 
       return {
         totalRecords: totalResult?.total ?? 0,

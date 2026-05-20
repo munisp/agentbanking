@@ -432,7 +432,6 @@ export async function checkBiometricServicesHealth(): Promise<
     { name: "video_kyc_legacy", url: `${KYC_SERVICE_URL}/health` },
     { name: "paddleocr", url: `${PADDLEOCR_URL}/health` },
     { name: "compliance_kyc", url: `${COMPLIANCE_KYC_URL}/health` },
-    { name: "deepface", url: `${DEEPFACE_SERVICE_URL}/health` },
   ];
 
   const results = await Promise.allSettled(

@@ -459,7 +459,7 @@ export const airtimeVendingRouter = router({
     }
   }),
 
-  networks: publicProcedure.query(async () => {
+  networks: protectedProcedure.query(async () => {
     return {
       networks: [
         { id: "NW-001", name: "MTN", code: "MTN", status: "active" },
@@ -467,7 +467,7 @@ export const airtimeVendingRouter = router({
       ],
     };
   }),
-  history: publicProcedure.query(async () => {
+  history: protectedProcedure.query(async () => {
     return {
       transactions: [
         {
@@ -496,7 +496,7 @@ export const airtimeVendingRouter = router({
         ],
       };
     }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalTransactions: 50000,
       totalVolume: 25000000,

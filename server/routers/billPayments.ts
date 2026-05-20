@@ -5,7 +5,7 @@
  * PostgreSQL (payment persistence), Go biller gateway (port 8140)
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
@@ -338,7 +338,7 @@ export const billPaymentsRouter = router({
     }
   }),
 
-  billers: publicProcedure.query(async () => {
+  billers: protectedProcedure.query(async () => {
     return {
       billers: [
         {
@@ -351,7 +351,7 @@ export const billPaymentsRouter = router({
       ],
     };
   }),
-  history: publicProcedure.query(async () => {
+  history: protectedProcedure.query(async () => {
     return {
       payments: [
         {
@@ -365,7 +365,7 @@ export const billPaymentsRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalPayments: 8000,
       totalVolume: 120000000,

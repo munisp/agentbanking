@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 
 export default function TenantBillingPortalPage() {

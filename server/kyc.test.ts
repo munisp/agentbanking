@@ -146,7 +146,14 @@ function makeCaller(role: "agent" | "admin" = "agent") {
             role: "admin",
             keycloakSub: "admin-sub",
           } as any)
-        : null,
+        : ({
+            id: 2,
+            name: "Test Agent",
+            role: "user",
+            agentCode: "AGT001",
+            username: "test-agent",
+            email: "agent@54link.io",
+          } as any),
   };
   return appRouter.createCaller(ctx);
 }

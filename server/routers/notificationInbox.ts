@@ -17,6 +17,33 @@ import {
 import { notification_logs, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+export function createNotification(params: {
+  channel: string;
+  category: string;
+  priority: string;
+  title: string;
+  body: string;
+  agentId?: number;
+  agentName?: string;
+  actionUrl?: string;
+}) {
+  return {
+    id: `notif_${Date.now()}_${Date.now().toString(36).slice(2, 8)}`,
+    channel: params.channel,
+    category: params.category,
+    priority: params.priority,
+    title: params.title,
+    body: params.body,
+    agentId: params.agentId,
+    agentName: params.agentName,
+    actionUrl: params.actionUrl,
+    read: false,
+    starred: false,
+    archived: false,
+    createdAt: new Date(),
+  };
+}
+
 export const notificationInboxRouter = router({
   getStats: protectedProcedure
     .input(z.object({ userId: z.string() }))

@@ -42,16 +42,16 @@ export default function ThresholdManager() {
     "critical" | "warning" | "info"
   >("warning");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const thresholds = trpc.sprint23.thresholds.list.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const evaluation = trpc.sprint23.thresholds.evaluate.useQuery();
   const utils = trpc.useUtils();
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const createMutation = trpc.sprint23.thresholds.create.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.thresholds.list.invalidate();
       toast.success("Threshold created");
       setDialogOpen(false);
@@ -61,19 +61,19 @@ export default function ThresholdManager() {
     },
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const updateMutation = trpc.sprint23.thresholds.update.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.thresholds.list.invalidate();
       toast.success("Threshold updated");
     },
   });
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const deleteMutation = trpc.sprint23.thresholds.delete.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.thresholds.list.invalidate();
       toast.success("Threshold deleted");
     },

@@ -136,9 +136,9 @@ export default function SettlementBatchProcessor() {
     Map<string, BatchProgressEvent>
   >(new Map());
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.settlementBatchProcessor.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const batchesQuery = trpc.settlementBatchProcessor.listBatches.useQuery({
     status: statusFilter as any,
     limit: 50,

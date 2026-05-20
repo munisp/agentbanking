@@ -12,33 +12,33 @@ export default function DatabaseVisualization() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.databaseVisualization.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Tables",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalTables != null ? String(stats.totalTables) : "—",
     },
     {
       label: "Total Rows",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.totalRows != null
-          ? // @ts-ignore
+          ? // @ts-ignore Sprint 85
             String(stats.totalRows.toLocaleString())
           : "—",
     },
     {
       label: "Total Size",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalSize != null ? String(stats.totalSize) : "—",
     },
     {
       label: "Avg Query Time",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.avgQueryTime != null ? String(stats.avgQueryTime) : "—",
     },
   ];

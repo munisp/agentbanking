@@ -25,11 +25,11 @@ export default function MerchantPayoutSettlementPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedPayout, setSelectedPayout] = useState<any>(null);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const payoutsQuery = trpc.merchantPayoutSettlement.listPayouts.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.merchantPayoutSettlement.getStats.useQuery();
   const approveMutation =
     trpc.merchantPayoutSettlement.approvePayout.useMutation({
@@ -64,10 +64,10 @@ export default function MerchantPayoutSettlementPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Create Payout Batch",
                   description: "Feature ready for integration",
                 });
@@ -77,10 +77,10 @@ export default function MerchantPayoutSettlementPage() {
               + Create Payout Batch
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Payout",
                   description: "Select a payout to edit",
                 });
@@ -90,10 +90,10 @@ export default function MerchantPayoutSettlementPage() {
               ✏️ Edit Payout
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Payout",
                   description: "Select a payout to delete",
                 });
@@ -250,9 +250,9 @@ export default function MerchantPayoutSettlementPage() {
                         <Eye className="h-4 w-4 text-zinc-400" />
                       </button>
                       {p.status === "pending" && (
-                        // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                        // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                         <button
-                          // @ts-ignore
+                          // @ts-ignore Sprint 85
                           onClick={() => approveMutation.mutate({ id: p.id })}
                           className="p-1.5 hover:bg-emerald-700/30 rounded-lg"
                         >

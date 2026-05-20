@@ -12,7 +12,7 @@ export default function FinancialReportingSuite() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.financialReportingSuite.getStats.useQuery();
   const stats = statsQuery.data;
 
@@ -20,33 +20,33 @@ export default function FinancialReportingSuite() {
     {
       label: "Total Revenue",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.totalRevenue != null
-          ? // @ts-ignore
+          ? // @ts-ignore Sprint 85
             String(stats.totalRevenue.toLocaleString())
           : "—",
     },
     {
       label: "Total Expenses",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.totalExpenses != null
-          ? // @ts-ignore
+          ? // @ts-ignore Sprint 85
             String(stats.totalExpenses.toLocaleString())
           : "—",
     },
     {
       label: "Net Profit",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.netProfit != null
-          ? // @ts-ignore
+          ? // @ts-ignore Sprint 85
             String(stats.netProfit.toLocaleString())
           : "—",
     },
     {
       label: "Profit Margin",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.profitMargin != null ? String(stats.profitMargin) : "—",
     },
   ];

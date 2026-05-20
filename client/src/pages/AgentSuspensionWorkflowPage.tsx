@@ -9,16 +9,16 @@ import { Ban, Search, UserX, UserCheck, AlertTriangle } from "lucide-react";
 
 export default function AgentSuspensionWorkflowPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.agentSuspensionWorkflow.list.useQuery();
   const suspendMut = trpc.agentSuspensionWorkflow.suspend.useMutation({
     onSuccess: () => toast.success("Agent suspended"),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const reinstateMut = trpc.agentSuspensionWorkflow.reinstate.useMutation({
     onSuccess: () => toast.success("Agent reinstated"),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const agents = (data?.agents || []).filter(
     (a: any) => !search || a.name?.toLowerCase().includes(search.toLowerCase())
   );

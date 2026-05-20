@@ -125,6 +125,9 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
   ],
 };
 
+/** Public alias for test/consumer access (Sprint 19+) */
+export const roleNavAccess: Record<string, string[]> = roleGroupAccess;
+
 /**
  * Get the navigation group IDs visible to a given role.
  * Falls back to viewer-level access for unknown roles.
@@ -159,8 +162,8 @@ const routeMinLevel: Record<string, number> = {
   "/infrastructure": 7,
   "/system-config-manager": 7,
 
-  // Admin+
-  "/admin": 6,
+  // Supervisor+
+  "/admin": 5,
   "/admin/fraud": 6,
   "/admin/audit": 6,
   "/admin/tenant": 6,

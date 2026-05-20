@@ -11,9 +11,9 @@ import { Wifi, Activity, Globe, Zap } from "lucide-react";
 
 export default function NetworkDiagnosticPage() {
   const [target, setTarget] = useState("8.8.8.8");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const resilience = trpc.networkResilience.getResilienceStatus.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const metrics = trpc.networkResilience.getConnectionMetrics.useQuery();
 
   return (

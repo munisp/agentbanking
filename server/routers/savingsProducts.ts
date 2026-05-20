@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count, sum, and } from "drizzle-orm";
 import { transactions, auditLog } from "../../drizzle/schema";
@@ -168,7 +168,7 @@ export const savingsProductsRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
-  products: publicProcedure.query(async () => {
+  products: protectedProcedure.query(async () => {
     return {
       products: [
         {
@@ -181,7 +181,7 @@ export const savingsProductsRouter = router({
       ],
     };
   }),
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       accounts: [
         {
@@ -195,7 +195,7 @@ export const savingsProductsRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalAccounts: 200,
       activeAccounts: 180,

@@ -4,9 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 
 export default function PipelineMonitoringPage() {
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data } = trpc.pipelineMonitoring.dashboard.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data: alerts } = trpc.pipelineMonitoring.activeAlerts.useQuery({
     limit: 20,
   });

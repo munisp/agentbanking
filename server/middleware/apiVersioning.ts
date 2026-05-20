@@ -6,7 +6,9 @@
 import type { Request, Response, NextFunction } from "express";
 
 const CURRENT_VERSION = "v1";
+const CURRENT_API_VERSION = CURRENT_VERSION;
 const SUPPORTED_VERSIONS = ["v1"];
+const DEPRECATED_VERSIONS: string[] = [];
 
 export function apiVersionMiddleware(
   req: Request,
@@ -30,10 +32,12 @@ export function apiVersionMiddleware(
     (req as unknown as Record<string, unknown>).apiVersion = CURRENT_VERSION;
   }
 
+  // Set response headers: x-api-version for client version detection
   res.setHeader("X-API-Version", CURRENT_VERSION);
   res.setHeader("X-API-Supported-Versions", SUPPORTED_VERSIONS.join(", "));
 
   next();
 }
 
+export const apiVersioningMiddleware = apiVersionMiddleware;
 export { CURRENT_VERSION, SUPPORTED_VERSIONS };

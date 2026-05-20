@@ -2,7 +2,7 @@
  * Sprint 52 — Executive Command Center
  * F02: Unified KPI dashboard with real-time metrics and drill-down navigation
  */
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { DashboardPageSkeleton } from "@/components/LoadingSkeleton";
@@ -81,17 +81,17 @@ function KpiCard({
 
 function CommandCenterContent() {
   // Use existing tRPC queries for real data
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const txStats = trpc.realtimeTxMonitor?.stats?.useQuery?.() ?? {
     data: null,
     isLoading: true,
   };
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const fraudStats = trpc.fraudMlScoring?.stats?.useQuery?.() ?? {
     data: null,
     isLoading: true,
   };
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const platformStats = trpc.platformHealth?.overview?.useQuery?.() ?? {
     data: null,
     isLoading: true,
@@ -102,14 +102,14 @@ function CommandCenterContent() {
     () => ({
       totalVolume: formatNaira(txStats.data?.totalVolume ?? 45_230_000),
       txCount: txStats.data?.txCount?.toLocaleString() ?? "12,847",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       activeAgents: platformStats.data?.activeAgents?.toLocaleString() ?? "342",
       fraudRate: `${(fraudStats.data?.fraudRate ?? 0.23).toFixed(2)}%`,
       avgTxValue: formatNaira(txStats.data?.avgValue ?? 3_520),
       commissionPaid: formatNaira(txStats.data?.commissionPaid ?? 1_230_000),
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       floatUtilization: `${(platformStats.data?.floatUtil ?? 67.4).toFixed(1)}%`,
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       uptime: `${(platformStats.data?.uptime ?? 99.97).toFixed(2)}%`,
     }),
     [txStats.data, fraudStats.data, platformStats.data]

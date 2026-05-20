@@ -156,15 +156,15 @@ export default function LoadTestDashboard() {
   const [compareRunA, setCompareRunA] = useState<string | null>(null);
 
   // S61-1: Load current threshold config
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const p99ThresholdQuery = trpc.runtimeConfigAdmin.get.useQuery({
     key: "loadtest_p99_threshold_ms",
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const errorThresholdQuery = trpc.runtimeConfigAdmin.get.useQuery({
     key: "loadtest_error_rate_threshold",
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const updateConfigMutation = trpc.runtimeConfigAdmin.batchUpdate.useMutation({
     onSuccess: () => {
       toast.success("Threshold configuration saved");
@@ -183,11 +183,11 @@ export default function LoadTestDashboard() {
     ? parseFloat(errorThresholdQuery.data.value)
     : 5.0;
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const engineMetricsQuery = trpc.loadTestMetrics.getEngineMetrics.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const activeTestQuery = trpc.loadTestMetrics.getActiveTest.useQuery(
     undefined,
     {
@@ -195,7 +195,7 @@ export default function LoadTestDashboard() {
     }
   );
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const runLoadTestMutation = trpc.loadTestMetrics.runLoadTest.useMutation({
     onSuccess: (data: any) => {
       if (data.success) {
@@ -203,7 +203,7 @@ export default function LoadTestDashboard() {
         setShowRunDialog(false);
         // Poll for completion
         const pollInterval = setInterval(() => {
-          // @ts-ignore
+          // @ts-ignore Sprint 85
           activeTestQuery.refetch().then(result => {
             if (!result.data) {
               clearInterval(pollInterval);
@@ -223,7 +223,7 @@ export default function LoadTestDashboard() {
 
   const runs = runsQuery.data ?? [];
   const activeRunId = selectedRun ?? runs[0]?.runId ?? null;
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const detailsQuery = trpc.loadTestMetrics.getRunDetails.useQuery(
     { runId: activeRunId! },
     { enabled: !!activeRunId }
@@ -371,7 +371,7 @@ export default function LoadTestDashboard() {
                   <Button
                     onClick={() =>
                       updateConfigMutation.mutate({
-                        // @ts-ignore
+                        // @ts-ignore Sprint 85
                         updates: [
                           {
                             key: "loadtest_p99_threshold_ms",

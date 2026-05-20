@@ -34,7 +34,7 @@ export default function BatchOperations() {
   const [smsMessage, setSmsMessage] = useState("");
   const [lastResult, setLastResult] = useState<any>(null);
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const kycMut = trpc.production.batchOps.bulkKycAction.useMutation({
     onSuccess: (d: any) => {
       setLastResult(d);
@@ -42,7 +42,7 @@ export default function BatchOperations() {
     },
     onError: () => toast.error("Batch KYC operation failed"),
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const walletMut = trpc.production.batchOps.bulkWalletAction.useMutation({
     onSuccess: (d: any) => {
       setLastResult(d);
@@ -50,7 +50,7 @@ export default function BatchOperations() {
     },
     onError: () => toast.error("Batch wallet operation failed"),
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const smsMut = trpc.production.batchOps.bulkSms.useMutation({
     onSuccess: (d: any) => {
       setLastResult(d);
@@ -58,7 +58,7 @@ export default function BatchOperations() {
     },
     onError: () => toast.error("Batch SMS failed"),
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const agentMut = trpc.production.batchOps.bulkAgentAction.useMutation({
     onSuccess: (d: any) => {
       setLastResult(d);

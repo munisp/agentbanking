@@ -9,11 +9,11 @@ import { trpc } from "@/lib/trpc";
 
 export default function CurrencyHedging() {
   const [search, setSearch] = useState("");
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const stats = trpc.currencyHedging.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const list = trpc.currencyHedging.listPositions.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const action = trpc.currencyHedging.createHedge.useMutation({
     onSuccess: () => toast.success("Create Hedge completed successfully"),
     onError: (e: any) => toast.error(e.message),

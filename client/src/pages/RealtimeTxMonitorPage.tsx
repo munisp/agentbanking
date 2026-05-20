@@ -26,13 +26,13 @@ export default function RealtimeTxMonitorPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const alertsQuery = trpc.realtimeTxMonitor.listAlerts.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.realtimeTxMonitor.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const ackMutation = trpc.realtimeTxMonitor.acknowledgeAlert.useMutation({
     onSuccess: () => {
       alertsQuery.refetch();
@@ -40,7 +40,7 @@ export default function RealtimeTxMonitorPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const dismissMutation = trpc.realtimeTxMonitor.dismissAlert.useMutation({
     onSuccess: () => {
       alertsQuery.refetch();
@@ -74,10 +74,10 @@ export default function RealtimeTxMonitorPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Create Alert Rule",
                   description: "Feature ready for integration",
                 });
@@ -87,10 +87,10 @@ export default function RealtimeTxMonitorPage() {
               + Create Alert Rule
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Alert",
                   description: "Select a alert to edit",
                 });
@@ -100,10 +100,10 @@ export default function RealtimeTxMonitorPage() {
               ✏️ Edit Alert
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Alert",
                   description: "Select a alert to delete",
                 });

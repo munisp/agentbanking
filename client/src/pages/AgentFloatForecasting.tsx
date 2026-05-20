@@ -151,14 +151,14 @@ export default function AgentFloatForecasting() {
   const [confirmStep, setConfirmStep] = useState(false);
   const [successAgent, setSuccessAgent] = useState<AgentForecast | null>(null);
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const stats = trpc.agentFloatForecasting.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const forecast = trpc.agentFloatForecasting.getForecast.useQuery({
     days: parseInt(selectedPeriod) || 7,
   });
   const triggerReplenishment =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.agentFloatForecasting.triggerReplenishment.useMutation({
       onSuccess: () => {
         setConfirmStep(false);

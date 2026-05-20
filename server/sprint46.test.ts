@@ -208,8 +208,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("payment notification stats should have correct structure", async () => {
     const mod = await import("./routers/paymentNotificationSystem");
     const router = mod.paymentNotificationSystemRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalSent).toBe(45892);
     expect(stats.deliveryRate).toBe(96.14);
     expect(stats.channels).toBeDefined();
@@ -220,8 +229,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("database visualization stats should report 78 tables", async () => {
     const mod = await import("./routers/databaseVisualization");
     const router = mod.databaseVisualizationRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalTables).toBe(78);
     expect(stats.totalRows).toBe(2450000);
     expect(stats.uptime).toBe("99.97%");
@@ -230,8 +248,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("middleware service manager should report 13 services", async () => {
     const mod = await import("./routers/middlewareServiceManager");
     const router = mod.middlewareServiceManagerRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.total).toBe(13);
     expect(stats.connected).toBe(12);
     expect(stats.disconnected).toBe(1);
@@ -240,8 +267,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("financial reporting suite should have valid P&L data", async () => {
     const mod = await import("./routers/financialReportingSuite");
     const router = mod.financialReportingSuiteRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalRevenue).toBe(4560000000);
     expect(stats.netProfit).toBe(1670000000);
     expect(stats.profitMargin).toBe(36.6);
@@ -251,8 +287,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("multi-currency exchange should support 15 currencies", async () => {
     const mod = await import("./routers/multiCurrencyExchange");
     const router = mod.multiCurrencyExchangeRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.supportedCurrencies).toBe(15);
     expect(stats.activePairs).toBe(42);
     expect(stats.corridors).toContain("NGN-USD");
@@ -262,8 +307,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("compliance reporting should have valid compliance score", async () => {
     const mod = await import("./routers/complianceReporting");
     const router = mod.complianceReportingRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.complianceScore).toBe(94.5);
     expect(stats.totalReports).toBe(456);
     expect(
@@ -278,8 +332,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("customer feedback NPS should be within valid range", async () => {
     const mod = await import("./routers/customerFeedbackNps");
     const router = mod.customerFeedbackNpsRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.npsScore).toBeGreaterThanOrEqual(-100);
     expect(stats.npsScore).toBeLessThanOrEqual(100);
     expect(stats.avgRating).toBeGreaterThanOrEqual(1);
@@ -289,8 +352,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("dispute workflow should have valid SLA compliance", async () => {
     const mod = await import("./routers/disputeWorkflowEngine");
     const router = mod.disputeWorkflowEngineRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.slaCompliance).toBeGreaterThan(90);
     expect(stats.totalDisputes).toBe(
       stats.open + stats.inProgress + stats.resolved + stats.escalated
@@ -300,8 +372,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("platform health monitor should report >98% health", async () => {
     const mod = await import("./routers/platformHealthMonitor");
     const router = mod.platformHealthMonitorRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.overallHealth).toBeGreaterThan(98);
     expect(stats.uptime30d).toBeGreaterThan(99.9);
   });
@@ -309,8 +390,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("bulk payment processor should have valid batch stats", async () => {
     const mod = await import("./routers/bulkPaymentProcessor");
     const router = mod.bulkPaymentProcessorRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalBatches).toBe(
       stats.processed + stats.failed + stats.pending
     );
@@ -319,8 +409,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("agent hierarchy should have valid agent distribution", async () => {
     const mod = await import("./routers/agentHierarchyTerritory");
     const router = mod.agentHierarchyTerritoryRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalAgents).toBe(
       stats.superAgents + stats.masterAgents + stats.subAgents
     );
@@ -331,8 +430,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("webhook delivery should have >98% success rate", async () => {
     const mod = await import("./routers/webhookDeliverySystem");
     const router = mod.webhookDeliverySystemRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.successRate).toBeGreaterThan(98);
     expect(stats.totalEndpoints).toBe(45);
   });
@@ -340,8 +448,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("API key management should track key lifecycle", async () => {
     const mod = await import("./routers/apiKeyManagement");
     const router = mod.apiKeyManagementRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalKeys).toBe(stats.activeKeys + stats.revokedKeys);
     expect(stats.totalRequests24h).toBeGreaterThan(0);
   });
@@ -349,8 +466,17 @@ describe("Sprint 46: Data Integrity", () => {
   it("platform config center should manage feature flags", async () => {
     const mod = await import("./routers/platformConfigCenter");
     const router = mod.platformConfigCenterRouter;
-    const caller = router.createCaller({} as any);
-    const stats = await caller.getStats();
+    const caller = router.createCaller({
+      user: {
+        id: 1,
+        username: "test",
+        role: "admin",
+        agentCode: "AGT001",
+        name: "Test",
+        email: "t@t.io",
+      },
+    } as any);
+    const stats = await caller.getStats({});
     expect(stats.totalFlags).toBe(stats.enabledFlags + stats.disabledFlags);
     expect(stats.activeAbTests).toBe(3);
   });

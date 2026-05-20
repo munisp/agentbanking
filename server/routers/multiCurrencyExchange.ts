@@ -1,6 +1,6 @@
 // Sprint 87: Upgraded from mock data to real DB queries — multiCurrencyExchange
 import { z } from "zod";
-import { protectedProcedure, router, publicProcedure } from "../_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { agentPushSubscriptions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";

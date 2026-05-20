@@ -12,21 +12,21 @@ import {
   RefreshCw,
 } from "lucide-react";
 export default function CocoIndexPipelinePage() {
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const analytics = trpc.cocoIndexPipeline.analytics.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const pipelines = trpc.cocoIndexPipeline.listPipelines.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const runs = trpc.cocoIndexPipeline.listRuns.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const triggerMut = trpc.cocoIndexPipeline.triggerRun.useMutation({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onSuccess: d => {
       if (d.success)
         alert(`Pipeline triggered: ${d.recordsProcessed} records processed`);
     },
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const toggleMut = trpc.cocoIndexPipeline.togglePipeline.useMutation({
     onSuccess: () => {
       pipelines.refetch();

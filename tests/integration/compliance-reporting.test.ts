@@ -169,7 +169,7 @@ describe("Data Consent Records Integration", () => {
 
   it("dataConsentRecordsCrud.list returns consent records", async () => {
     const caller = appRouter.createCaller(makeCtx());
-    const result = await caller.dataConsentRecordsCrud.list({
+    const result = await caller.dataConsentRecords.list({
       limit: 10,
       offset: 0,
     });

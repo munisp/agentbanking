@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 export default function ApiRateLimiterDash() {
   const [tab, setTab] = useState("overview");
   // Sprint 87: Wired to rateLimitDashboard router
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data, isLoading } = trpc.rateLimitDashboard.getStatus.useQuery({
     page: 1,
     limit: 10,

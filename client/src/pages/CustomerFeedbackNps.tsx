@@ -12,29 +12,29 @@ export default function CustomerFeedbackNps() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.customerFeedbackNps.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Feedback",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalFeedback != null ? String(stats.totalFeedback) : "—",
     },
     {
       label: "Avg Rating",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.avgRating != null ? String(stats.avgRating) : "—",
     },
     {
       label: "Nps Score",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.npsScore != null ? String(stats.npsScore) : "—",
     },
     {
       label: "Promoters",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.promoters != null ? String(stats.promoters) : "—",
     },
   ];

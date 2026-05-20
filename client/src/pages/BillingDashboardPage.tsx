@@ -59,7 +59,7 @@ export default function BillingDashboardPage() {
   // Billing config
   const { data: billingConfig } =
     trpc.billingLedger.getClientBillingConfig.useQuery(
-      // @ts-ignore — Sprint 85: pre-existing type mismatch
+      // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch
       { tenantId, clientId: "XMTS" }
     );
 

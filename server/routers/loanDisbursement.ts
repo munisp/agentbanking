@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -42,9 +42,12 @@ export const loanDisbursementRouter = router({
     try {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [totalResult] = await database
+      const _totalRows = await database
         .select({ total: count() })
         .from(transactions);
+      const totalResult = Array.isArray(_totalRows)
+        ? _totalRows[0]
+        : _totalRows;
 
       return {
         totalRecords: totalResult?.total ?? 0,
@@ -90,7 +93,7 @@ export const loanDisbursementRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       applications: [
         {
@@ -104,7 +107,7 @@ export const loanDisbursementRouter = router({
       total: 1,
     };
   }),
-  products: publicProcedure.query(async () => {
+  products: protectedProcedure.query(async () => {
     return {
       products: [
         {
@@ -117,7 +120,7 @@ export const loanDisbursementRouter = router({
       ],
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalApplications: 200,
       totalDisbursed: 50000000,

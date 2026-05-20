@@ -14,17 +14,17 @@ export default function UssdGateway() {
   const [screen, setScreen] = useState<string>("");
   const [ended, setEnded] = useState(false);
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const menuTree = trpc.ussdGateway.menuTree.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const analytics = trpc.ussdGateway.analytics.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const sessions = trpc.ussdGateway.activeSessions.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const txns = trpc.ussdGateway.transactions.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const processInput = trpc.ussdGateway.processInput.useMutation({
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     onSuccess: data => {
       setSessionId(data.sessionId);
       setScreen(data?.text);

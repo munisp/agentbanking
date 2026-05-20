@@ -17,9 +17,9 @@ export default function TenantBillingOnboardingPage() {
     currency: "NGN",
   });
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const provisionBilling =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.tenantBillingOnboarding.provisionTenantBilling.useMutation({
       onSuccess: (data: any) => {
         toast.success(`Billing provisioned for ${newTenant.tenantName}`);

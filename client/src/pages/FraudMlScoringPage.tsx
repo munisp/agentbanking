@@ -16,15 +16,15 @@ export default function FraudMlScoringPage() {
   const [riskFilter, setRiskFilter] = useState("all");
   const [selectedScore, setSelectedScore] = useState<any>(null);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const scoresQuery = trpc.fraudMlScoringEngine.listScores.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.fraudMlScoringEngine.getStats.useQuery();
   const stats = statsQuery.data;
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const scores = (scoresQuery.data ?? []).filter((s: any) => {
     if (
       search &&
@@ -60,10 +60,10 @@ export default function FraudMlScoringPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Add Manual Score",
                   description: "Feature ready for integration",
                 });
@@ -73,10 +73,10 @@ export default function FraudMlScoringPage() {
               + Add Manual Score
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Score",
                   description: "Select a score to edit",
                 });
@@ -86,10 +86,10 @@ export default function FraudMlScoringPage() {
               ✏️ Edit Score
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Score",
                   description: "Select a score to delete",
                 });
@@ -126,21 +126,21 @@ export default function FraudMlScoringPage() {
           },
           {
             label: "High Risk",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.highRisk ?? 0,
             icon: AlertTriangle,
             color: "text-red-400",
           },
           {
             label: "Blocked",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.blocked ?? 0,
             icon: ShieldAlert,
             color: "text-orange-400",
           },
           {
             label: "False Positives",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.falsePositives ?? 0,
             icon: CheckCircle,
             color: "text-emerald-400",

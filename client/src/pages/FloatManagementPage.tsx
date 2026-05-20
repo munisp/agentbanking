@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
  * Sprint 52 — Float Management Dashboard
  * F10: Agent float balances, top-ups, alerts, and utilization
  */
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { useState, useMemo } from "react";
@@ -122,7 +122,7 @@ function formatNaira(n: number) {
 
 function FloatContent() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: _liveData } = trpc.floatManagement.list.useQuery(undefined, {
     retry: 1,
   });

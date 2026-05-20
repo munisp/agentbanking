@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
  * Sprint 52 — Activity Audit Log
  * F04: Comprehensive audit trail with search, filter, and export
  */
-// @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+// @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -148,7 +148,7 @@ const MOCK_AUDIT_LOGS = [
 
 function AuditLogContent() {
   const [search, setSearch] = useState("");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: _liveData } = trpc.activityAuditLog.list.useQuery(undefined, {
     retry: 1,
   });

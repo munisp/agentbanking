@@ -30,11 +30,11 @@ export default function AgentGamificationPage() {
   const leaderboardQuery = trpc.agentGamification.getLeaderboard.useQuery({
     limit: 50,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const achievementsQuery = trpc.agentGamification.listAchievements.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const badgesQuery = trpc.agentGamification.listBadges.useQuery({
     limit: 100,
   });
@@ -52,10 +52,10 @@ export default function AgentGamificationPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Add Achievement",
                   description: "Feature ready for integration",
                 });
@@ -65,10 +65,10 @@ export default function AgentGamificationPage() {
               + Add Achievement
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Edit Achievement",
                   description: "Select a achievement to edit",
                 });
@@ -78,10 +78,10 @@ export default function AgentGamificationPage() {
               ✏️ Edit Achievement
             </button>
             <button
-              // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+              // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
               onClick={() => {
                 toast?.({
-                  // @ts-ignore
+                  // @ts-ignore Sprint 85
                   title: "Delete Achievement",
                   description: "Select a achievement to delete",
                 });
@@ -111,18 +111,18 @@ export default function AgentGamificationPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+          // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
           {
             label: "Total Agents",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.totalAgents ?? 0,
             icon: Target,
             color: "text-blue-400",
           },
-          // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+          // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
           {
             label: "Achievements Earned",
-            // @ts-ignore
+            // @ts-ignore Sprint 85
             value: stats?.totalAchievements ?? 0,
             icon: Star,
             color: "text-yellow-400",
@@ -186,9 +186,9 @@ export default function AgentGamificationPage() {
                         <div className="h-8 bg-zinc-700/50 rounded animate-pulse" />
                       </td>
                     </tr>
-                    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+                    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
                   ))
-                : // @ts-ignore
+                : // @ts-ignore Sprint 85
                   (leaderboardQuery.data ?? []).map((a: any, idx: number) => (
                     <tr
                       key={a.agent_id || idx}

@@ -6,7 +6,7 @@
  * TigerBeetle (double-entry ledger), APISIX (gateway routes)
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, merchants } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, like } from "drizzle-orm";
@@ -223,7 +223,7 @@ export const merchantPaymentsRouter = router({
     }
   }),
 
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       merchants: [
         {
@@ -237,7 +237,7 @@ export const merchantPaymentsRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalMerchants: 500,
       activeMerchants: 450,

@@ -7,7 +7,7 @@
  * Go Mojaloop connector (port 8143)
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
@@ -362,7 +362,7 @@ export const mobileMoneyRouter = router({
       }
     }),
 
-  providers: publicProcedure.query(async () => {
+  providers: protectedProcedure.query(async () => {
     return {
       providers: [
         { id: "mtn_momo", name: "MTN MoMo", country: "NG", status: "active" },
@@ -375,7 +375,7 @@ export const mobileMoneyRouter = router({
       ],
     };
   }),
-  wallets: publicProcedure.query(async () => {
+  wallets: protectedProcedure.query(async () => {
     return {
       wallets: [
         {
@@ -389,7 +389,7 @@ export const mobileMoneyRouter = router({
       total: 1,
     };
   }),
-  transactions: publicProcedure.query(async () => {
+  transactions: protectedProcedure.query(async () => {
     return {
       transactions: [
         {
@@ -403,7 +403,7 @@ export const mobileMoneyRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       totalTransactions: 850,
       totalVolume: 42500000,

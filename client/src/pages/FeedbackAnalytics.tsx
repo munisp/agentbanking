@@ -70,10 +70,10 @@ export default function FeedbackAnalytics() {
 
   // Calculate analytics from feedback list
   const analytics = useMemo(() => {
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     if (!feedbackList?.items) return null;
 
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     const entries = feedbackList.items as unknown as FeedbackEntry[];
     const totalFeedback = entries.length;
     const helpfulCount = entries.filter(f => f.rating === "up").length;
@@ -134,9 +134,9 @@ export default function FeedbackAnalytics() {
 
   // Filter feedback entries
   const filteredFeedback = useMemo(() => {
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     if (!feedbackList?.items) return [];
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     let entries = feedbackList.items as unknown as FeedbackEntry[];
     if (filterSection !== "all")
       entries = entries.filter(f => f.sectionId === filterSection);

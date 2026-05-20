@@ -28,15 +28,15 @@ export default function GeneralLedgerPage() {
   });
 
   const entriesQuery = trpc.generalLedger.listEntries.useQuery({ limit: 200 });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const accountsQuery = trpc.generalLedger.listAccounts.useQuery({
     limit: 100,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const trialBalanceQuery = trpc.generalLedger.getTrialBalance.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.generalLedger.getStats.useQuery();
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation = trpc.generalLedger.createEntry.useMutation({
     onSuccess: () => {
       entriesQuery.refetch();
@@ -47,7 +47,7 @@ export default function GeneralLedgerPage() {
   });
 
   const stats = statsQuery.data;
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const entries = (entriesQuery.data ?? []).filter((e: any) => {
     if (
       search &&

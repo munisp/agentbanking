@@ -12,29 +12,29 @@ export default function BulkPaymentProcessor() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.bulkPaymentProcessor.getStats.useQuery();
   const stats = statsQuery.data;
 
   const statCards = [
     {
       label: "Total Batches",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.totalBatches != null ? String(stats.totalBatches) : "—",
     },
     {
       label: "Processed",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.processed != null ? String(stats.processed) : "—",
     },
     {
       label: "Failed",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.failed != null ? String(stats.failed) : "—",
     },
     {
       label: "Pending",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.pending != null ? String(stats.pending) : "—",
     },
   ];

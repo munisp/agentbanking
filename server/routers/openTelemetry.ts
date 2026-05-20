@@ -14,25 +14,32 @@ export const openTelemetryRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(auditLog)
+          .orderBy(desc(auditLog.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(auditLog);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(auditLog);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -55,9 +62,8 @@ export const openTelemetryRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
-      .select({ total: count() })
-      .from(auditLog);
+    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -87,7 +93,7 @@ export const openTelemetryRouter = router({
       return results;
     }),
 
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       services: 12,
       spans: 150000,
@@ -111,18 +117,18 @@ export const openTelemetryRouter = router({
         total: 1,
       };
     }),
-  serviceMap: publicProcedure.query(async () => {
+  serviceMap: protectedProcedure.query(async () => {
     return {
       nodes: [{ id: "billing", type: "service", connections: 3 }],
       edges: [{ from: "billing", to: "postgres" }],
     };
   }),
 
-  searchTraces: publicProcedure.query(async () => {
+  searchTraces: protectedProcedure.query(async () => {
     return { traces: [], total: 0 };
   }),
 
-  serviceHealth: publicProcedure.query(async () => {
+  serviceHealth: protectedProcedure.query(async () => {
     return { services: [], healthy: 0, degraded: 0 };
   }),
 });

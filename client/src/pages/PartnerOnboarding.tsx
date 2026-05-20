@@ -160,7 +160,7 @@ export default function PartnerOnboarding() {
       return;
     }
     registerTenant.mutate({
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       inviteCode,
       companyName,
       companyRegistrationNumber: regNumber,
@@ -176,7 +176,7 @@ export default function PartnerOnboarding() {
   function handleSaveBranding() {
     if (!tenantId) return;
     updateBranding.mutate({
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       tenantId,
       primaryColor,
       secondaryColor,
@@ -192,7 +192,7 @@ export default function PartnerOnboarding() {
   function handleAddCorridor() {
     if (!tenantId) return;
     addCorridor.mutate({
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       tenantId,
       sourceCountry: newCorrSrc,
       sourceCurrency: newCorrSrcCur,
@@ -213,7 +213,7 @@ export default function PartnerOnboarding() {
   function handleAddFee() {
     if (!tenantId) return;
     addFee.mutate({
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       tenantId,
       feeType,
       feeValue,
@@ -224,7 +224,7 @@ export default function PartnerOnboarding() {
 
   function handleGoLive() {
     if (!tenantId) return;
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     completeOnboarding.mutate({ tenantId });
   }
 

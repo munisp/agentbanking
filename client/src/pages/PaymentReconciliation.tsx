@@ -12,7 +12,7 @@ export default function PaymentReconciliation() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.paymentReconciliation.getStats.useQuery();
   const stats = statsQuery.data;
 
@@ -20,26 +20,26 @@ export default function PaymentReconciliation() {
     {
       label: "Total Reconciled",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.totalReconciled != null
-          ? // @ts-ignore
+          ? // @ts-ignore Sprint 85
             String(stats.totalReconciled.toLocaleString())
           : "—",
     },
     {
       label: "Matched",
       value:
-        // @ts-ignore
+        // @ts-ignore Sprint 85
         stats?.matched != null ? String(stats.matched.toLocaleString()) : "—",
     },
     {
       label: "Discrepancies",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.discrepancies != null ? String(stats.discrepancies) : "—",
     },
     {
       label: "Resolved",
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       value: stats?.resolved != null ? String(stats.resolved) : "—",
     },
   ];

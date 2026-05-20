@@ -9,13 +9,13 @@ import { trpc } from "@/lib/trpc";
 
 export default function PaymentTokenVault() {
   const [search, setSearch] = useState("");
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const stats = trpc.paymentTokenVault.getStats.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const list = trpc.paymentTokenVault.listTokens.useQuery({
     status: undefined,
   });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const action = trpc.paymentTokenVault.createToken.useMutation({
     onSuccess: () => toast.success("Create Token completed successfully"),
     onError: (e: any) => toast.error(e.message),

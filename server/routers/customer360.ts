@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { protectedProcedure, router, publicProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { customers } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const customer360Router = router({
-  dashboard: publicProcedure.query(async () => {
+  dashboard: protectedProcedure.query(async () => {
     return {
       totalRecords: 0,
       activeRecords: 0,
@@ -24,25 +24,32 @@ export const customer360Router = router({
       })
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const results = await database
-        .select()
-        .from(customers)
-        .orderBy(desc(customers.id))
-        .limit(input.limit)
-        .offset(input.offset);
+      try {
+        const database = await getDb();
+        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        const results = await database
+          .select()
+          .from(customers)
+          .orderBy(desc(customers.id))
+          .limit(input.limit)
+          .offset(input.offset);
 
-      const [totalResult] = await database
-        .select({ total: count() })
-        .from(customers);
+        const _totalRows = await database
+          .select({ total: count() })
+          .from(customers);
+        const totalResult = Array.isArray(_totalRows)
+          ? _totalRows[0]
+          : _totalRows;
 
-      return {
-        data: results,
-        total: totalResult?.total ?? 0,
-        limit: input.limit,
-        offset: input.offset,
-      };
+        return {
+          data: results,
+          total: totalResult?.total ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      } catch {
+        return { data: [], total: 0, limit: 0, offset: 0 };
+      }
     }),
 
   getById: protectedProcedure
@@ -65,9 +72,10 @@ export const customer360Router = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const [totalResult] = await database
+    const _totalRows = await database
       .select({ total: count() })
       .from(customers);
+    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -97,11 +105,11 @@ export const customer360Router = router({
       return results;
     }),
 
-  getProfile: publicProcedure.query(async () => {
+  getProfile: protectedProcedure.query(async () => {
     return { id: "C-001", name: "Default Customer", segments: [], ltv: 0 };
   }),
 
-  analyzeSentiment: publicProcedure.query(async () => {
+  analyzeSentiment: protectedProcedure.query(async () => {
     return { score: 0.75, label: "positive", confidence: 0.85 };
   }),
 });

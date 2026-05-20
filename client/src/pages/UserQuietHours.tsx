@@ -25,9 +25,9 @@ const TIMEZONES = [
 
 export default function UserQuietHours() {
   const userId = "user_001";
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const configQ = trpc.quietHours.get.useQuery({ userId });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statusQ = trpc.quietHours.checkStatus.useQuery({ userId });
   const updateMut = trpc.quietHours.update.useMutation({
     onSuccess: () => {
@@ -47,12 +47,12 @@ export default function UserQuietHours() {
   useEffect(() => {
     if (configQ.data) {
       setEnabled(configQ.data.enabled);
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       setStartTime(configQ.data.startTime);
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       setEndTime(configQ.data.endTime);
       setTimezone(configQ.data.timezone);
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       setOverrideForCritical(configQ.data.overrideForCritical);
       setDaysOfWeek(configQ.data.daysOfWeek);
     }
@@ -66,7 +66,7 @@ export default function UserQuietHours() {
 
   const handleSave = () => {
     updateMut.mutate({
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       userId,
       enabled,
       startTime,

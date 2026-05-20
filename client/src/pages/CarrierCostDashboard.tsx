@@ -23,9 +23,9 @@ export default function CarrierCostDashboard() {
   const [ussdSessions, setUssdSessions] = useState(200);
   const [voiceMinutes, setVoiceMinutes] = useState(100);
 
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rates = trpc.carrierCost.listRates.useQuery({ country });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const comparison = trpc.carrierCost.compareForUsage.useQuery({
     country,
     smsCount,
@@ -33,7 +33,7 @@ export default function CarrierCostDashboard() {
     ussdSessions,
     voiceMinutes,
   });
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const countries = trpc.carrierCost.listCountries.useQuery();
 
   return (

@@ -1,4 +1,4 @@
-// @ts-ignore
+// @ts-ignore Sprint 85
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -110,7 +110,7 @@ export default function RealTimeDashboard() {
   }, []);
 
   // Fetch initial metrics from tRPC
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const statsQuery = trpc.billing?.getStats?.useQuery?.() || { data: null };
 
   const formatCurrency = (amount: number, currency: string = "KES") =>

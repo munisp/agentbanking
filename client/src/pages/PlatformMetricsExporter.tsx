@@ -8,9 +8,9 @@ import { trpc } from "@/lib/trpc";
 
 export default function PlatformMetricsExporter() {
   const [tab, setTab] = useState("overview");
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: _liveData } = trpc.platformMetricsExporter.list.useQuery(
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     undefined,
     { retry: 1 }
   );

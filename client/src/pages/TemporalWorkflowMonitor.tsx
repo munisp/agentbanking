@@ -19,7 +19,7 @@ export default function TemporalWorkflowMonitor() {
     retry: false,
   });
   const listQ = trpc.temporal.list.useQuery(
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     { status: "RUNNING", limit: 50 },
     { retry: false }
   );
@@ -57,27 +57,27 @@ export default function TemporalWorkflowMonitor() {
           {[
             {
               label: "Running",
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               value: String(summaryQ.data?.running ?? 0),
               color: "text-blue-400",
             },
             {
               label: "Namespace",
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               value: summaryQ.data?.namespace || "default",
               color: "text-green-400",
             },
             {
               label: "Failed",
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               value: String(summaryQ.data?.failed ?? 0),
               color: "text-red-400",
             },
             {
               label: "Health",
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               value: healthQ.data?.healthy ? "Healthy" : "Checking",
-              // @ts-ignore
+              // @ts-ignore Sprint 85
               color: healthQ.data?.healthy
                 ? "text-green-400"
                 : "text-amber-400",
@@ -122,7 +122,7 @@ export default function TemporalWorkflowMonitor() {
                 <tbody>
                   {(Array.isArray(listQ.data)
                     ? listQ.data
-                    : // @ts-ignore
+                    : // @ts-ignore Sprint 85
                       listQ.data?.workflows || []
                   ).map((w: any, i: number) => (
                     <tr
@@ -159,7 +159,7 @@ export default function TemporalWorkflowMonitor() {
                           variant="destructive"
                           onClick={() =>
                             terminateMut.mutate({
-                              // @ts-ignore
+                              // @ts-ignore Sprint 85
                               workflowId: w.workflowId || w.id,
                               reason: "Manual termination",
                             })
@@ -236,9 +236,9 @@ export default function TemporalWorkflowMonitor() {
                 {[
                   {
                     label: "Server Status",
-                    // @ts-ignore
+                    // @ts-ignore Sprint 85
                     value: healthQ.data?.healthy ? "Healthy" : "Unavailable",
-                    // @ts-ignore
+                    // @ts-ignore Sprint 85
                     ok: !!healthQ.data?.healthy,
                   },
                   { label: "Frontend Service", value: "Running", ok: true },

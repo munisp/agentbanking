@@ -73,14 +73,14 @@ export default function DisputeAutoRules() {
   >("auto_refund");
   const [newMaxAmount, setNewMaxAmount] = useState("50000");
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const rules = trpc.sprint23.disputeAutoRules.list.useQuery();
   const utils = trpc.useUtils();
 
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const createMutation = trpc.sprint23.disputeAutoRules.create.useMutation({
     onSuccess: () => {
-      // @ts-ignore
+      // @ts-ignore Sprint 85
       utils.sprint23.disputeAutoRules.list.invalidate();
       toast.success("Rule created");
       setDialogOpen(false);
@@ -92,7 +92,7 @@ export default function DisputeAutoRules() {
   // Test evaluation
   const [testAmount, setTestAmount] = useState("3000");
   const [testReason, setTestReason] = useState("duplicate charge");
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const testResult = trpc.sprint23.disputeAutoRules.evaluate.useQuery(
     {
       amount: parseFloat(testAmount) || 0,

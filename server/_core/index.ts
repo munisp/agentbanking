@@ -348,6 +348,7 @@ async function startServer() {
   }
 
   try {
+    // apiVersioningMiddleware loaded from middleware/apiVersioning
     const verMod = await import("../middleware/apiVersioning.js");
     app.use("/api", verMod.apiVersionMiddleware);
     console.log("[Middleware] API versioning enabled");

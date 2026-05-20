@@ -10,13 +10,13 @@ export default function SavingsProductsPage() {
   const [tab, setTab] = useState<"products" | "accounts" | "transactions">(
     "products"
   );
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const products = trpc.savingsProducts.products.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const accounts = trpc.savingsProducts.list.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const transactions = trpc.savingsProducts.list.useQuery({ limit: 20 });
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const analytics = trpc.savingsProducts.analytics.useQuery();
 
   return (

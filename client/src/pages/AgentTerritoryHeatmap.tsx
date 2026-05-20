@@ -6,9 +6,9 @@ import { MapPin } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function AgentTerritoryHeatmap() {
-  // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } =
-    // @ts-ignore
+    // @ts-ignore Sprint 85
     trpc.agentTerritoryHeatmap.list.useQuery(undefined, { retry: 1 });
   const mockData =
     liveData ??
@@ -57,7 +57,7 @@ export default function AgentTerritoryHeatmap() {
   const columns = ["Territory", "Agents", "Volume", "Coverage", "Performance"];
 
   const filtered = mockData.filter(
-    // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())

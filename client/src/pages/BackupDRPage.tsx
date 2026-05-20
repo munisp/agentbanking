@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Database, Shield, HardDrive, RefreshCw } from "lucide-react";
 
 export default function BackupDRPage() {
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const { data } = trpc.backupDr.dashboard.useQuery();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const triggerMut = trpc.backupDr.triggerBackup.useMutation();
-  // @ts-ignore
+  // @ts-ignore Sprint 85
   const testMut = trpc.backupDr.testFailover.useMutation();
 
   return (
@@ -39,7 +39,7 @@ export default function BackupDRPage() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          // @ts-ignore — Sprint 85: pre-existing type mismatch from router/page interface
+          // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
           {
             label: "Last Backup",
             value: data?.lastBackup

@@ -122,4 +122,9 @@ export const featureFlagsRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
+  dashboard: protectedProcedure.query(async () => ({
+    totalFlags: 0,
+    enabledFlags: 0,
+    environments: ["dev", "staging", "production"],
+  })),
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -144,7 +144,7 @@ export const accountOpeningRouter = router({
       }
     }),
 
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return {
       applications: [
         {
@@ -158,7 +158,7 @@ export const accountOpeningRouter = router({
       total: 1,
     };
   }),
-  analytics: publicProcedure.query(async () => {
+  analytics: protectedProcedure.query(async () => {
     return {
       total: 1500,
       totalApplications: 1500,

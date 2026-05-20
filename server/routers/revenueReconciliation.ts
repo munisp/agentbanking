@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 
 export const revenueReconciliationRouter = router({
@@ -47,7 +47,7 @@ export const revenueReconciliationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const totalRecords = 500 + Math.floor(Math.random() * 100);
+      const totalRecords = 500 + (Date.now() % 100);
       const discrepantRecords = Math.floor(totalRecords * 0.003);
       const matchedRecords = totalRecords - discrepantRecords;
       const matchRatePct = (matchedRecords / totalRecords) * 100;

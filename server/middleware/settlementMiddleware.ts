@@ -212,12 +212,19 @@ export async function canApproveSettlement(
 
 // ── Fluvio: Real-Time Settlement Event Streaming ─────────────────────────
 // fluvioProduce({ topic, key?, payload, timestamp? })
+const FLUVIO_CRITICAL_EVENTS = new Set([
+  "settlement_disbursement",
+  "settlement_reversal",
+  "settlement_batch_finalized",
+]);
+
 export async function streamSettlementEvent(params: {
   eventType: string;
   batchId?: string;
   agentCode?: string;
   amount?: number;
 }): Promise<void> {
+  const isCritical = FLUVIO_CRITICAL_EVENTS.has(params.eventType);
   try {
     await fluvioProduce({
       topic: "settlement-events",
@@ -232,10 +239,17 @@ export async function streamSettlementEvent(params: {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
+    if (isCritical) {
+      logger.error(
+        `[Fluvio] Critical settlement stream failed (fail-closed): ${(e as Error).message}`
+      );
+      throw new Error(
+        `Settlement event stream unavailable — refusing to proceed without real-time audit: ${(e as Error).message}`
+      );
+    }
     logger.warn(
       `[Fluvio] Settlement stream failed (degraded): ${(e as Error).message}`
     );
-    // Fluvio is observability — warn but do not block settlement
   }
 }
 

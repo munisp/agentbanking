@@ -8,6 +8,7 @@
  *  - Structured logging and metrics
  */
 import logger from "../_core/logger";
+import { getMtlsAgent } from "./mtlsAgent";
 
 // ── Circuit Breaker ──────────────────────────────────────────────────────────
 type CircuitState = "closed" | "open" | "half_open";
@@ -128,6 +129,8 @@ export interface ResilientFetchOptions {
   retry?: Partial<RetryConfig>;
   serviceName: string;
   fallback?: unknown;
+  /** When true, attach mTLS client certificates for inter-service calls. */
+  useMtls?: boolean;
 }
 
 export async function resilientFetch<T>(
@@ -135,9 +138,10 @@ export async function resilientFetch<T>(
   init: RequestInit & { method?: string },
   options: ResilientFetchOptions
 ): Promise<T> {
-  const { serviceName, timeoutMs = 5_000, fallback } = options;
+  const { serviceName, timeoutMs = 5_000, fallback, useMtls } = options;
   const retryConfig = { ...DEFAULT_RETRY, ...options.retry };
   const breaker = getBreaker(serviceName);
+  const mtlsAgent = useMtls ? getMtlsAgent() : null;
 
   if (!breaker.canExecute()) {
     if (fallback !== undefined) {
@@ -159,10 +163,15 @@ export async function resilientFetch<T>(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-      const response = await fetch(url, {
+      const fetchInit: RequestInit & Record<string, unknown> = {
         ...init,
         signal: controller.signal,
-      });
+      };
+      if (mtlsAgent) {
+        (fetchInit as Record<string, unknown>).agent = mtlsAgent;
+      }
+
+      const response = await fetch(url, fetchInit);
 
       clearTimeout(timeout);
 

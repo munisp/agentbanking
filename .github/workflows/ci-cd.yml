@@ -100,6 +100,32 @@ jobs:
           path: coverage/
           retention-days: 14
 
+  # ── Stage 2b: Docker Compose Sidecar Validation ─────────────────────────────
+  sidecar-validation:
+    name: Sidecar Compose Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Docker Compose files
+        run: |
+          for f in docker-compose*.yml; do
+            echo "Validating $f ..."
+            docker compose -f "$f" config --quiet && echo "  ✓ $f" || echo "  ✗ $f (invalid)"
+          done
+
+      - name: Verify sidecar service definitions
+        run: |
+          SERVICES=$(docker compose -f docker-compose.yml config --services 2>/dev/null | wc -l)
+          echo "Total services defined: $SERVICES"
+          if [ "$SERVICES" -lt 5 ]; then
+            echo "::warning::Only $SERVICES services defined — expected 5+"
+          fi
+          echo "Services:"
+          docker compose -f docker-compose.yml config --services 2>/dev/null | sort
+
   # ── Stage 3: Build ──────────────────────────────────────────────────────────
   build:
     name: Build Application

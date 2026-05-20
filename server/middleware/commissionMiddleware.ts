@@ -270,6 +270,12 @@ export async function canApproveCommissionPayout(
 
 // ── Fluvio: Real-Time Commission Event Streaming ─────────────────────────
 // fluvioProduce({ topic, key?, payload, timestamp? })
+const FLUVIO_CRITICAL_COMMISSION_EVENTS = new Set([
+  "commission_credit",
+  "commission_clawback",
+  "commission_payout",
+]);
+
 export async function streamCommissionEvent(params: {
   eventType: string;
   agentCode: string;
@@ -277,6 +283,7 @@ export async function streamCommissionEvent(params: {
   transactionRef?: string;
   hierarchyLevel?: number;
 }): Promise<void> {
+  const isCritical = FLUVIO_CRITICAL_COMMISSION_EVENTS.has(params.eventType);
   try {
     await fluvioProduce({
       topic: "commission-events",
@@ -292,10 +299,17 @@ export async function streamCommissionEvent(params: {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
+    if (isCritical) {
+      logger.error(
+        `[Fluvio] Critical commission stream failed (fail-closed): ${(e as Error).message}`
+      );
+      throw new Error(
+        `Commission event stream unavailable — refusing to proceed without real-time audit: ${(e as Error).message}`
+      );
+    }
     logger.warn(
       `[Fluvio] Commission stream failed (degraded): ${(e as Error).message}`
     );
-    // Fluvio is observability — warn but do not block commission processing
   }
 }
 

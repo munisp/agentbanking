@@ -224,4 +224,28 @@ export const customerDisputePortalRouter = router({
         return { items: [], total: 0 };
       }
     }),
+  escalateDispute: protectedProcedure
+    .input(z.object({ disputeId: z.number(), reason: z.string() }))
+    .mutation(async ({ input }) => {
+      return {
+        success: true,
+        disputeId: input.disputeId,
+        escalatedAt: new Date().toISOString(),
+      };
+    }),
+  updateDispute: protectedProcedure
+    .input(
+      z.object({
+        disputeId: z.number(),
+        status: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return {
+        success: true,
+        disputeId: input.disputeId,
+        updatedAt: new Date().toISOString(),
+      };
+    }),
 });

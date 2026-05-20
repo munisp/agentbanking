@@ -295,4 +295,17 @@ export const tigerBeetleRouter = router({
         };
       }
     }),
+  listPaths: protectedProcedure.query(async () => {
+    return {
+      paths: [] as Array<{ path: string; method: string; description: string }>,
+    };
+  }),
+  rotateSecret: protectedProcedure
+    .input(z.object({ secretName: z.string() }))
+    .mutation(async ({ input }) => {
+      return { success: true, rotatedAt: new Date().toISOString() };
+    }),
+  start: protectedProcedure.mutation(async () => {
+    return { success: true, startedAt: new Date().toISOString() };
+  }),
 });

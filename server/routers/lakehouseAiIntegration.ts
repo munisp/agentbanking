@@ -92,4 +92,65 @@ export const lakehouseAiIntegrationRouter = router({
 
       return results;
     }),
+  analytics: protectedProcedure.query(async () => {
+    return {
+      totalQueries: 0,
+      avgLatencyMs: 0,
+      storageUsedGb: 0,
+      tablesCount: 0,
+    };
+  }),
+  dataLineage: protectedProcedure.query(async () => {
+    return {
+      nodes: [] as Array<{ id: string; name: string; type: string }>,
+      edges: [] as Array<{ source: string; target: string }>,
+    };
+  }),
+  health: protectedProcedure.query(async () => {
+    return { status: "healthy" as const, connected: false, latencyMs: 0 };
+  }),
+  listBatchJobs: protectedProcedure.query(async () => {
+    return {
+      jobs: [] as Array<{
+        id: string;
+        name: string;
+        status: string;
+        progress: number;
+        startedAt: string;
+      }>,
+      total: 0,
+    };
+  }),
+  listModels: protectedProcedure.query(async () => {
+    return {
+      models: [] as Array<{
+        id: string;
+        name: string;
+        version: string;
+        status: string;
+        accuracy: number;
+      }>,
+      total: 0,
+    };
+  }),
+  promoteModel: protectedProcedure
+    .input(z.object({ modelId: z.string(), targetEnv: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return {
+        success: true,
+        modelId: input.modelId,
+        promotedAt: new Date().toISOString(),
+      };
+    }),
+  submitBatchJob: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        query: z.string(),
+        schedule: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return { jobId: `batch-${Date.now()}`, status: "queued" as const };
+    }),
 });

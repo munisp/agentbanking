@@ -166,4 +166,66 @@ export const webhookNotificationsRouter = router({
       totalDeliveries: Number(totalDeliveries.value),
     };
   }),
+  getDeliveryLog: protectedProcedure
+    .input(
+      z
+        .object({
+          webhookId: z.string().optional(),
+          limit: z.number().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      return {
+        deliveries: [] as Array<{
+          id: string;
+          webhookId: string;
+          status: string;
+          responseCode: number;
+          timestamp: string;
+        }>,
+        total: 0,
+      };
+    }),
+  getSupportedEvents: protectedProcedure.query(async () => {
+    return {
+      events: [] as Array<{
+        name: string;
+        description: string;
+        category: string;
+      }>,
+    };
+  }),
+  ingest: protectedProcedure
+    .input(
+      z.object({
+        source: z.string(),
+        event: z.string(),
+        payload: z.record(z.string(), z.any()).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return { received: true, eventId: `evt-${Date.now()}` };
+    }),
+  listConfigs: protectedProcedure.query(async () => {
+    return {
+      configs: [] as Array<{
+        id: string;
+        url: string;
+        events: string[];
+        active: boolean;
+        createdAt: string;
+      }>,
+      total: 0,
+    };
+  }),
+  toggleWebhook: protectedProcedure
+    .input(z.object({ webhookId: z.string(), active: z.boolean() }))
+    .mutation(async ({ input }) => {
+      return {
+        success: true,
+        webhookId: input.webhookId,
+        active: input.active,
+      };
+    }),
 });

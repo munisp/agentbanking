@@ -279,4 +279,160 @@ export const smsReceiptRouter = router({
         });
       }
     }),
+  addMessage: protectedProcedure
+    .input(z.object({ sessionId: z.string(), content: z.string() }))
+    .mutation(async ({ input }) => {
+      return {
+        messageId: `msg-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+      };
+    }),
+  fraud: protectedProcedure.query(async () => {
+    return {
+      alerts: [] as Array<{
+        id: string;
+        type: string;
+        severity: string;
+        amount: number;
+        timestamp: string;
+      }>,
+      total: 0,
+    };
+  }),
+  getDispute: protectedProcedure
+    .input(z.object({ disputeId: z.number() }))
+    .query(async ({ input }) => {
+      return {
+        id: input.disputeId,
+        status: "pending" as const,
+        amount: 0,
+        reason: "",
+        createdAt: "",
+      };
+    }),
+  getRankings: protectedProcedure.query(async () => {
+    return {
+      rankings: [] as Array<{
+        agentCode: string;
+        rank: number;
+        score: number;
+        transactions: number;
+      }>,
+    };
+  }),
+  getRecommendation: protectedProcedure.query(async () => {
+    return {
+      recommendations: [] as Array<{
+        id: string;
+        type: string;
+        description: string;
+        priority: string;
+      }>,
+    };
+  }),
+  getShortcuts: protectedProcedure.query(async () => {
+    return {
+      shortcuts: [] as Array<{
+        id: string;
+        label: string;
+        action: string;
+        icon: string;
+      }>,
+    };
+  }),
+  getStats: protectedProcedure.query(async () => {
+    return {
+      totalTransactions: 0,
+      totalAmount: 0,
+      avgTransactionAmount: 0,
+      successRate: 0,
+    };
+  }),
+  getSwitchStats: protectedProcedure.query(async () => {
+    return {
+      totalSwitches: 0,
+      successRate: 0,
+      avgLatencyMs: 0,
+      byProvider: [] as Array<{
+        provider: string;
+        count: number;
+        successRate: number;
+      }>,
+    };
+  }),
+  listRefunds: protectedProcedure.query(async () => {
+    return {
+      refunds: [] as Array<{
+        id: number;
+        amount: number;
+        status: string;
+        reason: string;
+        createdAt: string;
+      }>,
+      total: 0,
+    };
+  }),
+  myDisputes: protectedProcedure.query(async () => {
+    return {
+      disputes: [] as Array<{
+        id: number;
+        status: string;
+        amount: number;
+        reason: string;
+        createdAt: string;
+      }>,
+      total: 0,
+    };
+  }),
+  processInput: protectedProcedure
+    .input(z.object({ input: z.string(), sessionId: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return { response: "", type: "text" as const };
+    }),
+  raise: protectedProcedure
+    .input(
+      z.object({
+        type: z.string(),
+        amount: z.number().optional(),
+        description: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return { ticketId: `ticket-${Date.now()}`, status: "open" as const };
+    }),
+  recordSwitch: protectedProcedure
+    .input(
+      z.object({
+        fromProvider: z.string(),
+        toProvider: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return { success: true, switchId: `sw-${Date.now()}` };
+    }),
+  requestRefund: protectedProcedure
+    .input(
+      z.object({
+        transactionId: z.number(),
+        reason: z.string(),
+        amount: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return { refundId: `ref-${Date.now()}`, status: "pending" as const };
+    }),
+  startSession: protectedProcedure.mutation(async () => {
+    return {
+      sessionId: `sess-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+    };
+  }),
+  stats: protectedProcedure.query(async () => {
+    return {
+      daily: { transactions: 0, amount: 0, agents: 0 },
+      weekly: { transactions: 0, amount: 0 },
+      monthly: { transactions: 0, amount: 0 },
+    };
+  }),
 });

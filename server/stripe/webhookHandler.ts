@@ -1,4 +1,3 @@
-// @ts-nocheck — schema alignment pending (not request-path security code)
 /**
  * Stripe Webhook Handler — 54Link POS Shell
  *

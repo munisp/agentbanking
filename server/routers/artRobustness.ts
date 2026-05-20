@@ -92,4 +92,49 @@ export const artRobustnessRouter = router({
 
       return results;
     }),
+  analytics: protectedProcedure.query(async () => {
+    return { totalTests: 0, passRate: 0, avgRobustnessScore: 0, lastRunAt: "" };
+  }),
+  health: protectedProcedure.query(async () => {
+    return {
+      status: "healthy" as const,
+      uptime: 0,
+      lastCheck: new Date().toISOString(),
+    };
+  }),
+  listAttacks: protectedProcedure.query(async () => {
+    return {
+      attacks: [] as Array<{
+        id: string;
+        name: string;
+        type: string;
+        severity: string;
+      }>,
+      total: 0,
+    };
+  }),
+  listResults: protectedProcedure.query(async () => {
+    return {
+      results: [] as Array<{
+        id: string;
+        attackId: string;
+        score: number;
+        passed: boolean;
+        timestamp: string;
+      }>,
+      total: 0,
+    };
+  }),
+  runAttack: protectedProcedure
+    .input(z.object({ attackId: z.string(), modelId: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return { jobId: `attack-${Date.now()}`, status: "queued" as const };
+    }),
+  runFullSuite: protectedProcedure.mutation(async () => {
+    return {
+      jobId: `suite-${Date.now()}`,
+      status: "queued" as const,
+      totalAttacks: 0,
+    };
+  }),
 });

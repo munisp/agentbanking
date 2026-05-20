@@ -92,4 +92,72 @@ export const aiMonitoringRouter = router({
 
       return results;
     }),
+  dashboard: protectedProcedure.query(async () => {
+    return {
+      modelCount: 0,
+      activeModels: 0,
+      totalPredictions: 0,
+      avgLatencyMs: 0,
+      driftAlerts: 0,
+      fraudDetected: 0,
+    };
+  }),
+  liveFraudFeed: protectedProcedure.query(async () => {
+    return {
+      events: [] as Array<{
+        id: string;
+        timestamp: string;
+        score: number;
+        type: string;
+        agentCode: string;
+      }>,
+      total: 0,
+    };
+  }),
+  driftAnalysis: protectedProcedure.query(async () => {
+    return {
+      models: [] as Array<{
+        name: string;
+        driftScore: number;
+        status: string;
+        lastChecked: string;
+      }>,
+    };
+  }),
+  alerts: protectedProcedure.query(async () => {
+    return {
+      items: [] as Array<{
+        id: string;
+        severity: string;
+        message: string;
+        timestamp: string;
+        acknowledged: boolean;
+      }>,
+      total: 0,
+    };
+  }),
+  serviceHealth: protectedProcedure.query(async () => {
+    return {
+      services: [] as Array<{
+        name: string;
+        status: string;
+        latencyMs: number;
+        uptime: number;
+      }>,
+    };
+  }),
+  throughputTimeSeries: protectedProcedure.query(async () => {
+    return {
+      data: [] as Array<{
+        timestamp: string;
+        requests: number;
+        latencyMs: number;
+      }>,
+    };
+  }),
+  acknowledgeAlert: protectedProcedure
+    .input(z.object({ alertId: z.string() }))
+    .mutation(async ({ input }) => {
+      return { success: true, alertId: input.alertId };
+    }),
 });

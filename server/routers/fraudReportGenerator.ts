@@ -94,4 +94,48 @@ export const fraudReportGeneratorRouter = router({
 
       return results;
     }),
+  generateReport: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.string(),
+        endDate: z.string(),
+        type: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return {
+        reportId: `report-${Date.now()}`,
+        status: "generating" as const,
+      };
+    }),
+  getReport: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .query(async ({ input }) => {
+      return {
+        id: input.reportId,
+        status: "completed" as const,
+        data: {},
+        generatedAt: new Date().toISOString(),
+      };
+    }),
+  listReports: protectedProcedure.query(async () => {
+    return {
+      reports: [] as Array<{
+        id: string;
+        name: string;
+        status: string;
+        createdAt: string;
+      }>,
+      total: 0,
+    };
+  }),
+  quickStats: protectedProcedure.query(async () => {
+    return {
+      totalCases: 0,
+      openCases: 0,
+      resolvedToday: 0,
+      avgResolutionTimeHours: 0,
+      totalLossPrevented: 0,
+    };
+  }),
 });

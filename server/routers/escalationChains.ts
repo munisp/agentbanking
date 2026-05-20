@@ -92,6 +92,47 @@ export const escalationChainsRouter = router({
 
       return results;
     }),
+  acknowledgeEvent: protectedProcedure
+    .input(z.object({ eventId: z.string() }))
+    .mutation(async ({ input }) => {
+      return { success: true, eventId: input.eventId };
+    }),
+  listChains: protectedProcedure.query(async () => {
+    return {
+      chains: [] as Array<{
+        id: string;
+        name: string;
+        enabled: boolean;
+        steps: number;
+      }>,
+      total: 0,
+    };
+  }),
+  listEvents: protectedProcedure.query(async () => {
+    return {
+      events: [] as Array<{
+        id: string;
+        chainId: string;
+        severity: string;
+        status: string;
+        timestamp: string;
+      }>,
+      total: 0,
+    };
+  }),
+  resolveEvent: protectedProcedure
+    .input(z.object({ eventId: z.string(), resolution: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return { success: true, eventId: input.eventId };
+    }),
+  runEscalationCheck: protectedProcedure.mutation(async () => {
+    return { triggered: 0, checked: 0 };
+  }),
+  toggleChain: protectedProcedure
+    .input(z.object({ chainId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ input }) => {
+      return { success: true, chainId: input.chainId, enabled: input.enabled };
+    }),
 });
 
 // ── Sprint 15 test data exports ──────────────────────────────────────────────

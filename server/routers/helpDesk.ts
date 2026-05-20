@@ -175,4 +175,25 @@ export const helpDeskRouter = router({
   searchTickets: protectedProcedure.query(async () => {
     return { tickets: [], total: 0, page: 1 };
   }),
+  knowledgeBase: protectedProcedure
+    .input(
+      z
+        .object({
+          search: z.string().optional(),
+          category: z.string().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      return {
+        articles: [] as Array<{
+          id: string;
+          title: string;
+          category: string;
+          summary: string;
+          views: number;
+        }>,
+        total: 0,
+      };
+    }),
 });

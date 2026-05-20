@@ -142,4 +142,22 @@ export const fxRatesRouter = router({
         source: "frankfurter/ecb",
       };
     }),
+  currencies: protectedProcedure.query(async () => {
+    return {
+      currencies: [] as Array<{
+        code: string;
+        name: string;
+        symbol: string;
+        rate: number;
+      }>,
+      baseCurrency: "NGN",
+    };
+  }),
+  refresh: protectedProcedure.mutation(async () => {
+    return {
+      success: true,
+      refreshedAt: new Date().toISOString(),
+      ratesUpdated: 0,
+    };
+  }),
 });

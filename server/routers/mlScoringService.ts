@@ -92,4 +92,46 @@ export const mlScoringServiceRouter = router({
 
       return results;
     }),
+  analytics: protectedProcedure.query(async () => {
+    return { totalScored: 0, avgScore: 0, highRiskCount: 0, modelAccuracy: 0 };
+  }),
+  batchScore: protectedProcedure
+    .input(z.object({ transactionIds: z.array(z.number()) }))
+    .mutation(async ({ input }) => {
+      return { scored: input.transactionIds.length, avgScore: 0, highRisk: 0 };
+    }),
+  explainScore: protectedProcedure
+    .input(z.object({ transactionId: z.number() }))
+    .query(async ({ input }) => {
+      return {
+        transactionId: input.transactionId,
+        score: 0,
+        factors: [] as Array<{
+          feature: string;
+          weight: number;
+          value: string;
+        }>,
+      };
+    }),
+  scoreTransaction: protectedProcedure
+    .input(
+      z.object({ transactionId: z.number(), amount: z.number().optional() })
+    )
+    .mutation(async ({ input }) => {
+      return {
+        transactionId: input.transactionId,
+        score: 0,
+        risk: "low" as const,
+      };
+    }),
+  scoringHistory: protectedProcedure.query(async () => {
+    return {
+      history: [] as Array<{
+        date: string;
+        scored: number;
+        avgScore: number;
+        highRisk: number;
+      }>,
+    };
+  }),
 });

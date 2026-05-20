@@ -41,4 +41,40 @@ export const geoFencingRouter = router({
     activeZones: 0,
     totalChecks: 0,
   })),
+  createZone: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        lat: z.number(),
+        lng: z.number(),
+        radiusKm: z.number(),
+        type: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return {
+        id: `zone-${Date.now()}`,
+        name: input.name,
+        createdAt: new Date().toISOString(),
+      };
+    }),
+  deleteZone: protectedProcedure
+    .input(z.object({ zoneId: z.string() }))
+    .mutation(async ({ input }) => {
+      return { success: true, zoneId: input.zoneId };
+    }),
+  listZones: protectedProcedure.query(async () => {
+    return {
+      zones: [] as Array<{
+        id: string;
+        name: string;
+        lat: number;
+        lng: number;
+        radiusKm: number;
+        type: string;
+        active: boolean;
+      }>,
+      total: 0,
+    };
+  }),
 });

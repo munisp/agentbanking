@@ -92,4 +92,63 @@ export const systemHealthMonitorRouter = router({
 
       return results;
     }),
+  apiLatency: protectedProcedure.query(async () => {
+    return {
+      endpoints: [] as Array<{
+        path: string;
+        avgMs: number;
+        p95Ms: number;
+        p99Ms: number;
+      }>,
+      overallAvgMs: 0,
+    };
+  }),
+  errorTracking: protectedProcedure.query(async () => {
+    return {
+      errors: [] as Array<{
+        type: string;
+        message: string;
+        count: number;
+        lastSeen: string;
+      }>,
+      totalErrors: 0,
+    };
+  }),
+  overview: protectedProcedure.query(async () => {
+    return {
+      cpu: 0,
+      memory: 0,
+      disk: 0,
+      uptime: 0,
+      activeConnections: 0,
+      requestsPerMin: 0,
+    };
+  }),
+  securityEvents: protectedProcedure.query(async () => {
+    return {
+      events: [] as Array<{
+        id: string;
+        type: string;
+        severity: string;
+        source: string;
+        timestamp: string;
+      }>,
+      total: 0,
+    };
+  }),
+  transactionVolume: protectedProcedure.query(async () => {
+    return {
+      current: 0,
+      hourly: [] as Array<{ hour: string; count: number; amount: number }>,
+      daily: [] as Array<{ date: string; count: number; amount: number }>,
+    };
+  }),
+  userActivity: protectedProcedure.query(async () => {
+    return {
+      activeUsers: 0,
+      sessions: 0,
+      avgSessionDurationMin: 0,
+      topPages: [] as Array<{ page: string; views: number }>,
+    };
+  }),
 });

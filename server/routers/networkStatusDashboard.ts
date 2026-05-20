@@ -92,4 +92,72 @@ export const networkStatusDashboardRouter = router({
 
       return results;
     }),
+  getAlerts: protectedProcedure.query(async () => {
+    return {
+      alerts: [] as Array<{
+        id: string;
+        severity: string;
+        message: string;
+        carrier: string;
+        timestamp: string;
+        resolved: boolean;
+      }>,
+      total: 0,
+    };
+  }),
+  getCarrierHeatmap: protectedProcedure.query(async () => {
+    return {
+      data: [] as Array<{
+        carrier: string;
+        region: string;
+        quality: number;
+        latency: number;
+      }>,
+    };
+  }),
+  getCarrierSummary: protectedProcedure.query(async () => {
+    return {
+      carriers: [] as Array<{
+        name: string;
+        status: string;
+        uptime: number;
+        avgLatency: number;
+        failRate: number;
+      }>,
+    };
+  }),
+  getOverview: protectedProcedure.query(async () => {
+    return {
+      totalCarriers: 0,
+      healthyCarriers: 0,
+      degradedCarriers: 0,
+      downCarriers: 0,
+      avgLatency: 0,
+    };
+  }),
+  getRegions: protectedProcedure.query(async () => {
+    return {
+      regions: [] as Array<{
+        name: string;
+        status: string;
+        carrierCount: number;
+        avgQuality: number;
+      }>,
+    };
+  }),
+  getTimeSeries: protectedProcedure.query(async () => {
+    return {
+      data: [] as Array<{
+        timestamp: string;
+        latency: number;
+        throughput: number;
+        errorRate: number;
+      }>,
+    };
+  }),
+  resolveAlert: protectedProcedure
+    .input(z.object({ alertId: z.string(), resolution: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      return { success: true, alertId: input.alertId };
+    }),
 });

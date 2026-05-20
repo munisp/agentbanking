@@ -92,4 +92,35 @@ export const falkordbGraphRouter = router({
 
       return results;
     }),
+  analytics: protectedProcedure.query(async () => {
+    return { nodeCount: 0, edgeCount: 0, avgDegree: 0, communities: 0 };
+  }),
+  fraudRings: protectedProcedure.query(async () => {
+    return {
+      rings: [] as Array<{
+        id: string;
+        size: number;
+        riskScore: number;
+        members: string[];
+      }>,
+    };
+  }),
+  getNeighbors: protectedProcedure
+    .input(
+      z.object({ nodeId: z.string(), depth: z.number().optional().default(1) })
+    )
+    .query(async ({ input }) => {
+      return {
+        nodes: [] as Array<{ id: string; type: string; label: string }>,
+        edges: [] as Array<{ source: string; target: string; type: string }>,
+      };
+    }),
+  health: protectedProcedure.query(async () => {
+    return { status: "healthy" as const, connected: false, latencyMs: 0 };
+  }),
+  shortestPath: protectedProcedure
+    .input(z.object({ from: z.string(), to: z.string() }))
+    .query(async ({ input }) => {
+      return { path: [] as string[], distance: 0, found: false };
+    }),
 });

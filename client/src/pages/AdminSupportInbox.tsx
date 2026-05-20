@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Admin Support Inbox — 54Link POS Shell
  * Bloomberg Terminal dark theme with electric blue accents.

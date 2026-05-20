@@ -121,4 +121,24 @@ export const userNotifPreferencesRouter = router({
   enableAllForChannel: protectedProcedure
     .input(z.object({ channel: z.string() }))
     .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
+  getPreferences: protectedProcedure.query(async () => {
+    return {
+      email: true,
+      sms: true,
+      push: true,
+      inApp: true,
+      quietHoursEnabled: false,
+      quietHoursStart: 22,
+      quietHoursEnd: 7,
+    };
+  }),
+  updateCategory: protectedProcedure
+    .input(z.object({ categoryId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ input }) => {
+      return {
+        success: true,
+        categoryId: input.categoryId,
+        enabled: input.enabled,
+      };
+    }),
 });

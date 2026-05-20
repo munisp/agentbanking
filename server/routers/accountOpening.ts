@@ -86,6 +86,49 @@ export const accountOpeningRouter = router({
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+
+        // ══ FAIL-CLOSED KYC ENFORCEMENT ══
+        // For Tier 2+ accounts, verify KYC service is reachable BEFORE creating the record.
+        // If KYC enforcement gateway is unreachable, BLOCK the operation (fail-closed design).
+        const KYC_ENFORCEMENT_URL = process.env.KYC_ENFORCEMENT_URL || "http://localhost:8211";
+        const requiresKYC = !!(input.bvn || input.nin); // Tier 2+ requires BVN/NIN
+
+        if (requiresKYC) {
+          try {
+            const kycResp = await fetch(`${KYC_ENFORCEMENT_URL}/api/v1/enforce/account-opening`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                customer_id: `${input.firstName}-${input.lastName}-${input.phone}`.toLowerCase().replace(/\s/g, "-"),
+                tier: input.nin ? 3 : 2,
+                product_type: "current",
+                first_name: input.firstName,
+                last_name: input.lastName,
+                phone: input.phone,
+                bvn: input.bvn || "",
+                nin: input.nin || "",
+                email: input.email || "",
+              }),
+              signal: AbortSignal.timeout(10000),
+            });
+
+            if (kycResp.status === 503) {
+              // KYC gateway unreachable — FAIL CLOSED
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "KYC verification service unreachable — account opening BLOCKED (fail-closed). Retry when service is available.",
+              });
+            }
+          } catch (kycError) {
+            if (kycError instanceof TRPCError) throw kycError;
+            // Network error reaching KYC gateway — FAIL CLOSED
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "KYC enforcement gateway unreachable — account opening BLOCKED (fail-closed design prevents unverified account creation)",
+            });
+          }
+        }
+
         const [customer] = await db
           .insert(customers)
           .values({

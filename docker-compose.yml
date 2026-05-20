@@ -768,6 +768,173 @@ services:
     networks:
       - 54link-network
 
+  # ── KYC/KYB Enforcement & Compliance Services ──
+  goaml-integration:
+    build:
+      context: ./server/goaml-integration-go
+      dockerfile: Dockerfile
+    ports:
+      - "8210:8210"
+    environment:
+      - PORT=8210
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/10
+      - KEYCLOAK_URL=http://keycloak:8080
+      - TIGERBEETLE_URL=http://tigerbeetle:3001
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - FLUVIO_URL=http://fluvio:9003
+      - NFIU_ENDPOINT=https://goaml.nfiu.gov.ng/api/v1
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+    networks:
+      - 54link-network
+
+  kyc-enforcement:
+    build:
+      context: ./server/kyc-enforcement-go
+      dockerfile: Dockerfile
+    ports:
+      - "8211:8211"
+    environment:
+      - PORT=8211
+      - KYC_ENGINE_URL=http://liveness-detection:8104
+      - SANCTIONS_ENGINE_URL=http://kyb-risk-engine:8131
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/11
+      - KEYCLOAK_URL=http://keycloak:8080
+      - TIGERBEETLE_URL=http://tigerbeetle:3001
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - PERMIFY_URL=http://permify:3476
+      - FIRSTCENTRAL_API_URL=https://api.firstcentral.com.ng/v1
+      - CRC_API_URL=https://api.crc.com.ng/v1
+      - CREDITREGISTRY_API_URL=https://api.creditregistry.com/v1
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+    networks:
+      - 54link-network
+
+  aml-case-manager:
+    build:
+      context: ./server/aml-case-manager-go
+      dockerfile: Dockerfile
+    ports:
+      - "8212:8212"
+    environment:
+      - PORT=8212
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/12
+      - KEYCLOAK_URL=http://keycloak:8080
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - FLUVIO_URL=http://fluvio:9003
+      - PERMIFY_URL=http://permify:3476
+      - GOAML_SERVICE_URL=http://goaml-integration:8210
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+      - goaml-integration
+    networks:
+      - 54link-network
+
+  cbn-tiered-kyc:
+    build:
+      context: ./services/rust/cbn-tiered-kyc
+      dockerfile: Dockerfile
+    ports:
+      - "8213:8213"
+    environment:
+      - PORT=8213
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/13
+      - TIGERBEETLE_URL=http://tigerbeetle:3001
+      - PERMIFY_URL=http://permify:3476
+      - TEMPORAL_URL=http://temporal:7233
+      - FLUVIO_URL=http://fluvio:9003
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+    networks:
+      - 54link-network
+
+  sanctions-batch-rescreener:
+    build:
+      context: ./services/rust/sanctions-batch-rescreener
+      dockerfile: Dockerfile
+    ports:
+      - "8214:8214"
+    environment:
+      - PORT=8214
+      - SANCTIONS_ENGINE_URL=http://kyb-risk-engine:8131
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/14
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - FLUVIO_URL=http://fluvio:9003
+      - GOAML_SERVICE_URL=http://goaml-integration:8210
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+    networks:
+      - 54link-network
+
+  kyc-workflow-orchestration:
+    build:
+      context: ./services/python/kyc-workflow-orchestration
+      dockerfile: Dockerfile
+    ports:
+      - "8215:8215"
+    environment:
+      - PORT=8215
+      - SANCTIONS_ENGINE_URL=http://kyb-risk-engine:8131
+      - LIVENESS_SERVICE_URL=http://liveness-detection:8104
+      - DOCUMENT_OCR_URL=http://deepface:8133
+      - CBN_TIER_ENGINE_URL=http://cbn-tiered-kyc:8213
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/15
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - FLUVIO_URL=http://fluvio:9003
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+      - cbn-tiered-kyc
+    networks:
+      - 54link-network
+
+  kyc-event-consumer:
+    build:
+      context: ./services/python/kyc-event-consumer
+      dockerfile: Dockerfile
+    ports:
+      - "8216:8216"
+    environment:
+      - PORT=8216
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/16
+      - KYC_ORCHESTRATOR_URL=http://kyc-workflow-orchestration:8215
+      - KYB_ENGINE_URL=http://kyb-engine:8130
+      - TEMPORAL_URL=http://temporal:7233
+      - DAPR_HTTP_URL=http://localhost:3500
+      - FLUVIO_URL=http://fluvio:9003
+      - CONSUMER_GROUP=kyc-processor
+      - ENVIRONMENT=production
+    depends_on:
+      - kafka
+      - redis
+      - kyc-workflow-orchestration
+    networks:
+      - 54link-network
+
 networks:
   54link-network:
     name: 54link-network

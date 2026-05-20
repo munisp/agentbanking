@@ -488,6 +488,8 @@ import { ecommerceOrdersRouter } from "./routers/ecommerceOrders";
 import { supplyChainRouter } from "./routers/supplyChain";
 import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
+// ── KYC/KYB Enforcement & Compliance Services ──
+import { kycEnforcementRouter } from "./routers/kycEnforcement";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1081,6 +1083,8 @@ export const appRouter = router({
   supplyChain: supplyChainRouter,
   marketplace: marketplaceRouter,
   promotions: promotionsRouter,
+  // KYC/KYB Enforcement & Compliance
+  kycEnforcement: kycEnforcementRouter,
 });
 
 export type AppRouter = typeof appRouter;

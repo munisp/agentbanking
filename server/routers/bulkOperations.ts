@@ -129,13 +129,17 @@ export const bulkOperationsRouter = router({
         id: input?.id || null,
       };
     }),
-  analytics: protectedProcedure
-    .query(async () => {
-      const db = await getDb();
-      if (!db) return { totalJobs: 0, totalProcessed: 0, successRate: 100 };
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
-      return { totalJobs: Number(totalRow.value), totalProcessed: Number(totalRow.value), successRate: 99.5, avgSuccessRate: 99.5 };
-    }),
+  analytics: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { totalJobs: 0, totalProcessed: 0, successRate: 100 };
+    const [totalRow] = await db.select({ value: count() }).from(auditLog);
+    return {
+      totalJobs: Number(totalRow.value),
+      totalProcessed: Number(totalRow.value),
+      successRate: 99.5,
+      avgSuccessRate: 99.5,
+    };
+  }),
   history: protectedProcedure
     .input(
       z

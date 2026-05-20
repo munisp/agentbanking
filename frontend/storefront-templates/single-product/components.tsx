@@ -81,17 +81,17 @@ export function ProductDetail({
   onAddToCart,
 }: ProductProps) {
   const [selectedVariant, setSelectedVariant] = useState<number | undefined>(
-    variants?.[0]?.id,
+    variants?.[0]?.id
   );
   const [quantity, setQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
 
   const currentPrice =
-    variants?.find((v) => v.id === selectedVariant)?.price || price;
+    variants?.find(v => v.id === selectedVariant)?.price || price;
 
   // Group variants by attribute type
   const variantGroups: Record<string, string[]> = {};
-  variants?.forEach((v) => {
+  variants?.forEach(v => {
     Object.entries(v.attributes).forEach(([key, value]) => {
       if (!variantGroups[key]) variantGroups[key] = [];
       if (!variantGroups[key].includes(value)) {
@@ -133,18 +133,19 @@ export function ProductDetail({
             <div key={attrName} className="sf-variants">
               <span className="sf-variants__label">{attrName}</span>
               <div className="sf-variants__options">
-                {values.map((val) => (
+                {values.map(val => (
                   <button
                     key={val}
                     className={`sf-variants__option ${
-                      variants?.find((v) => v.id === selectedVariant)
-                        ?.attributes[attrName] === val
+                      variants?.find(v => v.id === selectedVariant)?.attributes[
+                        attrName
+                      ] === val
                         ? "sf-variants__option--active"
                         : ""
                     }`}
                     onClick={() => {
                       const match = variants?.find(
-                        (v) => v.attributes[attrName] === val,
+                        v => v.attributes[attrName] === val
                       );
                       if (match) setSelectedVariant(match.id);
                     }}
@@ -186,7 +187,7 @@ export function SocialProof({
     <section className="sf-social-proof">
       <div className="sf-container">
         <div className="sf-social-proof__stats">
-          {stats.map((stat) => (
+          {stats.map(stat => (
             <div key={stat.label}>
               <span className="sf-social-proof__stat-value">{stat.value}</span>
               <span className="sf-social-proof__stat-label">{stat.label}</span>

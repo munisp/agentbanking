@@ -45,7 +45,7 @@ export function Header({
             <input
               type="text"
               placeholder="Search products..."
-              onChange={(e) => onSearch?.(e.target.value)}
+              onChange={e => onSearch?.(e.target.value)}
             />
             <button type="button">Search</button>
           </div>
@@ -55,7 +55,7 @@ export function Header({
         <nav className="sf-categories">
           <div className="sf-container">
             <ul className="sf-categories__list">
-              {store.categories.map((cat) => (
+              {store.categories.map(cat => (
                 <li key={cat}>
                   <a href={`#${cat.toLowerCase()}`}>{cat}</a>
                 </li>
@@ -77,10 +77,10 @@ export function Sidebar({
 }) {
   return (
     <aside className="sf-sidebar">
-      {filters.map((group) => (
+      {filters.map(group => (
         <div key={group.name} className="sf-sidebar__section">
           <h4 className="sf-sidebar__title">{group.name}</h4>
-          {group.options.map((opt) => (
+          {group.options.map(opt => (
             <label key={opt.value} className="sf-sidebar__option">
               <input
                 type="checkbox"

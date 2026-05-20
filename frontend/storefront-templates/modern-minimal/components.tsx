@@ -38,7 +38,7 @@ export function Header({ store }: { store: StoreConfig }) {
         )}
         {store.categories && (
           <nav className="sf-header__nav">
-            {store.categories.map((cat) => (
+            {store.categories.map(cat => (
               <a key={cat} href={`#${cat.toLowerCase()}`}>
                 {cat}
               </a>

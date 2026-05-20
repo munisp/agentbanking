@@ -5,15 +5,16 @@ Each template is a self-contained theme that merchants can apply to their stores
 
 ## Available Templates
 
-| Template | Description | Best For |
-|----------|-------------|----------|
-| `modern-minimal` | Clean, minimalist layout with focus on product imagery | Fashion, lifestyle brands |
-| `marketplace-grid` | Grid-based layout optimized for large catalogs | Multi-vendor marketplaces |
-| `single-product` | Hero-focused layout for one hero product with variants | Product launches, DTC |
+| Template           | Description                                            | Best For                  |
+| ------------------ | ------------------------------------------------------ | ------------------------- |
+| `modern-minimal`   | Clean, minimalist layout with focus on product imagery | Fashion, lifestyle brands |
+| `marketplace-grid` | Grid-based layout optimized for large catalogs         | Multi-vendor marketplaces |
+| `single-product`   | Hero-focused layout for one hero product with variants | Product launches, DTC     |
 
 ## Template Structure
 
 Each template contains:
+
 ```
 template-name/
 ├── manifest.json       # Template metadata, color scheme, layout config
@@ -26,6 +27,7 @@ template-name/
 
 Merchants select a template during store creation or from Store Settings.
 The selected template's `manifest.json` defines:
+
 - Color scheme (primary, secondary, accent, background)
 - Layout mode (grid, list, hero)
 - Typography (font family, heading sizes)

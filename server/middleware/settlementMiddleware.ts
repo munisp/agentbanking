@@ -62,8 +62,11 @@ export async function publishSettlementEvent(params: {
     );
     logger.info(`[Kafka] Settlement event: ${params.eventType}`);
   } catch (e) {
-    logger.warn(
-      `[Kafka] Settlement event failed (fail-open): ${(e as Error).message}`
+    logger.error(
+      `[Kafka] Settlement event failed (fail-closed): ${(e as Error).message}`
+    );
+    throw new Error(
+      `Settlement audit trail unavailable — refusing to proceed without event log: ${(e as Error).message}`
     );
   }
 }
@@ -139,10 +142,12 @@ export async function tbRecordSettlementTransfer(params: {
     }
     return null;
   } catch (e) {
-    logger.warn(
-      `[TB-Settlement] Transfer failed (fail-open): ${(e as Error).message}`
+    logger.error(
+      `[TB-Settlement] Transfer failed (fail-closed): ${(e as Error).message}`
     );
-    return null;
+    throw new Error(
+      `Settlement ledger entry failed — refusing to disburse without ledger record: ${(e as Error).message}`
+    );
   }
 }
 
@@ -222,9 +227,10 @@ export async function streamSettlementEvent(params: {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
-    logger.debug(
-      `[Fluvio] Settlement stream failed (fail-open): ${(e as Error).message}`
+    logger.warn(
+      `[Fluvio] Settlement stream failed (degraded): ${(e as Error).message}`
     );
+    // Fluvio is observability — warn but do not block settlement
   }
 }
 
@@ -349,9 +355,13 @@ export async function initiateIlpSettlementTransfer(params: {
     );
     if (res.ok) return await res.json();
     return null;
-  } catch {
-    logger.warn("[Mojaloop] ILP settlement transfer failed (fail-open)");
-    return null;
+  } catch (e) {
+    logger.error(
+      `[Mojaloop] ILP settlement transfer failed (fail-closed): ${(e as Error).message}`
+    );
+    throw new Error(
+      `Interbank settlement failed — refusing to proceed without ILP confirmation: ${(e as Error).message}`
+    );
   }
 }
 

@@ -98,17 +98,18 @@ describe("Commission Middleware Integration", () => {
     expect(ok).toBe(false);
   });
 
-  it("Mojaloop ILP transfer returns null when sidecar unavailable", async () => {
+  it("Mojaloop ILP transfer throws when sidecar unavailable (fail-closed)", async () => {
     const mod = await import("./middleware/commissionMiddleware");
-    const result = await mod.initiateIlpCommissionTransfer({
-      payerFsp: "54link-fsp",
-      payeeFsp: "test-fsp",
-      amount: 1000,
-      currency: "NGN",
-      agentCode: "AGT001",
-      transactionRef: "ILP-TEST",
-    });
-    expect(result).toBeNull();
+    await expect(
+      mod.initiateIlpCommissionTransfer({
+        payerFsp: "54link-fsp",
+        payeeFsp: "test-fsp",
+        amount: 1000,
+        currency: "NGN",
+        agentCode: "AGT001",
+        transactionRef: "ILP-TEST",
+      })
+    ).rejects.toThrow("Cross-border commission transfer failed");
   });
 });
 

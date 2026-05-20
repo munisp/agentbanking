@@ -67,8 +67,11 @@ export async function publishCommissionEvent(params: {
       `[Kafka] Commission event published: ${params.eventType} for agent ${params.agentCode}`
     );
   } catch (e) {
-    logger.warn(
-      `[Kafka] Commission event publish failed (fail-open): ${(e as Error).message}`
+    logger.error(
+      `[Kafka] Commission event publish failed (fail-closed): ${(e as Error).message}`
+    );
+    throw new Error(
+      `Commission audit trail unavailable — refusing to proceed without event log: ${(e as Error).message}`
     );
   }
 }
@@ -99,7 +102,7 @@ export async function setCachedSplitRatios(
       SPLIT_CACHE_TTL
     );
   } catch {
-    /* fail-open */
+    /* cache write — non-critical, do not block */
   }
 }
 
@@ -119,7 +122,7 @@ export async function invalidateSplitCache(txType?: string): Promise<void> {
       await cacheDel("commission:splits:all");
     }
   } catch {
-    /* fail-open */
+    /* cache invalidation — non-critical, do not block */
   }
 }
 
@@ -153,7 +156,7 @@ export async function setCachedHierarchyChain(
       HIERARCHY_CACHE_TTL
     );
   } catch {
-    /* fail-open */
+    /* cache write — non-critical, do not block */
   }
 }
 
@@ -185,10 +188,12 @@ export async function tbRecordCommissionCredit(params: {
     }
     return null;
   } catch (e) {
-    logger.warn(
-      `[TB-Commission] Transfer failed (fail-open): ${(e as Error).message}`
+    logger.error(
+      `[TB-Commission] Transfer failed (fail-closed): ${(e as Error).message}`
     );
-    return null;
+    throw new Error(
+      `Commission ledger entry failed — refusing to credit without ledger record: ${(e as Error).message}`
+    );
   }
 }
 
@@ -213,10 +218,12 @@ export async function triggerCommissionPayoutWorkflow(params: {
     );
     return handle.workflowId;
   } catch (e) {
-    logger.warn(
-      `[Temporal] Commission payout workflow failed (fail-open): ${(e as Error).message}`
+    logger.error(
+      `[Temporal] Commission payout workflow failed (fail-closed): ${(e as Error).message}`
     );
-    return null;
+    throw new Error(
+      `Commission payout workflow failed — refusing to disburse without workflow confirmation: ${(e as Error).message}`
+    );
   }
 }
 
@@ -280,9 +287,10 @@ export async function streamCommissionEvent(params: {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
-    logger.debug(
-      `[Fluvio] Commission stream failed (fail-open): ${(e as Error).message}`
+    logger.warn(
+      `[Fluvio] Commission stream failed (degraded): ${(e as Error).message}`
     );
+    // Fluvio is observability — warn but do not block commission processing
   }
 }
 
@@ -304,8 +312,9 @@ export async function triggerCommissionSnapshot(
     });
     return res.ok;
   } catch {
-    logger.warn("[Lakehouse] Commission snapshot trigger failed (fail-open)");
+    logger.warn("[Lakehouse] Commission snapshot trigger failed (degraded)");
     return false;
+    // Lakehouse is analytics — warn but do not block
   }
 }
 
@@ -424,9 +433,13 @@ export async function initiateIlpCommissionTransfer(params: {
     );
     if (res.ok) return await res.json();
     return null;
-  } catch {
-    logger.warn("[Mojaloop] ILP commission transfer failed (fail-open)");
-    return null;
+  } catch (e) {
+    logger.error(
+      `[Mojaloop] ILP commission transfer failed (fail-closed): ${(e as Error).message}`
+    );
+    throw new Error(
+      `Cross-border commission transfer failed — refusing to proceed without ILP confirmation: ${(e as Error).message}`
+    );
   }
 }
 

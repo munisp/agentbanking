@@ -72,6 +72,15 @@ describe("envValidation", () => {
         "a-properly-long-internal-api-key-more-than-32-chars-long";
       process.env.TX_SIGNING_SECRET =
         "a-properly-long-tx-signing-secret-more-than-32-chars-long";
+      process.env.KEYCLOAK_CLIENT_SECRET = "prod-keycloak-secret-value";
+      process.env.PLATFORM_API_KEY = "prod-platform-api-key-value";
+      process.env.PLATFORM_SERVICE_TOKEN = "prod-platform-service-token";
+      process.env.MINIO_SECRET_KEY = "prod-minio-secret-key-value";
+      process.env.MINIO_ACCESS_KEY = "prod-minio-access-key-value";
+      process.env.APISIX_ADMIN_KEY = "prod-apisix-admin-key-value";
+      process.env.TERMII_API_KEY = "prod-termii-api-key-value";
+      process.env.FLUVIO_API_KEY = "prod-fluvio-api-key-value";
+      process.env.MQTT_PASSWORD = "prod-mqtt-password-value";
 
       const result = validateEnvironment();
 

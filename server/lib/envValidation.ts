@@ -70,7 +70,7 @@ const CRITICAL_ENV_VARS: EnvRule[] = [
   },
   {
     name: "KEYCLOAK_CLIENT_SECRET",
-    required: false,
+    required: true,
     category: "security",
     description: "Keycloak OIDC client secret",
   },
@@ -79,6 +79,54 @@ const CRITICAL_ENV_VARS: EnvRule[] = [
     required: false,
     category: "security",
     description: "HashiCorp Vault role ID",
+  },
+  {
+    name: "PLATFORM_API_KEY",
+    required: true,
+    category: "security",
+    description: "Platform API authentication key",
+  },
+  {
+    name: "PLATFORM_SERVICE_TOKEN",
+    required: true,
+    category: "security",
+    description: "Platform service-to-service token",
+  },
+  {
+    name: "MINIO_SECRET_KEY",
+    required: true,
+    category: "security",
+    description: "MinIO object storage secret key",
+  },
+  {
+    name: "APISIX_ADMIN_KEY",
+    required: true,
+    category: "security",
+    description: "APISIX API gateway admin key",
+  },
+  {
+    name: "TERMII_API_KEY",
+    required: true,
+    category: "security",
+    description: "Termii SMS/voice API key",
+  },
+  {
+    name: "FLUVIO_API_KEY",
+    required: true,
+    category: "security",
+    description: "Fluvio streaming API key",
+  },
+  {
+    name: "MQTT_PASSWORD",
+    required: true,
+    category: "security",
+    description: "MQTT broker authentication password",
+  },
+  {
+    name: "MINIO_ACCESS_KEY",
+    required: true,
+    category: "security",
+    description: "MinIO object storage access key",
   },
 ];
 
@@ -148,6 +196,15 @@ export function validateEnvironment(): ValidationResult {
     "pos54link-secret",
     "pos54link-dev-secret",
     "54link-dev",
+    "54link-platform-dev",
+    "54link-service-token-dev",
+    "54link-keycloak-dev",
+    "54link_minio_dev",
+    "54link-apisix-dev",
+    "54link-fluvio-dev",
+    "54link_mqtt_dev",
+    "TLtest_54link",
+    "54link_admin",
     "change-in-prod",
     "change-in-production",
   ];
@@ -157,10 +214,16 @@ export function validateEnvironment(): ValidationResult {
       "JWT_SECRET",
       "KEYCLOAK_CLIENT_SECRET",
       "PLATFORM_API_KEY",
+      "PLATFORM_SERVICE_TOKEN",
       "APISIX_ADMIN_KEY",
       "CRON_SECRET",
       "INTERNAL_API_KEY",
       "TX_SIGNING_SECRET",
+      "MINIO_SECRET_KEY",
+      "MINIO_ACCESS_KEY",
+      "TERMII_API_KEY",
+      "FLUVIO_API_KEY",
+      "MQTT_PASSWORD",
     ];
     for (const varName of secretVars) {
       const val = process.env[varName] ?? "";

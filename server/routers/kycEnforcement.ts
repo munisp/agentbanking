@@ -79,16 +79,12 @@ export const kycEnforcementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return serviceCall(
-        `${KYC_ENFORCEMENT_URL}/api/v1/enforce/loan`,
-        "POST",
-        {
-          customer_id: input.customerId,
-          loan_type: input.loanType,
-          amount: input.amount,
-          currency: input.currency,
-        }
-      );
+      return serviceCall(`${KYC_ENFORCEMENT_URL}/api/v1/enforce/loan`, "POST", {
+        customer_id: input.customerId,
+        loan_type: input.loanType,
+        amount: input.amount,
+        currency: input.currency,
+      });
     }),
 
   checkKYCStatus: protectedProcedure

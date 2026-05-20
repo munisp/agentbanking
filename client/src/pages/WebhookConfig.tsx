@@ -29,11 +29,11 @@ export default function WebhookConfig() {
   }) as any;
   const testMut = trpc.webhookNotif.ingest.useMutation({
     onSuccess: d =>
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       d.success
-        // @ts-expect-error — type inference mismatch
+        // @ts-expect-error Sprint 85 — type inference mismatch
         ? toast.success(`Test delivered: ${d.deliveryId}`)
-        // @ts-expect-error — type inference mismatch
+        // @ts-expect-error Sprint 85 — type inference mismatch
         : toast.error(d.error),
   }) as any;
 

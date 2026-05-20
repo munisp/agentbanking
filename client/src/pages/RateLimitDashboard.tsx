@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function RateLimitDashboard() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const overviewQ = trpc.rateLimitDashboard.overview.useQuery() as any;
 
   return (

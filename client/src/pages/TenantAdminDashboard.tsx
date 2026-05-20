@@ -38,27 +38,27 @@ export default function TenantAdminDashboard() {
     "tenant_admin" | "tenant_operator" | "tenant_viewer"
   >("tenant_viewer");
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const dashboard = trpc.tenantAdmin.dashboard.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const usersList = trpc.tenantAdmin.listUsers.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const settings = trpc.tenantAdmin.settings.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const branding = trpc.partnerOnboarding.getBranding.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const corridorsList = trpc.partnerOnboarding.listCorridors.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const feesList = trpc.partnerOnboarding.listFees.useQuery({
     tenantId: DEMO_TENANT_ID,
   }) as any;

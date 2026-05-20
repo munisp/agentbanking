@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, Upload } from "lucide-react";
 
 export default function DataExportImportPage() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data } = trpc.dataExportImport.dashboard.useQuery() as any;
 
   return (

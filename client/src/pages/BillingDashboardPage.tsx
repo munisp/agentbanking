@@ -40,14 +40,14 @@ export default function BillingDashboardPage() {
   // Revenue stream (real-time)
   const { data: revenueStream } =
     trpc.liveBillingDashboard.getRevenueStream.useQuery(
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       { clientId: "XMTS", tenantId },
       { refetchInterval: 10000 }
     ) as any;
 
   // Reconciliation metrics
   const { data: reconMetrics } = trpc.revenueReconciliation.getMetrics.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { tenantId }
   ) as any;
 

@@ -271,7 +271,7 @@ export default function NotificationInbox() {
 
   const { data, isLoading, refetch } = trpc.notificationInbox.list.useQuery({
     // channel: channelFilter as any,
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     category: categoryFilter as any,
     priority: priorityFilter as any,
     readStatus,
@@ -282,9 +282,9 @@ export default function NotificationInbox() {
     pageSize: 25,
   }) as any;
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: counts } = trpc.notificationInbox.getUnreadCounts.useQuery({}) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: stats } = trpc.notificationInbox.getStats.useQuery() as any;
 
   const markRead = trpc.notificationInbox.markRead.useMutation({
@@ -296,7 +296,7 @@ export default function NotificationInbox() {
       toast.success("All notifications marked as read");
     },
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const toggleStar = trpc.notificationInbox.toggleStar.useMutation({
     onSuccess: () => refetch(),
   }) as any;

@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 
 export default function NotificationAnalytics() {
   const [days, setDays] = useState(7);
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const overviewQ = trpc.notifAnalytics.overview.useQuery({ days }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const trendQ = trpc.notifAnalytics.dailyTrend.useQuery({ days }) as any;
 
   const channelColors: Record<string, string> = {

@@ -82,7 +82,7 @@ export default function ReportTemplateDesigner() {
   >("landscape");
 
   const { data: catalogData } = trpc.reportTemplate.widgetCatalog.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: templatesData, isLoading } = trpc.reportTemplate.list.useQuery({
     search: search || undefined,
   }) as any;

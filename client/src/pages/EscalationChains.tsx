@@ -17,7 +17,7 @@ export default function EscalationChains() {
   const [search, setSearch] = useState("");
 
   const chainsQ = trpc.escalationChains.listChains.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const eventsQ = trpc.escalationChains.listEvents.useQuery({}) as any;
   const toggleChain = trpc.escalationChains.toggleChain.useMutation({
     onSuccess: () => {
@@ -40,7 +40,7 @@ export default function EscalationChains() {
   const runCheck = trpc.escalationChains.runEscalationCheck.useMutation({
     onSuccess: d => {
       eventsQ.refetch();
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`Escalation check: ${d.escalated} escalated`);
     },
   }) as any;

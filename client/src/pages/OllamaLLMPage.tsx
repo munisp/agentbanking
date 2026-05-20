@@ -17,19 +17,19 @@ import {
 export default function OllamaLLMPage() {
   const [chatInput, setChatInput] = useState("");
   const [txDesc, setTxDesc] = useState("");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const health = trpc.ollamaLLM.health.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const analytics = trpc.ollamaLLM.analytics.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const models = trpc.ollamaLLM.listModels.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const sessions = trpc.ollamaLLM.listSessions.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const chatMut = trpc.ollamaLLM.chat.useMutation() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const fraudMut = trpc.ollamaLLM.explainFraud.useMutation() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const classifyMut = trpc.ollamaLLM.classifyTransaction.useMutation() as any;
 
   return (

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Gift, Users, TrendingUp, Award } from "lucide-react";
 
 export default function ReferralProgramPage() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const referrals = trpc.referralProgramDedicated.list.useQuery({ limit: 20 }) as any;
   const rewards = trpc.referralProgramDedicated.leaderboard.useQuery() as any;
   const tiers = trpc.referralProgramDedicated.tiers.useQuery() as any;

@@ -28,7 +28,7 @@ export default function ComplianceChatbotPage() {
   >("kyc");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const startSession = trpc.complianceChatbot.startSession.useMutation({
     onSuccess: (data: any) => setSessionId(data.sessionId),
   }) as any;
@@ -36,19 +36,19 @@ export default function ComplianceChatbotPage() {
     onSuccess: () => history.refetch(),
   }) as any;
   const history = trpc.complianceChatbot.getHistory.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { sessionId: sessionId ?? "" },
     { enabled: !!sessionId, refetchInterval: 2000 }
   ) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const sessions = trpc.complianceChatbot.listSessions.useQuery() as any;
   const kbSearch = trpc.complianceChatbot.searchKnowledgeBase.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { query: kbQuery, topK: 5 },
     { enabled: kbQuery.length > 2 }
   ) as any;
   const complianceCheck = trpc.complianceChatbot.quickComplianceCheck.useQuery({
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     checkType,
   }) as any;
 

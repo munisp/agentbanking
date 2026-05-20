@@ -14,11 +14,11 @@ export default function QdrantVectorSearchPage() {
   const analytics = trpc.qdrantVectorSearch.analytics.useQuery() as any;
   const collectionStats = trpc.qdrantVectorSearch.collectionStats.useQuery() as any;
   const searchResults = trpc.qdrantVectorSearch.semanticSearch.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { query: searchQuery, collection: "transactions", limit: 10 },
     { enabled: searchQuery.length > 2 }
   ) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const ragMut = trpc.qdrantVectorSearch.ragAnswer.useMutation() as any;
 
   return (

@@ -147,7 +147,7 @@ function TransactionVolumeChart() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "365d">("30d");
   const { data } = trpc.analyticsDashboard.transactionVolume.useQuery({
     period,
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     granularity: "daily",
   }) as any;
   return (
@@ -296,7 +296,7 @@ function OnboardingFunnel() {
 
 function FraudDetectionChart() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data } = trpc.analyticsDashboard.fraudDetectionRates.useQuery({
     period,
   }) as any;
@@ -524,7 +524,7 @@ function GeographicDistribution() {
 
 function SettlementTrend() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data } = trpc.analyticsDashboard.settlementTrend.useQuery({ period }) as any;
   return (
     <Card>
@@ -607,7 +607,7 @@ function SettlementTrend() {
 
 function KYCApprovalTrend() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data } = trpc.analyticsDashboard.kycApprovalTrend.useQuery({
     period,
   }) as any;

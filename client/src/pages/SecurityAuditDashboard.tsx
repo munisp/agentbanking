@@ -22,19 +22,19 @@ export default function SecurityAuditDashboard() {
   const [resource, setResource] = useState("transaction:cash_in");
   const [action, setAction] = useState("create");
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const scan = trpc.securityAudit.runSecurityScan.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const policies = trpc.securityAudit.getPolicies.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const fileIntegrity = trpc.securityAudit.getFileIntegrity.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const backups = trpc.securityAudit.getBackupStatus.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const ddos = trpc.securityAudit.getDDoSStatus.useQuery() as any;
   const auditChain = trpc.securityAudit.getAuditChain.useQuery({ limit: 20 }) as any;
   const pbacResult = trpc.securityAudit.evaluateAccess.useQuery({
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     subject,
     subjectRole: role,
     resource,

@@ -5,11 +5,11 @@ export default function Customer360Page() {
   const { data, isLoading } = trpc.customer360.dashboard.useQuery() as any;
   const [selectedId, setSelectedId] = useState("");
   const { data: profile } = trpc.customer360.getProfile.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { customerId: selectedId || "cust-1001" },
     { enabled: true }
   ) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const sentiment = trpc.customer360.analyzeSentiment.useMutation() as any;
 
   if (isLoading)

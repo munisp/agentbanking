@@ -155,7 +155,7 @@ export default function WeeklyReports() {
   const recipientsQ = trpc.weeklyReports.listRecipients.useQuery() as any;
 
   const reportDetailQ = trpc.weeklyReports.getById.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { id: selectedReportId ?? "" },
     { enabled: !!selectedReportId }
   ) as any;
@@ -214,7 +214,7 @@ export default function WeeklyReports() {
   }) as any;
 
   const pdfHtmlQ = trpc.weeklyReports.getPdfHtml.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { reportId: selectedReportId ?? "" },
     { enabled: false }
   ) as any;
@@ -223,11 +223,11 @@ export default function WeeklyReports() {
   const handlePdfExport = async () => {
     if (!selectedReportId) return;
     try {
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       const result = await utils.weeklyReports.getPdfHtml.fetch({
         reportId: selectedReportId,
       });
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       const blob = new Blob([result.html], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url, "_blank");

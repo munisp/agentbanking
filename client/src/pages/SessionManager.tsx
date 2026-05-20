@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function SessionManager() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const sessionsQ = trpc.sessionMgmt.list.useQuery({}) as any;
   const forceLogout = trpc.sessionMgmt.forceLogout.useMutation({
     onSuccess: () => {
@@ -16,7 +16,7 @@ export default function SessionManager() {
   const logoutAll = trpc.sessionMgmt.logoutAll.useMutation({
     onSuccess: d => {
       sessionsQ.refetch();
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`${d.loggedOut} sessions terminated`);
     },
   }) as any;

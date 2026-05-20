@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 export default function PredictiveAgentChurn() {
   const [search, setSearch] = useState("");
   const stats = trpc.predictiveAgentChurn.getStats.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const list = trpc.predictiveAgentChurn.listAtRisk.useQuery({
     minProbability: 0.5,
   }) as any;

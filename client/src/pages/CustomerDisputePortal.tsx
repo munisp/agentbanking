@@ -65,7 +65,7 @@ export default function CustomerDisputePortal() {
   // ── Live tRPC queries ──────────────────────────────────────────────
   const stats = trpc.customerDisputePortal.getStats.useQuery() as any;
   const disputes = trpc.customerDisputePortal.listDisputes.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     statusFilter === "all" ? undefined : { status: statusFilter }
   ) as any;
   const utils = trpc.useUtils();
@@ -84,7 +84,7 @@ export default function CustomerDisputePortal() {
 
   const updateMutation = trpc.customerDisputePortal.updateDispute.useMutation({
     onSuccess: data => {
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`Dispute ${data.disputeId} updated to ${data.status}`);
       utils.customerDisputePortal.listDisputes.invalidate();
       utils.customerDisputePortal.getStats.invalidate();

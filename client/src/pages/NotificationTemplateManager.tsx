@@ -12,10 +12,10 @@ export default function NotificationTemplateManager() {
   const [channelFilter, setChannelFilter] = useState<string>("");
 
   const templatesQ = trpc.notifTemplates.list.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     channelFilter ? { channel: channelFilter } : {}
   ) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const previewMut = trpc.notifTemplates.preview.useMutation() as any;
   const deleteMut = trpc.notifTemplates.delete.useMutation({
     onSuccess: () => {

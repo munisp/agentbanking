@@ -23,7 +23,7 @@ export default function FraudReportPage() {
   const [tab, setTab] = useState("generate");
 
   const listReports = trpc.fraudReport.listReports.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const quickStats = trpc.fraudReport.quickStats.useQuery({ year, month }) as any;
   const reportDetail = trpc.fraudReport.getReport.useQuery(
     { reportId: selectedReport ?? "" },
@@ -31,7 +31,7 @@ export default function FraudReportPage() {
   ) as any;
   const generateMut = trpc.fraudReport.generateReport.useMutation({
     onSuccess: data => {
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       setSelectedReport(data.id);
       setTab("view");
       listReports.refetch();

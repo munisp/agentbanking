@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 
 export default function NotificationCenterPage() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data, isLoading } = trpc.notificationCenter.dashboard.useQuery() as any;
 
   if (isLoading)

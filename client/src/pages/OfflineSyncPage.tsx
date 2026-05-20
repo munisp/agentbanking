@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { WifiOff, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
 
 export default function OfflineSyncPage() {
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const queue = trpc.offlineSync.queue.useQuery({ limit: 20 }) as any;
   const analytics = trpc.offlineSync.analytics.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const conflicts = trpc.offlineSync.queue.useQuery({
     status: "conflict",
     limit: 10,

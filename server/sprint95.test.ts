@@ -20,8 +20,8 @@ describe("Sprint 95: Router Implementation", () => {
     .readdirSync(routerDir)
     .filter(f => f.endsWith(".ts") && !f.includes(".test"));
 
-  it("should have 424 router files", () => {
-    expect(routerFiles.length).toBe(424);
+  it("should have 454 router files", () => {
+    expect(routerFiles.length).toBe(454);
   });
 
   it("should have zero empty routers (router({}))", () => {
@@ -298,15 +298,15 @@ describe("Sprint 95: UI/UX Completeness", () => {
   const pagesDir = path.resolve(__dirname, "../client/src/pages");
   const appTsxPath = path.resolve(__dirname, "../client/src/App.tsx");
 
-  it("should have 424+ routes defined", () => {
+  it("should have 434+ routes defined", () => {
     const content = fs.readFileSync(appTsxPath, "utf-8");
     const routeCount = (content.match(/path="/g) || []).length;
-    expect(routeCount).toBeGreaterThanOrEqual(424);
+    expect(routeCount).toBeGreaterThanOrEqual(434);
   });
 
-  it("should have 424+ page files", () => {
+  it("should have 434+ page files", () => {
     const pageFiles = fs.readdirSync(pagesDir).filter(f => f.endsWith(".tsx"));
-    expect(pageFiles.length).toBeGreaterThanOrEqual(424);
+    expect(pageFiles.length).toBeGreaterThanOrEqual(434);
   });
 
   it("should have zero 'Coming Soon' placeholder text", () => {

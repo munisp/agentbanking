@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 export default function AgentRevenueAttribution() {
   const [search, setSearch] = useState("");
   const stats = trpc.agentRevenueAttribution.getStats.useQuery(undefined) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const list = trpc.agentRevenueAttribution.listAttributions.useQuery({
     period: "2026-04",
   }) as any;

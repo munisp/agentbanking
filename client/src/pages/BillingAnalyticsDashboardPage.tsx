@@ -38,7 +38,7 @@ export default function BillingAnalyticsDashboardPage() {
   ) as any;
   // @ts-ignore Sprint 85
   const forecastData = trpc.billingProduction.getRevenueForecast.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { months: period === "12m" ? 12 : period === "6m" ? 6 : 3 },
     { enabled: !!user }
   ) as any;

@@ -24,7 +24,7 @@ export default function AIMonitoringDashboard() {
     refetchInterval: 5000,
   }) as any;
   const fraudFeed = trpc.aiMonitoring.liveFraudFeed.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { limit: 20, minRiskLevel: "medium" },
     { refetchInterval: 3000 }
   ) as any;
@@ -32,7 +32,7 @@ export default function AIMonitoringDashboard() {
     refetchInterval: 30000,
   }) as any;
   const alerts = trpc.aiMonitoring.alerts.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { includeAcknowledged: false },
     { refetchInterval: 10000 }
   ) as any;
@@ -40,7 +40,7 @@ export default function AIMonitoringDashboard() {
     refetchInterval: 15000,
   }) as any;
   const throughput = trpc.aiMonitoring.throughputTimeSeries.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { intervalMinutes: 5, periods: 12 },
     { refetchInterval: 10000 }
   ) as any;

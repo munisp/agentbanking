@@ -106,13 +106,13 @@ export default function NetworkStatusDashboard() {
 
   const overview = trpc.networkStatusDashboard.getOverview.useQuery() as any;
   const regions = trpc.networkStatusDashboard.getRegions.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const timeSeries = trpc.networkStatusDashboard.getTimeSeries.useQuery({
     region: selectedRegion,
     carrier: selectedCarrier,
     hours: timeRange,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const alerts = trpc.networkStatusDashboard.getAlerts.useQuery({
     unresolved: true,
   }) as any;

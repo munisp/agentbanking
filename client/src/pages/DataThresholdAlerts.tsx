@@ -58,14 +58,14 @@ export default function DataThresholdAlerts() {
 
   const utils = trpc.useUtils();
   const { data: rulesData } = trpc.thresholdAlerts.list.useQuery({
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     status: statusFilter as any,
     severity: severityFilter as any,
     search: search || undefined,
   }) as any;
   const { data: metricsData } = trpc.thresholdAlerts.metrics.useQuery() as any;
   const { data: operatorsData } = trpc.thresholdAlerts.operators.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: eventsData } = trpc.thresholdAlerts.events.useQuery({}) as any;
 
   const createMut = trpc.thresholdAlerts.create.useMutation({

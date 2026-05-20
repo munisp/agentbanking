@@ -13,12 +13,12 @@ export default function FalkorDBGraphPage() {
   const analytics = trpc.falkordbGraph.analytics.useQuery() as any;
   const [neighborNodeId, setNeighborNodeId] = useState("AGT-001");
   const neighborsQuery = trpc.falkordbGraph.getNeighbors.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { nodeId: neighborNodeId },
     { enabled: neighborNodeId.length > 0 }
   ) as any;
   const pathQuery = trpc.falkordbGraph.shortestPath.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { from: "AGT-001", to: "AGT-005" },
     { enabled: false }
   ) as any;

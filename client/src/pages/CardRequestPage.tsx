@@ -10,11 +10,11 @@ export default function CardRequestPage() {
   const [tab, setTab] = useState<"requests" | "inventory" | "delivery">(
     "requests"
   );
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const requests = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const inventory = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const deliveries = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
   const analytics = trpc.cardRequest.analytics.useQuery() as any;
 

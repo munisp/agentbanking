@@ -101,19 +101,19 @@ export default function PBACManagement() {
 
   // Queries
   const rolesQuery = trpc.pbacManagement.listRoles.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const permissionsQuery = trpc.pbacManagement.listPermissions.useQuery({
     riskLevel: "all",
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const usersQuery = trpc.pbacManagement.listUserAssignments.useQuery({
     roleId: selectedRole ?? undefined,
     search: userSearch || undefined,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({ pageSize: 20 }) as any;
   const roleDetail = trpc.pbacManagement.getRoleDetail.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { roleId: selectedRole! },
     { enabled: !!selectedRole }
   ) as any;

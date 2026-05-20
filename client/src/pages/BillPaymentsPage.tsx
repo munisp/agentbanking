@@ -8,7 +8,7 @@ import { Zap, Tv, Droplets, Receipt } from "lucide-react";
 
 export default function BillPaymentsPage() {
   const [category, setCategory] = useState<string>("");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const payments = trpc.billPayments.history.useQuery({
     category: category || undefined,
     limit: 20,

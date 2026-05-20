@@ -9,7 +9,7 @@ import { Layers, Play, XCircle, RotateCcw } from "lucide-react";
 export default function BulkOperationsPage() {
   const [filter, setFilter] = useState<string>("");
   const jobs = trpc.bulkOps.list.useQuery({
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     type: filter || undefined,
     limit: 20,
   }) as any;

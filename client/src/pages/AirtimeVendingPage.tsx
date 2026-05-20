@@ -8,12 +8,12 @@ import { Smartphone, Signal, Wifi, Phone } from "lucide-react";
 
 export default function AirtimeVendingPage() {
   const [tab, setTab] = useState<"airtime" | "data" | "bundles">("airtime");
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const airtimeTxns = trpc.airtimeVending.history.useQuery({
     type: "airtime",
     limit: 20,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const dataTxns = trpc.airtimeVending.history.useQuery({
     type: "data",
     limit: 20,

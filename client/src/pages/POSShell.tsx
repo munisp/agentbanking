@@ -1637,16 +1637,16 @@ function TileGrid({
           onPress={onPress}
           style={
             {
-              // @ts-expect-error — type inference mismatch
+              // @ts-expect-error Sprint 85 — type inference mismatch
               gridColumn: sizeMap[t.size]
                 .split(" ")[0]
                 .replace("col-span-", "span ")
                 .replace("span ", "span "),
               height:
-                // @ts-expect-error — type inference mismatch
+                // @ts-expect-error Sprint 85 — type inference mismatch
                 heightMap[t.size] === "h-24"
                   ? 96
-                  // @ts-expect-error — type inference mismatch
+                  // @ts-expect-error Sprint 85 — type inference mismatch
                   : heightMap[t.size] === "h-52"
                     ? 208
                     : 80,
@@ -6082,7 +6082,7 @@ function AMLCheckScreen({ onBack }: { onBack: () => void }) {
     matches: string[];
     sources: string[];
   } | null>(null);
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const amlMut = trpc.platform.fraud.amlCheck.useMutation({
     onSuccess: (data: unknown) => {
       const d = data as {
@@ -9107,12 +9107,12 @@ function DisputeScreen({ onBack }: { onBack: () => void }) {
     data: myDisputesData,
     isLoading,
     refetch,
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   } = trpc.disputes.myDisputes.useQuery({}) as any;
   const myDisputes = myDisputesData?.disputes ?? [];
   const { data: detail, refetch: refetchDetail } =
     trpc.disputes.getDispute.useQuery(
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       { ref: selectedRef! },
       { enabled: selectedRef !== null && view === "thread" }
     ) as any;
@@ -9126,7 +9126,7 @@ function DisputeScreen({ onBack }: { onBack: () => void }) {
 
   const raise = trpc.disputes.raise.useMutation({
     onSuccess: res => {
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success("Dispute raised: " + res.disputeRef);
       setTxRef("");
       setReason("");
@@ -15066,12 +15066,12 @@ export function DisputesScreen({ onBack }: { onBack: () => void }) {
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.disputes.myDisputes.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { limit: 10, offset: page * 10 },
     { enabled: view === "list" }
   ) as any;
   const { data: detail } = trpc.disputes.getDispute.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { ref: selectedRef! },
     { enabled: view === "detail" && !!selectedRef, refetchInterval: 15_000 }
   ) as any;
@@ -15090,7 +15090,7 @@ export function DisputesScreen({ onBack }: { onBack: () => void }) {
 
   const addMsg = trpc.disputes.addMessage.useMutation({
     onSuccess: () => {
-      // @ts-expect-error — type inference mismatch
+      // @ts-expect-error Sprint 85 — type inference mismatch
       utils.disputes.getDispute.invalidate({ ref: selectedRef! });
       setMsg("");
     },
@@ -15767,7 +15767,7 @@ function CarrierSwitchScreen({ onBack }: { onBack: () => void }) {
 
   const rankings = trpc.carrierSwitching.getRankings.useQuery() as any;
   const recommendation = trpc.carrierSwitching.getRecommendation.useQuery({
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     currentCarrier,
   }) as any;
   const switchStats = trpc.carrierSwitching.getSwitchStats.useQuery() as any;

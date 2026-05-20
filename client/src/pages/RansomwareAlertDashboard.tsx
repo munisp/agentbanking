@@ -151,7 +151,7 @@ export default function RansomwareAlertDashboard() {
   );
 
   const stats = trpc.ransomwareAlerts.getStats.useQuery() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const alerts = trpc.ransomwareAlerts.getAlerts.useQuery({
     category: categoryFilter as any,
     severity: severityFilter as any,
@@ -168,7 +168,7 @@ export default function RansomwareAlertDashboard() {
     },
   }) as any;
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const investigateMut = trpc.ransomwareAlerts.investigate.useMutation({
     onSuccess: () => {
       toast.success(
@@ -181,7 +181,7 @@ export default function RansomwareAlertDashboard() {
     },
   }) as any;
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const resolveMut = trpc.ransomwareAlerts.resolve.useMutation({
     onSuccess: () => {
       toast.success("Alert resolved: The alert has been resolved.");

@@ -111,15 +111,15 @@ export default function OfflineQueueDashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // tRPC queries
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const queueStatus = trpc.offlineQueue.getQueueStatus.useQuery({}) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const syncHistory = trpc.offlineQueue.getSyncHistory.useQuery({
     status: statusFilter as any,
     page,
     pageSize: 15,
   }) as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery({}) as any;
   const retryMutation = trpc.offlineQueue.retryFailed.useMutation({
     onSuccess: (data: any) => {

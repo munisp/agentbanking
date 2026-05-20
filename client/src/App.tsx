@@ -831,6 +831,42 @@ const TenantBillingPortalPage = lazy(
 const BillingAnalyticsDashboardPage = lazy(
   () => import("./pages/BillingAnalyticsDashboardPage")
 );
+const AgentPerformanceScorecardPage = lazy(
+  () => import("./pages/AgentPerformanceScorecardPage")
+);
+const AgentTrainingPortal = lazy(
+  () => import("./pages/AgentTrainingPortal")
+);
+const BiometricAuthGateway = lazy(
+  () => import("./pages/BiometricAuthGateway")
+);
+const ComplianceTrainingTracker = lazy(
+  () => import("./pages/ComplianceTrainingTracker")
+);
+const ComponentShowcase = lazy(
+  () => import("./pages/ComponentShowcase")
+);
+const EcommerceCheckout = lazy(
+  () => import("./pages/EcommerceCheckout")
+);
+const EcommerceMerchantStorefront = lazy(
+  () => import("./pages/EcommerceMerchantStorefront")
+);
+const EcommerceOrderManagement = lazy(
+  () => import("./pages/EcommerceOrderManagement")
+);
+const EcommerceProductCatalog = lazy(
+  () => import("./pages/EcommerceProductCatalog")
+);
+const EcommerceShoppingCart = lazy(
+  () => import("./pages/EcommerceShoppingCart")
+);
+const PaymentDisputeArbitration = lazy(
+  () => import("./pages/PaymentDisputeArbitration")
+);
+const PlatformHealthMonitor = lazy(
+  () => import("./pages/PlatformHealthMonitor")
+);
 
 // ─── Auth guard wrapper ───────────────────────────────────────────────────────
 // Admin dashboard paths bypass POS agent login — they use DashboardLayout's own
@@ -2115,6 +2151,18 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
+        <Route path="/agent-performance-scorecard" component={AgentPerformanceScorecardPage} />
+        <Route path="/agent-training-portal" component={AgentTrainingPortal} />
+        <Route path="/biometric-auth-gateway" component={BiometricAuthGateway} />
+        <Route path="/compliance-training-tracker" component={ComplianceTrainingTracker} />
+        <Route path="/component-showcase" component={ComponentShowcase} />
+        <Route path="/ecommerce/checkout" component={EcommerceCheckout} />
+        <Route path="/ecommerce/storefront" component={EcommerceMerchantStorefront} />
+        <Route path="/ecommerce/orders" component={EcommerceOrderManagement} />
+        <Route path="/ecommerce/products" component={EcommerceProductCatalog} />
+        <Route path="/ecommerce/cart" component={EcommerceShoppingCart} />
+        <Route path="/payment-dispute-arbitration" component={PaymentDisputeArbitration} />
+        <Route path="/platform-health-monitor" component={PlatformHealthMonitor} />
         {/* Fallback — POSShell handles named screens */}
         <Route path="/:screen" component={POSShell} />
       </Switch>

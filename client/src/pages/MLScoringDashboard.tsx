@@ -32,7 +32,7 @@ export default function MLScoringDashboard() {
 
   const scoreMut = trpc.mlScoring.scoreTransaction.useMutation() as any;
   const batchMut = trpc.mlScoring.batchScore.useMutation() as any;
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const explainMut = trpc.mlScoring.explainScore.useMutation() as any;
 
   const stats = analytics.data;

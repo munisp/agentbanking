@@ -84,11 +84,11 @@ export default function RateAlerts() {
 
   const { data: alertsData, isLoading } = trpc.rateAlerts.list.useQuery({
     // status: filter,
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     pageSize: 50,
   }) as any;
 
-  // @ts-expect-error — type inference mismatch
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: stats } = trpc.rateAlerts.getStats.useQuery({}) as any;
   const { data: checkerStatus } = trpc.rateAlerts.getCheckerStatus.useQuery() as any;
 

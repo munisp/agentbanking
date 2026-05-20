@@ -103,7 +103,7 @@ export default function MultiCurrency() {
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const ratesQuery = trpc.fxRates.getRates.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { base: baseCurrency, category: activeCategory },
     { refetchInterval: 60000 }
   ) as any;
@@ -119,7 +119,7 @@ export default function MultiCurrency() {
   ) as any;
 
   const historicalQuery = trpc.fxRates.historical.useQuery(
-    // @ts-expect-error — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { from: chartFrom, to: chartTo, period: chartPeriod },
     { enabled: activeTab === "charts" }
   ) as any;

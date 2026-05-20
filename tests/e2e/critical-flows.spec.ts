@@ -32,7 +32,7 @@ async function loginAsAgent(page: Page, agentCode = "AGT001", pin = "1234") {
 }
 
 // ─── Flow 1: Application Loads ───────────────────────────────────────────────
-test('F01: Application loads and shows login screen'  , async ({ page }) => {
+test("F01: Application loads and shows login screen", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle(/54Link|POS/i);
   // Should show some form of login/authentication UI
@@ -41,13 +41,13 @@ test('F01: Application loads and shows login screen'  , async ({ page }) => {
 });
 
 // ─── Flow 2: Health Check Endpoint ──────────────────────────────────────────
-test('F02: Health check endpoint returns OK'  , async ({ request }) => {
+test("F02: Health check endpoint returns OK", async ({ request }) => {
   const response = await request.get(`${BASE_URL}/api/trpc/healthCheck.status`);
   expect(response.status()).toBe(200);
 });
 
 // ─── Flow 3: Auth Me Endpoint (Unauthenticated) ─────────────────────────────
-test('F03: Auth me endpoint returns null for unauthenticated user'  , async ({
+test("F03: Auth me endpoint returns null for unauthenticated user", async ({
   request,
 }) => {
   const response = await request.get(`${BASE_URL}/api/trpc/auth.me`);
@@ -60,7 +60,7 @@ test('F03: Auth me endpoint returns null for unauthenticated user'  , async ({
 });
 
 // ─── Flow 4: Protected Endpoint Rejects Unauthenticated ─────────────────────
-test('F04: Protected endpoints reject unauthenticated requests'  , async ({
+test("F04: Protected endpoints reject unauthenticated requests", async ({
   request,
 }) => {
   const response = await request.get(
@@ -77,13 +77,13 @@ test('F04: Protected endpoints reject unauthenticated requests'  , async ({
 });
 
 // ─── Flow 5: API Docs Endpoint ───────────────────────────────────────────────
-test('F05: API docs endpoint returns OpenAPI spec'  , async ({ request }) => {
+test("F05: API docs endpoint returns OpenAPI spec", async ({ request }) => {
   const response = await request.get(`${BASE_URL}/api/trpc/apiDocs.getSpec`);
   expect(response.status()).toBe(200);
 });
 
 // ─── Flow 6: Stripe Webhook Endpoint Exists ──────────────────────────────────
-test('F06: Stripe webhook endpoint exists and validates signatures'  , async ({
+test("F06: Stripe webhook endpoint exists and validates signatures", async ({
   request,
 }) => {
   const response = await request.post(`${BASE_URL}/api/stripe/webhook`, {
@@ -95,7 +95,7 @@ test('F06: Stripe webhook endpoint exists and validates signatures'  , async ({
 });
 
 // ─── Flow 7: Navigation Structure ────────────────────────────────────────────
-test('F07: Application has proper navigation structure'  , async ({ page }) => {
+test("F07: Application has proper navigation structure", async ({ page }) => {
   await page.goto("/");
   // Check that the page renders without JavaScript errors
   const errors: string[] = [];
@@ -107,14 +107,14 @@ test('F07: Application has proper navigation structure'  , async ({ page }) => {
 });
 
 // ─── Flow 8: 404 Page ───────────────────────────────────────────────────────
-test('F08: Non-existent routes show 404 page'  , async ({ page }) => {
+test("F08: Non-existent routes show 404 page", async ({ page }) => {
   await page.goto("/this-route-does-not-exist-12345");
   const body = await page.textContent("body");
   expect(body).toContain("404");
 });
 
 // ─── Flow 9: Mobile Responsive Layout ────────────────────────────────────────
-test('F09: Application is responsive on mobile viewport'  , async ({ page }) => {
+test("F09: Application is responsive on mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 }); // iPhone X
   await page.goto("/");
   // Should render without horizontal scrollbar
@@ -128,7 +128,7 @@ test('F09: Application is responsive on mobile viewport'  , async ({ page }) => 
 });
 
 // ─── Flow 10: tRPC Batch Endpoint ────────────────────────────────────────────
-test('F10: tRPC batch endpoint handles multiple queries'  , async ({
+test("F10: tRPC batch endpoint handles multiple queries", async ({
   request,
 }) => {
   const response = await request.get(
@@ -141,14 +141,14 @@ test('F10: tRPC batch endpoint handles multiple queries'  , async ({
 });
 
 // ─── Flow 11: CORS Headers ──────────────────────────────────────────────────
-test('F11: API returns proper CORS headers'  , async ({ request }) => {
+test("F11: API returns proper CORS headers", async ({ request }) => {
   const response = await request.get(`${BASE_URL}/api/trpc/healthCheck.status`);
   // Server should not crash on CORS preflight
   expect(response.status()).toBe(200);
 });
 
 // ─── Flow 12: Content Security ───────────────────────────────────────────────
-test('F12: Application serves content with proper content type'  , async ({
+test("F12: Application serves content with proper content type", async ({
   request,
 }) => {
   const response = await request.get(`${BASE_URL}/`);
@@ -158,7 +158,7 @@ test('F12: Application serves content with proper content type'  , async ({
 });
 
 // ─── Flow 13: Static Assets Load ────────────────────────────────────────────
-test('F13: Static assets (JS, CSS) load correctly'  , async ({ page }) => {
+test("F13: Static assets (JS, CSS) load correctly", async ({ page }) => {
   const failedRequests: string[] = [];
   page.on("requestfailed", request => {
     if (request.url().includes(".js") || request.url().includes(".css")) {
@@ -171,7 +171,7 @@ test('F13: Static assets (JS, CSS) load correctly'  , async ({ page }) => {
 });
 
 // ─── Flow 14: No Console Errors on Load ─────────────────────────────────────
-test('F14: No critical console errors on initial load'  , async ({ page }) => {
+test("F14: No critical console errors on initial load", async ({ page }) => {
   const criticalErrors: string[] = [];
   page.on("pageerror", err => {
     // Filter out known non-critical errors
@@ -190,7 +190,7 @@ test('F14: No critical console errors on initial load'  , async ({ page }) => {
 });
 
 // ─── Flow 15: Admin Route Protection ─────────────────────────────────────────
-test('F15: Admin route redirects unauthenticated users'  , async ({ page }) => {
+test("F15: Admin route redirects unauthenticated users", async ({ page }) => {
   await page.goto("/admin");
   await page.waitForTimeout(3000);
   // Should either redirect to login or show access denied
@@ -209,7 +209,7 @@ test('F15: Admin route redirects unauthenticated users'  , async ({ page }) => {
 });
 
 // ─── Flow 16: API Rate Limiting Headers ──────────────────────────────────────
-test('F16: API endpoints return within acceptable time'  , async ({
+test("F16: API endpoints return within acceptable time", async ({
   request,
 }) => {
   const start = Date.now();
@@ -220,7 +220,7 @@ test('F16: API endpoints return within acceptable time'  , async ({
 });
 
 // ─── Flow 17: WebSocket Connection ───────────────────────────────────────────
-test('F17: WebSocket endpoint is accessible'  , async ({ page }) => {
+test("F17: WebSocket endpoint is accessible", async ({ page }) => {
   await page.goto("/");
   // Check that Socket.IO client can attempt connection
   const socketIOAvailable = await page.evaluate(() => {
@@ -234,7 +234,7 @@ test('F17: WebSocket endpoint is accessible'  , async ({ page }) => {
 });
 
 // ─── Flow 18: Billing Dashboard Route ────────────────────────────────────────
-test('F18: Billing dashboard route exists'  , async ({ page }) => {
+test("F18: Billing dashboard route exists", async ({ page }) => {
   await page.goto("/billing");
   await page.waitForTimeout(3000);
   // Should either show billing content or redirect to login
@@ -243,7 +243,7 @@ test('F18: Billing dashboard route exists'  , async ({ page }) => {
 });
 
 // ─── Flow 19: Transaction History Route ──────────────────────────────────────
-test('F19: Transaction history route exists'  , async ({ page }) => {
+test("F19: Transaction history route exists", async ({ page }) => {
   await page.goto("/transactions");
   await page.waitForTimeout(3000);
   const body = await page.textContent("body");
@@ -251,7 +251,7 @@ test('F19: Transaction history route exists'  , async ({ page }) => {
 });
 
 // ─── Flow 20: Error Recovery ─────────────────────────────────────────────────
-test('F20: Application recovers from API errors gracefully'  , async ({
+test("F20: Application recovers from API errors gracefully", async ({
   page,
 }) => {
   await page.goto("/");

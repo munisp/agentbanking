@@ -8,19 +8,19 @@ const originalFetch = globalThis.fetch;
 
 globalThis.fetch = async (
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: RequestInit
 ): Promise<Response> => {
   const url = typeof input === "string" ? input : input.toString();
 
   // Only intercept calls to external hosts that will DNS-fail in CI
   const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
   if (
-    !isLocalhost && (
-    url.includes("tigerbeetle-sidecar") ||
-    url.includes("permify") ||
-    url.includes("apisix") ||
-    url.includes("keycloak") ||
-    url.includes("kafka"))
+    !isLocalhost &&
+    (url.includes("tigerbeetle-sidecar") ||
+      url.includes("permify") ||
+      url.includes("apisix") ||
+      url.includes("keycloak") ||
+      url.includes("kafka"))
   ) {
     return new Response(JSON.stringify({ ok: true, data: [], allowed: true }), {
       status: 200,
@@ -46,12 +46,12 @@ const SUPPRESS_PATTERNS = [
 
 console.error = (...args: unknown[]) => {
   const msg = String(args[0] ?? "");
-  if (SUPPRESS_PATTERNS.some((p) => msg.includes(p))) return;
+  if (SUPPRESS_PATTERNS.some(p => msg.includes(p))) return;
   originalError.apply(console, args);
 };
 
 console.warn = (...args: unknown[]) => {
   const msg = String(args[0] ?? "");
-  if (SUPPRESS_PATTERNS.some((p) => msg.includes(p))) return;
+  if (SUPPRESS_PATTERNS.some(p => msg.includes(p))) return;
   originalWarn.apply(console, args);
 };

@@ -6,10 +6,18 @@ export default function EcommerceShoppingCart() {
   const customerId = 1; // From auth context in production
   const [syncing, setSyncing] = useState(false);
 
-  const { data: cart, refetch } = trpc.ecommerceCart.getCart.useQuery({ customerId });
-  const updateItem = trpc.ecommerceCart.updateItem.useMutation({ onSuccess: () => refetch() });
-  const removeItem = trpc.ecommerceCart.removeItem.useMutation({ onSuccess: () => refetch() });
-  const clearCart = trpc.ecommerceCart.clearCart.useMutation({ onSuccess: () => refetch() });
+  const { data: cart, refetch } = trpc.ecommerceCart.getCart.useQuery({
+    customerId,
+  });
+  const updateItem = trpc.ecommerceCart.updateItem.useMutation({
+    onSuccess: () => refetch(),
+  });
+  const removeItem = trpc.ecommerceCart.removeItem.useMutation({
+    onSuccess: () => refetch(),
+  });
+  const clearCart = trpc.ecommerceCart.clearCart.useMutation({
+    onSuccess: () => refetch(),
+  });
   const syncOffline = trpc.ecommerceCart.syncOfflineCart.useMutation({
     onSuccess: () => {
       setSyncing(false);
@@ -62,14 +70,19 @@ export default function EcommerceShoppingCart() {
       {!cart?.items?.length ? (
         <div className="text-center py-12 text-gray-500">
           <p className="text-lg">Your cart is empty</p>
-          <p className="text-sm mt-2">Add products from the catalog to get started</p>
+          <p className="text-sm mt-2">
+            Add products from the catalog to get started
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
-            {cart.items.map((item) => (
-              <div key={item.id} className="border rounded-lg p-4 flex justify-between items-center">
+            {cart.items.map(item => (
+              <div
+                key={item.id}
+                className="border rounded-lg p-4 flex justify-between items-center"
+              >
                 <div>
                   <h3 className="font-medium">{item.name}</h3>
                   <p className="text-sm text-gray-500">SKU: {item.sku}</p>
@@ -80,21 +93,35 @@ export default function EcommerceShoppingCart() {
                 <div className="flex items-center gap-3">
                   <div className="flex items-center border rounded">
                     <button
-                      onClick={() => updateItem.mutate({ customerId, sku: item.sku, quantity: Math.max(0, item.quantity - 1) })}
+                      onClick={() =>
+                        updateItem.mutate({
+                          customerId,
+                          sku: item.sku,
+                          quantity: Math.max(0, item.quantity - 1),
+                        })
+                      }
                       className="px-2 py-1 hover:bg-gray-100"
                     >
                       -
                     </button>
                     <span className="px-3">{item.quantity}</span>
                     <button
-                      onClick={() => updateItem.mutate({ customerId, sku: item.sku, quantity: item.quantity + 1 })}
+                      onClick={() =>
+                        updateItem.mutate({
+                          customerId,
+                          sku: item.sku,
+                          quantity: item.quantity + 1,
+                        })
+                      }
                       className="px-2 py-1 hover:bg-gray-100"
                     >
                       +
                     </button>
                   </div>
                   <button
-                    onClick={() => removeItem.mutate({ customerId, sku: item.sku })}
+                    onClick={() =>
+                      removeItem.mutate({ customerId, sku: item.sku })
+                    }
                     className="text-red-500 hover:text-red-700"
                   >
                     Remove

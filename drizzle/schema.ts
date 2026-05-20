@@ -4675,7 +4675,7 @@ export const ecommerceCategories = pgTable(
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     slugIdx: uniqueIndex("ecom_cat_slug_idx").on(t.slug),
     parentIdx: index("ecom_cat_parent_idx").on(t.parentId),
   })
@@ -4712,7 +4712,7 @@ export const ecommerceProducts = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     skuIdx: uniqueIndex("ecom_prod_sku_idx").on(t.sku),
     categoryIdx: index("ecom_prod_category_idx").on(t.categoryId),
     merchantIdx: index("ecom_prod_merchant_idx").on(t.merchantId),
@@ -4731,11 +4731,13 @@ export const ecommerceInventory = pgTable(
     quantity: integer("quantity").default(0).notNull(),
     reserved: integer("reserved").default(0).notNull(),
     reorderPoint: integer("reorder_point").default(10).notNull(),
-    warehouseId: varchar("warehouse_id", { length: 64 }).default("default").notNull(),
+    warehouseId: varchar("warehouse_id", { length: 64 })
+      .default("default")
+      .notNull(),
     lastRestocked: timestamp("last_restocked").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     skuIdx: uniqueIndex("ecom_inv_sku_idx").on(t.sku),
     productIdx: index("ecom_inv_product_idx").on(t.productId),
     lowStockIdx: index("ecom_inv_low_stock_idx").on(t.quantity, t.reorderPoint),
@@ -4754,7 +4756,7 @@ export const ecommerceInventoryReservations = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     skuIdx: index("ecom_res_sku_idx").on(t.sku),
     orderIdx: index("ecom_res_order_idx").on(t.orderId),
     expiryIdx: index("ecom_res_expiry_idx").on(t.expiresAt),
@@ -4783,8 +4785,12 @@ export const ecommerceOrders = pgTable(
     status: ecommerceOrderStatusEnum("status").default("pending").notNull(),
     subTotal: numeric("sub_total", { precision: 12, scale: 2 }).notNull(),
     tax: numeric("tax", { precision: 12, scale: 2 }).default("0").notNull(),
-    shippingFee: numeric("shipping_fee", { precision: 12, scale: 2 }).default("0").notNull(),
-    discount: numeric("discount", { precision: 12, scale: 2 }).default("0").notNull(),
+    shippingFee: numeric("shipping_fee", { precision: 12, scale: 2 })
+      .default("0")
+      .notNull(),
+    discount: numeric("discount", { precision: 12, scale: 2 })
+      .default("0")
+      .notNull(),
     total: numeric("total", { precision: 12, scale: 2 }).notNull(),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     paymentMethod: varchar("payment_method", { length: 32 }).notNull(),
@@ -4805,7 +4811,7 @@ export const ecommerceOrders = pgTable(
     fulfilledAt: timestamp("fulfilled_at"),
     cancelledAt: timestamp("cancelled_at"),
   },
-  (t) => ({
+  t => ({
     orderNumIdx: uniqueIndex("ecom_order_num_idx").on(t.orderNumber),
     customerIdx: index("ecom_order_customer_idx").on(t.customerId),
     merchantIdx: index("ecom_order_merchant_idx").on(t.merchantId),
@@ -4828,7 +4834,7 @@ export const ecommerceOrderItems = pgTable(
     unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
     total: numeric("total", { precision: 12, scale: 2 }).notNull(),
   },
-  (t) => ({
+  t => ({
     orderIdx: index("ecom_oi_order_idx").on(t.orderId),
     productIdx: index("ecom_oi_product_idx").on(t.productId),
   })
@@ -4842,7 +4848,9 @@ export const ecommerceCarts = pgTable(
     id: serial("id").primaryKey(),
     customerId: integer("customer_id").notNull(),
     couponCode: varchar("coupon_code", { length: 32 }),
-    discountAmount: numeric("discount_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    discountAmount: numeric("discount_amount", { precision: 12, scale: 2 })
+      .default("0")
+      .notNull(),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     offlineCreated: boolean("offline_created").default(false).notNull(),
     deviceId: varchar("device_id", { length: 128 }),
@@ -4850,7 +4858,7 @@ export const ecommerceCarts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     expiresAt: timestamp("expires_at"),
   },
-  (t) => ({
+  t => ({
     customerIdx: uniqueIndex("ecom_cart_customer_idx").on(t.customerId),
   })
 );
@@ -4870,7 +4878,7 @@ export const ecommerceCartItems = pgTable(
     merchantId: integer("merchant_id").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     cartIdx: index("ecom_ci_cart_idx").on(t.cartId),
     skuIdx: index("ecom_ci_sku_idx").on(t.sku),
   })
@@ -4878,13 +4886,10 @@ export const ecommerceCartItems = pgTable(
 export type EcommerceCartItem = typeof ecommerceCartItems.$inferSelect;
 
 // ─── E-Commerce: Customer Interactions (for recommendations) ─────────────────
-export const ecommerceInteractionTypeEnum = pgEnum("ecommerce_interaction_type", [
-  "view",
-  "add_to_cart",
-  "purchase",
-  "review",
-  "wishlist",
-]);
+export const ecommerceInteractionTypeEnum = pgEnum(
+  "ecommerce_interaction_type",
+  ["view", "add_to_cart", "purchase", "review", "wishlist"]
+);
 
 export const ecommerceInteractions = pgTable(
   "ecommerce_interactions",
@@ -4896,7 +4901,7 @@ export const ecommerceInteractions = pgTable(
     metadata: json("metadata").$type<Record<string, unknown>>().default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     customerIdx: index("ecom_interact_customer_idx").on(t.customerId),
     productIdx: index("ecom_interact_product_idx").on(t.productId),
     typeIdx: index("ecom_interact_type_idx").on(t.interactionType),

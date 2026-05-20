@@ -19,7 +19,7 @@ export default function EcommerceCheckout() {
 
   const { data: cart } = trpc.ecommerceCart.getCart.useQuery({ customerId });
   const createOrder = trpc.ecommerceOrders.createFromCart.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       setSubmitting(false);
       setOrderResult(data);
     },
@@ -43,10 +43,20 @@ export default function EcommerceCheckout() {
         <div className="text-6xl">✓</div>
         <h1 className="text-2xl font-bold text-green-700">Order Placed!</h1>
         <p className="text-gray-600">Order #{orderResult.orderNumber}</p>
-        <p className="text-lg font-medium">Total: {orderResult.currency} {Number(orderResult.total).toLocaleString()}</p>
+        <p className="text-lg font-medium">
+          Total: {orderResult.currency}{" "}
+          {Number(orderResult.total).toLocaleString()}
+        </p>
         <div className="flex gap-3 justify-center mt-6">
-          <a href="/ecommerce/orders" className="px-4 py-2 bg-blue-600 text-white rounded-lg">View Orders</a>
-          <a href="/ecommerce/catalog" className="px-4 py-2 border rounded-lg">Continue Shopping</a>
+          <a
+            href="/ecommerce/orders"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          >
+            View Orders
+          </a>
+          <a href="/ecommerce/catalog" className="px-4 py-2 border rounded-lg">
+            Continue Shopping
+          </a>
         </div>
       </div>
     );
@@ -61,14 +71,17 @@ export default function EcommerceCheckout() {
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Checkout</h1>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+      >
         {/* Shipping Address */}
         <div className="space-y-4">
           <h2 className="text-lg font-medium">Shipping Address</h2>
           <input
             placeholder="Street Address"
             value={address.street}
-            onChange={(e) => setAddress({ ...address, street: e.target.value })}
+            onChange={e => setAddress({ ...address, street: e.target.value })}
             required
             className="w-full px-3 py-2 border rounded-lg"
           />
@@ -76,14 +89,14 @@ export default function EcommerceCheckout() {
             <input
               placeholder="City"
               value={address.city}
-              onChange={(e) => setAddress({ ...address, city: e.target.value })}
+              onChange={e => setAddress({ ...address, city: e.target.value })}
               required
               className="px-3 py-2 border rounded-lg"
             />
             <input
               placeholder="State"
               value={address.state}
-              onChange={(e) => setAddress({ ...address, state: e.target.value })}
+              onChange={e => setAddress({ ...address, state: e.target.value })}
               required
               className="px-3 py-2 border rounded-lg"
             />
@@ -92,14 +105,16 @@ export default function EcommerceCheckout() {
             <input
               placeholder="Zip Code"
               value={address.zipCode}
-              onChange={(e) => setAddress({ ...address, zipCode: e.target.value })}
+              onChange={e =>
+                setAddress({ ...address, zipCode: e.target.value })
+              }
               required
               className="px-3 py-2 border rounded-lg"
             />
             <input
               placeholder="Phone"
               value={address.phone}
-              onChange={(e) => setAddress({ ...address, phone: e.target.value })}
+              onChange={e => setAddress({ ...address, phone: e.target.value })}
               required
               className="px-3 py-2 border rounded-lg"
             />
@@ -108,14 +123,23 @@ export default function EcommerceCheckout() {
           {/* Payment Method */}
           <h2 className="text-lg font-medium pt-4">Payment Method</h2>
           <div className="space-y-2">
-            {["card", "bank_transfer", "ussd", "mobile_money", "cash_on_delivery"].map((method) => (
-              <label key={method} className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            {[
+              "card",
+              "bank_transfer",
+              "ussd",
+              "mobile_money",
+              "cash_on_delivery",
+            ].map(method => (
+              <label
+                key={method}
+                className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+              >
                 <input
                   type="radio"
                   name="payment"
                   value={method}
                   checked={paymentMethod === method}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  onChange={e => setPaymentMethod(e.target.value)}
                 />
                 <span className="capitalize">{method.replace(/_/g, " ")}</span>
               </label>
@@ -126,10 +150,14 @@ export default function EcommerceCheckout() {
         {/* Order Summary */}
         <div className="border rounded-lg p-6 h-fit space-y-3">
           <h2 className="text-lg font-bold">Order Summary</h2>
-          {cart?.items?.map((item) => (
+          {cart?.items?.map(item => (
             <div key={item.id} className="flex justify-between text-sm">
-              <span>{item.name} × {item.quantity}</span>
-              <span>₦{(Number(item.unitPrice) * item.quantity).toLocaleString()}</span>
+              <span>
+                {item.name} × {item.quantity}
+              </span>
+              <span>
+                ₦{(Number(item.unitPrice) * item.quantity).toLocaleString()}
+              </span>
             </div>
           ))}
           <hr />

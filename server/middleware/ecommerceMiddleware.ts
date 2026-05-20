@@ -36,15 +36,27 @@ export async function checkEcommerceHealth(): Promise<EcommerceServiceStatus> {
   };
 
   const checks = [
-    { key: "catalog" as const, url: `${CATALOG_URL}/health`, svc: "ecom-catalog" },
+    {
+      key: "catalog" as const,
+      url: `${CATALOG_URL}/health`,
+      svc: "ecom-catalog",
+    },
     { key: "cart" as const, url: `${CART_URL}/health`, svc: "ecom-cart" },
-    { key: "intelligence" as const, url: `${INTELLIGENCE_URL}/health`, svc: "ecom-intelligence" },
+    {
+      key: "intelligence" as const,
+      url: `${INTELLIGENCE_URL}/health`,
+      svc: "ecom-intelligence",
+    },
   ];
 
   await Promise.allSettled(
     checks.map(async ({ key, url, svc }) => {
       try {
-        await resilientFetch<HealthResponse>(url, {}, { serviceName: svc, timeoutMs: 3000, fallback: null });
+        await resilientFetch<HealthResponse>(
+          url,
+          {},
+          { serviceName: svc, timeoutMs: 3000, fallback: null }
+        );
         status[key] = "healthy";
       } catch {
         status[key] = "unavailable";
@@ -64,14 +76,18 @@ export async function catalogServiceProxy(
   body?: unknown
 ): Promise<{ ok: boolean; data: unknown; fallback: boolean }> {
   try {
-    const data = await resilientFetch<unknown>(`${CATALOG_URL}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Key": process.env.INTERNAL_API_KEY || "",
+    const data = await resilientFetch<unknown>(
+      `${CATALOG_URL}${path}`,
+      {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": process.env.INTERNAL_API_KEY || "",
+        },
+        body: body ? JSON.stringify(body) : undefined,
       },
-      body: body ? JSON.stringify(body) : undefined,
-    }, { serviceName: "ecom-catalog", timeoutMs: 5000 });
+      { serviceName: "ecom-catalog", timeoutMs: 5000 }
+    );
     return { ok: true, data, fallback: false };
   } catch {
     return { ok: false, data: null, fallback: true };
@@ -87,14 +103,18 @@ export async function cartServiceProxy(
   body?: unknown
 ): Promise<{ ok: boolean; data: unknown; fallback: boolean }> {
   try {
-    const data = await resilientFetch<unknown>(`${CART_URL}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Key": process.env.INTERNAL_API_KEY || "",
+    const data = await resilientFetch<unknown>(
+      `${CART_URL}${path}`,
+      {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": process.env.INTERNAL_API_KEY || "",
+        },
+        body: body ? JSON.stringify(body) : undefined,
       },
-      body: body ? JSON.stringify(body) : undefined,
-    }, { serviceName: "ecom-cart", timeoutMs: 3000 });
+      { serviceName: "ecom-cart", timeoutMs: 3000 }
+    );
     return { ok: true, data, fallback: false };
   } catch {
     return { ok: false, data: null, fallback: true };
@@ -112,7 +132,11 @@ export async function getRecommendations(
     const data = await resilientFetch<{ recommendations: unknown[] }>(
       `${INTELLIGENCE_URL}/api/v1/recommendations/${customerId}?limit=${limit}`,
       {},
-      { serviceName: "ecom-intelligence", timeoutMs: 5000, fallback: { recommendations: [] } }
+      {
+        serviceName: "ecom-intelligence",
+        timeoutMs: 5000,
+        fallback: { recommendations: [] },
+      }
     );
     return data.recommendations || [];
   } catch {
@@ -129,7 +153,10 @@ export async function getDynamicPrice(
   quantity: number = 1
 ): Promise<{ price: number; adjustments: unknown[]; fromService: boolean }> {
   try {
-    const data = await resilientFetch<{ dynamicPrice: number; adjustments: unknown[] }>(
+    const data = await resilientFetch<{
+      dynamicPrice: number;
+      adjustments: unknown[];
+    }>(
       `${INTELLIGENCE_URL}/api/v1/pricing/${productId}?customer_id=${customerId}&quantity=${quantity}`,
       {},
       { serviceName: "ecom-intelligence", timeoutMs: 3000 }
@@ -155,7 +182,11 @@ export async function getOfflinePriceCache(
     const data = await resilientFetch<{ prices: unknown[] }>(
       `${INTELLIGENCE_URL}/api/v1/pricing/offline-cache?category_id=${categoryId}&limit=${limit}`,
       {},
-      { serviceName: "ecom-intelligence", timeoutMs: 10000, fallback: { prices: [] } }
+      {
+        serviceName: "ecom-intelligence",
+        timeoutMs: 10000,
+        fallback: { prices: [] },
+      }
     );
     return data.prices || [];
   } catch {

@@ -49,7 +49,8 @@ export const ecommerceCartRouter = router({
         .where(eq(ecommerceCartItems.cartId, cart.id));
 
       const subTotal = items.reduce(
-        (sum: number, item: EcommerceCartItem) => sum + parseFloat(item.unitPrice) * item.quantity,
+        (sum: number, item: EcommerceCartItem) =>
+          sum + parseFloat(item.unitPrice) * item.quantity,
         0
       );
 
@@ -58,7 +59,10 @@ export const ecommerceCartRouter = router({
         customerId: cart.customerId,
         items,
         subTotal,
-        itemCount: items.reduce((sum: number, i: EcommerceCartItem) => sum + i.quantity, 0),
+        itemCount: items.reduce(
+          (sum: number, i: EcommerceCartItem) => sum + i.quantity,
+          0
+        ),
         couponCode: cart.couponCode,
         discountAmount: parseFloat(cart.discountAmount),
         currency: cart.currency,
@@ -261,7 +265,12 @@ export const ecommerceCartRouter = router({
         deviceId: z.string(),
         checksum: z.string(),
         strategy: z
-          .enum(["prefer_online", "prefer_offline", "sum_quantities", "max_quantity"])
+          .enum([
+            "prefer_online",
+            "prefer_offline",
+            "sum_quantities",
+            "max_quantity",
+          ])
           .default("max_quantity"),
       })
     )
@@ -293,7 +302,9 @@ export const ecommerceCartRouter = router({
         .from(ecommerceCartItems)
         .where(eq(ecommerceCartItems.cartId, cart.id));
 
-      const existingMap = new Map<string, EcommerceCartItem>(existingItems.map((i: EcommerceCartItem) => [i.sku, i]));
+      const existingMap = new Map<string, EcommerceCartItem>(
+        existingItems.map((i: EcommerceCartItem) => [i.sku, i])
+      );
 
       for (const offlineItem of input.items) {
         const existing = existingMap.get(offlineItem.sku);

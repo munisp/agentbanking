@@ -41,7 +41,10 @@ export const ecommerceOrdersRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new Error("Database unavailable — cannot create order (fail-closed)");
+      if (!database)
+        throw new Error(
+          "Database unavailable — cannot create order (fail-closed)"
+        );
 
       // Get cart items
       const [cart] = await database
@@ -81,18 +84,25 @@ export const ecommerceOrdersRouter = router({
         // Reserve stock
         await database
           .update(ecommerceInventory)
-          .set({ reserved: inv.reserved + item.quantity, updatedAt: new Date() })
+          .set({
+            reserved: inv.reserved + item.quantity,
+            updatedAt: new Date(),
+          })
           .where(eq(ecommerceInventory.id, inv.id));
       }
 
       // Calculate totals
       const subTotal = cartItems.reduce(
-        (sum: number, item: EcommerceCartItem) => sum + parseFloat(item.unitPrice) * item.quantity,
+        (sum: number, item: EcommerceCartItem) =>
+          sum + parseFloat(item.unitPrice) * item.quantity,
         0
       );
       const tax = subTotal * 0.075; // 7.5% Nigerian VAT
-      const shippingFee = subTotal >= 50000 ? 0 : 500 + (cartItems.length - 1) * 100;
-      const discount = cart.discountAmount ? parseFloat(cart.discountAmount) : 0;
+      const shippingFee =
+        subTotal >= 50000 ? 0 : 500 + (cartItems.length - 1) * 100;
+      const discount = cart.discountAmount
+        ? parseFloat(cart.discountAmount)
+        : 0;
       const total = subTotal + tax + shippingFee - discount;
 
       // Generate order number
@@ -135,8 +145,12 @@ export const ecommerceOrdersRouter = router({
       }
 
       // Clear cart after order creation
-      await database.delete(ecommerceCartItems).where(eq(ecommerceCartItems.cartId, cart.id));
-      await database.delete(ecommerceCarts).where(eq(ecommerceCarts.id, cart.id));
+      await database
+        .delete(ecommerceCartItems)
+        .where(eq(ecommerceCartItems.cartId, cart.id));
+      await database
+        .delete(ecommerceCarts)
+        .where(eq(ecommerceCarts.id, cart.id));
 
       return order;
     }),
@@ -180,9 +194,12 @@ export const ecommerceOrdersRouter = router({
       if (!database) return { orders: [], total: 0 };
 
       const conditions = [];
-      if (input.customerId) conditions.push(eq(ecommerceOrders.customerId, input.customerId));
-      if (input.merchantId) conditions.push(eq(ecommerceOrders.merchantId, input.merchantId));
-      if (input.status) conditions.push(eq(ecommerceOrders.status, input.status as any));
+      if (input.customerId)
+        conditions.push(eq(ecommerceOrders.customerId, input.customerId));
+      if (input.merchantId)
+        conditions.push(eq(ecommerceOrders.merchantId, input.merchantId));
+      if (input.status)
+        conditions.push(eq(ecommerceOrders.status, input.status as any));
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -285,7 +302,11 @@ export const ecommerceOrdersRouter = router({
 
       const [order] = await database
         .update(ecommerceOrders)
-        .set({ status: "delivered", fulfilledAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: "delivered",
+          fulfilledAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(ecommerceOrders.id, input.id))
         .returning();
 
@@ -343,7 +364,10 @@ export const ecommerceOrdersRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new Error("Database unavailable — offline sync requires connectivity");
+      if (!database)
+        throw new Error(
+          "Database unavailable — offline sync requires connectivity"
+        );
 
       const results: Array<{
         clientId: string;
@@ -397,7 +421,11 @@ export const ecommerceOrdersRouter = router({
             });
           }
 
-          results.push({ clientId: offlineOrder.clientId, serverId: order.id, status: "synced" });
+          results.push({
+            clientId: offlineOrder.clientId,
+            serverId: order.id,
+            status: "synced",
+          });
         } catch (err) {
           results.push({
             clientId: offlineOrder.clientId,
@@ -409,8 +437,8 @@ export const ecommerceOrdersRouter = router({
 
       return {
         results,
-        synced: results.filter((r) => r.status === "synced").length,
-        errors: results.filter((r) => r.status === "error").length,
+        synced: results.filter(r => r.status === "synced").length,
+        errors: results.filter(r => r.status === "error").length,
         total: input.length,
       };
     }),

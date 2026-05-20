@@ -153,7 +153,8 @@ export const ecommerceCatalogRouter = router({
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.name) updates.name = input.name;
-      if (input.description !== undefined) updates.description = input.description;
+      if (input.description !== undefined)
+        updates.description = input.description;
       if (input.price) updates.price = input.price;
       if (input.isActive !== undefined) updates.isActive = input.isActive;
       if (input.tags) updates.tags = input.tags;
@@ -271,7 +272,9 @@ export const ecommerceCatalogRouter = router({
         .where(
           sql`(${ecommerceInventory.quantity} - ${ecommerceInventory.reserved}) <= ${ecommerceInventory.reorderPoint}`
         )
-        .orderBy(sql`(${ecommerceInventory.quantity} - ${ecommerceInventory.reserved}) ASC`)
+        .orderBy(
+          sql`(${ecommerceInventory.quantity} - ${ecommerceInventory.reserved}) ASC`
+        )
         .limit(input.limit);
 
       return { alerts, count: alerts.length };

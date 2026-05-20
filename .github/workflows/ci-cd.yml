@@ -74,6 +74,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Setup test fixtures
+        run: |
+          sudo mkdir -p /home/ubuntu/skills/54link-pos-builder/references
+          sudo mkdir -p /home/ubuntu/54link-financial-model
+          sudo cp fixtures/skills/54link-pos-builder/SKILL.md /home/ubuntu/skills/54link-pos-builder/
+          sudo cp fixtures/skills/54link-pos-builder/references/*.md /home/ubuntu/skills/54link-pos-builder/references/
+          sudo cp fixtures/54link-financial-model/54Link_Financial_Model_v4_OFFLINE.html /home/ubuntu/54link-financial-model/
+          sudo chmod -R a+r /home/ubuntu/skills /home/ubuntu/54link-financial-model
+
       - name: Run Vitest
         run: pnpm test -- --reporter=verbose --coverage
         env:

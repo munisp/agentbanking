@@ -1,9 +1,9 @@
 import { trpc } from "@/lib/trpc";
 
 export default function ComplianceAutomationPage() {
-  // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data, isLoading } =
-    trpc.complianceAutomation.dashboard.useQuery() as any;
+  const { data, isLoading } = trpc.complianceAutomation.dashboard.useQuery(
+    {}
+  ) as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading compliance...</div>;

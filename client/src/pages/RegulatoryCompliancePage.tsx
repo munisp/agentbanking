@@ -15,8 +15,9 @@ import {
 export default function RegulatoryCompliancePage() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } =
-    trpc.regulatoryComplianceChecks.list.useQuery() as any;
+  const { data, isLoading } = trpc.regulatoryComplianceChecks.list.useQuery(
+    {}
+  ) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const runCheckMut = trpc.regulatoryComplianceChecks.runCheck.useMutation({
     onSuccess: () => toast.success("Compliance check completed"),

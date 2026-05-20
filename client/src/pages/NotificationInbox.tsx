@@ -282,12 +282,11 @@ export default function NotificationInbox() {
     pageSize: 25,
   }) as any;
 
-  // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data: counts } = trpc.notificationInbox.getUnreadCounts.useQuery(
-    {}
-  ) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data: stats } = trpc.notificationInbox.getStats.useQuery() as any;
+  const { data: counts } =
+    trpc.notificationInbox.getUnreadCounts.useQuery() as any;
+  const { data: stats } = trpc.notificationInbox.getStats.useQuery({
+    userId: "current",
+  }) as any;
 
   const markRead = trpc.notificationInbox.markRead.useMutation({
     onSuccess: () => refetch(),

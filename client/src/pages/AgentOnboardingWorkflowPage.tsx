@@ -9,8 +9,9 @@ import { UserPlus, Search, CheckCircle, Clock, ArrowRight } from "lucide-react";
 export default function AgentOnboardingWorkflowPage() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } =
-    trpc.agentOnboardingWorkflow.list.useQuery() as any;
+  const { data, isLoading } = trpc.agentOnboardingWorkflow.list.useQuery(
+    {}
+  ) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const advanceMut = trpc.agentOnboardingWorkflow.advance.useMutation({
     onSuccess: () => toast.success("Stage advanced"),

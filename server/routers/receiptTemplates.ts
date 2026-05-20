@@ -5,6 +5,9 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { eq, count, desc } from "drizzle-orm";
+import { receiptTemplates } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const receiptTemplatesRouter = router({
   list: protectedProcedure
@@ -14,14 +17,35 @@ export const receiptTemplatesRouter = router({
         offset: z.number().default(0),
       })
     )
-    .query(async () => {
-      return { items: [], total: 0 };
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const items = await db
+        .select()
+        .from(receiptTemplates)
+        .orderBy(desc(receiptTemplates.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+      const [tot] = await db.select({ value: count() }).from(receiptTemplates);
+      return { items, total: Number(tot.value) };
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async () => {
-      return null;
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [item] = await db
+        .select()
+        .from(receiptTemplates)
+        .where(eq(receiptTemplates.id, input.id))
+        .limit(1);
+      if (!item)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Receipt template not found",
+        });
+      return item;
     }),
 
   create: protectedProcedure
@@ -33,12 +57,29 @@ export const receiptTemplatesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        return {
+          id: Date.now(),
+          name: input.name,
+          content: input.content,
+          type: input.type,
+          createdAt: new Date().toISOString(),
+        };
+      const [item] = await db
+        .insert(receiptTemplates)
+        .values({
+          name: input.name,
+          bodyTemplate: input.content,
+          channel: input.type,
+        })
+        .returning();
       return {
-        id: Date.now(),
-        name: input.name,
-        content: input.content,
-        type: input.type,
-        createdAt: new Date().toISOString(),
+        id: item.id,
+        name: item.name,
+        content: item.bodyTemplate,
+        type: item.channel,
+        createdAt: item.createdAt.toISOString(),
       };
     }),
 
@@ -51,12 +92,26 @@ export const receiptTemplatesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { id: input.id, updated: true };
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.name) updates.name = input.name;
+      if (input.content) updates.bodyTemplate = input.content;
+      await db
+        .update(receiptTemplates)
+        .set(updates)
+        .where(eq(receiptTemplates.id, input.id));
       return { id: input.id, updated: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { id: input.id, deleted: true };
+      await db
+        .delete(receiptTemplates)
+        .where(eq(receiptTemplates.id, input.id));
       return { id: input.id, deleted: true };
     }),
 });

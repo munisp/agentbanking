@@ -4627,3 +4627,36 @@ export const biometricAuditEvents = pgTable(
 );
 export type BiometricAuditEvent = typeof biometricAuditEvents.$inferSelect;
 export type NewBiometricAuditEvent = typeof biometricAuditEvents.$inferInsert;
+
+// ─── Receipt Templates ────────────────────────────────────────────────────────
+export const receiptTemplates = pgTable("receipt_templates", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  channel: varchar("channel", { length: 32 }).notNull().default("print"),
+  bodyTemplate: text("bodyTemplate").notNull(),
+  headerTemplate: text("headerTemplate"),
+  footerTemplate: text("footerTemplate"),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type ReceiptTemplate = typeof receiptTemplates.$inferSelect;
+
+// ─── Guide Feedback ───────────────────────────────────────────────────────────
+export const guideFeedback = pgTable(
+  "guide_feedback",
+  {
+    id: serial("id").primaryKey(),
+    guideId: varchar("guideId", { length: 128 }).notNull(),
+    subsection: varchar("subsection", { length: 128 }),
+    userId: integer("userId"),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    guideIdIdx: index("gf_guideId_idx").on(t.guideId),
+    userIdIdx: index("gf_userId_idx").on(t.userId),
+  })
+);
+export type GuideFeedback = typeof guideFeedback.$inferSelect;

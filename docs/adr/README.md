@@ -4,8 +4,9 @@ This directory contains the Architecture Decision Records for the 54Link POS She
 
 ## Index
 
-| ADR                                              | Title                                           | Status   | Date       |
-| ------------------------------------------------ | ----------------------------------------------- | -------- | ---------- |
+<!-- prettier-ignore -->
+| ADR | Title | Status | Date |
+| --- | ----- | ------ | ---- |
 | [ADR-001](ADR-001-tigerbeetle-ledger.md)         | TigerBeetle for Double-Entry Ledger             | Accepted | 2025-01-15 |
 | [ADR-002](ADR-002-temporal-workflows.md)         | Temporal for Billing Workflows                  | Accepted | 2025-01-20 |
 | [ADR-003](ADR-003-permify-rbac.md)               | Permify for Permission-Based Access Control     | Accepted | 2025-02-01 |

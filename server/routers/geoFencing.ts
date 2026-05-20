@@ -26,6 +26,13 @@ export const geoFencingRouter = router({
       name: input.name,
       created: true,
     })),
+  toggle: protectedProcedure
+    .input(z.object({ id: z.string(), active: z.boolean() }))
+    .mutation(async ({ input }) => ({
+      id: input.id,
+      active: input.active,
+      updated: true,
+    })),
   checkPoint: protectedProcedure
     .input(z.object({ lat: z.number(), lng: z.number() }))
     .query(async () => ({ inZone: false, zones: [] })),

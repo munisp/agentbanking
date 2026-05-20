@@ -1,106 +1,159 @@
-// @ts-nocheck
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { connectivityLog, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const networkTelemetryRouter = router({
-  list: protectedProcedure
+  metrics: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .from(connectivityLog)
+        .orderBy(desc(connectivityLog.recordedAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(connectivityLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "net_telemetry",
+        procedure: "metrics",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  traces: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(connectivityLog)
+        .orderBy(desc(connectivityLog.recordedAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(connectivityLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "net_telemetry",
+        procedure: "traces",
+      };
     }),
-  ingest: protectedProcedure
-    .input(z.object({ events: z.array(z.record(z.any())) }))
-    .mutation(async ({ input }) => ({ ingested: input.events.length })),
-  aggregate: protectedProcedure
-    .input(z.object({ metric: z.string(), period: z.string().default("1h") }))
-    .query(async () => ({ avg: 0, min: 0, max: 0, p95: 0, count: 0 })),
-  carrierBreakdown: protectedProcedure.query(async () => ({
-    carriers: [],
-    // carrier-level breakdown for telco network statistics
-  })),
+  alerts: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(connectivityLog)
+        .orderBy(desc(connectivityLog.recordedAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(connectivityLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "net_telemetry",
+        procedure: "alerts",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(connectivityLog)
+        .orderBy(desc(connectivityLog.recordedAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(connectivityLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "net_telemetry",
+        procedure: "config",
+      };
+    }),
+  export: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(connectivityLog)
+        .orderBy(desc(connectivityLog.recordedAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(connectivityLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "net_telemetry",
+        procedure: "export",
+      };
+    }),
 });

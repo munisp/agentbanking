@@ -1,95 +1,165 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { multiSimProfiles, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const carrierSwitchingRouter = router({
   list: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .from(multiSimProfiles)
+        .orderBy(desc(multiSimProfiles.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(multiSimProfiles);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "carrier_switch",
+        procedure: "list",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  switch: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "carrier_switch.switch",
+        resource: "carrier_switch",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "carrier_switch",
+        action: "switch",
+        id: input?.id || null,
+      };
+    }),
+  auto: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "carrier_switch.auto",
+        resource: "carrier_switch",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "carrier_switch",
+        action: "auto",
+        id: input?.id || null,
+      };
+    }),
+  history: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(multiSimProfiles)
+        .orderBy(desc(multiSimProfiles.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(multiSimProfiles);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "carrier_switch",
+        procedure: "history",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(multiSimProfiles)
+        .orderBy(desc(multiSimProfiles.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(multiSimProfiles);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "carrier_switch",
+        procedure: "config",
+      };
     }),
 });

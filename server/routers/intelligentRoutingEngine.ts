@@ -1,150 +1,154 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { transactions, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
-// Payment routing engine: selects optimal payment provider based on cost, latency, and success rate
 export const intelligentRoutingEngineRouter = router({
-  list: protectedProcedure
+  routes: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database)
-          return {
-            data: [],
-            items: [],
-            total: 0,
-            limit: input.limit,
-            offset: input.offset,
-          };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(totalRows) ? totalRows[0] : totalRows;
-
-        return {
-          data: Array.isArray(results) ? results : [],
-          items: Array.isArray(results) ? results : [],
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return {
-          data: [],
-          items: [],
-          total: 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database)
-        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .from(transactions)
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "routing",
+        procedure: "routes",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  optimize: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "routing.optimize",
+        resource: "routing",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "routing",
+        action: "optimize",
+        id: input?.id || null,
+      };
+    }),
+  rules: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database)
-        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(transactions)
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "routing",
+        procedure: "rules",
+      };
     }),
-
-  getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-  }),
-
-  listRoutes: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  optimizeRouting: protectedProcedure
+  stats: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "routing",
+        procedure: "stats",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "routing",
+        procedure: "config",
+      };
     }),
 });

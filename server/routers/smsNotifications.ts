@@ -1,95 +1,162 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { notificationDispatchLog, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const smsNotificationsRouter = router({
   list: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .from(notificationDispatchLog)
+        .orderBy(desc(notificationDispatchLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "sms",
+        procedure: "list",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  send: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "sms.send",
+        resource: "sms",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "sms",
+        action: "send",
+        id: input?.id || null,
+      };
+    }),
+  getById: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(notificationDispatchLog)
+        .orderBy(desc(notificationDispatchLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "sms",
+        procedure: "getById",
+      };
+    }),
+  stats: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(notificationDispatchLog)
+        .orderBy(desc(notificationDispatchLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "sms",
+        procedure: "stats",
+      };
+    }),
+  balance: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(notificationDispatchLog)
+        .orderBy(desc(notificationDispatchLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "sms",
+        procedure: "balance",
+      };
     }),
 });

@@ -1,156 +1,159 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 
 export const dbtIntegrationRouter = router({
-  list: protectedProcedure
+  models: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
         .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "dbt",
+        procedure: "models",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  run: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
-    }),
-
-  getProjectInfo: protectedProcedure.query(async () => {
-    return {
-      name: "ngapp_analytics",
-      version: "1.0.0",
-      models: 45,
-      tests: 120,
-      sources: 8,
-    };
-  }),
-  listModels: protectedProcedure.query(async () => {
-    return {
-      models: [
-        {
-          name: "fct_transactions",
-          schema: "analytics",
-          materialized: "table",
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "dbt.run",
+        resource: "dbt",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
         },
-      ],
-      total: 45,
-    };
-  }),
-  runTests: protectedProcedure.mutation(async () => {
-    return { passed: 118, failed: 2, total: 120, duration: 45 };
-  }),
-  getLineage: protectedProcedure.query(async () => {
-    return {
-      nodes: [{ name: "fct_transactions", type: "model" }],
-      edges: [{ from: "stg_transactions", to: "fct_transactions" }],
-    };
-  }),
-  projectInfo: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      });
+      return {
+        success: true,
+        domain: "dbt",
+        action: "run",
+        id: input?.id || null,
+      };
     }),
-  triggerRun: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .mutation(async () => {
-      return { success: true, status: "ok" };
+  test: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "dbt.test",
+        resource: "dbt",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "dbt",
+        action: "test",
+        id: input?.id || null,
+      };
     }),
-  listTests: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+  docs: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "dbt",
+        procedure: "docs",
+      };
     }),
   lineage: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
-      return { items: [], total: 0, status: "ok" };
-    }),
-  listSources: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
-      return { items: [], total: 0, status: "ok" };
-    }),
-  platformValue: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "dbt",
+        procedure: "lineage",
+      };
     }),
 });

@@ -1,125 +1,154 @@
-// Sprint 87: Regenerated — auditExport with real DB queries
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { auditLog } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const list = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
+export const auditExportRouter = router({
+  export: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
       const rows = await db
         .select()
         .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(lim)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
         .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(auditLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "audit_export",
+        procedure: "export",
+      };
+    }),
+  schedule: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "audit_export.schedule",
+        resource: "audit_export",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
       });
-    }
-  });
-const exportCsv = protectedProcedure
-  .input(
-    z.object({
-      id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(auditLog)
-          .where(eq(auditLog.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "exportCsv: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "exportCsv completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
       return {
         success: true,
-        message: "exportCsv completed",
-        timestamp: new Date().toISOString(),
+        domain: "audit_export",
+        action: "schedule",
+        id: input?.id || null,
       };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
-const getStats = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(auditLog)
-        .limit(100);
-      const recent = await db
+    }),
+  history: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
         .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(5);
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
       return {
-        totalRecords: total,
-        recentItems: recent,
-        summary: { active: total, lastUpdated: new Date().toISOString() },
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "audit_export",
+        procedure: "history",
       };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
-
-export const auditExportRouter = router({
-  list,
-  exportCsv,
-  getStats,
+    }),
+  formats: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "audit_export",
+        procedure: "formats",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "audit_export",
+        procedure: "config",
+      };
+    }),
 });

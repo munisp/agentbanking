@@ -1,134 +1,159 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { observabilityAlerts, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const openTelemetryRouter = router({
-  list: protectedProcedure
+  traces: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
-    }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
-    .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
-    )
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
-    }),
-
-  dashboard: protectedProcedure.query(async () => {
-    return {
-      services: 12,
-      spans: 150000,
-      errors: 25,
-      avgLatency: 45,
-      uptime: 99.95,
-    };
-  }),
-  traceSearch: publicProcedure
-    .input(z.object({ query: z.string().optional() }).optional())
-    .query(async () => {
+        .from(observabilityAlerts)
+        .orderBy(desc(observabilityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(observabilityAlerts);
       return {
-        traces: [
-          {
-            traceId: "abc123",
-            service: "billing",
-            duration: 120,
-            status: "ok",
-          },
-        ],
-        total: 1,
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "otel",
+        procedure: "traces",
       };
     }),
-  serviceMap: protectedProcedure.query(async () => {
-    return {
-      nodes: [{ id: "billing", type: "service", connections: 3 }],
-      edges: [{ from: "billing", to: "postgres" }],
-    };
-  }),
-
-  searchTraces: protectedProcedure.query(async () => {
-    return { traces: [], total: 0 };
-  }),
-
-  serviceHealth: protectedProcedure.query(async () => {
-    return { services: [], healthy: 0, degraded: 0 };
-  }),
+  metrics: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(observabilityAlerts)
+        .orderBy(desc(observabilityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(observabilityAlerts);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "otel",
+        procedure: "metrics",
+      };
+    }),
+  logs: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(observabilityAlerts)
+        .orderBy(desc(observabilityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(observabilityAlerts);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "otel",
+        procedure: "logs",
+      };
+    }),
+  alerts: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(observabilityAlerts)
+        .orderBy(desc(observabilityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(observabilityAlerts);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "otel",
+        procedure: "alerts",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(observabilityAlerts)
+        .orderBy(desc(observabilityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(observabilityAlerts);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "otel",
+        procedure: "config",
+      };
+    }),
 });

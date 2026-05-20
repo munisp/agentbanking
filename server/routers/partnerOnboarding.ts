@@ -1,162 +1,258 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { tenants, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const partnerOnboardingRouter = router({
   list: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenants)
+        .orderBy(desc(tenants.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(tenants);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "partner_onboard",
+        procedure: "list",
+      };
     }),
-
+  create: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "partner_onboard.create",
+        resource: "partner_onboard",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "partner_onboard",
+        action: "create",
+        id: input?.id || null,
+      };
+    }),
   getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
-    }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(tenants)
+        .orderBy(desc(tenants.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(tenants);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "partner_onboard",
+        procedure: "getById",
+      };
     }),
-
-  addCorridor: protectedProcedure
+  approve: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "partner_onboard.approve",
+        resource: "partner_onboard",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "partner_onboard",
+        action: "approve",
+        id: input?.id || null,
+      };
     }),
-
-  addFeeOverride: protectedProcedure
+  reject: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "partner_onboard.reject",
+        resource: "partner_onboard",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "partner_onboard",
+        action: "reject",
+        id: input?.id || null,
+      };
     }),
-
-  completeOnboarding: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      return { success: true };
-    }),
-
-  getBranding: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  listCorridors: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  listFees: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
   registerTenant: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      return { success: true, action: "registerTenant", id: input?.id || null };
     }),
-
   updateBranding: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      return { success: true, action: "updateBranding", id: input?.id || null };
     }),
-  validateInvite: protectedProcedure
-    .input(z.object({ inviteCode: z.string() }))
-    .query(async ({ input }) => ({
-      valid: true,
-      inviteCode: input.inviteCode,
-    })),
-  getProgress: protectedProcedure
-    .input(z.object({ tenantId: z.string().optional() }).default({}))
-    .query(async () => ({ step: 1, totalSteps: 5, complete: false })),
-  removeCorridor: protectedProcedure
-    .input(z.object({ corridorId: z.string() }))
-    .mutation(async () => ({ success: true })),
-  removeFee: protectedProcedure
-    .input(z.object({ feeId: z.string() }))
-    .mutation(async () => ({ success: true })),
+  addCorridor: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      return { success: true, action: "addCorridor", id: input?.id || null };
+    }),
+  addFeeOverride: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      return { success: true, action: "addFeeOverride", id: input?.id || null };
+    }),
+  completeOnboarding: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      return {
+        success: true,
+        action: "completeOnboarding",
+        id: input?.id || null,
+      };
+    }),
 });

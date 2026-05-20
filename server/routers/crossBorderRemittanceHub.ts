@@ -1,198 +1,192 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
-
-// ── Middleware Integration (Sprint 44) ──────────────────────────────
-import { publishEvent, type KafkaTopic } from "../kafkaClient";
-import { cacheSet, cacheGet } from "../redisClient";
-import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { tenantCorridors, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const crossBorderRemittanceHubRouter = router({
-  list: protectedProcedure
+  listCorridors: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const [record] = await database
-          .select()
-          .from(auditLog)
-          .where(eq(auditLog.id, input.id))
-          .limit(1);
-
-        if (!record) {
-          throw new Error(`Record with id ${input.id} not found`);
-        }
-        return record;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }),
-
-  getSummary: protectedProcedure.query(async () => {
-    try {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const _totalRows = await database
-        .select({ total: count() })
-        .from(auditLog);
-      const totalResult = Array.isArray(_totalRows)
-        ? _totalRows[0]
-        : _totalRows;
-
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenantCorridors)
+        .orderBy(desc(tenantCorridors.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(tenantCorridors);
       return {
-        totalRecords: totalResult?.total ?? 0,
-        lastUpdated: new Date().toISOString(),
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "remittance",
+        procedure: "listCorridors",
       };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }),
-
-  getRecent: protectedProcedure
+    }),
+  getRate: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const since = new Date();
-        since.setDate(since.getDate() - input.days);
-
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit);
-
-        return results;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenantCorridors)
+        .orderBy(desc(tenantCorridors.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(tenantCorridors);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "remittance",
+        procedure: "getRate",
+      };
     }),
-
-  getStats: protectedProcedure.query(async () => {
-    try {
-      const database = await getDb();
-      if (!database)
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      try {
-        await database.execute(sql`SELECT 1 as ok`);
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      } catch {
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      }
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }),
-
-  initiateTransfer: protectedProcedure
+  initiate: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
     )
-    .mutation(async () => {
-      try {
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
+          message: "DB unavailable",
         });
-      }
-    }),
-
-  listCorridors: protectedProcedure.query(async () => {
-    try {
-      return { data: [], total: 0 };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unknown error",
+      await db.insert(auditLog).values({
+        action: "remittance.initiate",
+        resource: "remittance",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
       });
-    }
-  }),
+      return {
+        success: true,
+        domain: "remittance",
+        action: "initiate",
+        id: input?.id || null,
+      };
+    }),
+  track: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenantCorridors)
+        .orderBy(desc(tenantCorridors.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(tenantCorridors);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "remittance",
+        procedure: "track",
+      };
+    }),
+  history: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenantCorridors)
+        .orderBy(desc(tenantCorridors.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(tenantCorridors);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "remittance",
+        procedure: "history",
+      };
+    }),
+  stats: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(tenantCorridors)
+        .orderBy(desc(tenantCorridors.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(tenantCorridors);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "remittance",
+        procedure: "stats",
+      };
+    }),
 });

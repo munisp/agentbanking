@@ -1,122 +1,154 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { apiKeys, auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 
 export const apiGatewayRouter = router({
-  list: protectedProcedure
+  routes: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        search: z.string().optional(),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+        .from(apiKeys)
+        .orderBy(desc(apiKeys.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(apiKeys);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "api_gw",
+        procedure: "routes",
+      };
     }),
-
-  getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  getRecent: protectedProcedure
+  stats: protectedProcedure
     .input(
-      z.object({
-        days: z.number().min(1).max(90).default(7),
-        limit: z.number().min(1).max(50).default(10),
-      })
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
     )
     .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
         .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+        .from(apiKeys)
+        .orderBy(desc(apiKeys.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(apiKeys);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "api_gw",
+        procedure: "stats",
+      };
     }),
-
-  dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  listApiKeys: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
-  }),
-
-  createApiKey: protectedProcedure.mutation(async () => {
-    return { id: "KEY-001", key: "ak_xxx", created: true };
-  }),
+  rateLimit: protectedProcedure
+    .input(
+      z
+        .object({
+          id: z.string().optional(),
+          data: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+      await db.insert(auditLog).values({
+        action: "api_gw.rateLimit",
+        resource: "api_gw",
+        resourceId: input?.id || "system",
+        status: "success",
+        metadata: {
+          ...(input?.data || {}),
+          actor: ctx.user?.email || "system",
+        },
+      });
+      return {
+        success: true,
+        domain: "api_gw",
+        action: "rateLimit",
+        id: input?.id || null,
+      };
+    }),
+  health: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(apiKeys)
+        .orderBy(desc(apiKeys.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(apiKeys);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "api_gw",
+        procedure: "health",
+      };
+    }),
+  config: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const limit = input?.limit ?? 20;
+      const offset = input?.offset ?? 0;
+      const rows = await db
+        .select()
+        .from(apiKeys)
+        .orderBy(desc(apiKeys.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await db.select({ value: count() }).from(apiKeys);
+      return {
+        items: rows,
+        total: Number(totalRow.value),
+        domain: "api_gw",
+        procedure: "config",
+      };
+    }),
 });

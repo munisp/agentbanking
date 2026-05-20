@@ -650,8 +650,9 @@ export default function CommissionEnginePage() {
                     <div>
                       <p className="font-semibold">{s.id}</p>
                       <p className="text-xs text-muted-foreground">
-                        {TX_TYPES.find((t: any) => t.value === s.transactionType)
-                          ?.label ?? s.transactionType}
+                        {TX_TYPES.find(
+                          (t: any) => t.value === s.transactionType
+                        )?.label ?? s.transactionType}
                       </p>
                     </div>
                     <Badge variant="default">active</Badge>

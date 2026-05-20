@@ -12,7 +12,9 @@ export default function InsuranceProductsPage() {
   );
   const products = trpc.insuranceProducts.products.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const policies = trpc.insuranceProducts.policies.useQuery({ limit: 20 }) as any;
+  const policies = trpc.insuranceProducts.policies.useQuery({
+    limit: 20,
+  }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const claims = trpc.insuranceProducts.policies.useQuery({ limit: 20 }) as any;
   const analytics = trpc.insuranceProducts.analytics.useQuery() as any;

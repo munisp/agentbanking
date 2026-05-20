@@ -238,7 +238,8 @@ function TransactionVolumeChart() {
 }
 
 function OnboardingFunnel() {
-  const { data } = trpc.analyticsDashboard.agentOnboardingFunnel.useQuery() as any;
+  const { data } =
+    trpc.analyticsDashboard.agentOnboardingFunnel.useQuery() as any;
   return (
     <Card>
       <CardHeader>
@@ -474,7 +475,8 @@ function RevenueBreakdown() {
 }
 
 function GeographicDistribution() {
-  const { data } = trpc.analyticsDashboard.geographicDistribution.useQuery() as any;
+  const { data } =
+    trpc.analyticsDashboard.geographicDistribution.useQuery() as any;
   return (
     <Card>
       <CardHeader>
@@ -490,7 +492,9 @@ function GeographicDistribution() {
         {data ? (
           <div className="space-y-2">
             {data.regions.map((region: any) => {
-              const maxAgents = Math.max(...data.regions.map((r: any) => r.agents));
+              const maxAgents = Math.max(
+                ...data.regions.map((r: any) => r.agents)
+              );
               const widthPct = (region.agents / maxAgents) * 100;
               return (
                 <div key={region.name} className="flex items-center gap-3">
@@ -525,7 +529,9 @@ function GeographicDistribution() {
 function SettlementTrend() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data } = trpc.analyticsDashboard.settlementTrend.useQuery({ period }) as any;
+  const { data } = trpc.analyticsDashboard.settlementTrend.useQuery({
+    period,
+  }) as any;
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">

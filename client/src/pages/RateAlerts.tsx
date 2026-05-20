@@ -90,7 +90,8 @@ export default function RateAlerts() {
 
   // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: stats } = trpc.rateAlerts.getStats.useQuery({}) as any;
-  const { data: checkerStatus } = trpc.rateAlerts.getCheckerStatus.useQuery() as any;
+  const { data: checkerStatus } =
+    trpc.rateAlerts.getCheckerStatus.useQuery() as any;
 
   const createAlert = trpc.rateAlerts.create.useMutation({
     onSuccess: () => {

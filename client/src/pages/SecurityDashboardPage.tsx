@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export default function SecurityDashboardPage() {
-  const { data, isLoading } = trpc.securityHardening.dashboard.useQuery() as any;
+  const { data, isLoading } =
+    trpc.securityHardening.dashboard.useQuery() as any;
   const owasp = trpc.securityHardening.owaspTop10.useQuery() as any;
   const pci = trpc.securityHardening.pciDssCompliance.useQuery() as any;
   const cbn = trpc.securityHardening.cbnCompliance.useQuery() as any;

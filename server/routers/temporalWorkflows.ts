@@ -194,6 +194,11 @@ export const temporalWorkflowsRouter = router({
   start: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "start", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "start",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
 });

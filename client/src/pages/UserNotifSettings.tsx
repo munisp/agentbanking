@@ -279,7 +279,9 @@ export default function UserNotifSettings() {
                   <Card key={ch}>
                     <CardContent className="p-4 flex items-center justify-between">
                       <div>
-                        <p className="font-medium">{(CHANNEL_LABELS as any)[ch]}</p>
+                        <p className="font-medium">
+                          {(CHANNEL_LABELS as any)[ch]}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {allEnabled
                             ? "All categories enabled"

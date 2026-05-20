@@ -5,7 +5,8 @@ import { Cpu, HardDrive, Activity, Gauge } from "lucide-react";
 
 export default function PerformanceProfilerPage() {
   const { data } = trpc.performanceProfiler.dashboard.useQuery() as any;
-  const { data: mem } = trpc.performanceProfiler.memoryProfile.useQuery() as any;
+  const { data: mem } =
+    trpc.performanceProfiler.memoryProfile.useQuery() as any;
 
   return (
     <div className="p-6 space-y-6">

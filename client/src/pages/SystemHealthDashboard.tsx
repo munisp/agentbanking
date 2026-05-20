@@ -370,27 +370,30 @@ export default function SystemHealthDashboard() {
                     barColor="#3b82f6"
                   />
                   <div className="flex gap-4 mt-4 text-xs">
-                    {(Object.entries(txVolumeQ.data.summary.byType) as [string, any][]).map(
-                      ([type, count]) => (
-                        <div key={type} className="flex items-center gap-1">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{
-                              backgroundColor: {
-                                cash_in: "#22c55e",
-                                cash_out: "#ef4444",
-                                transfer: "#3b82f6",
-                                bill_pay: "#f59e0b",
-                                airtime: "#8b5cf6",
-                              }[type],
-                            }}
-                          />
-                          <span className="text-gray-400 capitalize">
-                            {type.replace("_", " ")}: {count}
-                          </span>
-                        </div>
-                      )
-                    )}
+                    {(
+                      Object.entries(txVolumeQ.data.summary.byType) as [
+                        string,
+                        any,
+                      ][]
+                    ).map(([type, count]) => (
+                      <div key={type} className="flex items-center gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{
+                            backgroundColor: {
+                              cash_in: "#22c55e",
+                              cash_out: "#ef4444",
+                              transfer: "#3b82f6",
+                              bill_pay: "#f59e0b",
+                              airtime: "#8b5cf6",
+                            }[type],
+                          }}
+                        />
+                        <span className="text-gray-400 capitalize">
+                          {type.replace("_", " ")}: {count}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
@@ -407,39 +410,42 @@ export default function SystemHealthDashboard() {
             <CardContent className="space-y-4">
               {txVolumeQ.data && (
                 <>
-                  {(Object.entries(txVolumeQ.data.summary.byStatus) as [string, any][]).map(
-                    ([status, count]) => {
-                      const total = txVolumeQ.data!.summary.total || 1;
-                      const pct = ((count / total) * 100).toFixed(1);
-                      const color =
-                        status === "completed"
-                          ? "#22c55e"
-                          : status === "failed"
-                            ? "#ef4444"
-                            : "#f59e0b";
-                      return (
-                        <div key={status}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-300 capitalize">
-                              {status}
-                            </span>
-                            <span className="text-gray-400">
-                              {count} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-800 rounded-full h-2">
-                            <div
-                              className="h-2 rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: color,
-                              }}
-                            />
-                          </div>
+                  {(
+                    Object.entries(txVolumeQ.data.summary.byStatus) as [
+                      string,
+                      any,
+                    ][]
+                  ).map(([status, count]) => {
+                    const total = txVolumeQ.data!.summary.total || 1;
+                    const pct = ((count / total) * 100).toFixed(1);
+                    const color =
+                      status === "completed"
+                        ? "#22c55e"
+                        : status === "failed"
+                          ? "#ef4444"
+                          : "#f59e0b";
+                    return (
+                      <div key={status}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-gray-300 capitalize">
+                            {status}
+                          </span>
+                          <span className="text-gray-400">
+                            {count} ({pct}%)
+                          </span>
                         </div>
-                      );
-                    }
-                  )}
+                        <div className="w-full bg-gray-800 rounded-full h-2">
+                          <div
+                            className="h-2 rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </>
               )}
               {o && (
@@ -559,38 +565,40 @@ export default function SystemHealthDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {latencyQ.data?.endpoints.slice(0, 10).map((ep: any, i: any) => (
-                      <tr
-                        key={i}
-                        className="border-b border-gray-800/50 hover:bg-gray-800/30"
-                      >
-                        <td className="py-2 text-gray-300 font-mono text-xs truncate max-w-[200px]">
-                          {ep.endpoint}
-                        </td>
-                        <td className="py-2 text-right text-gray-400">
-                          {ep.p50}ms
-                        </td>
-                        <td className="py-2 text-right text-amber-400">
-                          {ep.p95}ms
-                        </td>
-                        <td className="py-2 text-right text-red-400">
-                          {ep.p99}ms
-                        </td>
-                        <td className="py-2 text-right">
-                          <span
-                            className={
-                              ep.errorRate > 5
-                                ? "text-red-400"
-                                : ep.errorRate > 0
-                                  ? "text-amber-400"
-                                  : "text-green-400"
-                            }
-                          >
-                            {ep.errorRate}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {latencyQ.data?.endpoints
+                      .slice(0, 10)
+                      .map((ep: any, i: any) => (
+                        <tr
+                          key={i}
+                          className="border-b border-gray-800/50 hover:bg-gray-800/30"
+                        >
+                          <td className="py-2 text-gray-300 font-mono text-xs truncate max-w-[200px]">
+                            {ep.endpoint}
+                          </td>
+                          <td className="py-2 text-right text-gray-400">
+                            {ep.p50}ms
+                          </td>
+                          <td className="py-2 text-right text-amber-400">
+                            {ep.p95}ms
+                          </td>
+                          <td className="py-2 text-right text-red-400">
+                            {ep.p99}ms
+                          </td>
+                          <td className="py-2 text-right">
+                            <span
+                              className={
+                                ep.errorRate > 5
+                                  ? "text-red-400"
+                                  : ep.errorRate > 0
+                                    ? "text-amber-400"
+                                    : "text-green-400"
+                              }
+                            >
+                              {ep.errorRate}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>

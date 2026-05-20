@@ -24,7 +24,9 @@ export default function DisputeAnalyticsDashboard() {
   // ── Live tRPC queries ──────────────────────────────────────────────
   const summary = trpc.disputeAnalytics.getSummary.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const resolution = trpc.disputeAnalytics.getResolutionMetrics.useQuery({}) as any;
+  const resolution = trpc.disputeAnalytics.getResolutionMetrics.useQuery(
+    {}
+  ) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const refunds = trpc.disputeAnalytics.getRefundRates.useQuery({}) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface

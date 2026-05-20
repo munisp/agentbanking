@@ -137,7 +137,14 @@ export const sprint23Router = router({
   }),
 
   reportComparison: protectedProcedure
-    .input(z.object({ reportAId: z.string().optional(), reportBId: z.string().optional() }).optional())
+    .input(
+      z
+        .object({
+          reportAId: z.string().optional(),
+          reportBId: z.string().optional(),
+        })
+        .optional()
+    )
     .query(async () => {
       return { data: [], total: 0 };
     }),

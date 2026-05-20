@@ -31,10 +31,10 @@ export default function WebhookConfig() {
     onSuccess: d =>
       // @ts-expect-error Sprint 85 — type inference mismatch
       d.success
-        // @ts-expect-error Sprint 85 — type inference mismatch
-        ? toast.success(`Test delivered: ${d.deliveryId}`)
-        // @ts-expect-error Sprint 85 — type inference mismatch
-        : toast.error(d.error),
+        ? // @ts-expect-error Sprint 85 — type inference mismatch
+          toast.success(`Test delivered: ${d.deliveryId}`)
+        : // @ts-expect-error Sprint 85 — type inference mismatch
+          toast.error(d.error),
   }) as any;
 
   const stats = statsQuery.data;

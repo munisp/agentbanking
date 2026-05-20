@@ -484,7 +484,9 @@ export default function LoadTestComparison() {
   const [runIdB, setRunIdB] = useState<string | null>(null);
 
   // @ts-ignore Sprint 85
-  const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 50 }) as any;
+  const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({
+    limit: 50,
+  }) as any;
   const runs = runsQuery.data ?? [];
 
   // Auto-select first two runs if available

@@ -171,6 +171,11 @@ export const bulkOperationsRouter = router({
   retry: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "retry", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "retry",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
 });

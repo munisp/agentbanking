@@ -237,9 +237,11 @@ export default function MLScoringDashboard() {
                     <div>
                       <p className="text-sm font-medium mb-1">Risk Factors:</p>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        {scoreMut.data.result.topRiskFactors.map((f: any, i: any) => (
-                          <li key={i}>• {f}</li>
-                        ))}
+                        {scoreMut.data.result.topRiskFactors.map(
+                          (f: any, i: any) => (
+                            <li key={i}>• {f}</li>
+                          )
+                        )}
                       </ul>
                     </div>
                   )}

@@ -139,8 +139,22 @@ export const disputesRouter = router({
       }
       return { disputeRef: input.disputeRef, resolved: true };
     }),
-  myDisputes: protectedProcedure.query(async () => { return { items: [], total: 0 }; }),
-  getDispute: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => { return { data: null, id: input.id }; }),
-  raise: protectedProcedure.input(z.object({ id: z.string().optional() }).optional()).mutation(async ({ input }) => { return { success: true, id: input?.id ?? null }; }),
-  addMessage: protectedProcedure.input(z.object({ id: z.string().optional() }).optional()).mutation(async ({ input }) => { return { success: true, id: input?.id ?? null }; }),
+  myDisputes: protectedProcedure.query(async () => {
+    return { items: [], total: 0 };
+  }),
+  getDispute: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      return { data: null, id: input.id };
+    }),
+  raise: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, id: input?.id ?? null };
+    }),
+  addMessage: protectedProcedure
+    .input(z.object({ id: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      return { success: true, id: input?.id ?? null };
+    }),
 });

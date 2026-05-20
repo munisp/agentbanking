@@ -27,7 +27,9 @@ export default function NotificationTemplateManager() {
 
   const selected = useMemo(() => {
     if (!selectedId || !templatesQ.data) return null;
-    return templatesQ.data.templates.find((t: any) => t.id === selectedId) || null;
+    return (
+      templatesQ.data.templates.find((t: any) => t.id === selectedId) || null
+    );
   }, [selectedId, templatesQ.data]);
 
   const channelIcon: Record<string, string> = {

@@ -81,7 +81,8 @@ export default function ReportTemplateDesigner() {
     "portrait" | "landscape"
   >("landscape");
 
-  const { data: catalogData } = trpc.reportTemplate.widgetCatalog.useQuery() as any;
+  const { data: catalogData } =
+    trpc.reportTemplate.widgetCatalog.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: templatesData, isLoading } = trpc.reportTemplate.list.useQuery({
     search: search || undefined,

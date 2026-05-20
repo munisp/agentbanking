@@ -1646,8 +1646,8 @@ function TileGrid({
                 // @ts-expect-error Sprint 85 — type inference mismatch
                 heightMap[t.size] === "h-24"
                   ? 96
-                  // @ts-expect-error Sprint 85 — type inference mismatch
-                  : heightMap[t.size] === "h-52"
+                  : // @ts-expect-error Sprint 85 — type inference mismatch
+                    heightMap[t.size] === "h-52"
                     ? 208
                     : 80,
             } as React.CSSProperties
@@ -4015,7 +4015,9 @@ function BillsScreen({ onBack }: { onBack: () => void }) {
               disabled={num < 100 || !account || isProcessing}
               onClick={async () => {
                 toast.success("Processing payment...");
-                const selectedBiller = billers.find((b: any) => b.id === biller);
+                const selectedBiller = billers.find(
+                  (b: any) => b.id === biller
+                );
                 const result = await submit({
                   type: "Bill Payment",
                   amount: num,
@@ -8997,7 +8999,9 @@ function TileEditorSheet({
                 key={t.id}
                 onClick={() =>
                   setSelected(prev =>
-                    active ? prev.filter((i: any) => i !== t.id) : [...prev, t.id]
+                    active
+                      ? prev.filter((i: any) => i !== t.id)
+                      : [...prev, t.id]
                   )
                 }
                 className="flex items-center gap-3 p-3 rounded-xl transition-all"
@@ -9107,7 +9111,7 @@ function DisputeScreen({ onBack }: { onBack: () => void }) {
     data: myDisputesData,
     isLoading,
     refetch,
-  // @ts-expect-error Sprint 85 — type inference mismatch
+    // @ts-expect-error Sprint 85 — type inference mismatch
   } = trpc.disputes.myDisputes.useQuery({}) as any;
   const myDisputes = myDisputesData?.disputes ?? [];
   const { data: detail, refetch: refetchDetail } =
@@ -9969,8 +9973,10 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
   const discard = trpc.resilience.discardOfflineItem.useMutation() as any;
   const encodeUssd = trpc.resilience.encodeUssd.useMutation() as any;
   const printUssd = trpc.resilience.printUssdReceipt.useMutation() as any;
-  const retryDeadLetterMut = trpc.resilience.retryDeadLetter.useMutation() as any;
-  const logConnectivityMut = trpc.resilience.logConnectivity.useMutation() as any;
+  const retryDeadLetterMut =
+    trpc.resilience.retryDeadLetter.useMutation() as any;
+  const logConnectivityMut =
+    trpc.resilience.logConnectivity.useMutation() as any;
   const alertOnPoorConnMut =
     trpc.resilience.alertOnPoorConnectivity.useMutation() as any;
   const { data: pushSubs } = trpc.resilience.getPushSubscriptions.useQuery(
@@ -13452,7 +13458,9 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setItems(items.map((n: any) => ({ ...n, read: true })))}
+              onClick={() =>
+                setItems(items.map((n: any) => ({ ...n, read: true })))
+              }
               className="text-xs"
               style={{ color: BLUE }}
             >
@@ -13473,7 +13481,9 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
               key={n.id}
               onClick={() =>
                 setItems(
-                  items.map((i: any) => (i.id === n.id ? { ...i, read: true } : i))
+                  items.map((i: any) =>
+                    i.id === n.id ? { ...i, read: true } : i
+                  )
                 )
               }
               className="flex gap-3 p-4 cursor-pointer transition-all hover:opacity-80"
@@ -15965,8 +15975,9 @@ function CarrierSwitchScreen({ onBack }: { onBack: () => void }) {
                       height: `${bar * 4 + 4}px`,
                       background: active
                         ? barColor(
-                            rankings.data?.find((r: any) => r.name === currentCarrier)
-                              ?.signalBars || 3
+                            rankings.data?.find(
+                              (r: any) => r.name === currentCarrier
+                            )?.signalBars || 3
                           )
                         : BORDER2,
                     }}

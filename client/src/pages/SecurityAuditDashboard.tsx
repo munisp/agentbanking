@@ -32,7 +32,9 @@ export default function SecurityAuditDashboard() {
   const backups = trpc.securityAudit.getBackupStatus.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const ddos = trpc.securityAudit.getDDoSStatus.useQuery() as any;
-  const auditChain = trpc.securityAudit.getAuditChain.useQuery({ limit: 20 }) as any;
+  const auditChain = trpc.securityAudit.getAuditChain.useQuery({
+    limit: 20,
+  }) as any;
   const pbacResult = trpc.securityAudit.evaluateAccess.useQuery({
     // @ts-expect-error Sprint 85 — type inference mismatch
     subject,

@@ -111,7 +111,9 @@ export default function PBACManagement() {
     search: userSearch || undefined,
   }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({ pageSize: 20 }) as any;
+  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({
+    pageSize: 20,
+  }) as any;
   const roleDetail = trpc.pbacManagement.getRoleDetail.useQuery(
     // @ts-expect-error Sprint 85 — type inference mismatch
     { roleId: selectedRole! },

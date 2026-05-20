@@ -834,21 +834,13 @@ const BillingAnalyticsDashboardPage = lazy(
 const AgentPerformanceScorecardPage = lazy(
   () => import("./pages/AgentPerformanceScorecardPage")
 );
-const AgentTrainingPortal = lazy(
-  () => import("./pages/AgentTrainingPortal")
-);
-const BiometricAuthGateway = lazy(
-  () => import("./pages/BiometricAuthGateway")
-);
+const AgentTrainingPortal = lazy(() => import("./pages/AgentTrainingPortal"));
+const BiometricAuthGateway = lazy(() => import("./pages/BiometricAuthGateway"));
 const ComplianceTrainingTracker = lazy(
   () => import("./pages/ComplianceTrainingTracker")
 );
-const ComponentShowcase = lazy(
-  () => import("./pages/ComponentShowcase")
-);
-const EcommerceCheckout = lazy(
-  () => import("./pages/EcommerceCheckout")
-);
+const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
+const EcommerceCheckout = lazy(() => import("./pages/EcommerceCheckout"));
 const EcommerceMerchantStorefront = lazy(
   () => import("./pages/EcommerceMerchantStorefront")
 );
@@ -2151,18 +2143,36 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
-        <Route path="/agent-performance-scorecard" component={AgentPerformanceScorecardPage} />
+        <Route
+          path="/agent-performance-scorecard"
+          component={AgentPerformanceScorecardPage}
+        />
         <Route path="/agent-training-portal" component={AgentTrainingPortal} />
-        <Route path="/biometric-auth-gateway" component={BiometricAuthGateway} />
-        <Route path="/compliance-training-tracker" component={ComplianceTrainingTracker} />
+        <Route
+          path="/biometric-auth-gateway"
+          component={BiometricAuthGateway}
+        />
+        <Route
+          path="/compliance-training-tracker"
+          component={ComplianceTrainingTracker}
+        />
         <Route path="/component-showcase" component={ComponentShowcase} />
         <Route path="/ecommerce/checkout" component={EcommerceCheckout} />
-        <Route path="/ecommerce/storefront" component={EcommerceMerchantStorefront} />
+        <Route
+          path="/ecommerce/storefront"
+          component={EcommerceMerchantStorefront}
+        />
         <Route path="/ecommerce/orders" component={EcommerceOrderManagement} />
         <Route path="/ecommerce/products" component={EcommerceProductCatalog} />
         <Route path="/ecommerce/cart" component={EcommerceShoppingCart} />
-        <Route path="/payment-dispute-arbitration" component={PaymentDisputeArbitration} />
-        <Route path="/platform-health-monitor" component={PlatformHealthMonitor} />
+        <Route
+          path="/payment-dispute-arbitration"
+          component={PaymentDisputeArbitration}
+        />
+        <Route
+          path="/platform-health-monitor"
+          component={PlatformHealthMonitor}
+        />
         {/* Fallback — POSShell handles named screens */}
         <Route path="/:screen" component={POSShell} />
       </Switch>

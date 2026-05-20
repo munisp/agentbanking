@@ -24,7 +24,10 @@ export default function FraudReportPage() {
 
   const listReports = trpc.fraudReport.listReports.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const quickStats = trpc.fraudReport.quickStats.useQuery({ year, month }) as any;
+  const quickStats = trpc.fraudReport.quickStats.useQuery({
+    year,
+    month,
+  }) as any;
   const reportDetail = trpc.fraudReport.getReport.useQuery(
     { reportId: selectedReport ?? "" },
     { enabled: !!selectedReport }
@@ -275,33 +278,37 @@ export default function FraudReportPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {report.trendAnalysis.topFraudCategories.map((c: any) => (
-                          <tr key={c.category} className="border-b">
-                            <td className="p-2 font-medium">{c.category}</td>
-                            <td className="p-2">{c.count.toLocaleString()}</td>
-                            <td className="p-2">
-                              ₦{(c.amount / 1000000).toFixed(1)}M
-                            </td>
-                            <td className="p-2">
-                              <Badge
-                                variant={
-                                  c.trend === "up"
-                                    ? "destructive"
+                        {report.trendAnalysis.topFraudCategories.map(
+                          (c: any) => (
+                            <tr key={c.category} className="border-b">
+                              <td className="p-2 font-medium">{c.category}</td>
+                              <td className="p-2">
+                                {c.count.toLocaleString()}
+                              </td>
+                              <td className="p-2">
+                                ₦{(c.amount / 1000000).toFixed(1)}M
+                              </td>
+                              <td className="p-2">
+                                <Badge
+                                  variant={
+                                    c.trend === "up"
+                                      ? "destructive"
+                                      : c.trend === "down"
+                                        ? "default"
+                                        : "outline"
+                                  }
+                                >
+                                  {c.trend === "up"
+                                    ? "↑"
                                     : c.trend === "down"
-                                      ? "default"
-                                      : "outline"
-                                }
-                              >
-                                {c.trend === "up"
-                                  ? "↑"
-                                  : c.trend === "down"
-                                    ? "↓"
-                                    : "→"}{" "}
-                                {c.trend}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
+                                      ? "↓"
+                                      : "→"}{" "}
+                                  {c.trend}
+                                </Badge>
+                              </td>
+                            </tr>
+                          )
+                        )}
                       </tbody>
                     </table>
                   </CardContent>

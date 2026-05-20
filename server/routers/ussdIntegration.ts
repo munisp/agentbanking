@@ -95,19 +95,36 @@ export const ussdIntegrationRouter = router({
   startSession: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "startSession", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "startSession",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
   processInput: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "processInput", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "processInput",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
-  getStats: protectedProcedure
-    .query(async () => {
-      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
-    }),
+  getStats: protectedProcedure.query(async () => {
+    return {
+      totalRecords: 0,
+      activeItems: 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
   getShortcuts: protectedProcedure
-    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .input(
+      z
+        .object({ id: z.string().optional(), query: z.string().optional() })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { data: null, id: input?.id ?? null };
     }),

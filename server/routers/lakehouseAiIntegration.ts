@@ -156,37 +156,72 @@ export const lakehouseAiIntegrationRouter = router({
         procedure: "config",
       };
     }),
-  health: protectedProcedure
-    .query(async () => {
-      return { status: "healthy", uptime: process.uptime(), memory: process.memoryUsage().heapUsed, timestamp: new Date().toISOString() };
-    }),
-  analytics: protectedProcedure
-    .query(async () => {
-      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
-    }),
+  health: protectedProcedure.query(async () => {
+    return {
+      status: "healthy",
+      uptime: process.uptime(),
+      memory: process.memoryUsage().heapUsed,
+      timestamp: new Date().toISOString(),
+    };
+  }),
+  analytics: protectedProcedure.query(async () => {
+    return {
+      totalRecords: 0,
+      activeItems: 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
   listModels: protectedProcedure
-    .input(z.object({ limit: z.number().default(20), offset: z.number().default(0) }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { items: [], total: 0 };
     }),
   listBatchJobs: protectedProcedure
-    .input(z.object({ limit: z.number().default(20), offset: z.number().default(0) }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { items: [], total: 0 };
     }),
   dataLineage: protectedProcedure
-    .input(z.object({ id: z.string().optional(), query: z.string().optional() }).optional())
+    .input(
+      z
+        .object({ id: z.string().optional(), query: z.string().optional() })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { data: null, timestamp: new Date().toISOString() };
     }),
   promoteModel: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "promoteModel", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "promoteModel",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
   submitBatchJob: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "submitBatchJob", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "submitBatchJob",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
 });

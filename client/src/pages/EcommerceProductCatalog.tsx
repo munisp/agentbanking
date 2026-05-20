@@ -17,7 +17,8 @@ export default function EcommerceProductCatalog() {
       active: true,
     }) as any;
 
-  const { data: categories } = trpc.ecommerceCatalog.listCategories.useQuery() as any;
+  const { data: categories } =
+    trpc.ecommerceCatalog.listCategories.useQuery() as any;
   const { data: lowStock } = trpc.ecommerceCatalog.lowStockAlerts.useQuery({
     limit: 10,
   }) as any;

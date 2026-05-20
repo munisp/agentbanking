@@ -12,7 +12,8 @@ export default function QdrantVectorSearchPage() {
   const [ragQuery, setRagQuery] = useState("");
   const health = trpc.qdrantVectorSearch.health.useQuery() as any;
   const analytics = trpc.qdrantVectorSearch.analytics.useQuery() as any;
-  const collectionStats = trpc.qdrantVectorSearch.collectionStats.useQuery() as any;
+  const collectionStats =
+    trpc.qdrantVectorSearch.collectionStats.useQuery() as any;
   const searchResults = trpc.qdrantVectorSearch.semanticSearch.useQuery(
     // @ts-expect-error Sprint 85 — type inference mismatch
     { query: searchQuery, collection: "transactions", limit: 10 },

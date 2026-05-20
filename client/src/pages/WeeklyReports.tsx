@@ -148,7 +148,10 @@ export default function WeeklyReports() {
   const utils = trpc.useUtils();
 
   // Queries
-  const listQ = trpc.weeklyReports.list.useQuery({ limit: 20, offset: 0 }) as any;
+  const listQ = trpc.weeklyReports.list.useQuery({
+    limit: 20,
+    offset: 0,
+  }) as any;
   const latestQ = trpc.weeklyReports.latest.useQuery() as any;
   const scheduleQ = trpc.weeklyReports.getSchedule.useQuery() as any;
   const emailConfigQ = trpc.weeklyReports.getEmailConfig.useQuery() as any;

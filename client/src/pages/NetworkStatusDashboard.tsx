@@ -116,7 +116,8 @@ export default function NetworkStatusDashboard() {
   const alerts = trpc.networkStatusDashboard.getAlerts.useQuery({
     unresolved: true,
   }) as any;
-  const heatmap = trpc.networkStatusDashboard.getCarrierHeatmap.useQuery() as any;
+  const heatmap =
+    trpc.networkStatusDashboard.getCarrierHeatmap.useQuery() as any;
   const carrierSummary =
     trpc.networkStatusDashboard.getCarrierSummary.useQuery() as any;
   const resolveAlert = trpc.networkStatusDashboard.resolveAlert.useMutation({

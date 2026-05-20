@@ -64,7 +64,8 @@ export default function DataThresholdAlerts() {
     search: search || undefined,
   }) as any;
   const { data: metricsData } = trpc.thresholdAlerts.metrics.useQuery() as any;
-  const { data: operatorsData } = trpc.thresholdAlerts.operators.useQuery() as any;
+  const { data: operatorsData } =
+    trpc.thresholdAlerts.operators.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: eventsData } = trpc.thresholdAlerts.events.useQuery({}) as any;
 

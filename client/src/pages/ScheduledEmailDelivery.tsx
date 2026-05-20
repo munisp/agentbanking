@@ -139,26 +139,30 @@ export default function ScheduledEmailDelivery() {
                         </tr>
                       </thead>
                       <tbody>
-                        {config.data.deliveryHistory.map((entry: any, idx: any) => (
-                          <tr key={idx} className="border-b border-border/50">
-                            <td className="py-2 px-3">
-                              {new Date(entry.sentAt).toLocaleString()}
-                            </td>
-                            <td className="text-center py-2 px-3">
-                              {entry.recipientCount}
-                            </td>
-                            <td className="text-center py-2 px-3">
-                              <Badge variant={statusColor(entry.status) as any}>
-                                {entry.status}
-                              </Badge>
-                            </td>
-                            <td className="py-2 px-3 text-xs text-muted-foreground">
-                              {entry.errors.length > 0
-                                ? entry.errors.join(", ")
-                                : "None"}
-                            </td>
-                          </tr>
-                        ))}
+                        {config.data.deliveryHistory.map(
+                          (entry: any, idx: any) => (
+                            <tr key={idx} className="border-b border-border/50">
+                              <td className="py-2 px-3">
+                                {new Date(entry.sentAt).toLocaleString()}
+                              </td>
+                              <td className="text-center py-2 px-3">
+                                {entry.recipientCount}
+                              </td>
+                              <td className="text-center py-2 px-3">
+                                <Badge
+                                  variant={statusColor(entry.status) as any}
+                                >
+                                  {entry.status}
+                                </Badge>
+                              </td>
+                              <td className="py-2 px-3 text-xs text-muted-foreground">
+                                {entry.errors.length > 0
+                                  ? entry.errors.join(", ")
+                                  : "None"}
+                              </td>
+                            </tr>
+                          )
+                        )}
                       </tbody>
                     </table>
                   </div>

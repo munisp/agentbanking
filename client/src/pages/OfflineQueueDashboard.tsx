@@ -120,7 +120,9 @@ export default function OfflineQueueDashboard() {
     pageSize: 15,
   }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery({}) as any;
+  const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery(
+    {}
+  ) as any;
   const retryMutation = trpc.offlineQueue.retryFailed.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Retry initiated: ${data.retried} items queued for retry`);

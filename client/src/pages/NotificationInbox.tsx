@@ -283,7 +283,9 @@ export default function NotificationInbox() {
   }) as any;
 
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data: counts } = trpc.notificationInbox.getUnreadCounts.useQuery({}) as any;
+  const { data: counts } = trpc.notificationInbox.getUnreadCounts.useQuery(
+    {}
+  ) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: stats } = trpc.notificationInbox.getStats.useQuery() as any;
 

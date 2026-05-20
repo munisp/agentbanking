@@ -53,16 +53,18 @@ export default function RetryQueueViewer() {
         {/* Stats */}
         {queueQ.data?.stats && (
           <div className="grid grid-cols-4 gap-4">
-            {(Object.entries(queueQ.data.stats) as [string, any][]).map(([key, value]) => (
-              <Card key={key} className="bg-gray-900 border-gray-800">
-                <CardContent className="pt-4">
-                  <div className="text-2xl font-bold text-white">{value}</div>
-                  <div className="text-sm text-gray-400 capitalize">
-                    {key.replace(/([A-Z])/g, " $1")}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {(Object.entries(queueQ.data.stats) as [string, any][]).map(
+              ([key, value]) => (
+                <Card key={key} className="bg-gray-900 border-gray-800">
+                  <CardContent className="pt-4">
+                    <div className="text-2xl font-bold text-white">{value}</div>
+                    <div className="text-sm text-gray-400 capitalize">
+                      {key.replace(/([A-Z])/g, " $1")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            )}
           </div>
         )}
 

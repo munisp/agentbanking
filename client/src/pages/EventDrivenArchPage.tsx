@@ -6,7 +6,9 @@ export default function EventDrivenArchPage() {
   // @ts-ignore Sprint 85
   const { data, isLoading } = trpc.eventDrivenArch.dashboard.useQuery() as any;
   // @ts-ignore Sprint 85
-  const dlq = trpc.eventDrivenArch.getDeadLetterQueue.useQuery({ limit: 20 }) as any;
+  const dlq = trpc.eventDrivenArch.getDeadLetterQueue.useQuery({
+    limit: 20,
+  }) as any;
 
   if (isLoading)
     return (

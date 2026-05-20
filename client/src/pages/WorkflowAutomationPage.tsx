@@ -2,7 +2,8 @@ import { trpc } from "@/lib/trpc";
 
 export default function WorkflowAutomationPage() {
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const { data, isLoading } = trpc.workflowAutomation.dashboard.useQuery() as any;
+  const { data, isLoading } =
+    trpc.workflowAutomation.dashboard.useQuery() as any;
   const approve = trpc.workflowAutomation.approveStep.useMutation() as any;
 
   if (isLoading)

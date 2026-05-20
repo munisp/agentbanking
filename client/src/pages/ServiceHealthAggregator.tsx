@@ -80,43 +80,47 @@ export default function ServiceHealthAggregator() {
         )}
 
         {/* Services by Category */}
-        {(Object.entries(categories) as [string, any][]).map(([category, services]) => (
-          <Card key={category} className="bg-gray-900 border-gray-800">
-            <CardHeader>
-              <CardTitle className="text-white">{category}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3">
-                {services.map((svc: any) => (
-                  <div
-                    key={svc.name}
-                    className="flex items-center justify-between bg-gray-800 rounded-lg p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-3 h-3 rounded-full ${statusColor[svc.status]}`}
-                      />
-                      <div>
-                        <div className="text-sm font-medium text-white">
-                          {svc.name}
+        {(Object.entries(categories) as [string, any][]).map(
+          ([category, services]) => (
+            <Card key={category} className="bg-gray-900 border-gray-800">
+              <CardHeader>
+                <CardTitle className="text-white">{category}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  {services.map((svc: any) => (
+                    <div
+                      key={svc.name}
+                      className="flex items-center justify-between bg-gray-800 rounded-lg p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-3 h-3 rounded-full ${statusColor[svc.status]}`}
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-white">
+                            {svc.name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {svc.details}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-400">
+                          {svc.latencyMs}ms
                         </div>
                         <div className="text-xs text-gray-500">
-                          {svc.details}
+                          {svc.uptime}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-gray-400">
-                        {svc.latencyMs}ms
-                      </div>
-                      <div className="text-xs text-gray-500">{svc.uptime}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        )}
       </div>
     </div>
   );

@@ -135,7 +135,8 @@ export default function MultiCurrency() {
     if (!searchQuery) return ratesQuery.data.rates;
     const q = searchQuery.toLowerCase();
     return ratesQuery.data.rates.filter(
-      (r: any) => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
+      (r: any) =>
+        r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
     );
   }, [ratesQuery.data?.rates, searchQuery]);
 

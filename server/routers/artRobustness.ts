@@ -156,32 +156,63 @@ export const artRobustnessRouter = router({
         procedure: "config",
       };
     }),
-  health: protectedProcedure
-    .query(async () => {
-      return { status: "healthy", uptime: process.uptime(), memory: process.memoryUsage().heapUsed, timestamp: new Date().toISOString() };
-    }),
-  analytics: protectedProcedure
-    .query(async () => {
-      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
-    }),
+  health: protectedProcedure.query(async () => {
+    return {
+      status: "healthy",
+      uptime: process.uptime(),
+      memory: process.memoryUsage().heapUsed,
+      timestamp: new Date().toISOString(),
+    };
+  }),
+  analytics: protectedProcedure.query(async () => {
+    return {
+      totalRecords: 0,
+      activeItems: 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
   listAttacks: protectedProcedure
-    .input(z.object({ limit: z.number().default(20), offset: z.number().default(0) }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { items: [], total: 0 };
     }),
   listResults: protectedProcedure
-    .input(z.object({ limit: z.number().default(20), offset: z.number().default(0) }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().default(20),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
     .query(async ({ input }) => {
       return { items: [], total: 0 };
     }),
   runAttack: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "runAttack", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "runAttack",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
   runFullSuite: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, action: "runFullSuite", id: input?.id ?? null, timestamp: new Date().toISOString() };
+      return {
+        success: true,
+        action: "runFullSuite",
+        id: input?.id ?? null,
+        timestamp: new Date().toISOString(),
+      };
     }),
 });

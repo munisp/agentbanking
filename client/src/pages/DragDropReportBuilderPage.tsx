@@ -10,7 +10,8 @@ export default function DragDropReportBuilderPage() {
     // @ts-ignore Sprint 85
     trpc.dragDropReportBuilder.dashboard.useQuery() as any;
   // @ts-ignore Sprint 85
-  const createReport = trpc.dragDropReportBuilder.saveReport.useMutation() as any;
+  const createReport =
+    trpc.dragDropReportBuilder.saveReport.useMutation() as any;
   const [reportName, setReportName] = useState("");
 
   if (isLoading)

@@ -13,7 +13,9 @@ export default function LoanDisbursementPage() {
   // @ts-expect-error Sprint 85 — type inference mismatch
   const loans = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const applications = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
+  const applications = trpc.loanDisbursement.list.useQuery({
+    limit: 20,
+  }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const repayments = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
   const analytics = trpc.loanDisbursement.analytics.useQuery() as any;

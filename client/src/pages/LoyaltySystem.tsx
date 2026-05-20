@@ -1168,7 +1168,9 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
         {tab === "challenges" && (
           <div className="flex flex-col gap-4">
             {(["daily", "weekly", "monthly"] as const).map((type: any) => {
-              const typeChallenges = CHALLENGES.filter((c: any) => c.type === type);
+              const typeChallenges = CHALLENGES.filter(
+                (c: any) => c.type === type
+              );
               return (
                 <div key={type}>
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -1356,7 +1358,8 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                         .filter(Boolean)
                         .map((entry, i) => {
                           const tierObj =
-                            TIERS.find((t: any) => t.name === entry.tier) ?? TIERS[0];
+                            TIERS.find((t: any) => t.name === entry.tier) ??
+                            TIERS[0];
                           return (
                             <div
                               key={entry.id}
@@ -1412,7 +1415,8 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                     )
                     .map((entry: any, i: any, arr: any) => {
                       const tierObj =
-                        TIERS.find((t: any) => t.name === entry.tier) ?? TIERS[0];
+                        TIERS.find((t: any) => t.name === entry.tier) ??
+                        TIERS[0];
                       return (
                         <div
                           key={entry.id}

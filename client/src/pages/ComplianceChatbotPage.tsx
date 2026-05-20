@@ -319,15 +319,17 @@ export default function ComplianceChatbotPage() {
                           Requirements:
                         </p>
                         <ul className="space-y-1">
-                          {complianceCheck.data.requirements.map((r: any, i: any) => (
-                            <li
-                              key={i}
-                              className="text-xs text-muted-foreground flex items-center gap-2"
-                            >
-                              <CheckCircle className="h-3 w-3 text-green-500" />{" "}
-                              {r}
-                            </li>
-                          ))}
+                          {complianceCheck.data.requirements.map(
+                            (r: any, i: any) => (
+                              <li
+                                key={i}
+                                className="text-xs text-muted-foreground flex items-center gap-2"
+                              >
+                                <CheckCircle className="h-3 w-3 text-green-500" />{" "}
+                                {r}
+                              </li>
+                            )
+                          )}
                         </ul>
                       </div>
                     </CardContent>

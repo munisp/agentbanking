@@ -16,7 +16,9 @@ export default function EcommerceCheckout() {
     phone: "",
   });
 
-  const { data: cart } = trpc.ecommerceCart.getCart.useQuery({ customerId }) as any;
+  const { data: cart } = trpc.ecommerceCart.getCart.useQuery({
+    customerId,
+  }) as any;
   const createOrder = trpc.ecommerceOrders.createFromCart.useMutation({
     onSuccess: data => {
       setSubmitting(false);

@@ -2,9 +2,12 @@ import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 
 export default function AdvancedBiReportingPage() {
-  const { data, isLoading } = trpc.advancedBiReporting.dashboard.useQuery() as any;
-  const { data: kpis } = trpc.advancedBiReporting.executiveKpis.useQuery() as any;
-  const reportBuilder = trpc.advancedBiReporting.reportBuilder.useQuery() as any;
+  const { data, isLoading } =
+    trpc.advancedBiReporting.dashboard.useQuery() as any;
+  const { data: kpis } =
+    trpc.advancedBiReporting.executiveKpis.useQuery() as any;
+  const reportBuilder =
+    trpc.advancedBiReporting.reportBuilder.useQuery() as any;
   const [dims] = useState(["region", "product"]);
   const [measures] = useState(["transaction_count", "total_amount"]);
 

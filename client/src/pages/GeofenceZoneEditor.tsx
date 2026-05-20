@@ -49,7 +49,9 @@ export default function GeofenceZoneEditor() {
   });
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const zones = trpc.geofencing.listZones.useQuery(undefined, { retry: false }) as any;
+  const zones = trpc.geofencing.listZones.useQuery(undefined, {
+    retry: false,
+  }) as any;
   const createZone = trpc.geofencing.createZone.useMutation({
     onSuccess: () => {
       toast.success("Zone created");

@@ -11,7 +11,9 @@ export default function MerchantPaymentsPage() {
     "transactions"
   );
   // @ts-expect-error Sprint 85 — type inference mismatch
-  const transactions = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
+  const transactions = trpc.merchantPayments.list.useQuery({
+    limit: 20,
+  }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const merchants = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
   // @ts-expect-error Sprint 85 — type inference mismatch

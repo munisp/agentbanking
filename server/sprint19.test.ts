@@ -383,13 +383,14 @@ describe("Enhanced CRUD", () => {
 describe("i18n Framework", () => {
   it("should export translation functions", async () => {
     const mod = await import("../client/src/lib/i18n");
-    expect(typeof mod.t).toBe("function");
-    expect(typeof mod.setLocale).toBe("function");
+    expect(typeof mod.changeLanguage).toBe("function");
+    expect(Array.isArray(mod.SUPPORTED_LANGUAGES)).toBe(true);
   });
 
   it("should return English translations by default", async () => {
-    const { t } = await import("../client/src/lib/i18n");
-    const result = t("app.title");
+    const mod = await import("../client/src/lib/i18n");
+    const i18n = mod.default;
+    const result = i18n.t("app_name");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { haptic } from "@/lib/haptics";
+import DashboardLayout from "@/components/DashboardLayout";
 
 function ProductSkeleton() {
   return (
@@ -35,7 +36,8 @@ export default function EcommerceProductCatalog() {
   }) as any;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <DashboardLayout>
+    <div className="p-6 flex flex-col">
       {/* Sticky Header with Search (P0: mobile-first) */}
       <div className="bg-white border-b sticky top-0 z-30 safe-top">
         <div className="max-w-6xl mx-auto px-4 py-3">
@@ -174,5 +176,6 @@ export default function EcommerceProductCatalog() {
         )}
       </div>
     </div>
+    </DashboardLayout>
   );
 }

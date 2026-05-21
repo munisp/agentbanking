@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { haptic } from "@/lib/haptics";
+import DashboardLayout from "@/components/DashboardLayout";
 
 export default function EcommerceShoppingCart() {
   const customerId = 1;
@@ -73,7 +74,8 @@ export default function EcommerceShoppingCart() {
   const total = subTotal + tax + shipping - (cart?.discountAmount || 0);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <DashboardLayout>
+    <div className="p-6 flex flex-col">
       {/* Header */}
       <div className="bg-white border-b safe-top">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -277,5 +279,6 @@ export default function EcommerceShoppingCart() {
         </div>
       )}
     </div>
+    </DashboardLayout>
   );
 }

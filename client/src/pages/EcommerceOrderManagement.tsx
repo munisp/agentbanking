@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import DashboardLayout from "@/components/DashboardLayout";
 
 export default function EcommerceOrderManagement() {
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -36,6 +37,7 @@ export default function EcommerceOrderManagement() {
   };
 
   return (
+    <DashboardLayout>
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Order Management</h1>
@@ -267,5 +269,6 @@ export default function EcommerceOrderManagement() {
         </div>
       )}
     </div>
+    </DashboardLayout>
   );
 }

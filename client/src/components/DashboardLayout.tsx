@@ -327,7 +327,22 @@ const navGroups: NavGroup[] = [
       },
     ],
   },
-  // ── 8. Notifications ──
+  // ── 8. E-Commerce & Storefront ──
+  {
+    id: "ecommerce",
+    label: "E-Commerce & Storefront",
+    icon: Store,
+    items: [
+      { icon: Store, label: "My Store", path: "/ecommerce/storefront" },
+      { icon: Package, label: "Products", path: "/ecommerce/products" },
+      { icon: ShoppingBag, label: "Orders", path: "/ecommerce/orders" },
+      { icon: Globe, label: "Store Mall", path: "/ecommerce/mall" },
+      { icon: Rocket, label: "Store Setup", path: "/ecommerce/store-setup" },
+      { icon: CreditCard, label: "Checkout", path: "/ecommerce/checkout" },
+      { icon: ShoppingBag, label: "Cart", path: "/ecommerce/cart" },
+    ],
+  },
+  // ── 9. Notifications ──
   {
     id: "notifications",
     label: "Notifications",

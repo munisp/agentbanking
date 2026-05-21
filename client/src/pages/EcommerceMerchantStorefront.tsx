@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { haptic } from "@/lib/haptics";
+import DashboardLayout from "@/components/DashboardLayout";
 
 function useAgentId(): number {
   return useMemo(() => {
@@ -83,10 +84,11 @@ export default function EcommerceMerchantStorefront() {
     orders?.orders.filter((o: any) => o.status === "pending").length || 0;
 
   return (
+    <DashboardLayout>
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-2xl font-bold text-foreground">
             {myStore?.storeName || "My Store"}
           </h1>
           {myStore?.slug && (
@@ -301,11 +303,11 @@ export default function EcommerceMerchantStorefront() {
           {myStore ? (
             <AgentStoreAnalytics storeId={myStore.id} />
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <p>Set up your store to view analytics</p>
               <a
                 href="/ecommerce/store-setup"
-                className="inline-block mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                className="inline-block mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm"
               >
                 Set Up Store
               </a>
@@ -314,6 +316,7 @@ export default function EcommerceMerchantStorefront() {
         </div>
       )}
     </div>
+    </DashboardLayout>
   );
 }
 

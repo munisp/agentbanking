@@ -47,7 +47,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
   ],
 
   // ── Agent: operational access ──
-  agent: ["core", "help", "finance", "notifications", "engagement"],
+  agent: ["core", "help", "finance", "notifications", "engagement", "ecommerce"],
 
   // ── Agent Manager: agent + agent management, territory, performance ──
   agent_manager: [
@@ -56,6 +56,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "finance",
     "notifications",
     "engagement",
+    "ecommerce",
     "agents",
     "analytics",
     "portals",
@@ -68,6 +69,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "finance",
     "notifications",
     "engagement",
+    "ecommerce",
     "agents",
     "analytics",
     "portals",
@@ -83,6 +85,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "finance",
     "notifications",
     "engagement",
+    "ecommerce",
     "agents",
     "analytics",
     "portals",
@@ -105,6 +108,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "finance",
     "notifications",
     "engagement",
+    "ecommerce",
     "agents",
     "analytics",
     "portals",
@@ -207,6 +211,15 @@ const routeMinLevel: Record<string, number> = {
   "/agent-scorecard": 4,
   "/agent-hierarchy-territory": 4,
   "/agent-performance-analytics": 4,
+
+  // Agent+ (E-Commerce & Storefront)
+  "/ecommerce/storefront": 3,
+  "/ecommerce/products": 3,
+  "/ecommerce/orders": 3,
+  "/ecommerce/store-setup": 3,
+  "/ecommerce/mall": 3,
+  "/ecommerce/checkout": 3,
+  "/ecommerce/cart": 3,
 
   // Agent+
   "/offline-queue": 3,

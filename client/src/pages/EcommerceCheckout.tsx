@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { haptic } from "@/lib/haptics";
+import DashboardLayout from "@/components/DashboardLayout";
 
 const STEPS = ["Shipping", "Payment", "Review"] as const;
 
@@ -89,7 +90,8 @@ export default function EcommerceCheckout() {
   const total = subTotal + tax + shipping;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <DashboardLayout>
+    <div className="p-6 flex flex-col">
       {/* Step Indicator (P0) */}
       <div className="bg-white border-b safe-top">
         <div className="max-w-4xl mx-auto px-4 py-4">
@@ -371,5 +373,6 @@ export default function EcommerceCheckout() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -545,7 +546,7 @@ export const agentStoreRouter = router({
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      const trackingCode = `DT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const trackingCode = `DT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
       const [tracking] = await database
         .insert(deliveryTracking)

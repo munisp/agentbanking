@@ -450,10 +450,8 @@ async function startServer() {
       res.cookie(KC_SESSION_COOKIE, sessionJwt, {
         httpOnly: true,
         path: "/",
-        sameSite: "none",
-        secure:
-          req.protocol === "https" ||
-          (req.headers["x-forwarded-proto"] ?? "").toString().includes("https"),
+        sameSite: "lax",
+        secure: false,
         maxAge: 8 * 60 * 60 * 1000,
       });
 

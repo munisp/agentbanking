@@ -153,6 +153,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { ThemeToggle } from "./ThemeToggle";
 
 // ─── Navigation Structure ─────────────────────────────────────────────────────
 // Organized into logical categories for optimal UX
@@ -1954,22 +1955,25 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
+        <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-2">
+            {isMobile && (
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
+            )}
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="tracking-tight text-foreground font-medium">
+                  {activeMenuItem?.label ?? "Menu"}
+                </span>
               </div>
             </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
             <LanguageSelector />
             <NotificationCenter />
           </div>
-        )}
+        </div>
         <main className="flex-1 p-4">{children}</main>
       </SidebarInset>
     </>

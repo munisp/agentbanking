@@ -39,7 +39,13 @@ export default function EcommerceCheckout() {
     setSubmitting(true);
     createOrder.mutate({
       customerId,
-      merchantId: 1,
+      merchantId: (() => {
+        try {
+          const raw = localStorage.getItem("pos54link-store");
+          if (raw) return JSON.parse(raw)?.state?.agent?.id ?? 1;
+        } catch { /* fallback */ }
+        return 1;
+      })(),
       paymentMethod,
       shippingAddress: address,
     });

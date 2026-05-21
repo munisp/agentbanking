@@ -4908,3 +4908,214 @@ export const ecommerceInteractions = pgTable(
   })
 );
 export type EcommerceInteraction = typeof ecommerceInteractions.$inferSelect;
+
+// ─── Agent Stores ─────────────────────────────────────────────────────────────
+export const agentStoreStatusEnum = pgEnum("agent_store_status", [
+  "pending",
+  "active",
+  "suspended",
+  "closed",
+]);
+
+export const agentStores = pgTable(
+  "agent_stores",
+  {
+    id: serial("id").primaryKey(),
+    agentId: integer("agent_id").notNull(),
+    agentCode: varchar("agent_code", { length: 32 }).notNull(),
+    slug: varchar("slug", { length: 128 }).notNull().unique(),
+    storeName: varchar("store_name", { length: 256 }).notNull(),
+    description: text("description"),
+    logoUrl: varchar("logo_url", { length: 512 }),
+    bannerUrl: varchar("banner_url", { length: 512 }),
+    themeColor: varchar("theme_color", { length: 7 }).default("#3b82f6"),
+    aboutHtml: text("about_html"),
+    phone: varchar("phone", { length: 20 }),
+    email: varchar("email", { length: 256 }),
+    address: text("address"),
+    city: varchar("city", { length: 128 }),
+    state: varchar("state", { length: 64 }),
+    lga: varchar("lga", { length: 128 }),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }),
+    businessHours: json("business_hours").$type<{
+      monday?: { open: string; close: string };
+      tuesday?: { open: string; close: string };
+      wednesday?: { open: string; close: string };
+      thursday?: { open: string; close: string };
+      friday?: { open: string; close: string };
+      saturday?: { open: string; close: string };
+      sunday?: { open: string; close: string };
+    }>(),
+    categories: json("categories").$type<string[]>().default([]),
+    tags: json("tags").$type<string[]>().default([]),
+    deliveryEnabled: boolean("delivery_enabled").default(true).notNull(),
+    pickupEnabled: boolean("pickup_enabled").default(true).notNull(),
+    minOrderAmount: numeric("min_order_amount", { precision: 12, scale: 2 }).default("0"),
+    platformCommissionPct: numeric("platform_commission_pct", { precision: 5, scale: 2 }).default("5.00").notNull(),
+    status: agentStoreStatusEnum("status").default("pending").notNull(),
+    isVerified: boolean("is_verified").default(false).notNull(),
+    totalSales: integer("total_sales").default(0).notNull(),
+    totalRevenue: numeric("total_revenue", { precision: 14, scale: 2 }).default("0").notNull(),
+    averageRating: numeric("average_rating", { precision: 3, scale: 2 }).default("0"),
+    reviewCount: integer("review_count").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    agentIdx: uniqueIndex("agent_store_agent_idx").on(t.agentId),
+    slugIdx: uniqueIndex("agent_store_slug_idx").on(t.slug),
+    agentCodeIdx: index("agent_store_code_idx").on(t.agentCode),
+    statusIdx: index("agent_store_status_idx").on(t.status),
+    cityIdx: index("agent_store_city_idx").on(t.city),
+    stateIdx: index("agent_store_state_idx").on(t.state),
+    ratingIdx: index("agent_store_rating_idx").on(t.averageRating),
+  })
+);
+export type AgentStore = typeof agentStores.$inferSelect;
+
+// ─── Agent Store Delivery Zones ───────────────────────────────────────────────
+export const deliveryZones = pgTable(
+  "delivery_zones",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull(),
+    zoneName: varchar("zone_name", { length: 128 }).notNull(),
+    description: text("description"),
+    deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 }).notNull(),
+    estimatedMinutes: integer("estimated_minutes").default(60),
+    maxDistanceKm: numeric("max_distance_km", { precision: 8, scale: 2 }),
+    areas: json("areas").$type<string[]>().default([]),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    storeIdx: index("dz_store_idx").on(t.storeId),
+  })
+);
+export type DeliveryZone = typeof deliveryZones.$inferSelect;
+
+// ─── Product Reviews ──────────────────────────────────────────────────────────
+export const productReviews = pgTable(
+  "product_reviews",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id").notNull(),
+    storeId: integer("store_id").notNull(),
+    customerId: integer("customer_id").notNull(),
+    customerName: varchar("customer_name", { length: 128 }),
+    rating: integer("rating").notNull(),
+    title: varchar("title", { length: 256 }),
+    body: text("body"),
+    isVerifiedPurchase: boolean("is_verified_purchase").default(false).notNull(),
+    helpfulCount: integer("helpful_count").default(0).notNull(),
+    images: json("images").$type<string[]>().default([]),
+    sellerReply: text("seller_reply"),
+    sellerRepliedAt: timestamp("seller_replied_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    productIdx: index("review_product_idx").on(t.productId),
+    storeIdx: index("review_store_idx").on(t.storeId),
+    customerIdx: index("review_customer_idx").on(t.customerId),
+    ratingIdx: index("review_rating_idx").on(t.rating),
+  })
+);
+export type ProductReview = typeof productReviews.$inferSelect;
+
+// ─── Store Reviews ────────────────────────────────────────────────────────────
+export const storeReviews = pgTable(
+  "store_reviews",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull(),
+    customerId: integer("customer_id").notNull(),
+    customerName: varchar("customer_name", { length: 128 }),
+    rating: integer("rating").notNull(),
+    body: text("body"),
+    orderId: integer("order_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    storeIdx: index("store_review_store_idx").on(t.storeId),
+    customerIdx: index("store_review_customer_idx").on(t.customerId),
+  })
+);
+export type StoreReview = typeof storeReviews.$inferSelect;
+
+// ─── Payment Splits ───────────────────────────────────────────────────────────
+export const paymentSplitStatusEnum = pgEnum("payment_split_status", [
+  "pending",
+  "processed",
+  "settled",
+  "failed",
+]);
+
+export const paymentSplits = pgTable(
+  "payment_splits",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").notNull(),
+    orderNumber: varchar("order_number", { length: 32 }).notNull(),
+    storeId: integer("store_id").notNull(),
+    agentId: integer("agent_id").notNull(),
+    orderTotal: numeric("order_total", { precision: 12, scale: 2 }).notNull(),
+    platformFee: numeric("platform_fee", { precision: 12, scale: 2 }).notNull(),
+    platformFeePct: numeric("platform_fee_pct", { precision: 5, scale: 2 }).notNull(),
+    agentPayout: numeric("agent_payout", { precision: 12, scale: 2 }).notNull(),
+    taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    status: paymentSplitStatusEnum("status").default("pending").notNull(),
+    settledAt: timestamp("settled_at"),
+    paymentRef: varchar("payment_ref", { length: 128 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    orderIdx: index("ps_order_idx").on(t.orderId),
+    storeIdx: index("ps_store_idx").on(t.storeId),
+    agentIdx: index("ps_agent_idx").on(t.agentId),
+    statusIdx: index("ps_status_idx").on(t.status),
+  })
+);
+export type PaymentSplit = typeof paymentSplits.$inferSelect;
+
+// ─── Delivery Tracking ────────────────────────────────────────────────────────
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "pending",
+  "assigned",
+  "picked_up",
+  "in_transit",
+  "delivered",
+  "failed",
+  "returned",
+]);
+
+export const deliveryTracking = pgTable(
+  "delivery_tracking",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").notNull(),
+    storeId: integer("store_id").notNull(),
+    deliveryZoneId: integer("delivery_zone_id"),
+    status: deliveryStatusEnum("status").default("pending").notNull(),
+    riderName: varchar("rider_name", { length: 128 }),
+    riderPhone: varchar("rider_phone", { length: 20 }),
+    trackingCode: varchar("tracking_code", { length: 64 }).unique(),
+    estimatedDelivery: timestamp("estimated_delivery"),
+    actualDelivery: timestamp("actual_delivery"),
+    deliveryNotes: text("delivery_notes"),
+    deliveryProofUrl: varchar("delivery_proof_url", { length: 512 }),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    orderIdx: uniqueIndex("dt_order_idx").on(t.orderId),
+    storeIdx: index("dt_store_idx").on(t.storeId),
+    statusIdx: index("dt_status_idx").on(t.status),
+    trackingIdx: uniqueIndex("dt_tracking_idx").on(t.trackingCode),
+  })
+);
+export type DeliveryTrackingRecord = typeof deliveryTracking.$inferSelect;

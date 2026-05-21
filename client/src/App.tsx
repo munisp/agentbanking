@@ -841,6 +841,9 @@ const ComplianceTrainingTracker = lazy(
 );
 const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
 const EcommerceCheckout = lazy(() => import("./pages/EcommerceCheckout"));
+const AgentStoreSetup = lazy(() => import("./pages/AgentStoreSetup"));
+const PublicStorefront = lazy(() => import("./pages/PublicStorefront"));
+const StoreMall = lazy(() => import("./pages/StoreMall"));
 const EcommerceMerchantStorefront = lazy(
   () => import("./pages/EcommerceMerchantStorefront")
 );
@@ -973,6 +976,8 @@ const ADMIN_DASHBOARD_PREFIXES = [
   "/customer-onboarding",
   "/merchant-settlement",
   "/insurance-claims",
+  "/ecommerce",
+  "/store",
   "/sla-monitor",
   "/bulk-disbursement",
   "/reversal-manager",
@@ -2165,6 +2170,9 @@ function AuthenticatedApp() {
         <Route path="/ecommerce/orders" component={EcommerceOrderManagement} />
         <Route path="/ecommerce/products" component={EcommerceProductCatalog} />
         <Route path="/ecommerce/cart" component={EcommerceShoppingCart} />
+        <Route path="/ecommerce/store-setup" component={AgentStoreSetup} />
+        <Route path="/ecommerce/mall" component={StoreMall} />
+        <Route path="/store/:slug" component={PublicStorefront} />
         <Route
           path="/payment-dispute-arbitration"
           component={PaymentDisputeArbitration}

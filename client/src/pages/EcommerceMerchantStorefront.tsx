@@ -1,8 +1,23 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { haptic } from "@/lib/haptics";
+
+function useAgentId(): number {
+  return useMemo(() => {
+    try {
+      const raw = localStorage.getItem("pos54link-store");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed?.state?.agent?.id ?? 1;
+      }
+    } catch { /* fallback */ }
+    return 1;
+  }, []);
+}
 
 export default function EcommerceMerchantStorefront() {
-  const merchantId = 1; // From auth context
+  const agentId = useAgentId();
+  const merchantId = agentId;
   const [activeTab, setActiveTab] = useState<
     "products" | "orders" | "analytics"
   >("products");
@@ -16,10 +31,15 @@ export default function EcommerceMerchantStorefront() {
     imageUrl: "",
   });
 
+  const { data: myStore } = trpc.agentStore.getMyStore.useQuery(
+    { agentId }
+  ) as any;
+
   const { data: products, refetch: refetchProducts } =
     trpc.ecommerceCatalog.listProducts.useQuery({
       limit: 50,
       offset: 0,
+      agentId,
     }) as any;
 
   const { data: orders } = trpc.ecommerceOrders.listOrders.useQuery({
@@ -62,7 +82,27 @@ export default function EcommerceMerchantStorefront() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Merchant Storefront</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">
+            {myStore?.storeName || "My Store"}
+          </h1>
+          {myStore?.slug && (
+            <p className="text-sm text-gray-500 mt-0.5">
+              Public URL: <a href={`/store/${myStore.slug}`} className="text-blue-600 hover:underline">/store/{myStore.slug}</a>
+            </p>
+          )}
+        </div>
+        {!myStore && (
+          <a
+            href="/ecommerce/store-setup"
+            onClick={() => haptic("micro")}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium"
+          >
+            Set Up Store
+          </a>
+        )}
+      </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -249,13 +289,69 @@ export default function EcommerceMerchantStorefront() {
 
       {/* Analytics Tab */}
       {activeTab === "analytics" && (
-        <div className="text-center py-8 text-gray-500">
-          <p>Analytics powered by Python Intelligence Service</p>
-          <p className="text-sm mt-2">
-            Sales forecasting, basket analysis, and inventory velocity
-          </p>
+        <div className="space-y-4">
+          {myStore ? (
+            <AgentStoreAnalytics storeId={myStore.id} />
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p>Set up your store to view analytics</p>
+              <a
+                href="/ecommerce/store-setup"
+                className="inline-block mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+              >
+                Set Up Store
+              </a>
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function AgentStoreAnalytics({ storeId }: { storeId: number }) {
+  const { data: analytics, isLoading } = trpc.agentStore.getStoreAnalytics.useQuery(
+    { storeId }
+  ) as any;
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="bg-white border rounded-lg p-4 animate-pulse">
+            <div className="h-3 bg-gray-200 rounded w-3/4 mb-2 skeleton" />
+            <div className="h-6 bg-gray-200 rounded w-1/2 skeleton" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (!analytics) return null;
+
+  const stats = [
+    { label: "Total Products", value: analytics.totalProducts },
+    { label: "Active Products", value: analytics.activeProducts },
+    { label: "Total Orders", value: analytics.totalOrders },
+    { label: "Pending Orders", value: analytics.pendingOrders, highlight: true },
+    { label: "Total Revenue", value: `₦${Number(analytics.totalRevenue).toLocaleString()}` },
+    { label: "Platform Fees", value: `₦${Number(analytics.platformFees).toLocaleString()}` },
+    { label: "Net Payout", value: `₦${Number(analytics.netPayout).toLocaleString()}`, highlight: true },
+    { label: "Avg Order Value", value: `₦${Number(analytics.avgOrderValue).toLocaleString()}` },
+    { label: "Reviews", value: analytics.reviewCount },
+    { label: "Avg Rating", value: `⭐ ${Number(analytics.avgRating).toFixed(1)}` },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      {stats.map(stat => (
+        <div key={stat.label} className="bg-white border rounded-lg p-4">
+          <p className="text-xs text-gray-500">{stat.label}</p>
+          <p className={`text-lg font-bold mt-1 ${stat.highlight ? "text-blue-600" : ""}`}>
+            {stat.value}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }

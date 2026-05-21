@@ -26,6 +26,8 @@ export const ecommerceCatalogRouter = router({
         categoryId: z.number().optional(),
         active: z.boolean().optional(),
         search: z.string().optional(),
+        agentId: z.number().optional(),
+        merchantId: z.number().optional(),
       })
     )
     .query(async ({ input }) => {
@@ -41,6 +43,12 @@ export const ecommerceCatalogRouter = router({
       }
       if (input.search) {
         conditions.push(ilike(ecommerceProducts.name, `%${input.search}%`));
+      }
+      if (input.agentId) {
+        conditions.push(eq(ecommerceProducts.agentId, input.agentId));
+      }
+      if (input.merchantId) {
+        conditions.push(eq(ecommerceProducts.merchantId, input.merchantId));
       }
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;

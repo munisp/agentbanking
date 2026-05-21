@@ -8,7 +8,7 @@
  * ALL 26 SCREENS FULLY IMPLEMENTED — Tier 1-4 improvements applied
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import LiveChatSupport from "./LiveChatSupport";
 import LoyaltySystem from "./LoyaltySystem";
@@ -36,6 +36,30 @@ import { NotificationBell } from "../components/NotificationBell";
 import { GdprConsentBanner } from "../components/GdprConsentBanner";
 import { useFaceMotionDetection } from "../hooks/useFaceMotionDetection";
 import type { ChallengeType as MotionChallengeType } from "../hooks/useFaceMotionDetection";
+import { haptic } from "../lib/haptics";
+import { TileContextMenu } from "../components/TileContextMenu";
+import { PullToRefresh } from "../components/PullToRefresh";
+import { EODWidget } from "../components/EODWidget";
+import { LAYOUT_PRESETS } from "../components/LayoutPresets";
+import type { LayoutPreset } from "../components/LayoutPresets";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useTranslation } from "react-i18next";
+import "../lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TileSize = "sm" | "md" | "lg" | "wide";
@@ -738,6 +762,265 @@ const TILE_REGISTRY: Tile[] = [
   },
 ];
 
+// ─── UX Enhancement Constants ─────────────────────────────────────────────────
+
+// Tiles that work offline (P2: offline dimming)
+const OFFLINE_CAPABLE_TILES = new Set([
+  "cash-in",
+  "cash-out",
+  "airtime",
+  "bills",
+  "transfer",
+  "float-bal",
+  "commission",
+  "daily-report",
+  "tx-history",
+  "offline-resilience",
+  "ussd-tx",
+  "carrier-switch",
+  "cust-lookup",
+  "kyc",
+  "biometric",
+  "acct-open",
+]);
+
+// Quick-action definitions per tile (P1: long-press menu)
+const TILE_QUICK_ACTIONS: Record<
+  string,
+  Array<{
+    label: string;
+    icon: string;
+    screenOverride?: string;
+    amount?: number;
+  }>
+> = {
+  "cash-in": [
+    { label: "Quick ₦1,000", icon: "💵", amount: 1000 },
+    { label: "Quick ₦5,000", icon: "💵", amount: 5000 },
+    { label: "Quick ₦10,000", icon: "💵", amount: 10000 },
+    { label: "Quick ₦20,000", icon: "💵", amount: 20000 },
+  ],
+  "cash-out": [
+    { label: "Quick ₦1,000", icon: "💵", amount: 1000 },
+    { label: "Quick ₦5,000", icon: "💵", amount: 5000 },
+    { label: "Quick ₦10,000", icon: "💵", amount: 10000 },
+    { label: "Quick ₦50,000", icon: "💵", amount: 50000 },
+  ],
+  transfer: [
+    { label: "Repeat Last Transfer", icon: "↺" },
+    { label: "Favorites", icon: "⭐" },
+  ],
+  "float-bal": [
+    { label: "Request Top-Up", icon: "📤" },
+    { label: "Transfer to Bank", icon: "🏦" },
+    { label: "View History", icon: "📊" },
+  ],
+  commission: [
+    { label: "Withdraw Commission", icon: "💰" },
+    { label: "View Breakdown", icon: "📊" },
+  ],
+  "cust-lookup": [
+    { label: "Recent Customers", icon: "🕐" },
+    { label: "New Customer", icon: "➕" },
+    { label: "Search by Phone", icon: "📱" },
+  ],
+};
+
+// Tile theme color presets (P3: tile theming)
+const TILE_THEME_COLORS = [
+  { name: "Default", hue: -1 },
+  { name: "Blue", hue: 260 },
+  { name: "Green", hue: 160 },
+  { name: "Gold", hue: 80 },
+  { name: "Red", hue: 25 },
+  { name: "Purple", hue: 300 },
+  { name: "Cyan", hue: 200 },
+  { name: "Pink", hue: 340 },
+];
+
+// Amount chips for quick entry strip (P1)
+const QUICK_AMOUNTS = [500, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000];
+
+// Tile customization persistence key
+const TILE_CUSTOM_KEY = "pos_tile_customizations";
+const TILE_USAGE_KEY = "pos_tile_usage";
+const LAYOUT_PRESET_KEY = "pos_layout_preset";
+
+interface TileCustomization {
+  order: string[];
+  sizes: Record<string, TileSize>;
+  colors: Record<string, number>;
+  groups: Record<string, string[]>;
+  preset: string;
+}
+
+function loadTileCustomizations(): TileCustomization {
+  try {
+    const raw = localStorage.getItem(TILE_CUSTOM_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return { order: [], sizes: {}, colors: {}, groups: {}, preset: "full" };
+}
+
+function saveTileCustomizations(c: TileCustomization) {
+  localStorage.setItem(TILE_CUSTOM_KEY, JSON.stringify(c));
+}
+
+function loadTileUsage(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TILE_USAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function saveTileUsage(u: Record<string, number>) {
+  localStorage.setItem(TILE_USAGE_KEY, JSON.stringify(u));
+}
+
+// SortableTile wrapper for DnD Kit (P1)
+function SortableTile({
+  tile,
+  editMode,
+  isOnline,
+  onPress,
+  customSize,
+  customColor,
+  liveData,
+  children,
+}: {
+  tile: Tile;
+  editMode: boolean;
+  isOnline: boolean;
+  onPress: (t: Tile) => void;
+  customSize?: TileSize;
+  customColor?: number;
+  liveData?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const size = customSize || tile.size;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tile.id, disabled: !editMode });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.7 : 1,
+  };
+
+  const colSpan =
+    size === "wide"
+      ? "col-span-4"
+      : size === "lg"
+        ? "col-span-2"
+        : size === "md"
+          ? "col-span-2"
+          : "col-span-1";
+  const rowSpan = size === "lg" ? "row-span-2" : "";
+  const h = size === "lg" ? "h-28" : size === "wide" ? "h-16" : "h-20";
+
+  const isOfflineDisabled = !isOnline && !OFFLINE_CAPABLE_TILES.has(tile.id);
+
+  const bgColor =
+    customColor && customColor >= 0
+      ? `oklch(0.55 0.18 ${customColor} / 0.15)`
+      : tile.bgColor;
+  const color =
+    customColor && customColor >= 0
+      ? `oklch(0.65 0.20 ${customColor})`
+      : tile.color;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...(editMode ? listeners : {})}
+      className={`${colSpan} ${rowSpan} ${h} ${isOfflineDisabled ? "tile-offline-only" : ""} ${isDragging ? "tile-dragging" : ""}`}
+    >
+      <button
+        onClick={() => {
+          if (!editMode && !isOfflineDisabled) {
+            haptic("tap");
+            onPress(tile);
+          }
+        }}
+        className={`w-full h-full rounded-2xl p-3 flex flex-col justify-between transition-all active:scale-95 relative overflow-hidden touch-target`}
+        style={{
+          background: bgColor,
+          border: `1px solid ${color}30`,
+        }}
+        aria-label={`${tile.label}: ${tile.description}`}
+      >
+        {editMode && (
+          <div
+            className="absolute inset-0 rounded-2xl border-2 tile-edit-mode"
+            style={{ borderColor: color }}
+          />
+        )}
+        {editMode && (
+          <div
+            className="absolute top-1.5 left-1.5 text-xs opacity-60 z-10"
+            style={{ color }}
+          >
+            ⋮⋮
+          </div>
+        )}
+        {(tile.badge || 0) > 0 && (
+          <div
+            className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white z-10"
+            style={{ background: RED }}
+          >
+            {tile.badge}
+          </div>
+        )}
+        {tile.hot && !editMode && (
+          <div
+            className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full animate-pulse"
+            style={{ background: color }}
+          />
+        )}
+        <div className="text-2xl leading-none">{tile.icon}</div>
+        <div>
+          {liveData && size !== "sm" && (
+            <div
+              className="text-xs font-bold mb-0.5"
+              style={{ color, fontFamily: MONO }}
+            >
+              {liveData}
+            </div>
+          )}
+          <div
+            className="text-xs font-bold text-white leading-tight"
+            style={{ fontFamily: DISP }}
+          >
+            {tile.label}
+          </div>
+          {tile.size !== "sm" && !liveData && (
+            <div
+              className="text-xs mt-0.5 leading-tight"
+              style={{ color, fontFamily: DISP, fontSize: 10, opacity: 0.8 }}
+            >
+              {tile.description}
+            </div>
+          )}
+        </div>
+        {children}
+      </button>
+    </div>
+  );
+}
+
 const DEFAULT_LAYOUT = [
   "cash-in",
   "cash-out",
@@ -864,8 +1147,12 @@ function ScreenHeader({
       style={{ borderColor: BORDER }}
     >
       <button
-        onClick={onBack}
-        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 text-gray-400 hover:text-white text-lg"
+        onClick={() => {
+          haptic("micro");
+          onBack();
+        }}
+        className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 text-gray-400 hover:text-white text-lg touch-target"
+        aria-label="Go back"
       >
         ←
       </button>
@@ -894,12 +1181,14 @@ function NumPad({
         <button
           key={k}
           onClick={() => {
+            haptic("micro");
             if (k === "⌫") onChange(value.slice(0, -1));
             else if (k === "." && value.includes(".")) return;
             else if (value.length >= 10) return;
             else onChange(value + k);
           }}
-          className="h-14 rounded-xl text-xl font-semibold transition-all active:scale-95"
+          className="h-14 rounded-xl text-xl font-semibold transition-all active:scale-95 touch-target"
+          aria-label={k === "⌫" ? "Delete" : k}
           style={{
             background: k === "⌫" ? "oklch(0.60 0.22 25 / 0.2)" : CARD,
             color: k === "⌫" ? RED : "white",
@@ -11502,6 +11791,104 @@ export default function POSShell() {
   const [tickerPos, setTickerPos] = useState(0);
   const [time, setTime] = useState(new Date());
   const tickerRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
+
+  // ── UX Enhancement State (P0→P3) ─────────────────────────────────────────
+  const [tileCustom, setTileCustom] = useState<TileCustomization>(
+    loadTileCustomizations
+  );
+  const [tileUsage, setTileUsage] =
+    useState<Record<string, number>>(loadTileUsage);
+  const [showQuickEntry, setShowQuickEntry] = useState(false);
+  const [quickEntryAmount, setQuickEntryAmount] = useState<number | null>(null);
+  const [quickEntryDirection, setQuickEntryDirection] = useState<
+    "CashIn" | "CashOut" | null
+  >(null);
+  const [showPresets, setShowPresets] = useState(false);
+  const [showTileThemer, setShowTileThemer] = useState<string | null>(null);
+  const [showSizeChooser, setShowSizeChooser] = useState<string | null>(null);
+  const [showLanguageSelector, setShowLanguageSelector] = useState(false);
+
+  // DnD Kit sensors (P1: drag-and-drop)
+  const pointerSensor = useSensor(PointerSensor, {
+    activationConstraint: { distance: 8 },
+  });
+  const touchSensor = useSensor(TouchSensor, {
+    activationConstraint: { delay: 300, tolerance: 8 },
+  });
+  const dndSensors = useSensors(pointerSensor, touchSensor);
+
+  // Handle tile drag end (P1)
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      haptic("micro");
+      setLayout(prev => {
+        const oldIndex = prev.indexOf(active.id as string);
+        const newIndex = prev.indexOf(over.id as string);
+        const newLayout = arrayMove(prev, oldIndex, newIndex);
+        setTileCustom(c => {
+          const updated = { ...c, order: newLayout };
+          saveTileCustomizations(updated);
+          return updated;
+        });
+        return newLayout;
+      });
+    }
+  }, []);
+
+  // Track tile usage (P2: smart ordering)
+  const trackTileUsage = useCallback((tileId: string) => {
+    setTileUsage(prev => {
+      const updated = { ...prev, [tileId]: (prev[tileId] || 0) + 1 };
+      saveTileUsage(updated);
+      return updated;
+    });
+  }, []);
+
+  // Apply layout preset (P2)
+  const applyPreset = useCallback((preset: LayoutPreset) => {
+    if (preset.id === "custom") return;
+    setLayout(preset.tileIds);
+    setTileCustom(c => {
+      const updated = { ...c, preset: preset.id, order: preset.tileIds };
+      saveTileCustomizations(updated);
+      return updated;
+    });
+    setShowPresets(false);
+    haptic("success");
+    toast.success(`Layout: ${preset.name}`);
+  }, []);
+
+  // Change tile size (P2: tile size customization)
+  const changeTileSize = useCallback((tileId: string, newSize: TileSize) => {
+    setTileCustom(c => {
+      const updated = { ...c, sizes: { ...c.sizes, [tileId]: newSize } };
+      saveTileCustomizations(updated);
+      return updated;
+    });
+    setShowSizeChooser(null);
+    haptic("micro");
+  }, []);
+
+  // Change tile color (P3: tile theming)
+  const changeTileColor = useCallback((tileId: string, hue: number) => {
+    setTileCustom(c => {
+      const updated = { ...c, colors: { ...c.colors, [tileId]: hue } };
+      saveTileCustomizations(updated);
+      return updated;
+    });
+    setShowTileThemer(null);
+    haptic("micro");
+  }, []);
+
+  // Restore persisted layout on mount
+  useEffect(() => {
+    const custom = loadTileCustomizations();
+    if (custom.order.length > 0) {
+      setLayout(custom.order);
+    }
+  }, []);
 
   // Live clock
   useEffect(() => {
@@ -11826,7 +12213,9 @@ export default function POSShell() {
   const notifCount = unreadFraudCount + unreadChatCount;
 
   const navigate = useCallback(
-    (screen: string) => {
+    (screen: string, tileId?: string) => {
+      if (tileId) trackTileUsage(tileId);
+      haptic("tap");
       if (screen === "__ussd__") {
         setShowUSSD(true);
         return;
@@ -11856,6 +12245,7 @@ export default function POSShell() {
       setShowFraudDash,
       setShowLiveChat,
       setShowLoyalty,
+      trackTileUsage,
     ]
   );
 
@@ -11865,20 +12255,53 @@ export default function POSShell() {
   const offlineQueueStore = usePosStore(s => s.offlineQueue);
   const totalOfflinePending = offlineQueueStore.length + pendingQueueCount;
 
-  const visibleTiles = layout
-    .map((id: any) => TILE_REGISTRY.find((t: any) => t.id === id))
-    .filter(
-      (t): t is Tile => !!t && (catFilter === "all" || t.category === catFilter)
-    )
-    .map((t: any) =>
+  // Compute visible tiles with smart ordering (P2)
+  const visibleTiles = useMemo(() => {
+    const tileMap = new Map(TILE_REGISTRY.map(t => [t.id, t]));
+    const base = layout
+      .map(id => tileMap.get(id))
+      .filter((t): t is Tile => !!t);
+
+    const filtered =
+      catFilter === "all" ? base : base.filter(t => t.category === catFilter);
+
+    return filtered.map(t =>
       t.id === "offline-resilience" && totalOfflinePending > 0
         ? { ...t, badge: totalOfflinePending }
         : t
     );
+  }, [layout, catFilter, totalOfflinePending]);
 
-  const quickAccess = [...TILE_REGISTRY]
-    .sort((a: any, b: any) => (b.usageCount || 0) - (a.usageCount || 0))
-    .slice(0, 4);
+  // Quick access tiles (sorted by actual usage)
+  const quickAccess = useMemo(() => {
+    return [...TILE_REGISTRY]
+      .sort(
+        (a, b) =>
+          (tileUsage[b.id] || b.usageCount || 0) -
+          (tileUsage[a.id] || a.usageCount || 0)
+      )
+      .slice(0, 4);
+  }, [tileUsage]);
+
+  // Live data for tiles (P1)
+  const tileLiveData = useMemo(() => {
+    const data: Record<string, React.ReactNode> = {};
+    data["float-bal"] = fmt(terminal.floatBalance);
+    data["commission"] = fmt(terminal.commissionBalance);
+    data["daily-report"] = `${terminal.txToday}/${terminal.txTarget} today`;
+    if (unreadFraudCount > 0)
+      data["fraud-alerts"] = `${unreadFraudCount} active`;
+    if (pendingQueueCount > 0)
+      data["offline-resilience"] = `${pendingQueueCount} queued`;
+    return data;
+  }, [
+    terminal.floatBalance,
+    terminal.commissionBalance,
+    terminal.txToday,
+    terminal.txTarget,
+    unreadFraudCount,
+    pendingQueueCount,
+  ]);
 
   // Screen router
   if (activeScreen) {
@@ -12187,13 +12610,15 @@ export default function POSShell() {
           </div>
         </div>
       )}
-      {/* ── Status Bar ── */}
+      {/* ── Status Bar (P0: safe-top for notched devices) ── */}
       <div
-        className="flex items-center justify-between px-4 py-2 flex-shrink-0"
+        className="flex items-center justify-between px-4 py-2 flex-shrink-0 safe-top"
         style={{
           background: "oklch(0.07 0.01 240)",
           borderBottom: `1px solid ${BORDER}`,
         }}
+        role="status"
+        aria-label="Terminal status bar"
       >
         <div className="flex items-center gap-2">
           <div
@@ -12527,33 +12952,43 @@ export default function POSShell() {
         </div>
       </div>
 
-      {/* ── Quick Access Strip ── */}
+      {/* ── Quick Access Strip (P0: touch targets 48px) ── */}
       <div
         className="flex gap-2 px-4 py-2 flex-shrink-0 overflow-x-auto"
         style={{ borderBottom: `1px solid ${BORDER}` }}
       >
         {quickAccess.map((t: any) => (
-          <button
+          <TileContextMenu
             key={t.id}
-            onClick={() => navigate(t.screen)}
-            className="flex flex-col items-center gap-1 flex-shrink-0 transition-all active:scale-90"
+            disabled={editMode}
+            actions={(TILE_QUICK_ACTIONS[t.id] || []).map(a => ({
+              label: a.label,
+              icon: a.icon,
+              action: () => navigate(a.screenOverride || t.screen, t.id),
+            }))}
           >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
-              style={{
-                background: t.bgColor,
-                border: `1px solid ${t.color}40`,
-              }}
+            <button
+              onClick={() => navigate(t.screen, t.id)}
+              className="flex flex-col items-center gap-1 flex-shrink-0 transition-all active:scale-90 touch-target"
+              aria-label={`Quick access: ${t.label}`}
             >
-              {t.icon}
-            </div>
-            <span
-              className="text-xs text-gray-400 whitespace-nowrap"
-              style={{ fontFamily: DISP, fontSize: 10 }}
-            >
-              {t.label}
-            </span>
-          </button>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-lg"
+                style={{
+                  background: t.bgColor,
+                  border: `1px solid ${t.color}40`,
+                }}
+              >
+                {t.icon}
+              </div>
+              <span
+                className="text-xs text-gray-400 whitespace-nowrap"
+                style={{ fontFamily: DISP, fontSize: 10 }}
+              >
+                {t.label}
+              </span>
+            </button>
+          </TileContextMenu>
         ))}
         <div
           className="w-px flex-shrink-0 mx-1"
@@ -12561,10 +12996,11 @@ export default function POSShell() {
         />
         <button
           onClick={() => setShowEditor(true)}
-          className="flex flex-col items-center gap-1 flex-shrink-0"
+          className="flex flex-col items-center gap-1 flex-shrink-0 touch-target"
+          aria-label="Add more tiles"
         >
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
+            className="w-12 h-12 rounded-xl flex items-center justify-center text-lg"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}
           >
             +
@@ -12578,7 +13014,35 @@ export default function POSShell() {
         </button>
       </div>
 
-      {/* ── Category Filter ── */}
+      {/* ── Transaction Quick-Entry Strip (P1) ── */}
+      <div
+        className="flex gap-1.5 px-4 py-1.5 overflow-x-auto flex-shrink-0"
+        style={{
+          borderBottom: `1px solid ${BORDER}`,
+          background: "oklch(0.08 0.01 240)",
+        }}
+      >
+        {QUICK_AMOUNTS.map(amt => (
+          <button
+            key={amt}
+            onClick={() => {
+              haptic("micro");
+              setQuickEntryAmount(amt);
+              setShowQuickEntry(true);
+            }}
+            className="amount-chip"
+            style={{
+              background: CARD,
+              color: GREEN,
+              border: `1px solid ${BORDER}`,
+            }}
+          >
+            ₦{amt >= 1000 ? `${amt / 1000}K` : amt}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Category Filter (P0: touch targets 44px) ── */}
       <div
         className="flex gap-2 px-4 py-2 overflow-x-auto flex-shrink-0"
         style={{ borderBottom: `1px solid ${BORDER}` }}
@@ -12586,130 +13050,291 @@ export default function POSShell() {
         {cats.map((c: any) => (
           <button
             key={c}
-            onClick={() => setCatFilter(c)}
-            className="px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap capitalize transition-all"
+            onClick={() => {
+              haptic("micro");
+              setCatFilter(c);
+            }}
+            className="px-4 py-2.5 rounded-lg text-xs font-semibold whitespace-nowrap capitalize transition-all touch-target"
             style={{
               background: catFilter === c ? BLUE : CARD,
-              color: catFilter === c ? "white" : "#6b7280",
+              color: catFilter === c ? "white" : "#9ca3af",
               border: `1px solid ${catFilter === c ? BLUE : BORDER}`,
             }}
+            aria-pressed={catFilter === c}
           >
             {c}
           </button>
         ))}
       </div>
 
-      {/* ── Tile Grid ── */}
-      <div className="flex-1 overflow-y-auto p-3">
-        <div className="grid grid-cols-4 gap-2 auto-rows-auto">
-          {visibleTiles.map((tile: any) => {
-            const colSpan =
-              tile.size === "wide"
-                ? "col-span-4"
-                : tile.size === "lg"
-                  ? "col-span-2"
-                  : tile.size === "md"
-                    ? "col-span-2"
-                    : "col-span-1";
-            const rowSpan = tile.size === "lg" ? "row-span-2" : "";
-            const h =
-              tile.size === "lg"
-                ? "h-28"
-                : tile.size === "wide"
-                  ? "h-16"
-                  : "h-20";
-            return (
-              <button
-                key={tile.id}
-                onClick={() => !editMode && navigate(tile.screen)}
-                className={`${colSpan} ${rowSpan} ${h} rounded-2xl p-3 flex flex-col justify-between transition-all active:scale-95 relative overflow-hidden`}
-                style={{
-                  background: tile.bgColor,
-                  border: `1px solid ${tile.color}30`,
-                }}
-              >
-                {/* Wobble in edit mode */}
-                {editMode && (
-                  <div
-                    className="absolute inset-0 rounded-2xl border-2 animate-pulse"
-                    style={{ borderColor: tile.color }}
-                  />
-                )}
-                {/* Badge */}
-                {(tile.badge || 0) > 0 && (
-                  <div
-                    className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white z-10"
-                    style={{ background: RED }}
-                  >
-                    {tile.badge}
-                  </div>
-                )}
-                {/* Hot indicator */}
-                {tile.hot && !editMode && (
-                  <div
-                    className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full animate-pulse"
-                    style={{ background: tile.color }}
-                  />
-                )}
-                <div className="text-2xl leading-none">{tile.icon}</div>
-                <div>
-                  <div
-                    className="text-xs font-bold text-white leading-tight"
-                    style={{ fontFamily: DISP }}
-                  >
-                    {tile.label}
-                  </div>
-                  {tile.size !== "sm" && (
-                    <div
-                      className="text-xs mt-0.5 leading-tight"
-                      style={{
-                        color: tile.color,
-                        fontFamily: DISP,
-                        fontSize: 10,
-                        opacity: 0.8,
-                      }}
-                    >
-                      {tile.description}
-                    </div>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-          {/* Add tile button */}
-          <button
-            onClick={() => setShowEditor(true)}
-            className="col-span-1 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95"
-            style={{ background: CARD, border: `2px dashed ${BORDER}` }}
+      {/* ── Daily Progress Bar (P2: status enhancement) ── */}
+      <div
+        className="px-4 py-1 flex-shrink-0"
+        style={{ background: "oklch(0.08 0.01 240)" }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs"
+            style={{ color: "#6b7280", fontFamily: MONO }}
           >
-            <span className="text-xl text-gray-600">+</span>
-            <span
-              className="text-xs text-gray-600"
-              style={{ fontFamily: DISP, fontSize: 10 }}
-            >
-              Add
+            {terminal.txToday}/{terminal.txTarget} today
+          </span>
+          <div
+            className="flex-1 h-1.5 rounded-full"
+            style={{ background: BORDER }}
+          >
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${Math.min((terminal.txToday / terminal.txTarget) * 100, 100)}%`,
+                background:
+                  terminal.txToday >= terminal.txTarget ? GREEN : BLUE,
+              }}
+            />
+          </div>
+          {terminal.txToday >= terminal.txTarget && (
+            <span className="text-xs" style={{ color: GREEN }}>
+              🎯
             </span>
-          </button>
+          )}
         </div>
       </div>
 
-      {/* ── Edit Mode Toggle ── */}
+      {/* ── Performance Dashboard Tile (P3) ── */}
       <div
-        className="flex items-center justify-between px-4 py-2 flex-shrink-0"
+        className="mx-3 mt-2 rounded-xl p-3 flex items-center gap-3"
+        style={{ background: CARD, border: `1px solid ${BORDER}` }}
+      >
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-1">
+            <span className="text-sm">🔥</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: GOLD, fontFamily: MONO }}
+            >
+              {GAMIFICATION.streak}d
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-sm">🏆</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: BLUE, fontFamily: MONO }}
+            >
+              #{GAMIFICATION.rank}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-sm">⚡</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: GREEN, fontFamily: MONO }}
+            >
+              {GAMIFICATION.weeklyProgress}/{GAMIFICATION.weeklyTarget}
+            </span>
+          </div>
+        </div>
+        {/* Mini progress ring */}
+        <svg width="28" height="28" viewBox="0 0 28 28">
+          <circle
+            cx="14"
+            cy="14"
+            r="11"
+            fill="none"
+            stroke={BORDER}
+            strokeWidth="3"
+          />
+          <circle
+            cx="14"
+            cy="14"
+            r="11"
+            fill="none"
+            stroke={BLUE}
+            strokeWidth="3"
+            strokeDasharray={`${(GAMIFICATION.weeklyProgress / GAMIFICATION.weeklyTarget) * 69.1} 69.1`}
+            strokeLinecap="round"
+            transform="rotate(-90 14 14)"
+          />
+        </svg>
+      </div>
+
+      {/* ── EOD Widget (P3) ── */}
+      <EODWidget
+        txCount={terminal.txToday}
+        floatBalance={terminal.floatBalance}
+        onReconcile={() => navigate("EODReconcile")}
+        onPrintSummary={() => toast.success("Printing day summary...")}
+      />
+
+      {/* ── Tile Grid with DnD (P1: drag-and-drop) ── */}
+      <PullToRefresh
+        className="flex-1"
+        onRefresh={async () => {
+          toast.success("Refreshed");
+        }}
+      >
+        <DndContext
+          sensors={dndSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={visibleTiles.map(t => t.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-4 gap-2 p-3 auto-rows-auto">
+              {visibleTiles.map((tile: any) => {
+                const actions = TILE_QUICK_ACTIONS[tile.id] || [];
+                return (
+                  <TileContextMenu
+                    key={tile.id}
+                    disabled={editMode}
+                    actions={[
+                      ...actions.map(a => ({
+                        label: a.label,
+                        icon: a.icon,
+                        action: () =>
+                          navigate(a.screenOverride || tile.screen, tile.id),
+                      })),
+                      ...(editMode
+                        ? [
+                            {
+                              label: "Change Size",
+                              icon: "📐",
+                              action: () => setShowSizeChooser(tile.id),
+                            },
+                            {
+                              label: "Change Color",
+                              icon: "🎨",
+                              action: () => setShowTileThemer(tile.id),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  >
+                    <SortableTile
+                      tile={tile}
+                      editMode={editMode}
+                      isOnline={isOnline}
+                      onPress={t => navigate(t.screen, t.id)}
+                      customSize={tileCustom.sizes[tile.id]}
+                      customColor={tileCustom.colors[tile.id]}
+                      liveData={tileLiveData[tile.id]}
+                    />
+                  </TileContextMenu>
+                );
+              })}
+              {/* Add tile button */}
+              <button
+                onClick={() => setShowEditor(true)}
+                className="col-span-1 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 touch-target"
+                style={{ background: CARD, border: `2px dashed ${BORDER}` }}
+                aria-label="Add new tile"
+              >
+                <span className="text-xl text-gray-600">+</span>
+                <span
+                  className="text-xs text-gray-600"
+                  style={{ fontFamily: DISP, fontSize: 10 }}
+                >
+                  Add
+                </span>
+              </button>
+            </div>
+          </SortableContext>
+        </DndContext>
+      </PullToRefresh>
+
+      {/* ── Edit Mode Toggle (P0: touch targets, P2: presets) ── */}
+      <div
+        className="flex items-center justify-between px-4 py-2 flex-shrink-0 safe-bottom"
         style={{ borderTop: `1px solid ${BORDER}` }}
       >
-        <button
-          onClick={() => setEditMode(e => !e)}
-          className="px-4 py-2 rounded-xl text-xs font-semibold transition-all"
-          style={{
-            background: editMode ? "oklch(0.60 0.22 25 / 0.2)" : CARD,
-            color: editMode ? RED : "#6b7280",
-            border: `1px solid ${editMode ? RED : BORDER}`,
-          }}
-        >
-          {editMode ? "✓ Done Editing" : "✏ Edit Layout"}
-        </button>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              haptic("tap");
+              setEditMode(e => !e);
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+            style={{
+              background: editMode ? "oklch(0.60 0.22 25 / 0.2)" : CARD,
+              color: editMode ? RED : "#9ca3af",
+              border: `1px solid ${editMode ? RED : BORDER}`,
+            }}
+          >
+            {editMode
+              ? t("done_editing", "✓ Done Editing")
+              : t("edit_layout", "✏ Edit Layout")}
+          </button>
+          {editMode && (
+            <>
+              <button
+                onClick={() => setShowPresets(true)}
+                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+                style={{
+                  background: CARD,
+                  color: BLUE,
+                  border: `1px solid ${BORDER}`,
+                }}
+                aria-label="Layout presets"
+              >
+                📐 Presets
+              </button>
+              <button
+                onClick={() => {
+                  setLayout(DEFAULT_LAYOUT);
+                  setTileCustom({
+                    order: [],
+                    sizes: {},
+                    colors: {},
+                    groups: {},
+                    preset: "full",
+                  });
+                  saveTileCustomizations({
+                    order: [],
+                    sizes: {},
+                    colors: {},
+                    groups: {},
+                    preset: "full",
+                  });
+                  haptic("success");
+                  toast.success("Layout reset to default");
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+                style={{
+                  background: CARD,
+                  color: "#6b7280",
+                  border: `1px solid ${BORDER}`,
+                }}
+                aria-label="Reset layout"
+              >
+                ↺ Reset
+              </button>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Paper level indicator (P2: status bar enhancement) */}
+          <div
+            className="flex items-center gap-1"
+            title={`Paper: ${terminal.paperLevel}%`}
+          >
+            <span
+              className="text-xs"
+              style={{ color: terminal.paperLevel > 20 ? "#6b7280" : RED }}
+            >
+              🧾
+            </span>
+            <span
+              className="text-xs"
+              style={{
+                color: terminal.paperLevel > 20 ? "#6b7280" : RED,
+                fontFamily: MONO,
+              }}
+            >
+              {terminal.paperLevel}%
+            </span>
+          </div>
           <div
             className="w-1.5 h-1.5 rounded-full"
             style={{ background: wsStatus === "connected" ? GREEN : GOLD }}
@@ -12779,9 +13404,9 @@ export default function POSShell() {
         </div>
       )}
 
-      {/* ── Live Ticker ── */}
+      {/* ── Live Ticker (P0: safe-bottom for home button bar) ── */}
       <div
-        className="flex-shrink-0 overflow-hidden py-1.5 px-4"
+        className="flex-shrink-0 overflow-hidden py-1.5 px-4 safe-bottom"
         style={{
           background: "oklch(0.07 0.01 240)",
           borderTop: `1px solid ${BORDER}`,
@@ -13017,6 +13642,239 @@ export default function POSShell() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick Entry Modal (P1: transaction quick-entry) ── */}
+      {showQuickEntry && quickEntryAmount && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end"
+          style={{
+            maxWidth: 430,
+            margin: "0 auto",
+            background: "oklch(0.04 0.01 240 / 0.85)",
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowQuickEntry(false);
+          }}
+        >
+          <div
+            className="rounded-t-3xl p-5 flex flex-col gap-4"
+            style={{ background: BG, border: `1px solid ${BORDER}` }}
+          >
+            <div className="flex items-center justify-between">
+              <div
+                className="text-base font-black text-white"
+                style={{ fontFamily: DISP }}
+              >
+                Quick Transaction · {fmt(quickEntryAmount)}
+              </div>
+              <button
+                onClick={() => setShowQuickEntry(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: CARD, color: "#9ca3af" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setQuickEntryDirection("CashIn");
+                  navigate("CashIn");
+                  setShowQuickEntry(false);
+                  haptic("success");
+                }}
+                className="flex-1 py-4 rounded-2xl text-sm font-bold text-white transition-all active:scale-95 touch-target"
+                style={{
+                  background: "oklch(0.45 0.18 160)",
+                  border: `1px solid ${GREEN}44`,
+                }}
+              >
+                ⬇ Cash In
+              </button>
+              <button
+                onClick={() => {
+                  setQuickEntryDirection("CashOut");
+                  navigate("CashOut");
+                  setShowQuickEntry(false);
+                  haptic("success");
+                }}
+                className="flex-1 py-4 rounded-2xl text-sm font-bold text-white transition-all active:scale-95 touch-target"
+                style={{
+                  background: "oklch(0.45 0.18 260)",
+                  border: `1px solid ${BLUE}44`,
+                }}
+              >
+                ⬆ Cash Out
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                navigate("Transfer");
+                setShowQuickEntry(false);
+                haptic("success");
+              }}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-95 touch-target"
+              style={{ background: CARD, border: `1px solid ${BORDER}` }}
+            >
+              ⇄ Transfer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Layout Presets Modal (P2) ── */}
+      {showPresets && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end"
+          style={{
+            maxWidth: 430,
+            margin: "0 auto",
+            background: "oklch(0.04 0.01 240 / 0.85)",
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowPresets(false);
+          }}
+        >
+          <div
+            className="rounded-t-3xl p-5 flex flex-col gap-3"
+            style={{ background: BG, border: `1px solid ${BORDER}` }}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div
+                className="text-base font-black text-white"
+                style={{ fontFamily: DISP }}
+              >
+                📐 Layout Presets
+              </div>
+              <button
+                onClick={() => setShowPresets(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: CARD, color: "#9ca3af" }}
+              >
+                ✕
+              </button>
+            </div>
+            {LAYOUT_PRESETS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => applyPreset(p)}
+                className="w-full p-4 rounded-2xl flex items-center gap-3 text-left transition-all active:scale-98 touch-target"
+                style={{
+                  background:
+                    tileCustom.preset === p.id
+                      ? `oklch(0.60 0.22 260 / 0.15)`
+                      : CARD,
+                  border: `1px solid ${tileCustom.preset === p.id ? BLUE : BORDER}`,
+                }}
+              >
+                <span className="text-2xl">{p.icon}</span>
+                <div className="flex-1">
+                  <div
+                    className="text-sm font-bold text-white"
+                    style={{ fontFamily: DISP }}
+                  >
+                    {p.name}
+                  </div>
+                  <div className="text-xs text-gray-400">{p.description}</div>
+                </div>
+                <span
+                  className="text-xs"
+                  style={{ color: "#6b7280", fontFamily: MONO }}
+                >
+                  {p.tileIds.length} tiles
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tile Size Chooser (P2) ── */}
+      {showSizeChooser && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end"
+          style={{
+            maxWidth: 430,
+            margin: "0 auto",
+            background: "oklch(0.04 0.01 240 / 0.85)",
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowSizeChooser(null);
+          }}
+        >
+          <div
+            className="rounded-t-3xl p-5 flex flex-col gap-3"
+            style={{ background: BG, border: `1px solid ${BORDER}` }}
+          >
+            <div
+              className="text-base font-black text-white"
+              style={{ fontFamily: DISP }}
+            >
+              📐 Tile Size
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {(["sm", "md", "lg", "wide"] as TileSize[]).map(s => (
+                <button
+                  key={s}
+                  onClick={() => changeTileSize(showSizeChooser, s)}
+                  className="py-3 rounded-xl text-xs font-bold text-white uppercase transition-all active:scale-95 touch-target"
+                  style={{
+                    background:
+                      (tileCustom.sizes[showSizeChooser] || "md") === s
+                        ? BLUE
+                        : CARD,
+                    border: `1px solid ${(tileCustom.sizes[showSizeChooser] || "md") === s ? BLUE : BORDER}`,
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tile Color Themer (P3) ── */}
+      {showTileThemer && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end"
+          style={{
+            maxWidth: 430,
+            margin: "0 auto",
+            background: "oklch(0.04 0.01 240 / 0.85)",
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowTileThemer(null);
+          }}
+        >
+          <div
+            className="rounded-t-3xl p-5 flex flex-col gap-3"
+            style={{ background: BG, border: `1px solid ${BORDER}` }}
+          >
+            <div
+              className="text-base font-black text-white"
+              style={{ fontFamily: DISP }}
+            >
+              🎨 Tile Color
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {TILE_THEME_COLORS.map(c => (
+                <button
+                  key={c.name}
+                  onClick={() => changeTileColor(showTileThemer, c.hue)}
+                  className="py-3 rounded-xl text-xs font-bold text-white transition-all active:scale-95 touch-target"
+                  style={{
+                    background: c.hue >= 0 ? `oklch(0.45 0.18 ${c.hue})` : CARD,
+                    border: `1px solid ${c.hue >= 0 ? `oklch(0.55 0.20 ${c.hue})` : BORDER}`,
+                  }}
+                >
+                  {c.name}
+                </button>
+              ))}
             </div>
           </div>
         </div>

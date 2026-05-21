@@ -1,6 +1,7 @@
 # 54Link Backup & Restore Procedures
 
 ## Overview
+
 This document covers backup and restore procedures for all 54Link data stores.
 
 ---
@@ -10,6 +11,7 @@ This document covers backup and restore procedures for all 54Link data stores.
 ### Automated Backups
 
 #### Daily Full Backup (via cron)
+
 ```bash
 # /etc/cron.d/54link-db-backup
 0 2 * * * postgres pg_dump -Fc -Z6 \
@@ -19,6 +21,7 @@ This document covers backup and restore procedures for all 54Link data stores.
 ```
 
 #### Continuous WAL Archiving (Point-in-Time Recovery)
+
 ```ini
 # postgresql.conf
 wal_level = replica
@@ -27,6 +30,7 @@ archive_command = 'aws s3 cp %p s3://54link-backups/wal/%f --sse AES256'
 ```
 
 ### Manual Backup
+
 ```bash
 # Full database dump (compressed custom format)
 pg_dump -Fc -Z6 \
@@ -45,6 +49,7 @@ pg_restore --list /backups/54link-$(date +%Y%m%d-%H%M).dump | head
 ### Restore
 
 #### Full Restore
+
 ```bash
 # Stop all services first
 docker compose -f docker-compose.production.yml stop api
@@ -65,6 +70,7 @@ docker compose -f docker-compose.production.yml start api
 ```
 
 #### Point-in-Time Recovery
+
 ```bash
 # 1. Stop PostgreSQL
 systemctl stop postgresql
@@ -92,6 +98,7 @@ systemctl start postgresql
 ## 2. Redis
 
 ### Backup
+
 ```bash
 # Trigger RDB snapshot
 redis-cli BGSAVE
@@ -104,6 +111,7 @@ cp /var/lib/redis/dump.rdb /backups/redis/dump-$(date +%Y%m%d-%H%M).rdb
 ```
 
 ### Restore
+
 ```bash
 # Stop Redis
 systemctl stop redis
@@ -124,6 +132,7 @@ redis-cli INFO keyspace
 ## 3. Kafka Topics
 
 ### Backup (Topic Configs + Offsets)
+
 ```bash
 # Export topic configurations
 kafka-topics.sh --bootstrap-server localhost:9092 --describe \
@@ -136,6 +145,7 @@ kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
 ```
 
 ### Note
+
 Kafka messages are transient by design. For long-term message retention, use the Lakehouse service (Fluvio → MinIO/S3).
 
 ---
@@ -143,6 +153,7 @@ Kafka messages are transient by design. For long-term message retention, use the
 ## 4. Keycloak
 
 ### Backup
+
 ```bash
 # Export realm configuration
 docker exec keycloak /opt/keycloak/bin/kc.sh export \
@@ -154,6 +165,7 @@ docker cp keycloak:/tmp/keycloak-export /backups/keycloak/$(date +%Y%m%d)/
 ```
 
 ### Restore
+
 ```bash
 # Import realm configuration
 docker exec keycloak /opt/keycloak/bin/kc.sh import \
@@ -166,6 +178,7 @@ docker exec keycloak /opt/keycloak/bin/kc.sh import \
 ## 5. Application Files & Config
 
 ### Backup
+
 ```bash
 # Application configuration
 tar czf /backups/config/54link-config-$(date +%Y%m%d).tar.gz \
@@ -183,17 +196,18 @@ aws s3 sync /backups/ s3://54link-backups/ --sse AES256
 
 ## Backup Schedule
 
-| Data Store | Frequency | Retention | Storage |
-|-----------|-----------|-----------|---------|
-| PostgreSQL (full) | Daily 02:00 WAT | 30 days | S3 |
-| PostgreSQL (WAL) | Continuous | 7 days | S3 |
-| Redis (RDB) | Every 6 hours | 7 days | S3 |
-| Keycloak realm | Weekly | 90 days | S3 |
-| App config | On every deploy | 90 days | S3 |
+| Data Store        | Frequency       | Retention | Storage |
+| ----------------- | --------------- | --------- | ------- |
+| PostgreSQL (full) | Daily 02:00 WAT | 30 days   | S3      |
+| PostgreSQL (WAL)  | Continuous      | 7 days    | S3      |
+| Redis (RDB)       | Every 6 hours   | 7 days    | S3      |
+| Keycloak realm    | Weekly          | 90 days   | S3      |
+| App config        | On every deploy | 90 days   | S3      |
 
 ## Backup Verification
 
 Run weekly restore test on staging:
+
 ```bash
 # Automated restore test (runs every Sunday 04:00 WAT)
 # Restores latest backup to staging and runs health checks
@@ -205,13 +219,15 @@ Run weekly restore test on staging:
 ## Disaster Recovery
 
 ### RTO / RPO Targets
-| Scenario | RPO | RTO |
-|----------|-----|-----|
-| Database corruption | 5 min (WAL) | 30 min |
-| Full infrastructure loss | 24 hours (daily backup) | 4 hours |
-| Single service failure | 0 (no data loss) | 5 min (auto-restart) |
+
+| Scenario                 | RPO                     | RTO                  |
+| ------------------------ | ----------------------- | -------------------- |
+| Database corruption      | 5 min (WAL)             | 30 min               |
+| Full infrastructure loss | 24 hours (daily backup) | 4 hours              |
+| Single service failure   | 0 (no data loss)        | 5 min (auto-restart) |
 
 ### DR Steps
+
 1. Provision new infrastructure (Terraform): `terraform apply -auto-approve`
 2. Restore database from S3 backup
 3. Restore Keycloak realm config

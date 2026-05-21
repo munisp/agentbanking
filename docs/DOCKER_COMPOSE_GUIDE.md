@@ -2,11 +2,11 @@
 
 ## Which file to use?
 
-| File | Purpose | When to use |
-|------|---------|-------------|
-| **`docker-compose.production.yml`** | **PRODUCTION** — full stack with profiles | Production & staging deployments |
-| `docker-compose.yml` | Local development — app + basic infra | `docker compose up` for quick local dev |
-| `docker-compose.override.yml` | Dev overrides (volumes, debug ports) | Auto-applied when using `docker-compose.yml` |
+| File                                | Purpose                                   | When to use                                  |
+| ----------------------------------- | ----------------------------------------- | -------------------------------------------- |
+| **`docker-compose.production.yml`** | **PRODUCTION** — full stack with profiles | Production & staging deployments             |
+| `docker-compose.yml`                | Local development — app + basic infra     | `docker compose up` for quick local dev      |
+| `docker-compose.override.yml`       | Dev overrides (volumes, debug ports)      | Auto-applied when using `docker-compose.yml` |
 
 ## Production Deployment
 
@@ -24,12 +24,13 @@ docker compose -f docker-compose.production.yml --env-file .env.production \
 ```
 
 ### Profiles
-| Profile | Services |
-|---------|----------|
-| `infra` | PostgreSQL, Redis, Kafka, Keycloak, Temporal, TigerBeetle, Permify, Vault |
-| `app` | 54Link API + all Go/Rust/Python microservices |
-| `gateway` | Nginx reverse proxy with TLS |
-| `observability` | Prometheus, Grafana, Loki, Promtail, Alertmanager |
+
+| Profile         | Services                                                                  |
+| --------------- | ------------------------------------------------------------------------- |
+| `infra`         | PostgreSQL, Redis, Kafka, Keycloak, Temporal, TigerBeetle, Permify, Vault |
+| `app`           | 54Link API + all Go/Rust/Python microservices                             |
+| `gateway`       | Nginx reverse proxy with TLS                                              |
+| `observability` | Prometheus, Grafana, Loki, Promtail, Alertmanager                         |
 
 ## Local Development
 
@@ -42,7 +43,9 @@ docker compose --profile infra up -d
 ```
 
 ## Legacy Files (DO NOT USE IN PRODUCTION)
+
 The following files are sprint-specific configurations kept for reference:
+
 - `docker-compose.sprint10.yml` through `docker-compose.sprint76.yml`
 - `docker-compose.final.yml`
 - `docker-compose.unified.yml`

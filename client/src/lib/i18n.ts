@@ -309,7 +309,10 @@ const resources = {
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: localStorage.getItem("pos_language") || "en",
+  lng:
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("pos_language") || "en"
+      : "en",
   fallbackLng: "en",
   interpolation: {
     escapeValue: false,
@@ -328,5 +331,7 @@ export const SUPPORTED_LANGUAGES = [
 
 export function changeLanguage(lng: string) {
   i18n.changeLanguage(lng);
-  localStorage.setItem("pos_language", lng);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem("pos_language", lng);
+  }
 }

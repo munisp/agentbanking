@@ -262,9 +262,7 @@ export default function PartnerOnboarding() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Globe className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg">
-              54Link Partner Onboarding
-            </span>
+            <span className="font-bold text-lg">54Link Partner Onboarding</span>
           </div>
           <Badge variant="outline">Step {step} of 5</Badge>
         </div>

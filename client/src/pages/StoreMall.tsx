@@ -3,17 +3,58 @@ import { trpc } from "@/lib/trpc";
 import { haptic } from "@/lib/haptics";
 
 const NIGERIAN_STATES = [
-  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
-  "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT",
-  "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi",
-  "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo",
-  "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara",
+  "Abia",
+  "Adamawa",
+  "Akwa Ibom",
+  "Anambra",
+  "Bauchi",
+  "Bayelsa",
+  "Benue",
+  "Borno",
+  "Cross River",
+  "Delta",
+  "Ebonyi",
+  "Edo",
+  "Ekiti",
+  "Enugu",
+  "FCT",
+  "Gombe",
+  "Imo",
+  "Jigawa",
+  "Kaduna",
+  "Kano",
+  "Katsina",
+  "Kebbi",
+  "Kogi",
+  "Kwara",
+  "Lagos",
+  "Nasarawa",
+  "Niger",
+  "Ogun",
+  "Ondo",
+  "Osun",
+  "Oyo",
+  "Plateau",
+  "Rivers",
+  "Sokoto",
+  "Taraba",
+  "Yobe",
+  "Zamfara",
 ];
 
 const CATEGORIES = [
-  "All", "Electronics", "Phones & Accessories", "Fashion", "Groceries",
-  "Health & Beauty", "Home & Garden", "Auto Parts", "Food & Beverages",
-  "Computing", "Building Materials", "Farming & Agriculture",
+  "All",
+  "Electronics",
+  "Phones & Accessories",
+  "Fashion",
+  "Groceries",
+  "Health & Beauty",
+  "Home & Garden",
+  "Auto Parts",
+  "Food & Beverages",
+  "Computing",
+  "Building Materials",
+  "Farming & Agriculture",
 ];
 
 function StoreSkeleton() {
@@ -43,7 +84,9 @@ export default function StoreMall() {
   const [search, setSearch] = useState("");
   const [state, setState] = useState("");
   const [category, setCategory] = useState("");
-  const [sortBy, setSortBy] = useState<"popular" | "rating" | "newest" | "name">("popular");
+  const [sortBy, setSortBy] = useState<
+    "popular" | "rating" | "newest" | "name"
+  >("popular");
   const [page, setPage] = useState(0);
   const limit = 20;
 
@@ -67,7 +110,8 @@ export default function StoreMall() {
         <div className="max-w-6xl mx-auto px-4 py-8 sm:py-12">
           <h1 className="text-3xl sm:text-4xl font-bold">54Link Mall</h1>
           <p className="text-blue-100 mt-2 text-sm sm:text-base">
-            Discover agent stores across Nigeria. Shop from local businesses, delivered to your door.
+            Discover agent stores across Nigeria. Shop from local businesses,
+            delivered to your door.
           </p>
 
           {/* Search */}
@@ -95,13 +139,18 @@ export default function StoreMall() {
           <div className="flex gap-3 items-center overflow-x-auto pb-1">
             <select
               value={state}
-              onChange={e => { setState(e.target.value); setPage(0); }}
+              onChange={e => {
+                setState(e.target.value);
+                setPage(0);
+              }}
               className="px-3 py-2 border rounded-lg text-sm whitespace-nowrap touch-target"
               aria-label="Filter by state"
             >
               <option value="">All States</option>
               {NIGERIAN_STATES.map(s => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
 
@@ -205,7 +254,9 @@ export default function StoreMall() {
                       ) : (
                         <div
                           className="w-14 h-14 rounded-xl border-3 border-white flex items-center justify-center text-xl font-bold text-white shadow-sm"
-                          style={{ backgroundColor: store.themeColor || "#3b82f6" }}
+                          style={{
+                            backgroundColor: store.themeColor || "#3b82f6",
+                          }}
                         >
                           {store.storeName.charAt(0)}
                         </div>
@@ -270,7 +321,10 @@ export default function StoreMall() {
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 mt-8">
                 <button
-                  onClick={() => { setPage(p => Math.max(0, p - 1)); haptic("micro"); }}
+                  onClick={() => {
+                    setPage(p => Math.max(0, p - 1));
+                    haptic("micro");
+                  }}
                   disabled={page === 0}
                   className="px-4 py-2 border rounded-lg text-sm disabled:opacity-40 touch-target"
                 >
@@ -280,7 +334,10 @@ export default function StoreMall() {
                   Page {page + 1} of {totalPages}
                 </span>
                 <button
-                  onClick={() => { setPage(p => Math.min(totalPages - 1, p + 1)); haptic("micro"); }}
+                  onClick={() => {
+                    setPage(p => Math.min(totalPages - 1, p + 1));
+                    haptic("micro");
+                  }}
                   disabled={page >= totalPages - 1}
                   className="px-4 py-2 border rounded-lg text-sm disabled:opacity-40 touch-target"
                 >

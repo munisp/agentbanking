@@ -43,7 +43,9 @@ export default function EcommerceCheckout() {
         try {
           const raw = localStorage.getItem("pos54link-store");
           if (raw) return JSON.parse(raw)?.state?.agent?.id ?? 1;
-        } catch { /* fallback */ }
+        } catch {
+          /* fallback */
+        }
         return 1;
       })(),
       paymentMethod,

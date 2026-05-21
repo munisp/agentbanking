@@ -43,7 +43,9 @@ export const storeReviewsRouter = router({
       return {
         reviews,
         total: totalResult[0]?.total ?? 0,
-        avgRating: ratingResult[0]?.avg ? parseFloat(String(ratingResult[0].avg)) : 0,
+        avgRating: ratingResult[0]?.avg
+          ? parseFloat(String(ratingResult[0].avg))
+          : 0,
       };
     }),
 
@@ -64,7 +66,10 @@ export const storeReviewsRouter = router({
     .mutation(async ({ input }) => {
       const database = await getDb();
       if (!database)
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
 
       // Check for existing review by same customer on same product
       const [existing] = await database
@@ -78,7 +83,10 @@ export const storeReviewsRouter = router({
         )
         .limit(1);
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "Already reviewed this product" });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Already reviewed this product",
+        });
       }
 
       const [review] = await database
@@ -109,7 +117,9 @@ export const storeReviewsRouter = router({
         await database
           .update(agentStores)
           .set({
-            averageRating: ratingStats.avgR ? parseFloat(String(ratingStats.avgR)).toFixed(2) : "0",
+            averageRating: ratingStats.avgR
+              ? parseFloat(String(ratingStats.avgR)).toFixed(2)
+              : "0",
             reviewCount: ratingStats.cnt,
             updatedAt: new Date(),
           })
@@ -194,7 +204,9 @@ export const storeReviewsRouter = router({
       return {
         reviews,
         total: totalResult[0]?.total ?? 0,
-        avgRating: ratingResult[0]?.avg ? parseFloat(String(ratingResult[0].avg)) : 0,
+        avgRating: ratingResult[0]?.avg
+          ? parseFloat(String(ratingResult[0].avg))
+          : 0,
       };
     }),
 
@@ -235,7 +247,9 @@ export const storeReviewsRouter = router({
         await database
           .update(agentStores)
           .set({
-            averageRating: stats.avg ? parseFloat(String(stats.avg)).toFixed(2) : "0",
+            averageRating: stats.avg
+              ? parseFloat(String(stats.avg)).toFixed(2)
+              : "0",
             reviewCount: stats.cnt,
             updatedAt: new Date(),
           })

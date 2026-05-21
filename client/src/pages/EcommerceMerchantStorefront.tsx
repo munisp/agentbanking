@@ -10,7 +10,9 @@ function useAgentId(): number {
         const parsed = JSON.parse(raw);
         return parsed?.state?.agent?.id ?? 1;
       }
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
     return 1;
   }, []);
 }
@@ -31,9 +33,9 @@ export default function EcommerceMerchantStorefront() {
     imageUrl: "",
   });
 
-  const { data: myStore } = trpc.agentStore.getMyStore.useQuery(
-    { agentId }
-  ) as any;
+  const { data: myStore } = trpc.agentStore.getMyStore.useQuery({
+    agentId,
+  }) as any;
 
   const { data: products, refetch: refetchProducts } =
     trpc.ecommerceCatalog.listProducts.useQuery({
@@ -89,7 +91,13 @@ export default function EcommerceMerchantStorefront() {
           </h1>
           {myStore?.slug && (
             <p className="text-sm text-gray-500 mt-0.5">
-              Public URL: <a href={`/store/${myStore.slug}`} className="text-blue-600 hover:underline">/store/{myStore.slug}</a>
+              Public URL:{" "}
+              <a
+                href={`/store/${myStore.slug}`}
+                className="text-blue-600 hover:underline"
+              >
+                /store/{myStore.slug}
+              </a>
             </p>
           )}
         </div>
@@ -310,9 +318,8 @@ export default function EcommerceMerchantStorefront() {
 }
 
 function AgentStoreAnalytics({ storeId }: { storeId: number }) {
-  const { data: analytics, isLoading } = trpc.agentStore.getStoreAnalytics.useQuery(
-    { storeId }
-  ) as any;
+  const { data: analytics, isLoading } =
+    trpc.agentStore.getStoreAnalytics.useQuery({ storeId }) as any;
 
   if (isLoading) {
     return (
@@ -333,13 +340,33 @@ function AgentStoreAnalytics({ storeId }: { storeId: number }) {
     { label: "Total Products", value: analytics.totalProducts },
     { label: "Active Products", value: analytics.activeProducts },
     { label: "Total Orders", value: analytics.totalOrders },
-    { label: "Pending Orders", value: analytics.pendingOrders, highlight: true },
-    { label: "Total Revenue", value: `₦${Number(analytics.totalRevenue).toLocaleString()}` },
-    { label: "Platform Fees", value: `₦${Number(analytics.platformFees).toLocaleString()}` },
-    { label: "Net Payout", value: `₦${Number(analytics.netPayout).toLocaleString()}`, highlight: true },
-    { label: "Avg Order Value", value: `₦${Number(analytics.avgOrderValue).toLocaleString()}` },
+    {
+      label: "Pending Orders",
+      value: analytics.pendingOrders,
+      highlight: true,
+    },
+    {
+      label: "Total Revenue",
+      value: `₦${Number(analytics.totalRevenue).toLocaleString()}`,
+    },
+    {
+      label: "Platform Fees",
+      value: `₦${Number(analytics.platformFees).toLocaleString()}`,
+    },
+    {
+      label: "Net Payout",
+      value: `₦${Number(analytics.netPayout).toLocaleString()}`,
+      highlight: true,
+    },
+    {
+      label: "Avg Order Value",
+      value: `₦${Number(analytics.avgOrderValue).toLocaleString()}`,
+    },
     { label: "Reviews", value: analytics.reviewCount },
-    { label: "Avg Rating", value: `⭐ ${Number(analytics.avgRating).toFixed(1)}` },
+    {
+      label: "Avg Rating",
+      value: `⭐ ${Number(analytics.avgRating).toFixed(1)}`,
+    },
   ];
 
   return (
@@ -347,7 +374,9 @@ function AgentStoreAnalytics({ storeId }: { storeId: number }) {
       {stats.map(stat => (
         <div key={stat.label} className="bg-white border rounded-lg p-4">
           <p className="text-xs text-gray-500">{stat.label}</p>
-          <p className={`text-lg font-bold mt-1 ${stat.highlight ? "text-blue-600" : ""}`}>
+          <p
+            className={`text-lg font-bold mt-1 ${stat.highlight ? "text-blue-600" : ""}`}
+          >
             {stat.value}
           </p>
         </div>

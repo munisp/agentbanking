@@ -32,27 +32,13 @@ function slugify(text: string): string {
 
 const businessHoursSchema = z
   .object({
-    monday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    tuesday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    wednesday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    thursday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    friday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    saturday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
-    sunday: z
-      .object({ open: z.string(), close: z.string() })
-      .optional(),
+    monday: z.object({ open: z.string(), close: z.string() }).optional(),
+    tuesday: z.object({ open: z.string(), close: z.string() }).optional(),
+    wednesday: z.object({ open: z.string(), close: z.string() }).optional(),
+    thursday: z.object({ open: z.string(), close: z.string() }).optional(),
+    friday: z.object({ open: z.string(), close: z.string() }).optional(),
+    saturday: z.object({ open: z.string(), close: z.string() }).optional(),
+    sunday: z.object({ open: z.string(), close: z.string() }).optional(),
   })
   .optional();
 
@@ -81,7 +67,11 @@ export const agentStoreRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
 
       // Check for existing store
       const [existing] = await database
@@ -90,7 +80,10 @@ export const agentStoreRouter = router({
         .where(eq(agentStores.agentId, input.agentId))
         .limit(1);
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "Agent already has a store" });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Agent already has a store",
+        });
       }
 
       const baseSlug = slugify(input.storeName);
@@ -206,7 +199,12 @@ export const agentStoreRouter = router({
       const [store] = await database
         .select()
         .from(agentStores)
-        .where(and(eq(agentStores.slug, input.slug), eq(agentStores.status, "active")))
+        .where(
+          and(
+            eq(agentStores.slug, input.slug),
+            eq(agentStores.status, "active")
+          )
+        )
         .limit(1);
 
       return store ?? null;
@@ -222,7 +220,12 @@ export const agentStoreRouter = router({
       const [store] = await database
         .select()
         .from(agentStores)
-        .where(and(eq(agentStores.agentCode, input.agentCode), eq(agentStores.status, "active")))
+        .where(
+          and(
+            eq(agentStores.agentCode, input.agentCode),
+            eq(agentStores.status, "active")
+          )
+        )
         .limit(1);
 
       return store ?? null;
@@ -283,10 +286,7 @@ export const agentStoreRouter = router({
           .orderBy(orderBy)
           .limit(input.limit)
           .offset(input.offset),
-        database
-          .select({ total: count() })
-          .from(agentStores)
-          .where(where),
+        database.select({ total: count() }).from(agentStores).where(where),
       ]);
 
       return {
@@ -392,10 +392,14 @@ export const agentStoreRouter = router({
 
       const orderConditions = [eq(ecommerceOrders.agentId, store.agentId)];
       if (input.startDate) {
-        orderConditions.push(gte(ecommerceOrders.createdAt, new Date(input.startDate)));
+        orderConditions.push(
+          gte(ecommerceOrders.createdAt, new Date(input.startDate))
+        );
       }
       if (input.endDate) {
-        orderConditions.push(lte(ecommerceOrders.createdAt, new Date(input.endDate)));
+        orderConditions.push(
+          lte(ecommerceOrders.createdAt, new Date(input.endDate))
+        );
       }
 
       const [orderStats] = await database
@@ -493,8 +497,10 @@ export const agentStoreRouter = router({
 
       const updates: Record<string, unknown> = {};
       if (input.zoneName !== undefined) updates.zoneName = input.zoneName;
-      if (input.deliveryFee !== undefined) updates.deliveryFee = input.deliveryFee;
-      if (input.estimatedMinutes !== undefined) updates.estimatedMinutes = input.estimatedMinutes;
+      if (input.deliveryFee !== undefined)
+        updates.deliveryFee = input.deliveryFee;
+      if (input.estimatedMinutes !== undefined)
+        updates.estimatedMinutes = input.estimatedMinutes;
       if (input.isActive !== undefined) updates.isActive = input.isActive;
       if (input.areas !== undefined) updates.areas = input.areas;
 
@@ -589,7 +595,8 @@ export const agentStoreRouter = router({
       };
       if (input.latitude) updates.latitude = input.latitude;
       if (input.longitude) updates.longitude = input.longitude;
-      if (input.deliveryProofUrl) updates.deliveryProofUrl = input.deliveryProofUrl;
+      if (input.deliveryProofUrl)
+        updates.deliveryProofUrl = input.deliveryProofUrl;
       if (input.status === "delivered") updates.actualDelivery = new Date();
 
       const [tracking] = await database
@@ -685,10 +692,7 @@ export const agentStoreRouter = router({
           .orderBy(desc(paymentSplits.createdAt))
           .limit(input.limit)
           .offset(input.offset),
-        database
-          .select({ total: count() })
-          .from(paymentSplits)
-          .where(where),
+        database.select({ total: count() }).from(paymentSplits).where(where),
       ]);
 
       return { splits, total: totalResult[0]?.total ?? 0 };
@@ -730,10 +734,7 @@ export const agentStoreRouter = router({
           .orderBy(desc(ecommerceOrders.createdAt))
           .limit(input.limit)
           .offset(input.offset),
-        database
-          .select({ total: count() })
-          .from(ecommerceOrders)
-          .where(where),
+        database.select({ total: count() }).from(ecommerceOrders).where(where),
       ]);
 
       return { orders, total: totalResult[0]?.total ?? 0 };

@@ -4951,13 +4951,26 @@ export const agentStores = pgTable(
     tags: json("tags").$type<string[]>().default([]),
     deliveryEnabled: boolean("delivery_enabled").default(true).notNull(),
     pickupEnabled: boolean("pickup_enabled").default(true).notNull(),
-    minOrderAmount: numeric("min_order_amount", { precision: 12, scale: 2 }).default("0"),
-    platformCommissionPct: numeric("platform_commission_pct", { precision: 5, scale: 2 }).default("5.00").notNull(),
+    minOrderAmount: numeric("min_order_amount", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    platformCommissionPct: numeric("platform_commission_pct", {
+      precision: 5,
+      scale: 2,
+    })
+      .default("5.00")
+      .notNull(),
     status: agentStoreStatusEnum("status").default("pending").notNull(),
     isVerified: boolean("is_verified").default(false).notNull(),
     totalSales: integer("total_sales").default(0).notNull(),
-    totalRevenue: numeric("total_revenue", { precision: 14, scale: 2 }).default("0").notNull(),
-    averageRating: numeric("average_rating", { precision: 3, scale: 2 }).default("0"),
+    totalRevenue: numeric("total_revenue", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
+    averageRating: numeric("average_rating", {
+      precision: 3,
+      scale: 2,
+    }).default("0"),
     reviewCount: integer("review_count").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -5007,7 +5020,9 @@ export const productReviews = pgTable(
     rating: integer("rating").notNull(),
     title: varchar("title", { length: 256 }),
     body: text("body"),
-    isVerifiedPurchase: boolean("is_verified_purchase").default(false).notNull(),
+    isVerifiedPurchase: boolean("is_verified_purchase")
+      .default(false)
+      .notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
     images: json("images").$type<string[]>().default([]),
     sellerReply: text("seller_reply"),
@@ -5062,9 +5077,14 @@ export const paymentSplits = pgTable(
     agentId: integer("agent_id").notNull(),
     orderTotal: numeric("order_total", { precision: 12, scale: 2 }).notNull(),
     platformFee: numeric("platform_fee", { precision: 12, scale: 2 }).notNull(),
-    platformFeePct: numeric("platform_fee_pct", { precision: 5, scale: 2 }).notNull(),
+    platformFeePct: numeric("platform_fee_pct", {
+      precision: 5,
+      scale: 2,
+    }).notNull(),
     agentPayout: numeric("agent_payout", { precision: 12, scale: 2 }).notNull(),
-    taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    taxAmount: numeric("tax_amount", { precision: 12, scale: 2 })
+      .default("0")
+      .notNull(),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     status: paymentSplitStatusEnum("status").default("pending").notNull(),
     settledAt: timestamp("settled_at"),

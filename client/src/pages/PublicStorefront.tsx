@@ -25,15 +25,19 @@ function StarRating({ rating }: { rating: number }) {
 
 export default function PublicStorefront() {
   // Extract slug from URL path: /store/:slug
-  const slug = window.location.pathname.split("/store/")[1]?.split("/")[0] || "";
+  const slug =
+    window.location.pathname.split("/store/")[1]?.split("/")[0] || "";
 
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"products" | "reviews" | "about">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "reviews" | "about">(
+    "products"
+  );
 
-  const { data: store, isLoading: storeLoading } = trpc.agentStore.getStoreBySlug.useQuery(
-    { slug },
-    { enabled: !!slug }
-  ) as any;
+  const { data: store, isLoading: storeLoading } =
+    trpc.agentStore.getStoreBySlug.useQuery(
+      { slug },
+      { enabled: !!slug }
+    ) as any;
 
   const { data: products, isLoading: productsLoading } =
     trpc.agentStore.getStoreProducts.useQuery(
@@ -80,7 +84,15 @@ export default function PublicStorefront() {
   const themeColor = store.themeColor || "#3b82f6";
   const isOpen = (() => {
     if (!store.businessHours) return null;
-    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const days = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
     const today = days[new Date().getDay()];
     const todayHours = store.businessHours[today];
     if (!todayHours) return false;
@@ -136,14 +148,24 @@ export default function PublicStorefront() {
               <h1 className="text-xl font-bold leading-tight flex items-center gap-2">
                 {store.storeName}
                 {store.isVerified && (
-                  <span className="text-blue-300 text-base" title="Verified">✓</span>
+                  <span className="text-blue-300 text-base" title="Verified">
+                    ✓
+                  </span>
                 )}
               </h1>
               <div className="flex items-center gap-3 text-sm text-white/80 mt-0.5">
-                {store.city && <span>{store.city}, {store.state}</span>}
+                {store.city && (
+                  <span>
+                    {store.city}, {store.state}
+                  </span>
+                )}
                 {isOpen !== null && (
-                  <span className={`inline-flex items-center gap-1 ${isOpen ? "text-green-300" : "text-red-300"}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-green-400" : "bg-red-400"}`} />
+                  <span
+                    className={`inline-flex items-center gap-1 ${isOpen ? "text-green-300" : "text-red-300"}`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-green-400" : "bg-red-400"}`}
+                    />
                     {isOpen ? "Open" : "Closed"}
                   </span>
                 )}
@@ -183,16 +205,17 @@ export default function PublicStorefront() {
           {(["products", "reviews", "about"] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => { setActiveTab(tab); haptic("micro"); }}
+              onClick={() => {
+                setActiveTab(tab);
+                haptic("micro");
+              }}
               className={`px-4 py-3 text-sm font-medium capitalize border-b-2 transition-colors ${
                 activeTab === tab
                   ? "border-blue-600 text-blue-600"
                   : "border-transparent text-gray-500"
               }`}
             >
-              {tab === "reviews"
-                ? `Reviews (${store.reviewCount})`
-                : tab}
+              {tab === "reviews" ? `Reviews (${store.reviewCount})` : tab}
             </button>
           ))}
         </div>
@@ -272,7 +295,10 @@ export default function PublicStorefront() {
               </div>
             ) : (
               reviews.reviews.map((review: any) => (
-                <div key={review.id} className="bg-white border rounded-xl p-4 space-y-2">
+                <div
+                  key={review.id}
+                  className="bg-white border rounded-xl p-4 space-y-2"
+                >
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-sm">
                       {review.customerName || "Customer"}
@@ -296,14 +322,18 @@ export default function PublicStorefront() {
           <div className="bg-white border rounded-xl p-5 space-y-4">
             {store.description && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">About</h3>
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  About
+                </h3>
                 <p className="text-sm">{store.description}</p>
               </div>
             )}
 
             {store.address && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">Address</h3>
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  Address
+                </h3>
                 <p className="text-sm">
                   {store.address}
                   {store.city && `, ${store.city}`}
@@ -314,8 +344,13 @@ export default function PublicStorefront() {
 
             {store.phone && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">Phone</h3>
-                <a href={`tel:${store.phone}`} className="text-sm text-blue-600">
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  Phone
+                </h3>
+                <a
+                  href={`tel:${store.phone}`}
+                  className="text-sm text-blue-600"
+                >
                   {store.phone}
                 </a>
               </div>
@@ -323,8 +358,13 @@ export default function PublicStorefront() {
 
             {store.email && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">Email</h3>
-                <a href={`mailto:${store.email}`} className="text-sm text-blue-600">
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  Email
+                </h3>
+                <a
+                  href={`mailto:${store.email}`}
+                  className="text-sm text-blue-600"
+                >
                   {store.email}
                 </a>
               </div>
@@ -332,7 +372,9 @@ export default function PublicStorefront() {
 
             {store.categories?.length > 0 && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">Categories</h3>
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  Categories
+                </h3>
                 <div className="flex flex-wrap gap-1.5">
                   {store.categories.map((cat: string) => (
                     <span
@@ -348,21 +390,27 @@ export default function PublicStorefront() {
 
             {store.businessHours && (
               <div>
-                <h3 className="font-medium text-sm text-gray-500 mb-1">Business Hours</h3>
+                <h3 className="font-medium text-sm text-gray-500 mb-1">
+                  Business Hours
+                </h3>
                 <div className="space-y-1">
-                  {["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map(
-                    day => {
-                      const h = store.businessHours?.[day];
-                      return (
-                        <div key={day} className="flex justify-between text-sm">
-                          <span className="capitalize text-gray-600">{day}</span>
-                          <span>
-                            {h ? `${h.open} – ${h.close}` : "Closed"}
-                          </span>
-                        </div>
-                      );
-                    }
-                  )}
+                  {[
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                  ].map(day => {
+                    const h = store.businessHours?.[day];
+                    return (
+                      <div key={day} className="flex justify-between text-sm">
+                        <span className="capitalize text-gray-600">{day}</span>
+                        <span>{h ? `${h.open} – ${h.close}` : "Closed"}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

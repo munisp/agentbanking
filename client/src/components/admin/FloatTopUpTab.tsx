@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * FloatTopUpTab — Admin Panel tab for approving/rejecting agent float top-up requests.
  */

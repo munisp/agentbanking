@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * GeofencingTab.tsx
  * Admin Panel tab for managing geofence zones, assigning agents to zones,

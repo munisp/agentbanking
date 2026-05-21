@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, reconciliationBatches } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // Transaction match engine: detects discrepancy between expected and actual settlements
@@ -20,14 +20,14 @@ export const reconciliationEngineRouter = router({
         if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
         const results = await database
           .select()
-          .from(auditLog)
+          .from(reconciliationBatches)
           .orderBy(desc(auditLog.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(auditLog);
+          .from(reconciliationBatches);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -50,7 +50,7 @@ export const reconciliationEngineRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
-        .from(auditLog)
+        .from(reconciliationBatches)
         .where(eq(auditLog.id, input.id))
         .limit(1);
 
@@ -63,7 +63,9 @@ export const reconciliationEngineRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const _totalRows = await database
+      .select({ total: count() })
+      .from(reconciliationBatches);
     const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
@@ -87,7 +89,7 @@ export const reconciliationEngineRouter = router({
 
       const results = await database
         .select()
-        .from(auditLog)
+        .from(reconciliationBatches)
         .orderBy(desc(auditLog.id))
         .limit(input.limit);
 

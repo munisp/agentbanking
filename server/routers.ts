@@ -348,6 +348,7 @@ import {
   serviceHealthRouter,
   cacheRouter,
 } from "./routers/sprint15Features";
+import { serviceHealthAggregatorRouter } from "./routers/serviceHealthAggregator";
 import { paymentNotificationSystemRouter } from "./routers/paymentNotificationSystem";
 import { databaseVisualizationRouter } from "./routers/databaseVisualization";
 import { middlewareServiceManagerRouter } from "./routers/middlewareServiceManager";
@@ -675,6 +676,8 @@ export const appRouter = router({
   eventBus: eventBusRouter,
   // Sprint 15: Service health aggregator
   serviceHealth: serviceHealthRouter,
+  // Production: Cross-service health aggregation
+  serviceHealthAggregator: serviceHealthAggregatorRouter,
   // Sprint 15: Cache invalidation management
   cache: cacheRouter,
   // Sprint 16: Multi-Tenant White-Label Onboarding

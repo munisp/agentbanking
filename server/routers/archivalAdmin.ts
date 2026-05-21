@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, backupSnapshots } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { notifyOwner } from "../_core/notification";
 import { getConfig, setConfig } from "../lib/runtimeConfig";
@@ -28,14 +28,14 @@ export const archivalAdminRouter = router({
           };
         const results = await database
           .select()
-          .from(auditLog)
+          .from(backupSnapshots)
           .orderBy(desc(auditLog.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(auditLog);
+          .from(backupSnapshots);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -58,7 +58,7 @@ export const archivalAdminRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
-        .from(auditLog)
+        .from(backupSnapshots)
         .where(eq(auditLog.id, input.id))
         .limit(1);
 
@@ -71,7 +71,9 @@ export const archivalAdminRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const _totalRows = await database
+      .select({ total: count() })
+      .from(backupSnapshots);
     const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
@@ -95,7 +97,7 @@ export const archivalAdminRouter = router({
 
       const results = await database
         .select()
-        .from(auditLog)
+        .from(backupSnapshots)
         .orderBy(desc(auditLog.id))
         .limit(input.limit);
 
@@ -253,7 +255,7 @@ export const archivalAdminRouter = router({
       if (!db) return [];
       const results = await db
         .select()
-        .from(auditLog)
+        .from(backupSnapshots)
         .where(eq(auditLog.action, "archival_job"))
         .orderBy(desc(auditLog.id))
         .limit(input.limit);

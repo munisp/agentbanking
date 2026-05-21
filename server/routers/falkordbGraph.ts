@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, platform_health_checks } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 export const falkordbGraphRouter = router({
@@ -22,11 +22,13 @@ export const falkordbGraphRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(platform_health_checks)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(platform_health_checks);
       return {
         items: rows,
         total: Number(totalRow.value),
@@ -50,11 +52,13 @@ export const falkordbGraphRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(platform_health_checks)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(platform_health_checks);
       return {
         items: rows,
         total: Number(totalRow.value),
@@ -78,11 +82,13 @@ export const falkordbGraphRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(platform_health_checks)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(platform_health_checks);
       return {
         items: rows,
         total: Number(totalRow.value),
@@ -106,11 +112,13 @@ export const falkordbGraphRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(platform_health_checks)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(platform_health_checks);
       return {
         items: rows,
         total: Number(totalRow.value),
@@ -134,11 +142,13 @@ export const falkordbGraphRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(platform_health_checks)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(platform_health_checks);
       return {
         items: rows,
         total: Number(totalRow.value),

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // TypeScript enabled — Sprint 96 security audit
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -61,8 +60,9 @@ function makeNoopChain(): any {
         prop === "every" ||
         prop === "find"
       )
-        return [][prop as any].bind([_noopRow]);
-      if (prop === 0 || prop === "0") return _noopRow;
+        return ([] as any)[prop as any].bind([_noopRow]);
+      if (prop === "0" || (typeof prop === "string" && prop === "0"))
+        return _noopRow;
       // Any property access returns a function that returns another chainable proxy
       return (..._args: any[]) => makeNoopChain();
     },

@@ -6,7 +6,7 @@ import {
   router,
 } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const ussdSessionReplayRouter = router({
@@ -23,14 +23,14 @@ export const ussdSessionReplayRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const results = await database
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.id))
         .limit(input.limit)
         .offset(input.offset);
 
       const [totalResult] = await database
         .select({ total: count() })
-        .from(auditLog);
+        .from(transactions);
 
       return {
         data: results,
@@ -47,7 +47,7 @@ export const ussdSessionReplayRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
-        .from(auditLog)
+        .from(transactions)
         .where(eq(auditLog.id, input.id))
         .limit(1);
 
@@ -62,7 +62,7 @@ export const ussdSessionReplayRouter = router({
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
     const [totalResult] = await database
       .select({ total: count() })
-      .from(auditLog);
+      .from(transactions);
 
     return {
       totalRecords: totalResult?.total ?? 0,
@@ -85,7 +85,7 @@ export const ussdSessionReplayRouter = router({
 
       const results = await database
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.id))
         .limit(input.limit);
 

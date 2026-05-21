@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, platformBillingLedger } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -27,14 +27,14 @@ export const partnerRevenueSharingRouter = router({
         if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
         const results = await database
           .select()
-          .from(auditLog)
+          .from(platformBillingLedger)
           .orderBy(desc(auditLog.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(auditLog);
+          .from(platformBillingLedger);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -62,7 +62,7 @@ export const partnerRevenueSharingRouter = router({
         if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
         const [record] = await database
           .select()
-          .from(auditLog)
+          .from(platformBillingLedger)
           .where(eq(auditLog.id, input.id))
           .limit(1);
 
@@ -85,7 +85,7 @@ export const partnerRevenueSharingRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const _totalRows = await database
         .select({ total: count() })
-        .from(auditLog);
+        .from(platformBillingLedger);
       const totalResult = Array.isArray(_totalRows)
         ? _totalRows[0]
         : _totalRows;
@@ -119,7 +119,7 @@ export const partnerRevenueSharingRouter = router({
 
         const results = await database
           .select()
-          .from(auditLog)
+          .from(platformBillingLedger)
           .orderBy(desc(auditLog.id))
           .limit(input.limit);
 

@@ -19,14 +19,14 @@ export const aiCashFlowPredictorRouter = router({
         if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
         const results = await database
           .select()
-          .from(auditLog)
+          .from(transactions)
           .orderBy(desc(auditLog.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(auditLog);
+          .from(transactions);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -49,7 +49,7 @@ export const aiCashFlowPredictorRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
-        .from(auditLog)
+        .from(transactions)
         .where(eq(auditLog.id, input.id))
         .limit(1);
 
@@ -62,7 +62,9 @@ export const aiCashFlowPredictorRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const _totalRows = await database
+      .select({ total: count() })
+      .from(transactions);
     const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
@@ -86,7 +88,7 @@ export const aiCashFlowPredictorRouter = router({
 
       const results = await database
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.id))
         .limit(input.limit);
 

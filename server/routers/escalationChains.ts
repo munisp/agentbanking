@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, platform_incidents } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const escalationChainsRouter = router({
@@ -19,14 +19,14 @@ export const escalationChainsRouter = router({
         if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
         const results = await database
           .select()
-          .from(auditLog)
+          .from(platform_incidents)
           .orderBy(desc(auditLog.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(auditLog);
+          .from(platform_incidents);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -49,7 +49,7 @@ export const escalationChainsRouter = router({
       if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
       const [record] = await database
         .select()
-        .from(auditLog)
+        .from(platform_incidents)
         .where(eq(auditLog.id, input.id))
         .limit(1);
 
@@ -62,7 +62,9 @@ export const escalationChainsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
+    const _totalRows = await database
+      .select({ total: count() })
+      .from(platform_incidents);
     const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
 
     return {
@@ -86,7 +88,7 @@ export const escalationChainsRouter = router({
 
       const results = await database
         .select()
-        .from(auditLog)
+        .from(platform_incidents)
         .orderBy(desc(auditLog.id))
         .limit(input.limit);
 

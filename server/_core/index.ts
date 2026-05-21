@@ -447,11 +447,15 @@ async function startServer() {
         .setExpirationTime("8h")
         .sign(jwtSecret);
 
+      const isProduction = process.env.NODE_ENV === "production";
       res.cookie(KC_SESSION_COOKIE, sessionJwt, {
         httpOnly: true,
         path: "/",
-        sameSite: "lax",
-        secure: false,
+        sameSite: isProduction ? "none" : "lax",
+        secure:
+          isProduction ||
+          req.protocol === "https" ||
+          (req.headers["x-forwarded-proto"] ?? "").toString().includes("https"),
         maxAge: 8 * 60 * 60 * 1000,
       });
 

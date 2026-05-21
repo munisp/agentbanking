@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, transactions } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 export const bulkOperationsRouter = router({
@@ -22,11 +22,11 @@ export const bulkOperationsRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
       return {
         jobs: rows,
         items: rows,
@@ -84,11 +84,11 @@ export const bulkOperationsRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
       return {
         items: rows,
         total: Number(totalRow.value),
@@ -132,7 +132,7 @@ export const bulkOperationsRouter = router({
   analytics: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { totalJobs: 0, totalProcessed: 0, successRate: 100 };
-    const [totalRow] = await db.select({ value: count() }).from(auditLog);
+    const [totalRow] = await db.select({ value: count() }).from(transactions);
     return {
       totalJobs: Number(totalRow.value),
       totalProcessed: Number(totalRow.value),
@@ -156,11 +156,11 @@ export const bulkOperationsRouter = router({
       const offset = input?.offset ?? 0;
       const rows = await db
         .select()
-        .from(auditLog)
+        .from(transactions)
         .orderBy(desc(auditLog.createdAt))
         .limit(limit)
         .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
+      const [totalRow] = await db.select({ value: count() }).from(transactions);
       return {
         items: rows,
         total: Number(totalRow.value),

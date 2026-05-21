@@ -17,20 +17,86 @@ const pool = new Pool({
 // ─── Nigerian Reference Data ─────────────────────────────────────────────────
 
 const NIGERIAN_STATES = [
-  "Lagos", "Abuja", "Kano", "Rivers", "Oyo", "Kaduna", "Ogun", "Anambra",
-  "Edo", "Delta", "Enugu", "Imo", "Abia", "Borno", "Bauchi", "Kwara",
-  "Osun", "Ekiti", "Ondo", "Cross River", "Akwa Ibom", "Plateau", "Niger",
-  "Benue", "Nasarawa", "Kogi", "Taraba", "Adamawa", "Gombe", "Yobe",
-  "Zamfara", "Sokoto", "Kebbi", "Jigawa", "Katsina", "Bayelsa", "Ebonyi",
+  "Lagos",
+  "Abuja",
+  "Kano",
+  "Rivers",
+  "Oyo",
+  "Kaduna",
+  "Ogun",
+  "Anambra",
+  "Edo",
+  "Delta",
+  "Enugu",
+  "Imo",
+  "Abia",
+  "Borno",
+  "Bauchi",
+  "Kwara",
+  "Osun",
+  "Ekiti",
+  "Ondo",
+  "Cross River",
+  "Akwa Ibom",
+  "Plateau",
+  "Niger",
+  "Benue",
+  "Nasarawa",
+  "Kogi",
+  "Taraba",
+  "Adamawa",
+  "Gombe",
+  "Yobe",
+  "Zamfara",
+  "Sokoto",
+  "Kebbi",
+  "Jigawa",
+  "Katsina",
+  "Bayelsa",
+  "Ebonyi",
 ];
 
 const NIGERIAN_CITIES: Record<string, string[]> = {
-  Lagos: ["Ikeja", "Lekki", "Victoria Island", "Surulere", "Yaba", "Oshodi", "Ajah", "Ikoyi", "Mushin", "Agege"],
-  Abuja: ["Garki", "Wuse", "Maitama", "Asokoro", "Gwarinpa", "Kubwa", "Nyanya", "Lugbe"],
-  Kano: ["Nassarawa", "Fagge", "Gwale", "Tarauni", "Ungogo", "Dala", "Kumbotso"],
+  Lagos: [
+    "Ikeja",
+    "Lekki",
+    "Victoria Island",
+    "Surulere",
+    "Yaba",
+    "Oshodi",
+    "Ajah",
+    "Ikoyi",
+    "Mushin",
+    "Agege",
+  ],
+  Abuja: [
+    "Garki",
+    "Wuse",
+    "Maitama",
+    "Asokoro",
+    "Gwarinpa",
+    "Kubwa",
+    "Nyanya",
+    "Lugbe",
+  ],
+  Kano: [
+    "Nassarawa",
+    "Fagge",
+    "Gwale",
+    "Tarauni",
+    "Ungogo",
+    "Dala",
+    "Kumbotso",
+  ],
   Rivers: ["Port Harcourt", "Obio-Akpor", "Eleme", "Bonny", "Okrika", "Oyigbo"],
   Oyo: ["Ibadan", "Ogbomoso", "Oyo Town", "Iseyin", "Saki", "Eruwa"],
-  Kaduna: ["Kaduna North", "Kaduna South", "Zaria", "Kafanchan", "Birnin Gwari"],
+  Kaduna: [
+    "Kaduna North",
+    "Kaduna South",
+    "Zaria",
+    "Kafanchan",
+    "Birnin Gwari",
+  ],
   Ogun: ["Abeokuta", "Sagamu", "Ijebu-Ode", "Ota", "Ilaro", "Ifo"],
   Anambra: ["Onitsha", "Awka", "Nnewi", "Ekwulobia", "Ihiala"],
   Edo: ["Benin City", "Auchi", "Ekpoma", "Uromi", "Irrua"],
@@ -41,52 +107,177 @@ const NIGERIAN_CITIES: Record<string, string[]> = {
 };
 
 const NIGERIAN_BANKS = [
-  "Access Bank", "GTBank", "First Bank", "UBA", "Zenith Bank",
-  "Fidelity Bank", "Sterling Bank", "Union Bank", "Wema Bank",
-  "Stanbic IBTC", "FCMB", "Ecobank", "Polaris Bank", "Keystone Bank",
-  "Kuda Bank", "OPay", "PalmPay", "Moniepoint",
+  "Access Bank",
+  "GTBank",
+  "First Bank",
+  "UBA",
+  "Zenith Bank",
+  "Fidelity Bank",
+  "Sterling Bank",
+  "Union Bank",
+  "Wema Bank",
+  "Stanbic IBTC",
+  "FCMB",
+  "Ecobank",
+  "Polaris Bank",
+  "Keystone Bank",
+  "Kuda Bank",
+  "OPay",
+  "PalmPay",
+  "Moniepoint",
 ];
 
 const NIGERIAN_FIRST_NAMES = [
-  "Adebayo", "Chidinma", "Oluwaseun", "Ngozi", "Emeka", "Funmilayo",
-  "Chukwuemeka", "Aisha", "Obinna", "Yetunde", "Tunde", "Amaka",
-  "Ibrahim", "Folake", "Olu", "Chiamaka", "Musa", "Temitope",
-  "Ifeanyi", "Bukola", "Abdullahi", "Nneka", "Segun", "Halima",
-  "Chidi", "Titilayo", "Yakubu", "Chioma", "Dele", "Fatima",
-  "Obiora", "Shade", "Uche", "Bintu", "Obi", "Zainab",
-  "Nnamdi", "Jumoke", "Bala", "Mercy", "Kingsley", "Habiba",
-  "Victor", "Adetola", "Sunday", "Khadijah", "Peter", "Adeola",
-  "Godwin", "Patience",
+  "Adebayo",
+  "Chidinma",
+  "Oluwaseun",
+  "Ngozi",
+  "Emeka",
+  "Funmilayo",
+  "Chukwuemeka",
+  "Aisha",
+  "Obinna",
+  "Yetunde",
+  "Tunde",
+  "Amaka",
+  "Ibrahim",
+  "Folake",
+  "Olu",
+  "Chiamaka",
+  "Musa",
+  "Temitope",
+  "Ifeanyi",
+  "Bukola",
+  "Abdullahi",
+  "Nneka",
+  "Segun",
+  "Halima",
+  "Chidi",
+  "Titilayo",
+  "Yakubu",
+  "Chioma",
+  "Dele",
+  "Fatima",
+  "Obiora",
+  "Shade",
+  "Uche",
+  "Bintu",
+  "Obi",
+  "Zainab",
+  "Nnamdi",
+  "Jumoke",
+  "Bala",
+  "Mercy",
+  "Kingsley",
+  "Habiba",
+  "Victor",
+  "Adetola",
+  "Sunday",
+  "Khadijah",
+  "Peter",
+  "Adeola",
+  "Godwin",
+  "Patience",
 ];
 
 const NIGERIAN_LAST_NAMES = [
-  "Okafor", "Adeyemi", "Mohammed", "Okonkwo", "Balogun", "Abubakar",
-  "Eze", "Ogundimu", "Ibrahim", "Nwosu", "Adeleke", "Sani",
-  "Okoro", "Akande", "Aliyu", "Igwe", "Fashola", "Yusuf",
-  "Nwankwo", "Oladipo", "Garba", "Chukwu", "Olaleye", "Danjuma",
-  "Onyeka", "Jimoh", "Madu", "Ayodeji", "Bello", "Ugochukwu",
-  "Oni", "Ahmad", "Obi", "Lawal", "Nwachukwu", "Adamu",
-  "Ikenna", "Salami", "Agu", "Bakare", "Dikko", "Obaseki",
-  "Osuji", "Abdulkadir", "Emenike", "Afolabi",
+  "Okafor",
+  "Adeyemi",
+  "Mohammed",
+  "Okonkwo",
+  "Balogun",
+  "Abubakar",
+  "Eze",
+  "Ogundimu",
+  "Ibrahim",
+  "Nwosu",
+  "Adeleke",
+  "Sani",
+  "Okoro",
+  "Akande",
+  "Aliyu",
+  "Igwe",
+  "Fashola",
+  "Yusuf",
+  "Nwankwo",
+  "Oladipo",
+  "Garba",
+  "Chukwu",
+  "Olaleye",
+  "Danjuma",
+  "Onyeka",
+  "Jimoh",
+  "Madu",
+  "Ayodeji",
+  "Bello",
+  "Ugochukwu",
+  "Oni",
+  "Ahmad",
+  "Obi",
+  "Lawal",
+  "Nwachukwu",
+  "Adamu",
+  "Ikenna",
+  "Salami",
+  "Agu",
+  "Bakare",
+  "Dikko",
+  "Obaseki",
+  "Osuji",
+  "Abdulkadir",
+  "Emenike",
+  "Afolabi",
 ];
 
-const NIGERIAN_PRODUCTS: { name: string; category: number; priceRange: [number, number] }[] = [
+const NIGERIAN_PRODUCTS: {
+  name: string;
+  category: number;
+  priceRange: [number, number];
+}[] = [
   // Electronics (1)
-  { name: "Hisense 43\" Smart TV", category: 1, priceRange: [145000, 195000] },
-  { name: "LG Inverter Air Conditioner 1.5HP", category: 1, priceRange: [280000, 350000] },
-  { name: "Thermocool Generator 3.5KVA", category: 1, priceRange: [350000, 450000] },
-  { name: "Scanfrost Refrigerator 250L", category: 1, priceRange: [185000, 220000] },
-  { name: "JBL Bluetooth Speaker Flip 6", category: 1, priceRange: [35000, 55000] },
+  { name: 'Hisense 43" Smart TV', category: 1, priceRange: [145000, 195000] },
+  {
+    name: "LG Inverter Air Conditioner 1.5HP",
+    category: 1,
+    priceRange: [280000, 350000],
+  },
+  {
+    name: "Thermocool Generator 3.5KVA",
+    category: 1,
+    priceRange: [350000, 450000],
+  },
+  {
+    name: "Scanfrost Refrigerator 250L",
+    category: 1,
+    priceRange: [185000, 220000],
+  },
+  {
+    name: "JBL Bluetooth Speaker Flip 6",
+    category: 1,
+    priceRange: [35000, 55000],
+  },
   { name: "Binatone Blender 1.5L", category: 1, priceRange: [15000, 25000] },
   // Phones & Accessories (2)
   { name: "Samsung Galaxy A54 5G", category: 2, priceRange: [220000, 280000] },
   { name: "iPhone 15 128GB", category: 2, priceRange: [650000, 750000] },
   { name: "Tecno Camon 20 Pro", category: 2, priceRange: [150000, 185000] },
   { name: "Infinix Note 30 Pro", category: 2, priceRange: [130000, 165000] },
-  { name: "Oraimo Power Bank 20000mAh", category: 2, priceRange: [8000, 12000] },
+  {
+    name: "Oraimo Power Bank 20000mAh",
+    category: 2,
+    priceRange: [8000, 12000],
+  },
   { name: "Airpods Pro 2nd Gen", category: 2, priceRange: [85000, 120000] },
-  { name: "Phone Screen Protector (Tempered Glass)", category: 2, priceRange: [1500, 3000] },
-  { name: "Samsung Galaxy S24 Ultra", category: 2, priceRange: [900000, 1100000] },
+  {
+    name: "Phone Screen Protector (Tempered Glass)",
+    category: 2,
+    priceRange: [1500, 3000],
+  },
+  {
+    name: "Samsung Galaxy S24 Ultra",
+    category: 2,
+    priceRange: [900000, 1100000],
+  },
   // Fashion (3)
   { name: "Ankara Fabric (6 yards)", category: 3, priceRange: [3500, 8000] },
   { name: "Men's Native Agbada Set", category: 3, priceRange: [25000, 65000] },
@@ -99,7 +290,11 @@ const NIGERIAN_PRODUCTS: { name: string; category: number; priceRange: [number, 
   { name: "Golden Penny Semolina 10kg", category: 4, priceRange: [7500, 9500] },
   { name: "Dangote Sugar 50kg", category: 4, priceRange: [45000, 55000] },
   { name: "Kings Vegetable Oil 5L", category: 4, priceRange: [8000, 11000] },
-  { name: "Indomie Noodles (Carton of 40)", category: 4, priceRange: [12000, 15000] },
+  {
+    name: "Indomie Noodles (Carton of 40)",
+    category: 4,
+    priceRange: [12000, 15000],
+  },
   { name: "Bag of Rice (50kg Local)", category: 4, priceRange: [55000, 75000] },
   { name: "Peak Milk Tin (400g x 12)", category: 4, priceRange: [9500, 12000] },
   { name: "Maggi Seasoning (Carton)", category: 4, priceRange: [4500, 6000] },
@@ -108,23 +303,47 @@ const NIGERIAN_PRODUCTS: { name: string; category: number; priceRange: [number, 
   { name: "Oriflame Skincare Set", category: 5, priceRange: [15000, 25000] },
   { name: "Cantu Shea Butter Leave-In", category: 5, priceRange: [4500, 7000] },
   { name: "Black Soap (Natural 500g)", category: 5, priceRange: [1000, 3000] },
-  { name: "Shea Butter (Unrefined 500g)", category: 5, priceRange: [2000, 4000] },
+  {
+    name: "Shea Butter (Unrefined 500g)",
+    category: 5,
+    priceRange: [2000, 4000],
+  },
   { name: "Nivea Body Lotion 400ml", category: 5, priceRange: [2500, 4000] },
   // Home & Garden (6)
   { name: "Mouka Foam Mattress 6x6", category: 6, priceRange: [85000, 150000] },
-  { name: "Rechargeable Standing Fan", category: 6, priceRange: [25000, 45000] },
-  { name: "Plastic Storage Containers Set", category: 6, priceRange: [8000, 15000] },
+  {
+    name: "Rechargeable Standing Fan",
+    category: 6,
+    priceRange: [25000, 45000],
+  },
+  {
+    name: "Plastic Storage Containers Set",
+    category: 6,
+    priceRange: [8000, 15000],
+  },
   { name: "Solar Panel 200W", category: 6, priceRange: [65000, 95000] },
   { name: "Inverter Battery 200AH", category: 6, priceRange: [120000, 180000] },
   // Auto Parts (7)
   { name: "Car Battery (75AH)", category: 7, priceRange: [35000, 55000] },
-  { name: "Engine Oil (5L Synthetic)", category: 7, priceRange: [12000, 20000] },
+  {
+    name: "Engine Oil (5L Synthetic)",
+    category: 7,
+    priceRange: [12000, 20000],
+  },
   { name: "Brake Pads (Front Set)", category: 7, priceRange: [8000, 15000] },
   // Food & Beverages (8)
   { name: "Palm Wine (Fresh, 5L)", category: 8, priceRange: [3000, 5000] },
-  { name: "Zobo Drink (Hibiscus, 1L x 12)", category: 8, priceRange: [3600, 5000] },
+  {
+    name: "Zobo Drink (Hibiscus, 1L x 12)",
+    category: 8,
+    priceRange: [3600, 5000],
+  },
   { name: "Suya Spice Mix (1kg)", category: 8, priceRange: [2500, 4000] },
-  { name: "Dried Fish (Stockfish, 1kg)", category: 8, priceRange: [8000, 12000] },
+  {
+    name: "Dried Fish (Stockfish, 1kg)",
+    category: 8,
+    priceRange: [8000, 12000],
+  },
   { name: "Garri (White, 50kg bag)", category: 8, priceRange: [20000, 32000] },
   { name: "Ogiri (Locust Bean, 500g)", category: 8, priceRange: [1500, 3000] },
   { name: "Egusi (Ground, 2kg)", category: 8, priceRange: [6000, 9000] },
@@ -132,16 +351,32 @@ const NIGERIAN_PRODUCTS: { name: string; category: number; priceRange: [number, 
   // Computing (9)
   { name: "HP Laptop 15 (Core i5)", category: 9, priceRange: [350000, 480000] },
   { name: "USB Flash Drive 64GB", category: 9, priceRange: [3500, 6000] },
-  { name: "Wireless Mouse & Keyboard Combo", category: 9, priceRange: [8000, 15000] },
+  {
+    name: "Wireless Mouse & Keyboard Combo",
+    category: 9,
+    priceRange: [8000, 15000],
+  },
   { name: "External Hard Drive 1TB", category: 9, priceRange: [25000, 40000] },
   // Building Materials (10)
   { name: "Dangote Cement (50kg)", category: 10, priceRange: [5500, 7000] },
-  { name: "Roofing Sheets (Bundle of 20)", category: 10, priceRange: [120000, 180000] },
-  { name: "Iron Rods (12mm, Bundle)", category: 10, priceRange: [350000, 450000] },
+  {
+    name: "Roofing Sheets (Bundle of 20)",
+    category: 10,
+    priceRange: [120000, 180000],
+  },
+  {
+    name: "Iron Rods (12mm, Bundle)",
+    category: 10,
+    priceRange: [350000, 450000],
+  },
   { name: "PVC Ceiling (Box of 10)", category: 10, priceRange: [15000, 25000] },
   // Farming (11)
   { name: "NPK Fertilizer (50kg)", category: 11, priceRange: [18000, 25000] },
-  { name: "Maize Seeds (Hybrid, 10kg)", category: 11, priceRange: [8000, 12000] },
+  {
+    name: "Maize Seeds (Hybrid, 10kg)",
+    category: 11,
+    priceRange: [8000, 12000],
+  },
   { name: "Knapsack Sprayer 16L", category: 11, priceRange: [15000, 25000] },
   { name: "Poultry Feed (25kg)", category: 11, priceRange: [12000, 18000] },
   // Baby Products (12)
@@ -149,27 +384,57 @@ const NIGERIAN_PRODUCTS: { name: string; category: number; priceRange: [number, 
   { name: "Baby Formula (900g)", category: 12, priceRange: [6000, 12000] },
   { name: "Baby Cot (Wooden)", category: 12, priceRange: [35000, 65000] },
   // Sports (13)
-  { name: "Football (Nike Official)", category: 13, priceRange: [15000, 30000] },
+  {
+    name: "Football (Nike Official)",
+    category: 13,
+    priceRange: [15000, 30000],
+  },
   { name: "Running Shoes (Adidas)", category: 13, priceRange: [25000, 55000] },
   { name: "Gym Dumbbell Set (20kg)", category: 13, priceRange: [20000, 40000] },
 ];
 
 const STORE_NAMES = [
-  "Mama Ngozi Electronics", "Alhaji Musa General Store", "Baba Alaye Fashion House",
-  "ChiChi Beauty Palace", "Emeka Motors & Parts", "Funmi's Kitchen Supplies",
-  "Iya Basira Groceries", "Kingsley Tech Hub", "Nkechi Home & Garden",
-  "Olu Phone Centre", "Prince Digital World", "Queen's Fabrics & Accessories",
-  "Rasheed Building Materials", "Sunday Farm Inputs", "Titi Baby Store",
-  "Uncle Joe Sports", "Vitality Health Store", "Wale's Book Corner",
-  "Xpress Mobile Accessories", "Yemi Computing Centre", "Zainab Ankara Palace",
-  "Dada Electronics Mart", "Ejiro's Food Market", "Garba Agro Supply",
-  "Hauwa Fashion World", "Ikenna Auto Parts", "Jide Power Solutions",
-  "Kunle Furniture Store", "Lateef Phone Repairs", "Mama Iyabo Provisions",
+  "Mama Ngozi Electronics",
+  "Alhaji Musa General Store",
+  "Baba Alaye Fashion House",
+  "ChiChi Beauty Palace",
+  "Emeka Motors & Parts",
+  "Funmi's Kitchen Supplies",
+  "Iya Basira Groceries",
+  "Kingsley Tech Hub",
+  "Nkechi Home & Garden",
+  "Olu Phone Centre",
+  "Prince Digital World",
+  "Queen's Fabrics & Accessories",
+  "Rasheed Building Materials",
+  "Sunday Farm Inputs",
+  "Titi Baby Store",
+  "Uncle Joe Sports",
+  "Vitality Health Store",
+  "Wale's Book Corner",
+  "Xpress Mobile Accessories",
+  "Yemi Computing Centre",
+  "Zainab Ankara Palace",
+  "Dada Electronics Mart",
+  "Ejiro's Food Market",
+  "Garba Agro Supply",
+  "Hauwa Fashion World",
+  "Ikenna Auto Parts",
+  "Jide Power Solutions",
+  "Kunle Furniture Store",
+  "Lateef Phone Repairs",
+  "Mama Iyabo Provisions",
 ];
 
 const TERMINAL_MODELS = [
-  "PAX A920 MAX", "PAX A920 Pro", "Moniepoint POS", "OPay Terminal S1",
-  "Verifone X990", "Ingenico Move 5000", "PAX D200T", "Sunmi V2 Pro",
+  "PAX A920 MAX",
+  "PAX A920 Pro",
+  "Moniepoint POS",
+  "OPay Terminal S1",
+  "Verifone X990",
+  "Ingenico Move 5000",
+  "PAX D200T",
+  "Sunmi V2 Pro",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -185,7 +450,34 @@ function pickN<T>(arr: readonly T[], n: number): T[] {
   return shuffled.slice(0, n);
 }
 function nigerianPhone(): string {
-  const prefixes = ["0803", "0805", "0806", "0807", "0808", "0809", "0810", "0812", "0813", "0814", "0815", "0816", "0817", "0818", "0902", "0903", "0904", "0905", "0906", "0907", "0908", "0909", "0912", "0913", "0915", "0916"];
+  const prefixes = [
+    "0803",
+    "0805",
+    "0806",
+    "0807",
+    "0808",
+    "0809",
+    "0810",
+    "0812",
+    "0813",
+    "0814",
+    "0815",
+    "0816",
+    "0817",
+    "0818",
+    "0902",
+    "0903",
+    "0904",
+    "0905",
+    "0906",
+    "0907",
+    "0908",
+    "0909",
+    "0912",
+    "0913",
+    "0915",
+    "0916",
+  ];
   return pick(prefixes) + String(rand(1000000, 9999999));
 }
 function nigerianBVN(): string {
@@ -199,7 +491,10 @@ function randomDate(daysBack: number): Date {
   return new Date(now.getTime() - rand(0, daysBack * 24 * 60 * 60 * 1000));
 }
 function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 // ─── Seed Functions ──────────────────────────────────────────────────────────
@@ -264,7 +559,18 @@ async function seedCustomers(count: number = 50) {
     const lastName = pick(NIGERIAN_LAST_NAMES);
     const state = pick(Object.keys(NIGERIAN_CITIES));
     const city = pick(NIGERIAN_CITIES[state]);
-    const streets = ["Adeola Odeku St", "Allen Avenue", "Awolowo Way", "Bode Thomas St", "Herbert Macaulay Way", "Ikorodu Rd", "Marina", "Broad St", "Ahmadu Bello Way", "Tafawa Balewa Square"];
+    const streets = [
+      "Adeola Odeku St",
+      "Allen Avenue",
+      "Awolowo Way",
+      "Bode Thomas St",
+      "Herbert Macaulay Way",
+      "Ikorodu Rd",
+      "Marina",
+      "Broad St",
+      "Ahmadu Bello Way",
+      "Tafawa Balewa Square",
+    ];
 
     const row = [
       firstName,
@@ -295,9 +601,24 @@ async function seedCustomers(count: number = 50) {
 
 async function seedTransactions(agentCount: number, count: number = 200) {
   console.log(`  Seeding ${count} transactions...`);
-  const txTypes = ["Cash In", "Cash Out", "Transfer", "Card Payment", "QR Payment", "Airtime", "Bill Payment"] as const;
+  const txTypes = [
+    "Cash In",
+    "Cash Out",
+    "Transfer",
+    "Card Payment",
+    "QR Payment",
+    "Airtime",
+    "Bill Payment",
+  ] as const;
   const channels = ["Cash", "Card", "USSD", "QR", "NFC", "App"] as const;
-  const statuses = ["success", "success", "success", "success", "pending", "failed"] as const;
+  const statuses = [
+    "success",
+    "success",
+    "success",
+    "success",
+    "pending",
+    "failed",
+  ] as const;
 
   const values: string[] = [];
   const params: unknown[] = [];
@@ -347,10 +668,24 @@ async function seedAgentStores(agentCount: number, count: number = 20) {
   let idx = 0;
 
   for (let i = 1; i <= count; i++) {
-    const storeName = STORE_NAMES[i - 1] || `${pick(NIGERIAN_FIRST_NAMES)}'s Store`;
+    const storeName =
+      STORE_NAMES[i - 1] || `${pick(NIGERIAN_FIRST_NAMES)}'s Store`;
     const state = pick(Object.keys(NIGERIAN_CITIES));
     const city = pick(NIGERIAN_CITIES[state]);
-    const cats = pickN(["Electronics", "Fashion", "Groceries", "Phones", "Health & Beauty", "Home & Garden", "Food", "Computing", "Auto Parts"], rand(2, 4));
+    const cats = pickN(
+      [
+        "Electronics",
+        "Fashion",
+        "Groceries",
+        "Phones",
+        "Health & Beauty",
+        "Home & Garden",
+        "Food",
+        "Computing",
+        "Auto Parts",
+      ],
+      rand(2, 4)
+    );
 
     const row = [
       i, // agent_id
@@ -406,7 +741,9 @@ async function seedProducts(storeCount: number) {
 
     const row = [
       `SKU${String(i).padStart(6, "0")}`, // sku
-      i <= NIGERIAN_PRODUCTS.length ? prod.name : `${prod.name} (Pack ${Math.ceil(i / NIGERIAN_PRODUCTS.length)})`, // name
+      i <= NIGERIAN_PRODUCTS.length
+        ? prod.name
+        : `${prod.name} (Pack ${Math.ceil(i / NIGERIAN_PRODUCTS.length)})`, // name
       `High quality ${prod.name}. Sourced from trusted Nigerian suppliers. Fast delivery across Nigeria.`, // description
       prod.category, // category_id
       String(price), // price
@@ -416,8 +753,24 @@ async function seedProducts(storeCount: number) {
       merchantId, // merchant_id
       merchantId, // agent_id
       String(rand(1, 50)), // weight
-      JSON.stringify(pickN(["bestseller", "new", "promo", "limited", "bulk", "wholesale", "retail"], rand(1, 3))), // tags
-      JSON.stringify({ brand: pick(["Generic", "Premium", "Local", "Imported"]), condition: "new" }), // attributes
+      JSON.stringify(
+        pickN(
+          [
+            "bestseller",
+            "new",
+            "promo",
+            "limited",
+            "bulk",
+            "wholesale",
+            "retail",
+          ],
+          rand(1, 3)
+        )
+      ), // tags
+      JSON.stringify({
+        brand: pick(["Generic", "Premium", "Local", "Imported"]),
+        condition: "new",
+      }), // attributes
     ];
     const placeholders = row.map(() => `$${++idx}`);
     values.push(`(${placeholders.join(", ")})`);
@@ -460,10 +813,28 @@ async function seedInventory(productCount: number) {
   );
 }
 
-async function seedOrders(customerCount: number, storeCount: number, count: number = 60) {
+async function seedOrders(
+  customerCount: number,
+  storeCount: number,
+  count: number = 60
+) {
   console.log(`  Seeding ${count} orders...`);
-  const statuses = ["pending", "processing", "shipped", "delivered", "delivered", "delivered", "cancelled"] as const;
-  const paymentMethods = ["card", "bank_transfer", "wallet", "cash_on_delivery", "ussd"];
+  const statuses = [
+    "pending",
+    "processing",
+    "shipped",
+    "delivered",
+    "delivered",
+    "delivered",
+    "cancelled",
+  ] as const;
+  const paymentMethods = [
+    "card",
+    "bank_transfer",
+    "wallet",
+    "cash_on_delivery",
+    "ussd",
+  ];
 
   const values: string[] = [];
   const params: unknown[] = [];
@@ -551,7 +922,13 @@ async function seedOrderItems(orderCount: number, productCount: number) {
 async function seedFraudAlerts(agentCount: number) {
   const count = 15;
   console.log(`  Seeding ${count} fraud alerts...`);
-  const types = ["velocity_breach", "unusual_amount", "geo_anomaly", "device_mismatch", "duplicate_transaction"];
+  const types = [
+    "velocity_breach",
+    "unusual_amount",
+    "geo_anomaly",
+    "device_mismatch",
+    "duplicate_transaction",
+  ];
   const values: string[] = [];
   const params: unknown[] = [];
   let idx = 0;
@@ -609,7 +986,14 @@ async function seedProductReviews(productCount: number, customerCount: number) {
       rand(1, customerCount), // customer_id
       `${firstName} ${lastName}`, // customer_name
       rand(3, 5), // rating
-      pick(["Great product!", "Worth every naira", "Good quality", "Very satisfied", "Recommended!", "Na correct one!"]), // title
+      pick([
+        "Great product!",
+        "Worth every naira",
+        "Good quality",
+        "Very satisfied",
+        "Recommended!",
+        "Na correct one!",
+      ]), // title
       pick(reviewTexts), // body
       rand(0, 1) === 1, // is_verified_purchase
       rand(0, 15), // helpful_count
@@ -628,7 +1012,12 @@ async function seedProductReviews(productCount: number, customerCount: number) {
 }
 
 async function seedDeliveryZones(storeCount: number) {
-  const zoneNames = ["Within City (Same Day)", "Interstate (2-3 Days)", "Express (Next Day)", "Economy (4-7 Days)"];
+  const zoneNames = [
+    "Within City (Same Day)",
+    "Interstate (2-3 Days)",
+    "Express (Next Day)",
+    "Economy (4-7 Days)",
+  ];
   const values: string[] = [];
   const params: unknown[] = [];
   let idx = 0;
@@ -659,7 +1048,18 @@ async function seedDeliveryZones(storeCount: number) {
 async function seedAuditLog(agentCount: number) {
   const count = 50;
   console.log(`  Seeding ${count} audit log entries...`);
-  const actions = ["login", "transaction.create", "float.topup", "agent.update", "kyc.verify", "store.create", "product.add", "order.update", "dispute.open", "config.change"];
+  const actions = [
+    "login",
+    "transaction.create",
+    "float.topup",
+    "agent.update",
+    "kyc.verify",
+    "store.create",
+    "product.add",
+    "order.update",
+    "dispute.open",
+    "config.change",
+  ];
   const values: string[] = [];
   const params: unknown[] = [];
   let idx = 0;
@@ -674,7 +1074,10 @@ async function seedAuditLog(agentCount: number) {
       `197.210.${rand(1, 255)}.${rand(1, 255)}`,
       "54Link POS Shell/3.0 (Android 13)",
       pick(["success", "success", "success", "failure"]),
-      JSON.stringify({ platform: "android", deviceId: `DEV${rand(1000, 9999)}` }),
+      JSON.stringify({
+        platform: "android",
+        deviceId: `DEV${rand(1000, 9999)}`,
+      }),
       randomDate(30).toISOString(),
     ];
     const placeholders = row.map(() => `$${++idx}`);
@@ -693,7 +1096,15 @@ async function seedLoyaltyHistory(agentCount: number) {
   const count = 40;
   console.log(`  Seeding ${count} loyalty entries...`);
   const types = ["earned", "redeemed", "bonus", "challenge"] as const;
-  const descriptions = ["Daily login streak", "Transaction milestone", "Referral bonus", "Monthly challenge", "Tier upgrade bonus", "Birthday reward", "Top performer"];
+  const descriptions = [
+    "Daily login streak",
+    "Transaction milestone",
+    "Referral bonus",
+    "Monthly challenge",
+    "Tier upgrade bonus",
+    "Birthday reward",
+    "Top performer",
+  ];
   const values: string[] = [];
   const params: unknown[] = [];
   let idx = 0;

@@ -97,9 +97,17 @@ export const transactionExportEngineRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { total: 0, active: 0, recent: 0, lastUpdated: new Date().toISOString() };
+    if (!database)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     try {
-      const [totalRow] = await database.select({ total: count() }).from(transactions);
+      const [totalRow] = await database
+        .select({ total: count() })
+        .from(transactions);
       const total = totalRow?.total ?? 0;
       return {
         total,
@@ -108,7 +116,12 @@ export const transactionExportEngineRouter = router({
         lastUpdated: new Date().toISOString(),
       };
     } catch {
-      return { total: 0, active: 0, recent: 0, lastUpdated: new Date().toISOString() };
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
   }),
 });

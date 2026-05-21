@@ -145,9 +145,7 @@ export default function AgentStoreSetup() {
       <DashboardLayout>
         <div className="p-6 space-y-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Store Setup
-            </h1>
+            <h1 className="text-2xl font-bold text-foreground">Store Setup</h1>
             <p className="text-muted-foreground">
               Manage your online storefront
             </p>
@@ -160,7 +158,10 @@ export default function AgentStoreSetup() {
                 {existingStore.storeName}
               </h2>
               <p className="text-muted-foreground mt-1">Your store is live!</p>
-              <Badge variant="outline" className="mt-4 bg-green-500/10 text-green-500 border-green-500/20">
+              <Badge
+                variant="outline"
+                className="mt-4 bg-green-500/10 text-green-500 border-green-500/20"
+              >
                 <span className="w-2 h-2 bg-green-500 rounded-full mr-2" />
                 {existingStore.status}
               </Badge>
@@ -357,7 +358,9 @@ export default function AgentStoreSetup() {
                     }
                     className="w-5 h-5 rounded"
                   />
-                  <span className="text-sm text-foreground">Offer Delivery</span>
+                  <span className="text-sm text-foreground">
+                    Offer Delivery
+                  </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input

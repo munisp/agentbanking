@@ -47,7 +47,14 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
   ],
 
   // ── Agent: operational access ──
-  agent: ["core", "help", "finance", "notifications", "engagement", "ecommerce"],
+  agent: [
+    "core",
+    "help",
+    "finance",
+    "notifications",
+    "engagement",
+    "ecommerce",
+  ],
 
   // ── Agent Manager: agent + agent management, territory, performance ──
   agent_manager: [

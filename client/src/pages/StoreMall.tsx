@@ -131,10 +131,7 @@ export default function StoreMall() {
                 onChange={e => setSearch(e.target.value)}
                 className="flex-1"
               />
-              <Button
-                onClick={() => haptic("micro")}
-                variant="secondary"
-              >
+              <Button onClick={() => haptic("micro")} variant="secondary">
                 Search
               </Button>
             </div>

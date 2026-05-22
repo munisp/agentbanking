@@ -15,18 +15,37 @@ export const coalitionLoyaltyRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [pointsRes, redeemedRes, partnersRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(SUM((data->>'points_balance')::numeric), 0) as total FROM "loyalty_members" WHERE status = 'active'`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'points_redeemed')::numeric), 0) as total FROM "loyalty_members"`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COUNT(DISTINCT data->>'partner_id') as cnt FROM "loyalty_members" WHERE data->>'partner_id' IS NOT NULL`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'points_balance')::numeric), 0) as total FROM "loyalty_members" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'points_redeemed')::numeric), 0) as total FROM "loyalty_members"`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(DISTINCT data->>'partner_id') as cnt FROM "loyalty_members" WHERE data->>'partner_id' IS NOT NULL`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const pointsResult = (pointsRes as any).rows?.[0]?.total;
       const redeemedResult = (redeemedRes as any).rows?.[0]?.total;
       const partnersResult = (partnersRes as any).rows?.[0]?.cnt;
       return {
-      totalMembers: total,
-      pointsCirculating: Number(pointsResult ?? 0),
-      redemptionRate: total > 0 ? ((Number(redeemedResult ?? 0) / Math.max(Number(pointsResult ?? 1), 1)) * 100).toFixed(1) + "%" : "0%",
-      coalitionPartners: Number(partnersResult ?? 0),
+        totalMembers: total,
+        pointsCirculating: Number(pointsResult ?? 0),
+        redemptionRate:
+          total > 0
+            ? (
+                (Number(redeemedResult ?? 0) /
+                  Math.max(Number(pointsResult ?? 1), 1)) *
+                100
+              ).toFixed(1) + "%"
+            : "0%",
+        coalitionPartners: Number(partnersResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,11 +101,23 @@ export const coalitionLoyaltyRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.customerName || typeof input.data.customerName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "customerName is required for loyalty enrollment" });
+      if (
+        !input.data.customerName ||
+        typeof input.data.customerName !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "customerName is required for loyalty enrollment",
+        });
       }
-      if (!input.data.phoneNumber || typeof input.data.phoneNumber !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "phoneNumber is required" });
+      if (
+        !input.data.phoneNumber ||
+        typeof input.data.phoneNumber !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "phoneNumber is required",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -124,9 +155,20 @@ export const coalitionLoyaltyRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["active", "inactive", "suspended", "bronze", "silver", "gold", "platinum"];
+      const validStatuses = [
+        "active",
+        "inactive",
+        "suspended",
+        "bronze",
+        "silver",
+        "gold",
+        "platinum",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -164,15 +206,21 @@ export const coalitionLoyaltyRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Coalition Loyalty Program (Go)", url: "http://localhost:8287/health" },
-      { name: "Coalition Loyalty Program (Rust)", url: "http://localhost:8288/health" },
+      {
+        name: "Coalition Loyalty Program (Go)",
+        url: "http://localhost:8287/health",
+      },
+      {
+        name: "Coalition Loyalty Program (Rust)",
+        url: "http://localhost:8288/health",
+      },
       {
         name: "Coalition Loyalty Program (Python)",
         url: "http://localhost:8289/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

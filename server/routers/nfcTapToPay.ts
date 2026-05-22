@@ -15,20 +15,39 @@ export const nfcTapToPayRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [activeRes, todayRes, volumeRes, avgTimeRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{vol:0}]})),
-        db.execute(sql`SELECT COALESCE(AVG((data->>'tap_duration_ms')::numeric), 0) as avg_ms FROM "nfc_terminals" WHERE status = 'approved'`).catch(() => ({rows:[{avg_ms:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ vol: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(AVG((data->>'tap_duration_ms')::numeric), 0) as avg_ms FROM "nfc_terminals" WHERE status = 'approved'`
+          )
+          .catch(() => ({ rows: [{ avg_ms: 0 }] })),
       ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const todayResult = (todayRes as any).rows?.[0]?.cnt;
       const volumeResult = (volumeRes as any).rows?.[0]?.vol;
       const avgTimeResult = (avgTimeRes as any).rows?.[0]?.avg_ms;
       return {
-      activeTerminals: Number(activeResult ?? 0),
-      transactionsToday: Number(todayResult ?? 0),
-      volumeToday: Number(volumeResult ?? 0),
-      avgTapTime: total > 0 ? ((Number(avgTimeResult ?? 0)) / 1000).toFixed(2) + "s" : "0s",
+        activeTerminals: Number(activeResult ?? 0),
+        transactionsToday: Number(todayResult ?? 0),
+        volumeToday: Number(volumeResult ?? 0),
+        avgTapTime:
+          total > 0
+            ? (Number(avgTimeResult ?? 0) / 1000).toFixed(2) + "s"
+            : "0s",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -84,11 +103,20 @@ export const nfcTapToPayRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.terminalId || typeof input.data.terminalId !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "terminalId is required for NFC registration" });
+      if (!input.data.terminalId || typeof input.data.terminalId !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "terminalId is required for NFC registration",
+        });
       }
-      if (!input.data.deviceModel || typeof input.data.deviceModel !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "deviceModel is required (Android NFC-enabled device)" });
+      if (
+        !input.data.deviceModel ||
+        typeof input.data.deviceModel !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "deviceModel is required (Android NFC-enabled device)",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -126,9 +154,18 @@ export const nfcTapToPayRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["approved", "declined", "pending", "reversed", "active"];
+      const validStatuses = [
+        "approved",
+        "declined",
+        "pending",
+        "reversed",
+        "active",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -174,7 +211,7 @@ export const nfcTapToPayRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

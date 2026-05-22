@@ -14,21 +14,45 @@ export const healthInsuranceMicroRouter = router({
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
-      const [activeRes, premiumRes, claimsRes, claimsPaidRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'premium')::numeric), 0) as total FROM "health_policies"`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'claim_pending'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'claim_amount')::numeric), 0) as total FROM "health_policies" WHERE status = 'claim_paid'`).catch(() => ({rows:[{total:0}]})),
-      ]);
+      const [activeRes, premiumRes, claimsRes, claimsPaidRes] =
+        await Promise.all([
+          db
+            .execute(
+              sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'active'`
+            )
+            .catch(() => ({ rows: [{ cnt: 0 }] })),
+          db
+            .execute(
+              sql`SELECT COALESCE(SUM((data->>'premium')::numeric), 0) as total FROM "health_policies"`
+            )
+            .catch(() => ({ rows: [{ total: 0 }] })),
+          db
+            .execute(
+              sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'claim_pending'`
+            )
+            .catch(() => ({ rows: [{ cnt: 0 }] })),
+          db
+            .execute(
+              sql`SELECT COALESCE(SUM((data->>'claim_amount')::numeric), 0) as total FROM "health_policies" WHERE status = 'claim_paid'`
+            )
+            .catch(() => ({ rows: [{ total: 0 }] })),
+        ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const premiumResult = (premiumRes as any).rows?.[0]?.total;
       const claimsResult = (claimsRes as any).rows?.[0]?.cnt;
       const claimsPaidResult = (claimsPaidRes as any).rows?.[0]?.total;
       return {
-      activePolicies: Number(activeResult ?? 0),
-      totalPremiums: Number(premiumResult ?? 0),
-      pendingClaims: Number(claimsResult ?? 0),
-      claimRatio: total > 0 ? ((Number(claimsPaidResult ?? 0) / Math.max(Number(premiumResult ?? 1), 1)) * 100).toFixed(1) + "%" : "0%",
+        activePolicies: Number(activeResult ?? 0),
+        totalPremiums: Number(premiumResult ?? 0),
+        pendingClaims: Number(claimsResult ?? 0),
+        claimRatio:
+          total > 0
+            ? (
+                (Number(claimsPaidResult ?? 0) /
+                  Math.max(Number(premiumResult ?? 1), 1)) *
+                100
+              ).toFixed(1) + "%"
+            : "0%",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -84,15 +108,29 @@ export const healthInsuranceMicroRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.holderName || typeof input.data.holderName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "holderName is required" });
+      if (!input.data.holderName || typeof input.data.holderName !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "holderName is required",
+        });
       }
-      if (!input.data.planType || !["basic", "standard", "premium", "family"].includes(input.data.planType as string)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "planType must be one of: basic, standard, premium, family" });
+      if (
+        !input.data.planType ||
+        !["basic", "standard", "premium", "family"].includes(
+          input.data.planType as string
+        )
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "planType must be one of: basic, standard, premium, family",
+        });
       }
       const premium = Number(input.data.premium);
       if (!premium || premium < 500 || premium > 500000) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Premium must be between ₦500 and ₦500,000" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Premium must be between ₦500 and ₦500,000",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -130,9 +168,18 @@ export const healthInsuranceMicroRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["active", "expired", "suspended", "claim_pending", "claim_paid"];
+      const validStatuses = [
+        "active",
+        "expired",
+        "suspended",
+        "claim_pending",
+        "claim_paid",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -170,15 +217,21 @@ export const healthInsuranceMicroRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Health Insurance Micro-Products (Go)", url: "http://localhost:8254/health" },
-      { name: "Health Insurance Micro-Products (Rust)", url: "http://localhost:8255/health" },
+      {
+        name: "Health Insurance Micro-Products (Go)",
+        url: "http://localhost:8254/health",
+      },
+      {
+        name: "Health Insurance Micro-Products (Rust)",
+        url: "http://localhost:8255/health",
+      },
       {
         name: "Health Insurance Micro-Products (Python)",
         url: "http://localhost:8256/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

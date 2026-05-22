@@ -15,18 +15,30 @@ export const iotSmartPosRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [onlineRes, alertRes, predictRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE status = 'online'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'alert_active')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'predicted_failure')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE status = 'online'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'alert_active')::boolean = true`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'predicted_failure')::boolean = true`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const onlineResult = (onlineRes as any).rows?.[0]?.cnt;
       const alertResult = (alertRes as any).rows?.[0]?.cnt;
       const predictResult = (predictRes as any).rows?.[0]?.cnt;
       return {
-      totalDevices: total,
-      onlineDevices: Number(onlineResult ?? 0),
-      activeAlerts: Number(alertResult ?? 0),
-      predictedFailures: Number(predictResult ?? 0),
+        totalDevices: total,
+        onlineDevices: Number(onlineResult ?? 0),
+        activeAlerts: Number(alertResult ?? 0),
+        predictedFailures: Number(predictResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,11 +94,18 @@ export const iotSmartPosRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.deviceType || typeof input.data.deviceType !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "deviceType is required (e.g., temperature, gps, tamper, battery)" });
+      if (!input.data.deviceType || typeof input.data.deviceType !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "deviceType is required (e.g., temperature, gps, tamper, battery)",
+        });
       }
-      if (!input.data.location || typeof input.data.location !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "location is required for IoT device registration" });
+      if (!input.data.location || typeof input.data.location !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "location is required for IoT device registration",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -126,7 +145,10 @@ export const iotSmartPosRouter = router({
 
       const validStatuses = ["online", "offline", "maintenance", "tampered"];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -172,7 +194,7 @@ export const iotSmartPosRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

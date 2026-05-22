@@ -15,18 +15,33 @@ export const satelliteConnectivityRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [activeRes, failoverRes, syncRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "satellite_links" WHERE status = 'connected'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "satellite_links" WHERE status = 'failover' AND created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'data_synced_mb')::numeric), 0) as mb FROM "satellite_links"`).catch(() => ({rows:[{mb:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "satellite_links" WHERE status = 'connected'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "satellite_links" WHERE status = 'failover' AND created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'data_synced_mb')::numeric), 0) as mb FROM "satellite_links"`
+          )
+          .catch(() => ({ rows: [{ mb: 0 }] })),
       ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const failoverResult = (failoverRes as any).rows?.[0]?.cnt;
       const syncResult = (syncRes as any).rows?.[0]?.mb;
       return {
-      activeLinks: Number(activeResult ?? 0),
-      failoversToday: Number(failoverResult ?? 0),
-      dataSynced: Number(Number(syncResult ?? 0).toFixed(2)),
-      coveragePercent: total > 0 ? ((Number(activeResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
+        activeLinks: Number(activeResult ?? 0),
+        failoversToday: Number(failoverResult ?? 0),
+        dataSynced: Number(Number(syncResult ?? 0).toFixed(2)),
+        coveragePercent:
+          total > 0
+            ? ((Number(activeResult ?? 0) / total) * 100).toFixed(1) + "%"
+            : "0%",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,11 +97,23 @@ export const satelliteConnectivityRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.agentCode || typeof input.data.agentCode !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "agentCode is required" });
+      if (!input.data.agentCode || typeof input.data.agentCode !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "agentCode is required",
+        });
       }
-      if (!input.data.provider || !["starlink", "ast_spacemobile", "oneweb", "vsat"].includes(input.data.provider as string)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "provider must be one of: starlink, ast_spacemobile, oneweb, vsat" });
+      if (
+        !input.data.provider ||
+        !["starlink", "ast_spacemobile", "oneweb", "vsat"].includes(
+          input.data.provider as string
+        )
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "provider must be one of: starlink, ast_spacemobile, oneweb, vsat",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -124,9 +151,17 @@ export const satelliteConnectivityRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["connected", "disconnected", "failover", "syncing"];
+      const validStatuses = [
+        "connected",
+        "disconnected",
+        "failover",
+        "syncing",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -164,15 +199,21 @@ export const satelliteConnectivityRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Satellite Connectivity (Go)", url: "http://localhost:8272/health" },
-      { name: "Satellite Connectivity (Rust)", url: "http://localhost:8273/health" },
+      {
+        name: "Satellite Connectivity (Go)",
+        url: "http://localhost:8272/health",
+      },
+      {
+        name: "Satellite Connectivity (Rust)",
+        url: "http://localhost:8273/health",
+      },
       {
         name: "Satellite Connectivity (Python)",
         url: "http://localhost:8274/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

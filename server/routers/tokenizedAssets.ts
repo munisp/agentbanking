@@ -15,18 +15,30 @@ export const tokenizedAssetsRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [holdersRes, marketCapRes, dividendsRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(SUM((data->>'holder_count')::numeric), 0) as cnt FROM "tokenized_assets" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'total_tokens')::numeric * (data->>'price_per_token')::numeric), 0) as cap FROM "tokenized_assets" WHERE status = 'active'`).catch(() => ({rows:[{cap:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'dividends_paid')::numeric), 0) as total FROM "tokenized_assets"`).catch(() => ({rows:[{total:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'holder_count')::numeric), 0) as cnt FROM "tokenized_assets" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'total_tokens')::numeric * (data->>'price_per_token')::numeric), 0) as cap FROM "tokenized_assets" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cap: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'dividends_paid')::numeric), 0) as total FROM "tokenized_assets"`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
       ]);
       const holdersResult = (holdersRes as any).rows?.[0]?.cnt;
       const marketCapResult = (marketCapRes as any).rows?.[0]?.cap;
       const dividendsResult = (dividendsRes as any).rows?.[0]?.total;
       return {
-      totalAssets: total,
-      totalHolders: Number(holdersResult ?? 0),
-      marketCap: Number(marketCapResult ?? 0),
-      dividendsPaid: Number(dividendsResult ?? 0),
+        totalAssets: total,
+        totalHolders: Number(holdersResult ?? 0),
+        marketCap: Number(marketCapResult ?? 0),
+        dividendsPaid: Number(dividendsResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,19 +94,41 @@ export const tokenizedAssetsRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.assetName || typeof input.data.assetName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "assetName is required" });
+      if (!input.data.assetName || typeof input.data.assetName !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "assetName is required",
+        });
       }
-      if (!input.data.assetType || !["real_estate", "commodity", "equipment", "vehicle", "agricultural_land"].includes(input.data.assetType as string)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "assetType must be one of: real_estate, commodity, equipment, vehicle, agricultural_land" });
+      if (
+        !input.data.assetType ||
+        ![
+          "real_estate",
+          "commodity",
+          "equipment",
+          "vehicle",
+          "agricultural_land",
+        ].includes(input.data.assetType as string)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "assetType must be one of: real_estate, commodity, equipment, vehicle, agricultural_land",
+        });
       }
       const totalTokens = Number(input.data.totalTokens);
       if (!totalTokens || totalTokens < 10) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "totalTokens must be at least 10" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "totalTokens must be at least 10",
+        });
       }
       const pricePerToken = Number(input.data.pricePerToken);
       if (!pricePerToken || pricePerToken < 100) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "pricePerToken must be at least ₦100" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "pricePerToken must be at least ₦100",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -134,7 +168,10 @@ export const tokenizedAssetsRouter = router({
 
       const validStatuses = ["active", "sold_out", "suspended", "pending"];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -180,7 +217,7 @@ export const tokenizedAssetsRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

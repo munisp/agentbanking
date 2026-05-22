@@ -15,18 +15,34 @@ export const aiCreditScoringRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [avgRes, approvedRes, aucRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(AVG((data->>'score')::numeric), 0) as avg_score FROM "credit_scores"`).catch(() => ({rows:[{avg_score:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "credit_scores" WHERE (data->>'score')::numeric >= 650`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(MAX((metadata->>'model_auc')::numeric), 0) as auc FROM "credit_scores"`).catch(() => ({rows:[{auc:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(AVG((data->>'score')::numeric), 0) as avg_score FROM "credit_scores"`
+          )
+          .catch(() => ({ rows: [{ avg_score: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "credit_scores" WHERE (data->>'score')::numeric >= 650`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(MAX((metadata->>'model_auc')::numeric), 0) as auc FROM "credit_scores"`
+          )
+          .catch(() => ({ rows: [{ auc: 0 }] })),
       ]);
       const avgResult = (avgRes as any).rows?.[0]?.avg_score;
       const approvedResult = (approvedRes as any).rows?.[0]?.cnt;
       const aucResult = (aucRes as any).rows?.[0]?.auc;
       return {
-      totalScored: total,
-      avgScore: total > 0 ? Number(Number(avgResult ?? 0).toFixed(1)) : 0,
-      approvalRate: total > 0 ? ((Number(approvedResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
-      modelAuc: Number(aucResult ?? 0) > 0 ? Number(aucResult).toFixed(3) : "0.850",
+        totalScored: total,
+        avgScore: total > 0 ? Number(Number(avgResult ?? 0).toFixed(1)) : 0,
+        approvalRate:
+          total > 0
+            ? ((Number(approvedResult ?? 0) / total) * 100).toFixed(1) + "%"
+            : "0%",
+        modelAuc:
+          Number(aucResult ?? 0) > 0 ? Number(aucResult).toFixed(3) : "0.850",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -83,12 +99,18 @@ export const aiCreditScoringRouter = router({
       const db = (await getDb())!;
 
       if (!input.data.customerId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "customerId is required for credit scoring" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "customerId is required for credit scoring",
+        });
       }
       if (input.data.score !== undefined) {
         const score = Number(input.data.score);
         if (score < 300 || score > 900) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Credit score must be between 300 and 900" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Credit score must be between 300 and 900",
+          });
         }
       }
       const jsonStr = JSON.stringify(input.data);
@@ -127,9 +149,18 @@ export const aiCreditScoringRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["scored", "pending", "expired", "disputed", "active"];
+      const validStatuses = [
+        "scored",
+        "pending",
+        "expired",
+        "disputed",
+        "active",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -175,7 +206,7 @@ export const aiCreditScoringRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

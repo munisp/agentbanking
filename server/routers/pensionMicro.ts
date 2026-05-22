@@ -15,16 +15,29 @@ export const pensionMicroRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [contribRes, withdrawRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(SUM((data->>'total_contributed')::numeric), 0) as total FROM "pension_accounts"`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "pension_accounts" WHERE status = 'withdrawn'`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'total_contributed')::numeric), 0) as total FROM "pension_accounts"`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "pension_accounts" WHERE status = 'withdrawn'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const contribResult = (contribRes as any).rows?.[0]?.total;
       const withdrawResult = (withdrawRes as any).rows?.[0]?.cnt;
       return {
-      totalAccounts: total,
-      totalContributions: Number(contribResult ?? 0),
-      avgMonthlyContrib: total > 0 ? Number((Number(contribResult ?? 0) / Math.max(total, 1)).toFixed(2)) : 0,
-      withdrawalRequests: Number(withdrawResult ?? 0),
+        totalAccounts: total,
+        totalContributions: Number(contribResult ?? 0),
+        avgMonthlyContrib:
+          total > 0
+            ? Number(
+                (Number(contribResult ?? 0) / Math.max(total, 1)).toFixed(2)
+              )
+            : 0,
+        withdrawalRequests: Number(withdrawResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -80,15 +93,25 @@ export const pensionMicroRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.holderName || typeof input.data.holderName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "holderName is required for pension account" });
+      if (!input.data.holderName || typeof input.data.holderName !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "holderName is required for pension account",
+        });
       }
       const monthlyContrib = Number(input.data.monthlyContribution);
       if (!monthlyContrib || monthlyContrib < 100 || monthlyContrib > 1000000) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "monthlyContribution must be between ₦100 and ₦1,000,000" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "monthlyContribution must be between ₦100 and ₦1,000,000",
+        });
       }
-      if (!input.data.rsaPin || typeof input.data.rsaPin !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "rsaPin (Retirement Savings Account PIN) is required for PenCom compliance" });
+      if (!input.data.rsaPin || typeof input.data.rsaPin !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "rsaPin (Retirement Savings Account PIN) is required for PenCom compliance",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -128,7 +151,10 @@ export const pensionMicroRouter = router({
 
       const validStatuses = ["active", "dormant", "matured", "withdrawn"];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -166,15 +192,21 @@ export const pensionMicroRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Pension Micro-Contributions (Go)", url: "http://localhost:8278/health" },
-      { name: "Pension Micro-Contributions (Rust)", url: "http://localhost:8279/health" },
+      {
+        name: "Pension Micro-Contributions (Go)",
+        url: "http://localhost:8278/health",
+      },
+      {
+        name: "Pension Micro-Contributions (Rust)",
+        url: "http://localhost:8279/health",
+      },
       {
         name: "Pension Micro-Contributions (Python)",
         url: "http://localhost:8280/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

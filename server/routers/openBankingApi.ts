@@ -15,18 +15,30 @@ export const openBankingApiRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [activeRes, todayRes, revenueRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "open_banking_partners" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "open_banking_partners" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'monthly_fee')::numeric), 0) as revenue FROM "open_banking_partners" WHERE status = 'active'`).catch(() => ({rows:[{revenue:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "open_banking_partners" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "open_banking_partners" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'monthly_fee')::numeric), 0) as revenue FROM "open_banking_partners" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ revenue: 0 }] })),
       ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const todayResult = (todayRes as any).rows?.[0]?.cnt;
       const revenueResult = (revenueRes as any).rows?.[0]?.revenue;
       return {
-      totalPartners: total,
-      activeKeys: Number(activeResult ?? 0),
-      requestsToday: Number(todayResult ?? 0),
-      revenueThisMonth: Number(revenueResult ?? 0),
+        totalPartners: total,
+        activeKeys: Number(activeResult ?? 0),
+        requestsToday: Number(todayResult ?? 0),
+        revenueThisMonth: Number(revenueResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,11 +94,23 @@ export const openBankingApiRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.partnerName || typeof input.data.partnerName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "partnerName is required" });
+      if (
+        !input.data.partnerName ||
+        typeof input.data.partnerName !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "partnerName is required",
+        });
       }
-      if (!input.data.callbackUrl || typeof input.data.callbackUrl !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "callbackUrl is required for API webhooks" });
+      if (
+        !input.data.callbackUrl ||
+        typeof input.data.callbackUrl !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "callbackUrl is required for API webhooks",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -126,7 +150,10 @@ export const openBankingApiRouter = router({
 
       const validStatuses = ["active", "suspended", "pending", "revoked"];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -172,7 +199,7 @@ export const openBankingApiRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

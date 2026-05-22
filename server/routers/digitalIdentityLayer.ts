@@ -15,18 +15,30 @@ export const digitalIdentityLayerRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [verifiedRes, ninRes, fraudRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE status = 'verified' AND updated_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE data->>'nin_status' = 'enrolled'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE (data->>'fraud_flag')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE status = 'verified' AND updated_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE data->>'nin_status' = 'enrolled'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE (data->>'fraud_flag')::boolean = true`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const verifiedResult = (verifiedRes as any).rows?.[0]?.cnt;
       const ninResult = (ninRes as any).rows?.[0]?.cnt;
       const fraudResult = (fraudRes as any).rows?.[0]?.cnt;
       return {
-      totalIdentities: total,
-      verifiedToday: Number(verifiedResult ?? 0),
-      ninEnrollments: Number(ninResult ?? 0),
-      fraudDetected: Number(fraudResult ?? 0),
+        totalIdentities: total,
+        verifiedToday: Number(verifiedResult ?? 0),
+        ninEnrollments: Number(ninResult ?? 0),
+        fraudDetected: Number(fraudResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,14 +94,30 @@ export const digitalIdentityLayerRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.fullName || typeof input.data.fullName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "fullName is required for identity registration" });
+      if (!input.data.fullName || typeof input.data.fullName !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "fullName is required for identity registration",
+        });
       }
-      if (!input.data.dateOfBirth || typeof input.data.dateOfBirth !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "dateOfBirth is required (YYYY-MM-DD format)" });
+      if (
+        !input.data.dateOfBirth ||
+        typeof input.data.dateOfBirth !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "dateOfBirth is required (YYYY-MM-DD format)",
+        });
       }
-      if (input.data.nin && typeof input.data.nin === 'string' && (input.data.nin as string).length !== 11) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "NIN must be exactly 11 digits" });
+      if (
+        input.data.nin &&
+        typeof input.data.nin === "string" &&
+        (input.data.nin as string).length !== 11
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "NIN must be exactly 11 digits",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -127,9 +155,18 @@ export const digitalIdentityLayerRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["verified", "pending", "rejected", "expired", "active"];
+      const validStatuses = [
+        "verified",
+        "pending",
+        "rejected",
+        "expired",
+        "active",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -167,15 +204,21 @@ export const digitalIdentityLayerRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Digital Identity Layer (Go)", url: "http://localhost:8275/health" },
-      { name: "Digital Identity Layer (Rust)", url: "http://localhost:8276/health" },
+      {
+        name: "Digital Identity Layer (Go)",
+        url: "http://localhost:8275/health",
+      },
+      {
+        name: "Digital Identity Layer (Rust)",
+        url: "http://localhost:8276/health",
+      },
       {
         name: "Digital Identity Layer (Python)",
         url: "http://localhost:8277/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

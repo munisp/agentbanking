@@ -15,18 +15,33 @@ export const stablecoinRailsRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [supplyRes, volumeRes, devRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(SUM((data->>'balance')::numeric), 0) as supply FROM "stable_wallets" WHERE status = 'active'`).catch(() => ({rows:[{supply:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "stable_wallets" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{vol:0}]})),
-        db.execute(sql`SELECT COALESCE(AVG((data->>'peg_deviation')::numeric), 0) as dev FROM "stable_wallets" WHERE data->>'peg_deviation' IS NOT NULL`).catch(() => ({rows:[{dev:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'balance')::numeric), 0) as supply FROM "stable_wallets" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ supply: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "stable_wallets" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ vol: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(AVG((data->>'peg_deviation')::numeric), 0) as dev FROM "stable_wallets" WHERE data->>'peg_deviation' IS NOT NULL`
+          )
+          .catch(() => ({ rows: [{ dev: 0 }] })),
       ]);
       const supplyResult = (supplyRes as any).rows?.[0]?.supply;
       const volumeResult = (volumeRes as any).rows?.[0]?.vol;
       const devResult = (devRes as any).rows?.[0]?.dev;
       return {
-      totalWallets: total,
-      circulatingSupply: Number(supplyResult ?? 0),
-      dailyVolume: Number(volumeResult ?? 0),
-      pegDeviation: Number(devResult ?? 0) !== 0 ? Number(devResult).toFixed(4) + "%" : "0.00%",
+        totalWallets: total,
+        circulatingSupply: Number(supplyResult ?? 0),
+        dailyVolume: Number(volumeResult ?? 0),
+        pegDeviation:
+          Number(devResult ?? 0) !== 0
+            ? Number(devResult).toFixed(4) + "%"
+            : "0.00%",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,12 +97,21 @@ export const stablecoinRailsRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.walletAddress || typeof input.data.walletAddress !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "walletAddress is required" });
+      if (
+        !input.data.walletAddress ||
+        typeof input.data.walletAddress !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "walletAddress is required",
+        });
       }
       const amount = Number(input.data.amount);
       if (amount !== undefined && amount < 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "amount cannot be negative" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "amount cannot be negative",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -125,9 +149,21 @@ export const stablecoinRailsRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["active", "frozen", "suspended", "closed", "confirmed", "pending", "failed", "processing"];
+      const validStatuses = [
+        "active",
+        "frozen",
+        "suspended",
+        "closed",
+        "confirmed",
+        "pending",
+        "failed",
+        "processing",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -173,7 +209,7 @@ export const stablecoinRailsRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

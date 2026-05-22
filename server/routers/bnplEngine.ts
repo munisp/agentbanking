@@ -15,20 +15,39 @@ export const bnplEngineRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [activeRes, disbursedRes, paidRes, overdueRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as total FROM "bnpl_applications" WHERE status IN ('active','completed')`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'completed'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'overdue'`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as total FROM "bnpl_applications" WHERE status IN ('active','completed')`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'completed'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'overdue'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const disbursedResult = (disbursedRes as any).rows?.[0]?.total;
       const paidResult = (paidRes as any).rows?.[0]?.cnt;
       const overdueResult = (overdueRes as any).rows?.[0]?.cnt;
       return {
-      activeLoans: Number(activeResult ?? 0),
-      totalDisbursed: Number(disbursedResult ?? 0),
-      repaymentRate: total > 0 ? ((Number(paidResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
-      overdueCount: Number(overdueResult ?? 0),
+        activeLoans: Number(activeResult ?? 0),
+        totalDisbursed: Number(disbursedResult ?? 0),
+        repaymentRate:
+          total > 0
+            ? ((Number(paidResult ?? 0) / total) * 100).toFixed(1) + "%"
+            : "0%",
+        overdueCount: Number(overdueResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -86,14 +105,23 @@ export const bnplEngineRouter = router({
 
       const amount = Number(input.data.amount);
       if (!amount || amount < 1000 || amount > 5000000) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "BNPL amount must be between ₦1,000 and ₦5,000,000" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "BNPL amount must be between ₦1,000 and ₦5,000,000",
+        });
       }
       const installments = Number(input.data.installments);
       if (!installments || installments < 2 || installments > 12) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Installments must be between 2 and 12" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Installments must be between 2 and 12",
+        });
       }
       if (!input.data.customerId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "customerId is required" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "customerId is required",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -131,9 +159,18 @@ export const bnplEngineRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["active", "overdue", "completed", "defaulted", "pending"];
+      const validStatuses = [
+        "active",
+        "overdue",
+        "completed",
+        "defaulted",
+        "pending",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -179,7 +216,7 @@ export const bnplEngineRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

@@ -15,20 +15,39 @@ export const conversationalBankingRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [activeRes, msgRes, cmdRes, satisfiedRes] = await Promise.all([
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'message_count')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'commands_executed')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE (data->>'satisfaction_score')::numeric >= 4`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE status = 'active'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'message_count')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'commands_executed')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE (data->>'satisfaction_score')::numeric >= 4`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const activeResult = (activeRes as any).rows?.[0]?.cnt;
       const msgResult = (msgRes as any).rows?.[0]?.cnt;
       const cmdResult = (cmdRes as any).rows?.[0]?.cnt;
       const satisfiedResult = (satisfiedRes as any).rows?.[0]?.cnt;
       return {
-      activeSessions: Number(activeResult ?? 0),
-      messagesToday: Number(msgResult ?? 0),
-      commandsExecuted: Number(cmdResult ?? 0),
-      satisfactionRate: total > 0 ? ((Number(satisfiedResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
+        activeSessions: Number(activeResult ?? 0),
+        messagesToday: Number(msgResult ?? 0),
+        commandsExecuted: Number(cmdResult ?? 0),
+        satisfactionRate:
+          total > 0
+            ? ((Number(satisfiedResult ?? 0) / total) * 100).toFixed(1) + "%"
+            : "0%",
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -84,11 +103,26 @@ export const conversationalBankingRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.channel || !["whatsapp", "telegram", "ussd", "webchat", "sms"].includes(input.data.channel as string)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "channel must be one of: whatsapp, telegram, ussd, webchat, sms" });
+      if (
+        !input.data.channel ||
+        !["whatsapp", "telegram", "ussd", "webchat", "sms"].includes(
+          input.data.channel as string
+        )
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "channel must be one of: whatsapp, telegram, ussd, webchat, sms",
+        });
       }
-      if (!input.data.customerPhone || typeof input.data.customerPhone !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "customerPhone is required" });
+      if (
+        !input.data.customerPhone ||
+        typeof input.data.customerPhone !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "customerPhone is required",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -128,7 +162,10 @@ export const conversationalBankingRouter = router({
 
       const validStatuses = ["active", "idle", "closed", "escalated"];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -166,15 +203,21 @@ export const conversationalBankingRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      { name: "Conversational Banking (Go)", url: "http://localhost:8260/health" },
-      { name: "Conversational Banking (Rust)", url: "http://localhost:8261/health" },
+      {
+        name: "Conversational Banking (Go)",
+        url: "http://localhost:8260/health",
+      },
+      {
+        name: "Conversational Banking (Rust)",
+        url: "http://localhost:8261/health",
+      },
       {
         name: "Conversational Banking (Python)",
         url: "http://localhost:8262/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

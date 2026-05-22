@@ -15,18 +15,30 @@ export const educationPaymentsRouter = router({
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
 
       const [studentRes, feesRes, examRes] = await Promise.all([
-        db.execute(sql`SELECT COALESCE(SUM((data->>'student_count')::numeric), 0) as cnt FROM "edu_schools"`).catch(() => ({rows:[{cnt:0}]})),
-        db.execute(sql`SELECT COALESCE(SUM((data->>'fees_collected')::numeric), 0) as total FROM "edu_schools"`).catch(() => ({rows:[{total:0}]})),
-        db.execute(sql`SELECT COUNT(*) as cnt FROM "edu_schools" WHERE data->>'type' = 'exam_registration'`).catch(() => ({rows:[{cnt:0}]})),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'student_count')::numeric), 0) as cnt FROM "edu_schools"`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COALESCE(SUM((data->>'fees_collected')::numeric), 0) as total FROM "edu_schools"`
+          )
+          .catch(() => ({ rows: [{ total: 0 }] })),
+        db
+          .execute(
+            sql`SELECT COUNT(*) as cnt FROM "edu_schools" WHERE data->>'type' = 'exam_registration'`
+          )
+          .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
       const studentResult = (studentRes as any).rows?.[0]?.cnt;
       const feesResult = (feesRes as any).rows?.[0]?.total;
       const examResult = (examRes as any).rows?.[0]?.cnt;
       return {
-      registeredSchools: total,
-      totalStudents: Number(studentResult ?? 0),
-      feesCollected: Number(feesResult ?? 0),
-      examRegistrations: Number(examResult ?? 0),
+        registeredSchools: total,
+        totalStudents: Number(studentResult ?? 0),
+        feesCollected: Number(feesResult ?? 0),
+        examRegistrations: Number(examResult ?? 0),
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -82,15 +94,27 @@ export const educationPaymentsRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      if (!input.data.schoolName || typeof input.data.schoolName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "schoolName is required" });
+      if (!input.data.schoolName || typeof input.data.schoolName !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "schoolName is required",
+        });
       }
-      if (!input.data.studentName || typeof input.data.studentName !== 'string') {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "studentName is required" });
+      if (
+        !input.data.studentName ||
+        typeof input.data.studentName !== "string"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "studentName is required",
+        });
       }
       const amount = Number(input.data.amount);
       if (!amount || amount < 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "amount must be a positive number" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "amount must be a positive number",
+        });
       }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
@@ -128,9 +152,18 @@ export const educationPaymentsRouter = router({
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
 
-      const validStatuses = ["paid", "partial", "overdue", "refunded", "active"];
+      const validStatuses = [
+        "paid",
+        "partial",
+        "overdue",
+        "refunded",
+        "active",
+      ];
       if (!validStatuses.includes(input.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status must be one of: " + validStatuses.join(", "),
+        });
       }
       const recordId = input.id;
       const newStatus = input.status;
@@ -169,14 +202,17 @@ export const educationPaymentsRouter = router({
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
       { name: "Education Payments (Go)", url: "http://localhost:8257/health" },
-      { name: "Education Payments (Rust)", url: "http://localhost:8258/health" },
+      {
+        name: "Education Payments (Rust)",
+        url: "http://localhost:8258/health",
+      },
       {
         name: "Education Payments (Python)",
         url: "http://localhost:8259/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async (svc) => {
+      services.map(async svc => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

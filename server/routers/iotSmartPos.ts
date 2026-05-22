@@ -13,17 +13,31 @@ export const iotSmartPosRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "iot_devices"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [onlineRes, alertRes, predictRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE status = 'online'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'alert_active')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "iot_devices" WHERE (data->>'predicted_failure')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const onlineResult = (onlineRes as any).rows?.[0]?.cnt;
+      const alertResult = (alertRes as any).rows?.[0]?.cnt;
+      const predictResult = (predictRes as any).rows?.[0]?.cnt;
+      return {
       totalDevices: total,
-      onlineDevices: active,
-      activeAlerts: Math.min(total, 70),
-      predictedFailures: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      onlineDevices: Number(onlineResult ?? 0),
+      activeAlerts: Number(alertResult ?? 0),
+      predictedFailures: Number(predictResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalDevices: 0,
+        onlineDevices: 0,
+        activeAlerts: 0,
+        predictedFailures: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,13 @@ export const iotSmartPosRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.deviceType || typeof input.data.deviceType !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "deviceType is required (e.g., temperature, gps, tamper, battery)" });
+      }
+      if (!input.data.location || typeof input.data.location !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "location is required for IoT device registration" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "iot_devices" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +123,11 @@ export const iotSmartPosRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["online", "offline", "maintenance", "tampered"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -140,10 +166,13 @@ export const iotSmartPosRouter = router({
     const services = [
       { name: "IoT Smart POS (Go)", url: "http://localhost:8266/health" },
       { name: "IoT Smart POS (Rust)", url: "http://localhost:8267/health" },
-      { name: "IoT Smart POS (Python)", url: "http://localhost:8268/health" },
+      {
+        name: "IoT Smart POS (Python)",
+        url: "http://localhost:8268/health",
+      },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

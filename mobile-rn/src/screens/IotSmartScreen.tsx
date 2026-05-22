@@ -6,13 +6,14 @@ interface RecordItem { id: number; status?: string; [key: string]: any; }
 
 const API_BASE = 'http://localhost:3001/api/trpc';
 
-const SlaText = ({ item }: { item: RecordItem }) => {
-    const sla = Number(item.sla_score || 0);
-    const color = sla >= 99 ? '#22c55e' : sla >= 95 ? '#f59e0b' : '#ef4444';
-    return (<Text style={{ fontSize: 12, fontWeight: '700', color }}>{sla.toFixed(1)}% SLA</Text>);
+const DeviceInfo = ({ item }: { item: RecordItem }) => {
+    const bat = Number(item.battery || 100); const temp = Number(item.temperature || 25);
+    const batIcon = bat > 50 ? '🔋' : bat > 20 ? '🪫' : '⚠️';
+    return (<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ fontSize: 12 }}>{batIcon} {bat}%</Text><Text style={{ fontSize: 12, marginLeft: 8, color: temp > 45 ? '#ef4444' : '#6b7280' }}>🌡️ {temp}°C</Text></View>);
   };
 
-export default function AnaasScreen() {
+export default function IotSmartScreen() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [items, setItems] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,8 +24,8 @@ export default function AnaasScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/anaas.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/anaas.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/iot_smart.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/iot_smart.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);
@@ -43,7 +44,7 @@ export default function AnaasScreen() {
     return m[s || ''] || '#6b7280';
   };
 
-  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading ANaaS / Embedded Finance...</Text></View>);
+  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading IoT Smart POS...</Text></View>);
   if (error) return (<View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={loadData} style={styles.retryBtn}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>);
 
   return (
@@ -54,29 +55,29 @@ export default function AnaasScreen() {
       ListHeaderComponent={
         <View>
           <View style={styles.header}>
-            <Text style={styles.title}>ANaaS / Embedded Finance</Text>
-            <Text style={styles.subtitle}>Agent Network as a Service</Text>
+            <Text style={styles.title}>IoT Smart POS</Text>
+            <Text style={styles.subtitle}>Sensors & predictive maintenance</Text>
           </View>
           <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🏢</Text>
-            <Text style={styles.statLabel}>Tenants</Text>
-            <Text style={styles.statValue}>{stats?.totalTenants ?? '—'}</Text>
+            <Text style={styles.statIcon}>📡</Text>
+            <Text style={styles.statLabel}>Total Devices</Text>
+            <Text style={styles.statValue}>{stats?.totalDevices ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>👥</Text>
-            <Text style={styles.statLabel}>Shared Agents</Text>
-            <Text style={styles.statValue}>{stats?.sharedAgents ?? '—'}</Text>
+            <Text style={styles.statIcon}>🟢</Text>
+            <Text style={styles.statLabel}>Online</Text>
+            <Text style={styles.statValue}>{stats?.onlineDevices ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>💰</Text>
-            <Text style={styles.statLabel}>Monthly Revenue</Text>
-            <Text style={styles.statValue}>₦{stats?.monthlyRevenue ?? '—'}</Text>
+            <Text style={styles.statIcon}>⚠️</Text>
+            <Text style={styles.statLabel}>Alerts</Text>
+            <Text style={styles.statValue}>{stats?.activeAlerts ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>⚡</Text>
-            <Text style={styles.statLabel}>Avg SLA</Text>
-            <Text style={styles.statValue}>{stats?.avgSlaScore ?? '—'}</Text>
+            <Text style={styles.statIcon}>🔮</Text>
+            <Text style={styles.statLabel}>Predicted Failures</Text>
+            <Text style={styles.statValue}>{stats?.predictedFailures ?? '—'}</Text>
           </View>
           </View>
           <View style={styles.searchWrap}>
@@ -89,13 +90,13 @@ export default function AnaasScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.idBadge}><Text style={styles.idText}>#{item.id}</Text></View>
-            <Text style={styles.cardTitle} numberOfLines={1}>{item.tenantName || `Record #${item.id}`}</Text>
+            <Text style={styles.cardTitle} numberOfLines={1}>{item.deviceType || `Record #${item.id}`}</Text>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
               <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{(item.status || '—').toUpperCase()}</Text>
             </View>
           </View>
           <View style={styles.cardBody}>
-            <SlaText item={item} />
+            <DeviceInfo item={item} />
           </View>
         </View>
       )}

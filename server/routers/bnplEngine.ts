@@ -13,17 +13,33 @@ export const bnplEngineRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "bnpl_applications"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
+
+      const [activeRes, disbursedRes, paidRes, overdueRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as total FROM "bnpl_applications" WHERE status IN ('active','completed')`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'completed'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "bnpl_applications" WHERE status = 'overdue'`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const activeResult = (activeRes as any).rows?.[0]?.cnt;
+      const disbursedResult = (disbursedRes as any).rows?.[0]?.total;
+      const paidResult = (paidRes as any).rows?.[0]?.cnt;
+      const overdueResult = (overdueRes as any).rows?.[0]?.cnt;
+      return {
+      activeLoans: Number(activeResult ?? 0),
+      totalDisbursed: Number(disbursedResult ?? 0),
+      repaymentRate: total > 0 ? ((Number(paidResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
+      overdueCount: Number(overdueResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
     } catch {
-      total = 0;
+      return {
+        activeLoans: 0,
+        totalDisbursed: 0,
+        repaymentRate: 0,
+        overdueCount: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
-      activeLoans: total,
-      totalDisbursed: active,
-      repaymentRate: total > 0 ? "87.5%" : "0%",
-      overdueCount: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
   }),
 
   list: protectedProcedure
@@ -67,6 +83,18 @@ export const bnplEngineRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const amount = Number(input.data.amount);
+      if (!amount || amount < 1000 || amount > 5000000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "BNPL amount must be between ₦1,000 and ₦5,000,000" });
+      }
+      const installments = Number(input.data.installments);
+      if (!installments || installments < 2 || installments > 12) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Installments must be between 2 and 12" });
+      }
+      if (!input.data.customerId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "customerId is required" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "bnpl_applications" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +130,11 @@ export const bnplEngineRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "overdue", "completed", "defaulted", "pending"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -140,10 +173,13 @@ export const bnplEngineRouter = router({
     const services = [
       { name: "BNPL Engine (Go)", url: "http://localhost:8233/health" },
       { name: "BNPL Engine (Rust)", url: "http://localhost:8234/health" },
-      { name: "BNPL Engine (Python)", url: "http://localhost:8235/health" },
+      {
+        name: "BNPL Engine (Python)",
+        url: "http://localhost:8235/health",
+      },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

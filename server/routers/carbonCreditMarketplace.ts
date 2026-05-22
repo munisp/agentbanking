@@ -13,17 +13,31 @@ export const carbonCreditMarketplaceRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "carbon_projects"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [issuedRes, retiredRes, volumeRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'credits_issued')::numeric), 0) as total FROM "carbon_projects" WHERE status = 'verified'`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'credits_retired')::numeric), 0) as total FROM "carbon_projects"`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'trade_volume')::numeric), 0) as total FROM "carbon_projects"`).catch(() => ({rows:[{total:0}]})),
+      ]);
+      const issuedResult = (issuedRes as any).rows?.[0]?.total;
+      const retiredResult = (retiredRes as any).rows?.[0]?.total;
+      const volumeResult = (volumeRes as any).rows?.[0]?.total;
+      return {
       totalProjects: total,
-      creditsIssued: active,
-      creditsRetired: Math.min(total, 70),
-      marketVolume: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      creditsIssued: Number(issuedResult ?? 0),
+      creditsRetired: Number(retiredResult ?? 0),
+      marketVolume: Number(volumeResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalProjects: 0,
+        creditsIssued: 0,
+        creditsRetired: 0,
+        marketVolume: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,17 @@ export const carbonCreditMarketplaceRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.projectName || typeof input.data.projectName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "projectName is required" });
+      }
+      if (!input.data.projectType || !["reforestation", "solar", "wind", "cookstove", "biogas", "waste_mgmt"].includes(input.data.projectType as string)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "projectType must be one of: reforestation, solar, wind, cookstove, biogas, waste_mgmt" });
+      }
+      const credits = Number(input.data.creditsRequested);
+      if (!credits || credits < 1) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "creditsRequested must be at least 1 tonne CO2e" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "carbon_projects" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +127,11 @@ export const carbonCreditMarketplaceRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["verified", "pending", "rejected", "expired", "active"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +168,15 @@ export const carbonCreditMarketplaceRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Carbon Credit Marketplace (Go)",
-        url: "http://localhost:8281/health",
-      },
-      {
-        name: "Carbon Credit Marketplace (Rust)",
-        url: "http://localhost:8282/health",
-      },
+      { name: "Carbon Credit Marketplace (Go)", url: "http://localhost:8281/health" },
+      { name: "Carbon Credit Marketplace (Rust)", url: "http://localhost:8282/health" },
       {
         name: "Carbon Credit Marketplace (Python)",
         url: "http://localhost:8283/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

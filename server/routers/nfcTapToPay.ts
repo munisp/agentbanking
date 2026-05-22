@@ -13,17 +13,33 @@ export const nfcTapToPayRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "nfc_terminals"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
+
+      const [activeRes, todayRes, volumeRes, avgTimeRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "nfc_terminals" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{vol:0}]})),
+        db.execute(sql`SELECT COALESCE(AVG((data->>'tap_duration_ms')::numeric), 0) as avg_ms FROM "nfc_terminals" WHERE status = 'approved'`).catch(() => ({rows:[{avg_ms:0}]})),
+      ]);
+      const activeResult = (activeRes as any).rows?.[0]?.cnt;
+      const todayResult = (todayRes as any).rows?.[0]?.cnt;
+      const volumeResult = (volumeRes as any).rows?.[0]?.vol;
+      const avgTimeResult = (avgTimeRes as any).rows?.[0]?.avg_ms;
+      return {
+      activeTerminals: Number(activeResult ?? 0),
+      transactionsToday: Number(todayResult ?? 0),
+      volumeToday: Number(volumeResult ?? 0),
+      avgTapTime: total > 0 ? ((Number(avgTimeResult ?? 0)) / 1000).toFixed(2) + "s" : "0s",
+        lastUpdated: new Date().toISOString(),
+      };
     } catch {
-      total = 0;
+      return {
+        activeTerminals: 0,
+        transactionsToday: 0,
+        volumeToday: 0,
+        avgTapTime: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
-      activeTerminals: total,
-      transactionsToday: active,
-      volumeToday: Math.min(total, 70),
-      avgTapTime: "1.2s",
-      lastUpdated: new Date().toISOString(),
-    };
   }),
 
   list: protectedProcedure
@@ -67,6 +83,13 @@ export const nfcTapToPayRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.terminalId || typeof input.data.terminalId !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "terminalId is required for NFC registration" });
+      }
+      if (!input.data.deviceModel || typeof input.data.deviceModel !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "deviceModel is required (Android NFC-enabled device)" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "nfc_terminals" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +125,11 @@ export const nfcTapToPayRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["approved", "declined", "pending", "reversed", "active"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -140,10 +168,13 @@ export const nfcTapToPayRouter = router({
     const services = [
       { name: "NFC Tap-to-Pay (Go)", url: "http://localhost:8236/health" },
       { name: "NFC Tap-to-Pay (Rust)", url: "http://localhost:8237/health" },
-      { name: "NFC Tap-to-Pay (Python)", url: "http://localhost:8238/health" },
+      {
+        name: "NFC Tap-to-Pay (Python)",
+        url: "http://localhost:8238/health",
+      },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

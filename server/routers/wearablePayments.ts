@@ -13,17 +13,33 @@ export const wearablePaymentsRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "wearable_devices"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
+
+      const [activeRes, balanceRes, txnRes, agentRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "wearable_devices" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'balance')::numeric), 0) as total FROM "wearable_devices" WHERE status = 'active'`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "wearable_devices" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(DISTINCT agent_id) as cnt FROM "wearable_devices" WHERE agent_id IS NOT NULL`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const activeResult = (activeRes as any).rows?.[0]?.cnt;
+      const balanceResult = (balanceRes as any).rows?.[0]?.total;
+      const txnResult = (txnRes as any).rows?.[0]?.cnt;
+      const agentResult = (agentRes as any).rows?.[0]?.cnt;
+      return {
+      activeDevices: Number(activeResult ?? 0),
+      totalBalance: Number(balanceResult ?? 0),
+      transactionsToday: Number(txnResult ?? 0),
+      agentsIssuing: Number(agentResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
     } catch {
-      total = 0;
+      return {
+        activeDevices: 0,
+        totalBalance: 0,
+        transactionsToday: 0,
+        agentsIssuing: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
-      activeDevices: total,
-      totalBalance: active,
-      transactionsToday: Math.min(total, 70),
-      agentsIssuing: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
   }),
 
   list: protectedProcedure
@@ -67,6 +83,13 @@ export const wearablePaymentsRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.deviceType || !["wristband", "ring", "keychain", "sticker"].includes(input.data.deviceType as string)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "deviceType must be one of: wristband, ring, keychain, sticker" });
+      }
+      if (!input.data.customerName || typeof input.data.customerName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "customerName is required" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "wearable_devices" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +125,11 @@ export const wearablePaymentsRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "inactive", "deactivated", "lost"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -146,7 +174,7 @@ export const wearablePaymentsRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

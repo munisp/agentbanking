@@ -6,13 +6,13 @@ interface RecordItem { id: number; status?: string; [key: string]: any; }
 
 const API_BASE = 'http://localhost:3001/api/trpc';
 
-const SlaText = ({ item }: { item: RecordItem }) => {
-    const sla = Number(item.sla_score || 0);
-    const color = sla >= 99 ? '#22c55e' : sla >= 95 ? '#f59e0b' : '#ef4444';
-    return (<Text style={{ fontSize: 12, fontWeight: '700', color }}>{sla.toFixed(1)}% SLA</Text>);
+const WearableIcon = ({ item }: { item: RecordItem }) => {
+    const type = item.deviceType || 'wristband';
+    const icons: Record<string, string> = { wristband: '⌚', ring: '💍', keychain: '🔑', sticker: '🏷️' };
+    return (<Text style={{ fontSize: 18 }}>{icons[type] || '📱'}</Text>);
   };
 
-export default function AnaasScreen() {
+export default function WearableScreen() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [items, setItems] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,8 +23,8 @@ export default function AnaasScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/anaas.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/anaas.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/wearable.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/wearable.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);
@@ -43,7 +43,7 @@ export default function AnaasScreen() {
     return m[s || ''] || '#6b7280';
   };
 
-  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading ANaaS / Embedded Finance...</Text></View>);
+  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading Wearable Payments...</Text></View>);
   if (error) return (<View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={loadData} style={styles.retryBtn}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>);
 
   return (
@@ -54,29 +54,29 @@ export default function AnaasScreen() {
       ListHeaderComponent={
         <View>
           <View style={styles.header}>
-            <Text style={styles.title}>ANaaS / Embedded Finance</Text>
-            <Text style={styles.subtitle}>Agent Network as a Service</Text>
+            <Text style={styles.title}>Wearable Payments</Text>
+            <Text style={styles.subtitle}>NFC wristbands, rings & keychains</Text>
           </View>
           <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🏢</Text>
-            <Text style={styles.statLabel}>Tenants</Text>
-            <Text style={styles.statValue}>{stats?.totalTenants ?? '—'}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>👥</Text>
-            <Text style={styles.statLabel}>Shared Agents</Text>
-            <Text style={styles.statValue}>{stats?.sharedAgents ?? '—'}</Text>
+            <Text style={styles.statIcon}>⌚</Text>
+            <Text style={styles.statLabel}>Active Devices</Text>
+            <Text style={styles.statValue}>{stats?.activeDevices ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statIcon}>💰</Text>
-            <Text style={styles.statLabel}>Monthly Revenue</Text>
-            <Text style={styles.statValue}>₦{stats?.monthlyRevenue ?? '—'}</Text>
+            <Text style={styles.statLabel}>Total Balance</Text>
+            <Text style={styles.statValue}>₦{stats?.totalBalance ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>⚡</Text>
-            <Text style={styles.statLabel}>Avg SLA</Text>
-            <Text style={styles.statValue}>{stats?.avgSlaScore ?? '—'}</Text>
+            <Text style={styles.statIcon}>🔄</Text>
+            <Text style={styles.statLabel}>Transactions</Text>
+            <Text style={styles.statValue}>{stats?.transactionsToday ?? '—'}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🏪</Text>
+            <Text style={styles.statLabel}>Agents Issuing</Text>
+            <Text style={styles.statValue}>{stats?.agentsIssuing ?? '—'}</Text>
           </View>
           </View>
           <View style={styles.searchWrap}>
@@ -89,13 +89,13 @@ export default function AnaasScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.idBadge}><Text style={styles.idText}>#{item.id}</Text></View>
-            <Text style={styles.cardTitle} numberOfLines={1}>{item.tenantName || `Record #${item.id}`}</Text>
+            <Text style={styles.cardTitle} numberOfLines={1}>{item.deviceType || `Record #${item.id}`}</Text>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
               <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{(item.status || '—').toUpperCase()}</Text>
             </View>
           </View>
           <View style={styles.cardBody}>
-            <SlaText item={item} />
+            <WearableIcon item={item} />
           </View>
         </View>
       )}

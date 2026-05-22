@@ -13,17 +13,31 @@ export const stablecoinRailsRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "stable_wallets"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [supplyRes, volumeRes, devRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'balance')::numeric), 0) as supply FROM "stable_wallets" WHERE status = 'active'`).catch(() => ({rows:[{supply:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'amount')::numeric), 0) as vol FROM "stable_wallets" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{vol:0}]})),
+        db.execute(sql`SELECT COALESCE(AVG((data->>'peg_deviation')::numeric), 0) as dev FROM "stable_wallets" WHERE data->>'peg_deviation' IS NOT NULL`).catch(() => ({rows:[{dev:0}]})),
+      ]);
+      const supplyResult = (supplyRes as any).rows?.[0]?.supply;
+      const volumeResult = (volumeRes as any).rows?.[0]?.vol;
+      const devResult = (devRes as any).rows?.[0]?.dev;
+      return {
       totalWallets: total,
-      circulatingSupply: active,
-      dailyVolume: Math.min(total, 70),
-      pegDeviation: total > 0 ? "87.5%" : "0%",
-      lastUpdated: new Date().toISOString(),
-    };
+      circulatingSupply: Number(supplyResult ?? 0),
+      dailyVolume: Number(volumeResult ?? 0),
+      pegDeviation: Number(devResult ?? 0) !== 0 ? Number(devResult).toFixed(4) + "%" : "0.00%",
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalWallets: 0,
+        circulatingSupply: 0,
+        dailyVolume: 0,
+        pegDeviation: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,14 @@ export const stablecoinRailsRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.walletAddress || typeof input.data.walletAddress !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "walletAddress is required" });
+      }
+      const amount = Number(input.data.amount);
+      if (amount !== undefined && amount < 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "amount cannot be negative" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "stable_wallets" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +124,11 @@ export const stablecoinRailsRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "frozen", "suspended", "closed", "confirmed", "pending", "failed", "processing"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -146,7 +173,7 @@ export const stablecoinRailsRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

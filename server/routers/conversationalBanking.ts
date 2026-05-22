@@ -13,17 +13,33 @@ export const conversationalBankingRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "chat_sessions"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
+
+      const [activeRes, msgRes, cmdRes, satisfiedRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'message_count')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'commands_executed')::numeric), 0) as cnt FROM "chat_sessions" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "chat_sessions" WHERE (data->>'satisfaction_score')::numeric >= 4`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const activeResult = (activeRes as any).rows?.[0]?.cnt;
+      const msgResult = (msgRes as any).rows?.[0]?.cnt;
+      const cmdResult = (cmdRes as any).rows?.[0]?.cnt;
+      const satisfiedResult = (satisfiedRes as any).rows?.[0]?.cnt;
+      return {
+      activeSessions: Number(activeResult ?? 0),
+      messagesToday: Number(msgResult ?? 0),
+      commandsExecuted: Number(cmdResult ?? 0),
+      satisfactionRate: total > 0 ? ((Number(satisfiedResult ?? 0) / total) * 100).toFixed(1) + "%" : "0%",
+        lastUpdated: new Date().toISOString(),
+      };
     } catch {
-      total = 0;
+      return {
+        activeSessions: 0,
+        messagesToday: 0,
+        commandsExecuted: 0,
+        satisfactionRate: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
-      activeSessions: total,
-      messagesToday: active,
-      commandsExecuted: Math.min(total, 70),
-      satisfactionRate: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
   }),
 
   list: protectedProcedure
@@ -67,6 +83,13 @@ export const conversationalBankingRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.channel || !["whatsapp", "telegram", "ussd", "webchat", "sms"].includes(input.data.channel as string)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "channel must be one of: whatsapp, telegram, ussd, webchat, sms" });
+      }
+      if (!input.data.customerPhone || typeof input.data.customerPhone !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "customerPhone is required" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "chat_sessions" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +125,11 @@ export const conversationalBankingRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "idle", "closed", "escalated"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +166,15 @@ export const conversationalBankingRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Conversational Banking (Go)",
-        url: "http://localhost:8260/health",
-      },
-      {
-        name: "Conversational Banking (Rust)",
-        url: "http://localhost:8261/health",
-      },
+      { name: "Conversational Banking (Go)", url: "http://localhost:8260/health" },
+      { name: "Conversational Banking (Rust)", url: "http://localhost:8261/health" },
       {
         name: "Conversational Banking (Python)",
         url: "http://localhost:8262/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

@@ -13,17 +13,31 @@ export const payrollDisbursementRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "payroll_employers"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [empRes, disbursedRes, pendingRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'employee_count')::numeric), 0) as cnt FROM "payroll_employers" WHERE status = 'processed'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'total_amount')::numeric), 0) as total FROM "payroll_employers" WHERE status = 'processed' AND created_at >= date_trunc('month', CURRENT_DATE)`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "payroll_employers" WHERE status = 'pending'`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const empResult = (empRes as any).rows?.[0]?.cnt;
+      const disbursedResult = (disbursedRes as any).rows?.[0]?.total;
+      const pendingResult = (pendingRes as any).rows?.[0]?.cnt;
+      return {
       totalEmployers: total,
-      totalEmployees: active,
-      monthlyDisbursed: Math.min(total, 70),
-      pendingCashOut: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      totalEmployees: Number(empResult ?? 0),
+      monthlyDisbursed: Number(disbursedResult ?? 0),
+      pendingCashOut: Number(pendingResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalEmployers: 0,
+        totalEmployees: 0,
+        monthlyDisbursed: 0,
+        pendingCashOut: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,18 @@ export const payrollDisbursementRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.employerName || typeof input.data.employerName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "employerName is required" });
+      }
+      const empCount = Number(input.data.employeeCount);
+      if (!empCount || empCount < 1 || empCount > 100000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "employeeCount must be between 1 and 100,000" });
+      }
+      const totalAmount = Number(input.data.totalAmount);
+      if (!totalAmount || totalAmount < 30000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "totalAmount must be at least ₦30,000 (minimum wage)" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "payroll_employers" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +128,11 @@ export const payrollDisbursementRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["processed", "pending", "failed", "partial"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +169,15 @@ export const payrollDisbursementRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Payroll & Salary Disbursement (Go)",
-        url: "http://localhost:8251/health",
-      },
-      {
-        name: "Payroll & Salary Disbursement (Rust)",
-        url: "http://localhost:8252/health",
-      },
+      { name: "Payroll & Salary Disbursement (Go)", url: "http://localhost:8251/health" },
+      { name: "Payroll & Salary Disbursement (Rust)", url: "http://localhost:8252/health" },
       {
         name: "Payroll & Salary Disbursement (Python)",
         url: "http://localhost:8253/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

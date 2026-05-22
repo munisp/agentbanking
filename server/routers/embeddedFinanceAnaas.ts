@@ -13,17 +13,31 @@ export const embeddedFinanceAnaasRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "anaas_tenants"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [agentsRes, revenueRes, slaRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'agent_count')::numeric), 0) as cnt FROM "anaas_tenants" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'monthly_volume')::numeric), 0) as revenue FROM "anaas_tenants" WHERE status = 'active'`).catch(() => ({rows:[{revenue:0}]})),
+        db.execute(sql`SELECT COALESCE(AVG((data->>'sla_score')::numeric), 0) as avg_sla FROM "anaas_tenants" WHERE status = 'active'`).catch(() => ({rows:[{avg_sla:0}]})),
+      ]);
+      const agentsResult = (agentsRes as any).rows?.[0]?.cnt;
+      const revenueResult = (revenueRes as any).rows?.[0]?.revenue;
+      const slaResult = (slaRes as any).rows?.[0]?.avg_sla;
+      return {
       totalTenants: total,
-      sharedAgents: active,
-      monthlyRevenue: Math.min(total, 70),
-      avgSlaScore: total > 0 ? "87.5%" : "0%",
-      lastUpdated: new Date().toISOString(),
-    };
+      sharedAgents: Number(agentsResult ?? 0),
+      monthlyRevenue: Number(revenueResult ?? 0),
+      avgSlaScore: total > 0 ? Number(Number(slaResult ?? 0).toFixed(1)) : 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalTenants: 0,
+        sharedAgents: 0,
+        monthlyRevenue: 0,
+        avgSlaScore: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,13 @@ export const embeddedFinanceAnaasRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.tenantName || typeof input.data.tenantName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "tenantName is required" });
+      }
+      if (!input.data.type || !["bank", "fintech", "telco", "insurance"].includes(input.data.type as string)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "type must be one of: bank, fintech, telco, insurance" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "anaas_tenants" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +123,11 @@ export const embeddedFinanceAnaasRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "trial", "suspended", "churned"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +164,15 @@ export const embeddedFinanceAnaasRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Embedded Finance / ANaaS (Go)",
-        url: "http://localhost:8248/health",
-      },
-      {
-        name: "Embedded Finance / ANaaS (Rust)",
-        url: "http://localhost:8249/health",
-      },
+      { name: "Embedded Finance / ANaaS (Go)", url: "http://localhost:8248/health" },
+      { name: "Embedded Finance / ANaaS (Rust)", url: "http://localhost:8249/health" },
       {
         name: "Embedded Finance / ANaaS (Python)",
         url: "http://localhost:8250/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

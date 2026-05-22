@@ -1,28 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-  ScrollView,
-  Alert,
-} from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 
-interface StatsData {
-  [key: string]: string | number;
-}
-
-interface RecordItem {
-  id: number;
-  status?: string;
-  name?: string;
-  [key: string]: any;
-}
+interface StatsData { [key: string]: string | number; }
+interface RecordItem { id: number; status?: string; [key: string]: any; }
 
 const API_BASE = 'http://localhost:3001/api/trpc';
+
+const VerifyBars = ({ item }: { item: RecordItem }) => {
+    const level = Number(item.verificationLevel || 1);
+    const labels = ['BVN', 'NIN', 'Bio', 'KYC'];
+    return (<View style={{ flexDirection: 'row' }}>{[0,1,2,3].map(i => (
+      <View key={i} style={{ width: 18, height: 5, backgroundColor: i < level ? '#22c55e' : '#d1d5db', marginRight: 2, borderRadius: 3 }} />
+    ))}</View>);
+  };
 
 export default function DigitalIdentityScreen() {
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -30,6 +20,7 @@ export default function DigitalIdentityScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -40,156 +31,108 @@ export default function DigitalIdentityScreen() {
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);
       setError('');
-    } catch (e: any) {
-      setError(e.message || 'Failed to load data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    } catch (e: any) { setError(e.message || 'Failed to load'); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
+  const onRefresh = useCallback(() => { setRefreshing(true); loadData(); }, [loadData]);
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    loadData();
-  }, [loadData]);
+  const filtered = search ? items.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(search.toLowerCase()))) : items;
 
-  const getStatusColor = (status?: string): string => {
-    switch (status?.toLowerCase()) {
-      case 'active': case 'healthy': case 'verified': case 'approved': case 'confirmed':
-      case 'paid': case 'online': case 'connected':
-        return '#22c55e';
-      case 'pending': case 'review': case 'dormant': case 'idle': case 'partial':
-      case 'maintenance': case 'failover': case 'syncing':
-        return '#f59e0b';
-      case 'suspended': case 'failed': case 'declined': case 'rejected': case 'overdue':
-      case 'defaulted': case 'offline': case 'tampered': case 'escalated': case 'lost':
-        return '#ef4444';
-      default:
-        return '#6b7280';
-    }
+  const getStatusColor = (s?: string): string => {
+    const m: Record<string, string> = { active: '#22c55e', pending: '#f59e0b', suspended: '#ef4444', completed: '#3b82f6', failed: '#ef4444', online: '#22c55e', offline: '#ef4444', verified: '#22c55e', overdue: '#ef4444', connected: '#22c55e', processed: '#22c55e' };
+    return m[s || ''] || '#6b7280';
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Loading Digital Identity...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadData}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading Digital Identity...</Text></View>);
+  if (error) return (<View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={loadData} style={styles.retryBtn}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>);
 
   return (
-    <ScrollView
-      style={styles.container}
+    <FlatList
+      data={filtered}
+      keyExtractor={item => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Digital Identity</Text>
-        <Text style={styles.subtitle}>NIN enrollment and verifiable credentials</Text>
-      </View>
-
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
-        {stats && Object.entries(stats).filter(([k]) => k !== 'lastUpdated').map(([key, value]) => (
-          <View key={key} style={styles.statCard}>
-            <Text style={styles.statLabel}>
-              {key.replace(/([A-Z])/g, ' $1').trim()}
-            </Text>
-            <Text style={styles.statValue}>{String(value)}</Text>
+      ListHeaderComponent={
+        <View>
+          <View style={styles.header}>
+            <Text style={styles.title}>Digital Identity</Text>
+            <Text style={styles.subtitle}>DID, NIN enrollment & verification</Text>
           </View>
-        ))}
-      </View>
-
-      {/* Records List */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Records ({items.length})</Text>
-        {items.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No records yet</Text>
+          <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🆔</Text>
+            <Text style={styles.statLabel}>Identities</Text>
+            <Text style={styles.statValue}>{stats?.totalIdentities ?? '—'}</Text>
           </View>
-        ) : (
-          items.map((item, index) => (
-            <TouchableOpacity
-              key={item.id || index}
-              style={styles.listItem}
-              onPress={() => Alert.alert('Record', JSON.stringify(item, null, 2))}
-            >
-              <View style={styles.listItemLeft}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{item.id ?? index + 1}</Text>
-                </View>
-                <View>
-                  <Text style={styles.itemTitle}>
-                    {item.name || item.partnerName || item.customerName || `Record ${index + 1}`}
-                  </Text>
-                  <Text style={styles.itemSubtitle}>ID: {item.id}</Text>
-                </View>
-              </View>
-              <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-                <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>
-                  {item.status || 'active'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
-      </View>
-    </ScrollView>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>✅</Text>
+            <Text style={styles.statLabel}>Verified Today</Text>
+            <Text style={styles.statValue}>{stats?.verifiedToday ?? '—'}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🪪</Text>
+            <Text style={styles.statLabel}>NIN Enrolled</Text>
+            <Text style={styles.statValue}>{stats?.ninEnrollments ?? '—'}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🚨</Text>
+            <Text style={styles.statLabel}>Fraud Detected</Text>
+            <Text style={styles.statValue}>{stats?.fraudDetected ?? '—'}</Text>
+          </View>
+          </View>
+          <View style={styles.searchWrap}>
+            <TextInput style={styles.searchInput} placeholder="Search records..." value={search} onChangeText={setSearch} placeholderTextColor="#9ca3af" />
+          </View>
+          <Text style={styles.sectionTitle}>Records ({filtered.length})</Text>
+        </View>
+      }
+      renderItem={({ item }) => (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.idBadge}><Text style={styles.idText}>#{item.id}</Text></View>
+            <Text style={styles.cardTitle} numberOfLines={1}>{item.fullName || `Record #${item.id}`}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+              <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{(item.status || '—').toUpperCase()}</Text>
+            </View>
+          </View>
+          <View style={styles.cardBody}>
+            <VerifyBars item={item} />
+          </View>
+        </View>
+      )}
+      ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyText}>No records found</Text></View>}
+      contentContainerStyle={styles.list}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loadingText: { marginTop: 12, color: '#6b7280', fontSize: 16 },
-  errorText: { color: '#ef4444', fontSize: 16, textAlign: 'center', marginBottom: 16 },
-  retryButton: { backgroundColor: '#6366f1', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  loadingText: { marginTop: 12, color: '#6b7280' },
+  errorText: { fontSize: 16, color: '#ef4444', textAlign: 'center', marginBottom: 16 },
+  retryBtn: { backgroundColor: '#3b82f6', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
   retryText: { color: '#fff', fontWeight: '600' },
-  header: { padding: 20, paddingBottom: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#111827' },
-  subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12 },
-  statCard: {
-    width: '48%', margin: '1%', backgroundColor: '#fff', borderRadius: 12,
-    padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
-  },
-  statLabel: { fontSize: 12, color: '#6b7280', textTransform: 'capitalize' },
-  statValue: { fontSize: 22, fontWeight: '700', color: '#111827', marginTop: 4 },
-  section: { padding: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 12 },
-  emptyState: { alignItems: 'center', padding: 32 },
-  emptyText: { color: '#9ca3af', fontSize: 16 },
-  listItem: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', padding: 14, borderRadius: 10, marginBottom: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03,
-    shadowRadius: 1, elevation: 1,
-  },
-  listItemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: '#e0e7ff',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  avatarText: { fontWeight: '700', color: '#4f46e5' },
-  itemTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  itemSubtitle: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  badgeText: { fontSize: 12, fontWeight: '600' },
+  header: { padding: 16 },
+  title: { fontSize: 22, fontWeight: '800', color: '#111' },
+  subtitle: { fontSize: 13, color: '#6b7280', marginTop: 4 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 },
+  statCard: { width: '48%', backgroundColor: '#f9fafb', borderRadius: 12, padding: 12, margin: '1%', borderWidth: 1, borderColor: '#e5e7eb' },
+  statIcon: { fontSize: 18 },
+  statLabel: { fontSize: 11, color: '#6b7280', marginTop: 4 },
+  statValue: { fontSize: 20, fontWeight: '800', color: '#111', marginTop: 2 },
+  searchWrap: { paddingHorizontal: 16, paddingVertical: 8 },
+  searchInput: { backgroundColor: '#f3f4f6', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: '#e5e7eb' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 8, color: '#374151' },
+  card: { backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 8, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  idBadge: { backgroundColor: '#ede9fe', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  idText: { fontSize: 11, fontWeight: '700', color: '#7c3aed' },
+  cardTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
+  statusText: { fontSize: 10, fontWeight: '700' },
+  cardBody: { paddingTop: 4 },
+  empty: { padding: 40, alignItems: 'center' },
+  emptyText: { color: '#9ca3af', fontSize: 14 },
+  list: { paddingBottom: 32 },
 });

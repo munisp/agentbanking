@@ -13,17 +13,31 @@ export const superAppFrameworkRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "mini_apps"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [usersRes, launchRes, revenueRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'active_users')::numeric), 0) as cnt FROM "mini_apps" WHERE status = 'published'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'daily_launches')::numeric), 0) as cnt FROM "mini_apps" WHERE created_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'revenue')::numeric), 0) as revenue FROM "mini_apps"`).catch(() => ({rows:[{revenue:0}]})),
+      ]);
+      const usersResult = (usersRes as any).rows?.[0]?.cnt;
+      const launchResult = (launchRes as any).rows?.[0]?.cnt;
+      const revenueResult = (revenueRes as any).rows?.[0]?.revenue;
+      return {
       totalApps: total,
-      activeUsers: active,
-      dailyLaunches: Math.min(total, 70),
-      totalRevenue: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      activeUsers: Number(usersResult ?? 0),
+      dailyLaunches: Number(launchResult ?? 0),
+      totalRevenue: Number(revenueResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalApps: 0,
+        activeUsers: 0,
+        dailyLaunches: 0,
+        totalRevenue: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,13 @@ export const superAppFrameworkRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.name || typeof input.data.name !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Mini-app name is required" });
+      }
+      if (!input.data.category || typeof input.data.category !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "category is required (e.g., payments, transport, utilities)" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "mini_apps" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +123,11 @@ export const superAppFrameworkRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["published", "draft", "suspended", "review"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -139,17 +165,14 @@ export const superAppFrameworkRouter = router({
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
       { name: "Super App Framework (Go)", url: "http://localhost:8245/health" },
-      {
-        name: "Super App Framework (Rust)",
-        url: "http://localhost:8246/health",
-      },
+      { name: "Super App Framework (Rust)", url: "http://localhost:8246/health" },
       {
         name: "Super App Framework (Python)",
         url: "http://localhost:8247/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

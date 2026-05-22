@@ -13,17 +13,31 @@ export const coalitionLoyaltyRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "loyalty_members"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [pointsRes, redeemedRes, partnersRes] = await Promise.all([
+        db.execute(sql`SELECT COALESCE(SUM((data->>'points_balance')::numeric), 0) as total FROM "loyalty_members" WHERE status = 'active'`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'points_redeemed')::numeric), 0) as total FROM "loyalty_members"`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COUNT(DISTINCT data->>'partner_id') as cnt FROM "loyalty_members" WHERE data->>'partner_id' IS NOT NULL`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const pointsResult = (pointsRes as any).rows?.[0]?.total;
+      const redeemedResult = (redeemedRes as any).rows?.[0]?.total;
+      const partnersResult = (partnersRes as any).rows?.[0]?.cnt;
+      return {
       totalMembers: total,
-      pointsCirculating: active,
-      redemptionRate: total > 0 ? "87.5%" : "0%",
-      coalitionPartners: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      pointsCirculating: Number(pointsResult ?? 0),
+      redemptionRate: total > 0 ? ((Number(redeemedResult ?? 0) / Math.max(Number(pointsResult ?? 1), 1)) * 100).toFixed(1) + "%" : "0%",
+      coalitionPartners: Number(partnersResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalMembers: 0,
+        pointsCirculating: 0,
+        redemptionRate: 0,
+        coalitionPartners: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,13 @@ export const coalitionLoyaltyRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.customerName || typeof input.data.customerName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "customerName is required for loyalty enrollment" });
+      }
+      if (!input.data.phoneNumber || typeof input.data.phoneNumber !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "phoneNumber is required" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "loyalty_members" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +123,11 @@ export const coalitionLoyaltyRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "inactive", "suspended", "bronze", "silver", "gold", "platinum"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +164,15 @@ export const coalitionLoyaltyRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Coalition Loyalty Program (Go)",
-        url: "http://localhost:8287/health",
-      },
-      {
-        name: "Coalition Loyalty Program (Rust)",
-        url: "http://localhost:8288/health",
-      },
+      { name: "Coalition Loyalty Program (Go)", url: "http://localhost:8287/health" },
+      { name: "Coalition Loyalty Program (Rust)", url: "http://localhost:8288/health" },
       {
         name: "Coalition Loyalty Program (Python)",
         url: "http://localhost:8289/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

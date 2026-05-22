@@ -13,17 +13,31 @@ export const digitalIdentityLayerRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "did_identities"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [verifiedRes, ninRes, fraudRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE status = 'verified' AND updated_at >= CURRENT_DATE`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE data->>'nin_status' = 'enrolled'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "did_identities" WHERE (data->>'fraud_flag')::boolean = true`).catch(() => ({rows:[{cnt:0}]})),
+      ]);
+      const verifiedResult = (verifiedRes as any).rows?.[0]?.cnt;
+      const ninResult = (ninRes as any).rows?.[0]?.cnt;
+      const fraudResult = (fraudRes as any).rows?.[0]?.cnt;
+      return {
       totalIdentities: total,
-      verifiedToday: active,
-      ninEnrollments: Math.min(total, 70),
-      fraudDetected: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      verifiedToday: Number(verifiedResult ?? 0),
+      ninEnrollments: Number(ninResult ?? 0),
+      fraudDetected: Number(fraudResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalIdentities: 0,
+        verifiedToday: 0,
+        ninEnrollments: 0,
+        fraudDetected: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,16 @@ export const digitalIdentityLayerRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.fullName || typeof input.data.fullName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "fullName is required for identity registration" });
+      }
+      if (!input.data.dateOfBirth || typeof input.data.dateOfBirth !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "dateOfBirth is required (YYYY-MM-DD format)" });
+      }
+      if (input.data.nin && typeof input.data.nin === 'string' && (input.data.nin as string).length !== 11) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "NIN must be exactly 11 digits" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "did_identities" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +126,11 @@ export const digitalIdentityLayerRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["verified", "pending", "rejected", "expired", "active"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +167,15 @@ export const digitalIdentityLayerRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Digital Identity Layer (Go)",
-        url: "http://localhost:8275/health",
-      },
-      {
-        name: "Digital Identity Layer (Rust)",
-        url: "http://localhost:8276/health",
-      },
+      { name: "Digital Identity Layer (Go)", url: "http://localhost:8275/health" },
+      { name: "Digital Identity Layer (Rust)", url: "http://localhost:8276/health" },
       {
         name: "Digital Identity Layer (Python)",
         url: "http://localhost:8277/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

@@ -14,12 +14,10 @@ class _TokenizedAssetsScreenState extends ConsumerState<TokenizedAssetsScreen> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   String _error = '';
+  String _searchQuery = '';
 
   @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
+  void initState() { super.initState(); _loadData(); }
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
@@ -29,207 +27,78 @@ class _TokenizedAssetsScreenState extends ConsumerState<TokenizedAssetsScreen> {
       final listResp = await api.get('/api/trpc/tokenized_assets.list?input={"limit":20,"offset":0}');
       setState(() {
         _stats = statsResp.data?['result']?['data'] ?? {};
-        _items = List<Map<String, dynamic>>.from(
-          listResp.data?['result']?['data']?['items'] ?? [],
-        );
+        _items = List<Map<String, dynamic>>.from(listResp.data?['result']?['data']?['items'] ?? []);
         _loading = false;
       });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
-    }
+    } catch (e) { setState(() { _error = e.toString(); _loading = false; }); }
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return Card(elevation: 2, child: Padding(padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+        Row(children: [Icon(icon, size: 16, color: color), const SizedBox(width: 6), Flexible(child: Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600]), overflow: TextOverflow.ellipsis))]),
+        const SizedBox(height: 8),
+        Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+      ])));
+  }
+
+  Widget _buildTokenDistribution(Map<String, dynamic> item) {
+    final sold = int.tryParse('${item[\'tokensSold\'] ?? 0}') ?? 0;
+    final total = int.tryParse('${item[\'totalTokens\'] ?? 100}') ?? 100;
+    final pct = total > 0 ? (sold / total * 100) : 0.0;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${pct.toStringAsFixed(0)}% sold ($sold/$total tokens)', style: const TextStyle(fontSize: 10, color: Colors.grey)), const SizedBox(height: 2), LinearProgressIndicator(value: pct / 100, color: pct >= 100 ? Colors.green : Colors.blue, backgroundColor: Colors.grey[300])]);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final filtered = _searchQuery.isEmpty ? _items : _items.where((item) => item.values.any((v) => '$v'.toLowerCase().contains(_searchQuery.toLowerCase()))).toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tokenized Assets'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
-        ],
+        title: Row(children: [Icon(Icons.token, size: 24), const SizedBox(width: 8), const Text('Tokenized Assets')]),
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData)],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error.isNotEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-                      const SizedBox(height: 16),
-                      Text(_error, textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _loadData, child: const Text('Retry')),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: CustomScrollView(
-                    slivers: [
-                      // Header
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Tokenized Assets',
-                                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Fractional ownership of real estate and commodities',
-                                style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Stats Grid
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 1.8,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final entries = (_stats ?? {}).entries.toList();
-                              if (index >= entries.length) return null;
-                              final entry = entries[index];
-                              return Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        entry.key.replaceAllMapped(
-                                          RegExp(r'([A-Z])'),
-                                          (m) => ' ${m.group(0)}',
-                                        ).trim(),
-                                        style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${entry.value}',
-                                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                            childCount: (_stats ?? {}).length,
-                          ),
-                        ),
-                      ),
-                      // Items List
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverToBoxAdapter(
-                          child: Text(
-                            'Records (${_items.length})',
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final item = _items[index];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  child: Text('${item['id'] ?? index + 1}'),
-                                ),
-                                title: Text(item['name'] ?? item['partnerName'] ?? item['customerName'] ?? 'Record ${index + 1}'),
-                                subtitle: Text(item['status'] ?? 'active'),
-                                trailing: Chip(
-                                  label: Text(
-                                    item['status'] ?? 'active',
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                  backgroundColor: _getStatusColor(item['status']),
-                                ),
-                                onTap: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Viewing record ${item['id']}')),
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                          childCount: _items.length,
-                        ),
-                      ),
-                      // Empty state
-                      if (_items.isEmpty)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
-                                const SizedBox(height: 16),
-                                Text('No records yet', style: theme.textTheme.bodyLarge),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+      body: _loading ? const Center(child: CircularProgressIndicator())
+          : _error.isNotEmpty ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error), const SizedBox(height: 16),
+              Text(_error, textAlign: TextAlign.center), const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadData, child: const Text('Retry'))]))
+          : RefreshIndicator(onRefresh: _loadData, child: CustomScrollView(slivers: [
+              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Tokenized Assets', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text('Fractional ownership — real estate, commodities, equipment', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+              ]))),
+              SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.6),
+                  delegate: SliverChildListDelegate([
+                              _buildStatCard('Total Assets', '${_stats?['totalAssets'] ?? '\u2014'}', Icons.apartment, Colors.blue),
+                              _buildStatCard('Token Holders', '${_stats?['totalHolders'] ?? '\u2014'}', Icons.people, Colors.green),
+                              _buildStatCard('Market Cap', '₦${_stats?['marketCap'] ?? '\u2014'}', Icons.show_chart, Colors.orange),
+                              _buildStatCard('Dividends Paid', '₦${_stats?['dividendsPaid'] ?? '\u2014'}', Icons.paid, Colors.purple),
+                  ]))),
+              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.all(16), child: TextField(
+                onChanged: (v) => setState(() => _searchQuery = v),
+                decoration: InputDecoration(hintText: 'Search records...', prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12))))),
+              SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverToBoxAdapter(child: Text('Records (${filtered.length})', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)))),
+              SliverList(delegate: SliverChildBuilderDelegate((context, index) {
+                final item = filtered[index];
+                return Card(margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(leading: CircleAvatar(backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text('${item[\'id\'] ?? index + 1}', style: TextStyle(color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold))),
+                    title: Text('${item['assetName'] ?? item['assetType'] ?? item['totalTokens'] ?? item['pricePerToken'] ?? \'Record #${item[\'id\']}\'}', overflow: TextOverflow.ellipsis),
+                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Status: ${item[\'status\'] ?? \'\u2014\'}', style: const TextStyle(fontSize: 12)),
+                      const SizedBox(height: 4),
+                      _buildTokenDistribution(item),
+                    ]),
+                    trailing: Icon(Icons.chevron_right, color: Colors.grey[400]), isThreeLine: true));
+              }, childCount: filtered.length)),
+              const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+            ])),
     );
-  }
-
-  Color _getStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'active':
-      case 'healthy':
-      case 'verified':
-      case 'approved':
-      case 'confirmed':
-      case 'paid':
-      case 'online':
-      case 'connected':
-        return Colors.green[100]!;
-      case 'pending':
-      case 'review':
-      case 'dormant':
-      case 'idle':
-      case 'partial':
-      case 'maintenance':
-      case 'failover':
-      case 'syncing':
-        return Colors.orange[100]!;
-      case 'suspended':
-      case 'failed':
-      case 'declined':
-      case 'rejected':
-      case 'overdue':
-      case 'defaulted':
-      case 'offline':
-      case 'tampered':
-      case 'escalated':
-      case 'lost':
-        return Colors.red[100]!;
-      default:
-        return Colors.grey[200]!;
-    }
   }
 }

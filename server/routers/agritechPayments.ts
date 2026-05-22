@@ -13,17 +13,31 @@ export const agritechPaymentsRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "agri_farms"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
-    } catch {
-      total = 0;
-    }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
+
+      const [coopRes, inputRes, cropRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(DISTINCT data->>'cooperative_id') as cnt FROM "agri_farms" WHERE data->>'cooperative_id' IS NOT NULL`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'input_purchases')::numeric), 0) as total FROM "agri_farms"`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'crop_sales')::numeric), 0) as total FROM "agri_farms"`).catch(() => ({rows:[{total:0}]})),
+      ]);
+      const coopResult = (coopRes as any).rows?.[0]?.cnt;
+      const inputResult = (inputRes as any).rows?.[0]?.total;
+      const cropResult = (cropRes as any).rows?.[0]?.total;
+      return {
       registeredFarms: total,
-      cooperatives: active,
-      totalInputSales: Math.min(total, 70),
-      totalCropSales: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
+      cooperatives: Number(coopResult ?? 0),
+      totalInputSales: Number(inputResult ?? 0),
+      totalCropSales: Number(cropResult ?? 0),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        registeredFarms: 0,
+        cooperatives: 0,
+        totalInputSales: 0,
+        totalCropSales: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
 
   list: protectedProcedure
@@ -67,6 +81,16 @@ export const agritechPaymentsRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.farmName || typeof input.data.farmName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "farmName is required" });
+      }
+      if (!input.data.cropType || typeof input.data.cropType !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "cropType is required (e.g., cassava, maize, rice, yam)" });
+      }
+      if (!input.data.state || typeof input.data.state !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "state (Nigerian state) is required" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "agri_farms" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +126,11 @@ export const agritechPaymentsRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "harvesting", "dormant", "suspended"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -146,7 +175,7 @@ export const agritechPaymentsRouter = router({
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

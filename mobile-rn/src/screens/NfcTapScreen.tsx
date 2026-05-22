@@ -6,13 +6,15 @@ interface RecordItem { id: number; status?: string; [key: string]: any; }
 
 const API_BASE = 'http://localhost:3001/api/trpc';
 
-const SlaText = ({ item }: { item: RecordItem }) => {
-    const sla = Number(item.sla_score || 0);
-    const color = sla >= 99 ? '#22c55e' : sla >= 95 ? '#f59e0b' : '#ef4444';
-    return (<Text style={{ fontSize: 12, fontWeight: '700', color }}>{sla.toFixed(1)}% SLA</Text>);
+const SignalBars = ({ item }: { item: RecordItem }) => {
+    const strength = Number(item.signalStrength || 0);
+    const bars = Math.min(4, Math.ceil(strength / 25));
+    return (<View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+      {[0,1,2,3].map(i => (<View key={i} style={{ width: 5, height: 6 + i * 3, backgroundColor: i < bars ? '#22c55e' : '#d1d5db', marginRight: 1, borderRadius: 1 }} />))}
+    </View>);
   };
 
-export default function AnaasScreen() {
+export default function NfcTapScreen() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [items, setItems] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,8 +25,8 @@ export default function AnaasScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/anaas.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/anaas.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/nfc_tap.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/nfc_tap.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);
@@ -43,7 +45,7 @@ export default function AnaasScreen() {
     return m[s || ''] || '#6b7280';
   };
 
-  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading ANaaS / Embedded Finance...</Text></View>);
+  if (loading) return (<View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /><Text style={styles.loadingText}>Loading NFC Tap-to-Pay...</Text></View>);
   if (error) return (<View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={loadData} style={styles.retryBtn}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>);
 
   return (
@@ -54,29 +56,29 @@ export default function AnaasScreen() {
       ListHeaderComponent={
         <View>
           <View style={styles.header}>
-            <Text style={styles.title}>ANaaS / Embedded Finance</Text>
-            <Text style={styles.subtitle}>Agent Network as a Service</Text>
+            <Text style={styles.title}>NFC Tap-to-Pay</Text>
+            <Text style={styles.subtitle}>Android POS terminal</Text>
           </View>
           <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🏢</Text>
-            <Text style={styles.statLabel}>Tenants</Text>
-            <Text style={styles.statValue}>{stats?.totalTenants ?? '—'}</Text>
+            <Text style={styles.statIcon}>📱</Text>
+            <Text style={styles.statLabel}>Active Terminals</Text>
+            <Text style={styles.statValue}>{stats?.activeTerminals ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>👥</Text>
-            <Text style={styles.statLabel}>Shared Agents</Text>
-            <Text style={styles.statValue}>{stats?.sharedAgents ?? '—'}</Text>
+            <Text style={styles.statIcon}>👆</Text>
+            <Text style={styles.statLabel}>Today's Taps</Text>
+            <Text style={styles.statValue}>{stats?.transactionsToday ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statIcon}>💰</Text>
-            <Text style={styles.statLabel}>Monthly Revenue</Text>
-            <Text style={styles.statValue}>₦{stats?.monthlyRevenue ?? '—'}</Text>
+            <Text style={styles.statLabel}>Today's Volume</Text>
+            <Text style={styles.statValue}>₦{stats?.volumeToday ?? '—'}</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statIcon}>⚡</Text>
-            <Text style={styles.statLabel}>Avg SLA</Text>
-            <Text style={styles.statValue}>{stats?.avgSlaScore ?? '—'}</Text>
+            <Text style={styles.statIcon}>⏱️</Text>
+            <Text style={styles.statLabel}>Avg Tap Time</Text>
+            <Text style={styles.statValue}>{stats?.avgTapTime ?? '—'}</Text>
           </View>
           </View>
           <View style={styles.searchWrap}>
@@ -89,13 +91,13 @@ export default function AnaasScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.idBadge}><Text style={styles.idText}>#{item.id}</Text></View>
-            <Text style={styles.cardTitle} numberOfLines={1}>{item.tenantName || `Record #${item.id}`}</Text>
+            <Text style={styles.cardTitle} numberOfLines={1}>{item.terminalId || `Record #${item.id}`}</Text>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
               <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{(item.status || '—').toUpperCase()}</Text>
             </View>
           </View>
           <View style={styles.cardBody}>
-            <SlaText item={item} />
+            <SignalBars item={item} />
           </View>
         </View>
       )}

@@ -13,17 +13,33 @@ export const healthInsuranceMicroRouter = router({
         sql`SELECT COUNT(*) as cnt FROM "health_policies"`
       );
       total = Number((result as any).rows?.[0]?.cnt ?? 0);
+
+      const [activeRes, premiumRes, claimsRes, claimsPaidRes] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'active'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'premium')::numeric), 0) as total FROM "health_policies"`).catch(() => ({rows:[{total:0}]})),
+        db.execute(sql`SELECT COUNT(*) as cnt FROM "health_policies" WHERE status = 'claim_pending'`).catch(() => ({rows:[{cnt:0}]})),
+        db.execute(sql`SELECT COALESCE(SUM((data->>'claim_amount')::numeric), 0) as total FROM "health_policies" WHERE status = 'claim_paid'`).catch(() => ({rows:[{total:0}]})),
+      ]);
+      const activeResult = (activeRes as any).rows?.[0]?.cnt;
+      const premiumResult = (premiumRes as any).rows?.[0]?.total;
+      const claimsResult = (claimsRes as any).rows?.[0]?.cnt;
+      const claimsPaidResult = (claimsPaidRes as any).rows?.[0]?.total;
+      return {
+      activePolicies: Number(activeResult ?? 0),
+      totalPremiums: Number(premiumResult ?? 0),
+      pendingClaims: Number(claimsResult ?? 0),
+      claimRatio: total > 0 ? ((Number(claimsPaidResult ?? 0) / Math.max(Number(premiumResult ?? 1), 1)) * 100).toFixed(1) + "%" : "0%",
+        lastUpdated: new Date().toISOString(),
+      };
     } catch {
-      total = 0;
+      return {
+        activePolicies: 0,
+        totalPremiums: 0,
+        pendingClaims: 0,
+        claimRatio: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    const active = Math.max(0, Math.floor(total * 0.85));
-    return {
-      activePolicies: total,
-      totalPremiums: active,
-      pendingClaims: Math.min(total, 70),
-      claimRatio: Math.min(total, 80),
-      lastUpdated: new Date().toISOString(),
-    };
   }),
 
   list: protectedProcedure
@@ -67,6 +83,17 @@ export const healthInsuranceMicroRouter = router({
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      if (!input.data.holderName || typeof input.data.holderName !== 'string') {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "holderName is required" });
+      }
+      if (!input.data.planType || !["basic", "standard", "premium", "family"].includes(input.data.planType as string)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "planType must be one of: basic, standard, premium, family" });
+      }
+      const premium = Number(input.data.premium);
+      if (!premium || premium < 500 || premium > 500000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Premium must be between ₦500 and ₦500,000" });
+      }
       const jsonStr = JSON.stringify(input.data);
       const result = await db.execute(
         sql`INSERT INTO "health_policies" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
@@ -102,6 +129,11 @@ export const healthInsuranceMicroRouter = router({
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
+
+      const validStatuses = ["active", "expired", "suspended", "claim_pending", "claim_paid"];
+      if (!validStatuses.includes(input.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Status must be one of: " + validStatuses.join(", ") });
+      }
       const recordId = input.id;
       const newStatus = input.status;
       await db.execute(
@@ -138,21 +170,15 @@ export const healthInsuranceMicroRouter = router({
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
-      {
-        name: "Health Insurance Micro-Products (Go)",
-        url: "http://localhost:8254/health",
-      },
-      {
-        name: "Health Insurance Micro-Products (Rust)",
-        url: "http://localhost:8255/health",
-      },
+      { name: "Health Insurance Micro-Products (Go)", url: "http://localhost:8254/health" },
+      { name: "Health Insurance Micro-Products (Rust)", url: "http://localhost:8255/health" },
       {
         name: "Health Insurance Micro-Products (Python)",
         url: "http://localhost:8256/health",
       },
     ];
     const results = await Promise.all(
-      services.map(async svc => {
+      services.map(async (svc) => {
         try {
           const res = await fetch(svc.url, {
             signal: AbortSignal.timeout(3000),

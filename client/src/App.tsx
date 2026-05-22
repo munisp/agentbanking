@@ -2196,18 +2196,32 @@ const NfcTapToPayPage = lazy(() => import("./pages/NfcTapToPay"));
 const AiCreditScoringPage = lazy(() => import("./pages/AiCreditScoring"));
 const AgritechPaymentsPage = lazy(() => import("./pages/AgritechPayments"));
 const SuperAppFrameworkPage = lazy(() => import("./pages/SuperAppFramework"));
-const EmbeddedFinanceAnaasPage = lazy(() => import("./pages/EmbeddedFinanceAnaas"));
-const PayrollDisbursementPage = lazy(() => import("./pages/PayrollDisbursement"));
-const HealthInsuranceMicroPage = lazy(() => import("./pages/HealthInsuranceMicro"));
+const EmbeddedFinanceAnaasPage = lazy(
+  () => import("./pages/EmbeddedFinanceAnaas")
+);
+const PayrollDisbursementPage = lazy(
+  () => import("./pages/PayrollDisbursement")
+);
+const HealthInsuranceMicroPage = lazy(
+  () => import("./pages/HealthInsuranceMicro")
+);
 const EducationPaymentsPage = lazy(() => import("./pages/EducationPayments"));
-const ConversationalBankingPage = lazy(() => import("./pages/ConversationalBanking"));
+const ConversationalBankingPage = lazy(
+  () => import("./pages/ConversationalBanking")
+);
 const StablecoinRailsPage = lazy(() => import("./pages/StablecoinRails"));
 const IotSmartPosPage = lazy(() => import("./pages/IotSmartPos"));
 const WearablePaymentsPage = lazy(() => import("./pages/WearablePayments"));
-const SatelliteConnectivityPage = lazy(() => import("./pages/SatelliteConnectivity"));
-const DigitalIdentityLayerPage = lazy(() => import("./pages/DigitalIdentityLayer"));
+const SatelliteConnectivityPage = lazy(
+  () => import("./pages/SatelliteConnectivity")
+);
+const DigitalIdentityLayerPage = lazy(
+  () => import("./pages/DigitalIdentityLayer")
+);
 const PensionMicroPage = lazy(() => import("./pages/PensionMicro"));
-const CarbonCreditMarketplacePage = lazy(() => import("./pages/CarbonCreditMarketplace"));
+const CarbonCreditMarketplacePage = lazy(
+  () => import("./pages/CarbonCreditMarketplace")
+);
 const TokenizedAssetsPage = lazy(() => import("./pages/TokenizedAssets"));
 const CoalitionLoyaltyPage = lazy(() => import("./pages/CoalitionLoyalty"));
 

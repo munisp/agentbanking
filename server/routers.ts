@@ -495,6 +495,28 @@ import { kycEnforcementRouter } from "./routers/kycEnforcement";
 import { agentStoreRouter } from "./routers/agentStore";
 import { storeReviewsRouter } from "./routers/storeReviews";
 
+// ── Future-Proofing Features (20 services × 4 languages) ──
+import { openBankingApiRouter } from "./routers/openBankingApi";
+import { bnplEngineRouter } from "./routers/bnplEngine";
+import { nfcTapToPayRouter } from "./routers/nfcTapToPay";
+import { aiCreditScoringRouter } from "./routers/aiCreditScoring";
+import { agritechPaymentsRouter } from "./routers/agritechPayments";
+import { superAppFrameworkRouter } from "./routers/superAppFramework";
+import { embeddedFinanceAnaasRouter } from "./routers/embeddedFinanceAnaas";
+import { payrollDisbursementRouter } from "./routers/payrollDisbursement";
+import { healthInsuranceMicroRouter } from "./routers/healthInsuranceMicro";
+import { educationPaymentsRouter } from "./routers/educationPayments";
+import { conversationalBankingRouter } from "./routers/conversationalBanking";
+import { stablecoinRailsRouter } from "./routers/stablecoinRails";
+import { iotSmartPosRouter } from "./routers/iotSmartPos";
+import { wearablePaymentsRouter } from "./routers/wearablePayments";
+import { satelliteConnectivityRouter } from "./routers/satelliteConnectivity";
+import { digitalIdentityLayerRouter } from "./routers/digitalIdentityLayer";
+import { pensionMicroRouter } from "./routers/pensionMicro";
+import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
+import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
+import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
+
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -1094,6 +1116,27 @@ export const appRouter = router({
   // Agent Store E-Commerce
   agentStore: agentStoreRouter,
   storeReviews: storeReviewsRouter,
+  // ── Future-Proofing Features ──
+  openBankingApi: openBankingApiRouter,
+  bnplEngine: bnplEngineRouter,
+  nfcTapToPay: nfcTapToPayRouter,
+  aiCreditScoring: aiCreditScoringRouter,
+  agritechPayments: agritechPaymentsRouter,
+  superAppFramework: superAppFrameworkRouter,
+  embeddedFinanceAnaas: embeddedFinanceAnaasRouter,
+  payrollDisbursement: payrollDisbursementRouter,
+  healthInsuranceMicro: healthInsuranceMicroRouter,
+  educationPayments: educationPaymentsRouter,
+  conversationalBanking: conversationalBankingRouter,
+  stablecoinRails: stablecoinRailsRouter,
+  iotSmartPos: iotSmartPosRouter,
+  wearablePayments: wearablePaymentsRouter,
+  satelliteConnectivity: satelliteConnectivityRouter,
+  digitalIdentityLayer: digitalIdentityLayerRouter,
+  pensionMicro: pensionMicroRouter,
+  carbonCreditMarketplace: carbonCreditMarketplaceRouter,
+  tokenizedAssets: tokenizedAssetsRouter,
+  coalitionLoyalty: coalitionLoyaltyRouter,
 });
 
 export type AppRouter = typeof appRouter;

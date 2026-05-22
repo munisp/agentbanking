@@ -147,6 +147,13 @@ import {
   UserX,
   ShieldAlert,
   Inbox,
+  Building,
+  LayoutGrid,
+  Coins,
+  Watch,
+  Satellite,
+  TreeDeciduous,
+  Gem,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -1619,6 +1626,34 @@ const navGroups: NavGroup[] = [
       { icon: Settings, label: "System Settings", path: "/system-settings" },
       { icon: Trophy, label: "Agent Leaderboard", path: "/agent-leaderboard" },
       { icon: Wallet, label: "Float Management", path: "/float-management" },
+    ],
+  },
+  // ── 33. Future-Proofing Features ──
+  {
+    id: "future-features",
+    label: "Future Features",
+    icon: Rocket,
+    items: [
+      { icon: Globe, label: "Open Banking API", path: "/future/open-banking" },
+      { icon: CreditCard, label: "BNPL Engine", path: "/future/bnpl" },
+      { icon: Smartphone, label: "NFC Tap-to-Pay", path: "/future/nfc-tap-to-pay" },
+      { icon: Brain, label: "AI Credit Scoring", path: "/future/ai-credit-scoring" },
+      { icon: Leaf, label: "AgriTech Payments", path: "/future/agritech" },
+      { icon: LayoutGrid, label: "Super App", path: "/future/super-app" },
+      { icon: Building, label: "ANaaS", path: "/future/anaas" },
+      { icon: Wallet, label: "Payroll", path: "/future/payroll" },
+      { icon: Heart, label: "Health Insurance", path: "/future/health-insurance" },
+      { icon: GraduationCap, label: "Education", path: "/future/education" },
+      { icon: MessageCircle, label: "Chat Banking", path: "/future/conversational-banking" },
+      { icon: Coins, label: "Stablecoin Rails", path: "/future/stablecoin" },
+      { icon: Cpu, label: "IoT Smart POS", path: "/future/iot-pos" },
+      { icon: Watch, label: "Wearable Payments", path: "/future/wearable" },
+      { icon: Satellite, label: "Satellite", path: "/future/satellite" },
+      { icon: Fingerprint, label: "Digital Identity", path: "/future/digital-identity" },
+      { icon: PiggyBank, label: "Micro-Pension", path: "/future/pension" },
+      { icon: TreeDeciduous, label: "Carbon Credits", path: "/future/carbon-credits" },
+      { icon: Gem, label: "Tokenized Assets", path: "/future/tokenized-assets" },
+      { icon: Star, label: "Loyalty Program", path: "/future/loyalty" },
     ],
   },
 ];

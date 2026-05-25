@@ -60,7 +60,11 @@ async function snapshotTransactions(date: string): Promise<void> {
   const key = await uploadTransactionSnapshot(date, rows);
 
   // Dual-write: also ingest to unified Lakehouse Bronze layer
-  await ingestToLakehouse("transactions_daily", rows as Record<string, unknown>[], "cron-transactions");
+  await ingestToLakehouse(
+    "transactions_daily",
+    rows as Record<string, unknown>[],
+    "cron-transactions"
+  );
 
   logger.info(
     { key, count: rows.length, date },
@@ -89,7 +93,11 @@ async function snapshotFraudEvents(date: string): Promise<void> {
   const key = await uploadFraudEvents(date, rows);
 
   // Dual-write: also ingest to unified Lakehouse Bronze layer
-  await ingestToLakehouse("fraud_events_daily", rows as Record<string, unknown>[], "cron-fraud");
+  await ingestToLakehouse(
+    "fraud_events_daily",
+    rows as Record<string, unknown>[],
+    "cron-fraud"
+  );
 
   logger.info(
     { key, count: rows.length, date },
@@ -175,7 +183,11 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
       })
     );
     // Dual-write: also ingest to unified Lakehouse Bronze layer
-    await ingestToLakehouse("agent_metrics_daily", metrics as Record<string, unknown>[], "cron-agent-metrics");
+    await ingestToLakehouse(
+      "agent_metrics_daily",
+      metrics as Record<string, unknown>[],
+      "cron-agent-metrics"
+    );
 
     logger.info(
       { key, count: metrics.length, date },

@@ -213,9 +213,7 @@ export async function ingestToLakehouse(
       logger.info(`[Lakehouse] Ingested to ${table} via unified API`);
       return true;
     }
-    logger.warn(
-      `[Lakehouse] Ingest to ${table} returned ${res.status}`
-    );
+    logger.warn(`[Lakehouse] Ingest to ${table} returned ${res.status}`);
     return false;
   } catch (err) {
     logger.warn({ err }, `[Lakehouse] Ingest to ${table} failed`);
@@ -238,7 +236,9 @@ export async function queryLakehouse(
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return [];
-    const result = (await res.json()) as { results?: Record<string, unknown>[] };
+    const result = (await res.json()) as {
+      results?: Record<string, unknown>[];
+    };
     return result.results ?? [];
   } catch {
     return [];

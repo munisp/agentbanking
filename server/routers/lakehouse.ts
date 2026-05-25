@@ -939,42 +939,58 @@ export const lakehouseRouter = router({
 
   // ── Unified Lakehouse: SQL Query ──────────────────────────────────────────
   querySQL: protectedProcedure
-    .input(z.object({
-      sql: z.string().min(1).max(5000),
-      layer: z.enum(["bronze", "silver", "gold"]).default("gold"),
-    }))
+    .input(
+      z.object({
+        sql: z.string().min(1).max(5000),
+        layer: z.enum(["bronze", "silver", "gold"]).default("gold"),
+      })
+    )
     .query(async ({ input }) => {
       return queryLakehouse(input.sql, input.layer);
     }),
 
   // ── Unified Lakehouse: ETL Promote ────────────────────────────────────────
   promoteTable: adminProcedure
-    .input(z.object({
-      table: z.string().min(1),
-      sourceLayer: z.enum(["bronze", "silver"]).default("bronze"),
-      targetLayer: z.enum(["silver", "gold"]).default("silver"),
-    }))
+    .input(
+      z.object({
+        table: z.string().min(1),
+        sourceLayer: z.enum(["bronze", "silver"]).default("bronze"),
+        targetLayer: z.enum(["silver", "gold"]).default("silver"),
+      })
+    )
     .mutation(async ({ input }) => {
       const result = await promoteLakehouseTable(
         input.table,
         input.sourceLayer,
-        input.targetLayer,
+        input.targetLayer
       );
       if (!result) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "ETL promotion failed" });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "ETL promotion failed",
+        });
       }
       return result;
     }),
 
   // ── Unified Lakehouse: Ingest ─────────────────────────────────────────────
   ingest: adminProcedure
-    .input(z.object({
-      table: z.string().min(1),
-      data: z.union([z.record(z.string(), z.unknown()), z.array(z.record(z.string(), z.unknown()))]),
-      source: z.string().default("trpc-manual"),
-    }))
+    .input(
+      z.object({
+        table: z.string().min(1),
+        data: z.union([
+          z.record(z.string(), z.unknown()),
+          z.array(z.record(z.string(), z.unknown())),
+        ]),
+        source: z.string().default("trpc-manual"),
+      })
+    )
     .mutation(async ({ input }) => {
-      const success = await ingestToLakehouse(input.table, input.data, input.source);
+      const success = await ingestToLakehouse(
+        input.table,
+        input.data,
+        input.source
+      );
       return { success, table: input.table };
     }),
 });

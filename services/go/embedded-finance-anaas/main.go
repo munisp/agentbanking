@@ -282,15 +282,49 @@ func (o *OpenSearchClient) Search(index, query string) ([]map[string]interface{}
 }
 
 func (l *LakehouseClient) IngestEvent(table string, event interface{}) error {
-	log.Printf("[Lakehouse] Ingest to %s", table)
-	body, _ := json.Marshal(map[string]interface{}{"table": table, "data": event})
-	resp, err := http.Post(fmt.Sprintf("%s/v1/ingest", l.url), "application/json", bytes.NewReader(body))
+	body, _ := json.Marshal(map[string]interface{}{"table": table, "data": event, "source": "embedded-finance-anaas"})
+	client := &http.Client{Timeout: 5 * time.Second}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/v1/ingest", l.url), bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			log.Printf("[Lakehouse] Ingest to %s failed (attempt %d/3): %v", table, attempt+1, err)
+			time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			log.Printf("[Lakehouse] Ingested to %s (%d bytes)", table, len(body))
+			return nil
+		}
+		lastErr = fmt.Errorf("status %d", resp.StatusCode)
+		log.Printf("[Lakehouse] Ingest to %s returned %d (attempt %d/3)", table, resp.StatusCode, attempt+1)
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+	}
+	log.Printf("[Lakehouse] DEAD-LETTER: Failed to ingest to %s after 3 attempts: %v", table, lastErr)
+	return lastErr
+}
+
+func (l *LakehouseClient) Query(sqlQuery string) ([]map[string]interface{}, error) {
+	body, _ := json.Marshal(map[string]interface{}{"sql": sqlQuery})
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/v1/query", l.url), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[Lakehouse] Failed: %v", err)
-		return nil
+		return nil, err
 	}
 	defer resp.Body.Close()
-	return nil
+	var result struct {
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Results, nil
 }
 
 // ── Keycloak JWT Verification ──────────────────────────────────────────────────

@@ -171,6 +171,52 @@ impl OpenSearchClient {
     }
 }
 
+
+struct LakehouseClient { url: String }
+
+impl LakehouseClient {
+    async fn ingest(&self, table: &str, data: &serde_json::Value) {
+        let payload = serde_json::json!({"table": table, "data": data, "source": "iot-smart-pos"});
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default();
+        for attempt in 0..3u8 {
+            match client.post(format!("{}/v1/ingest", self.url))
+                .json(&payload).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    info!("[Lakehouse] Ingested to {}", table);
+                    return;
+                },
+                Ok(resp) => {
+                    warn!("[Lakehouse] Ingest to {} returned {}, attempt {}", table, resp.status(), attempt + 1);
+                },
+                Err(e) => {
+                    warn!("[Lakehouse] Ingest to {} failed: {}, attempt {}", table, e, attempt + 1);
+                },
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1))).await;
+            }
+        }
+        warn!("[Lakehouse] Ingest to {} failed after 3 attempts (dead-letter)", table);
+    }
+
+    async fn query(&self, sql: &str) -> Vec<serde_json::Value> {
+        let payload = serde_json::json!({"sql": sql});
+        let client = reqwest::Client::new();
+        match client.post(format!("{}/v1/query", self.url))
+            .json(&payload).send().await {
+            Ok(resp) => {
+                if let Ok(result) = resp.json::<serde_json::Value>().await {
+                    result["results"].as_array().cloned().unwrap_or_default()
+                } else { vec![] }
+            },
+            Err(_) => vec![],
+        }
+    }
+}
+
 // ── App State ──────────────────────────────────────────────────────────────────
 
 struct AppState {
@@ -181,6 +227,7 @@ struct AppState {
     tigerbeetle: TigerBeetleClient,
     fluvio: FluvioProducer,
     opensearch: OpenSearchClient,
+    lakehouse: LakehouseClient,
 }
 
 impl AppState {
@@ -198,6 +245,7 @@ impl AppState {
             tigerbeetle: TigerBeetleClient { addr: tb_addr },
             fluvio: FluvioProducer { endpoint: fluvio_ep },
             opensearch: OpenSearchClient { url: os_url },
+            lakehouse: LakehouseClient { url: config.lakehouse_url.clone() },
         }
     }
 }
@@ -315,6 +363,9 @@ async fn create_record(
 
     // Cache result
     state.cache.set(&format!("iot-smart-pos:{}", id), &payload.to_string(), 3600);
+
+    // Ingest to Lakehouse for analytics
+    state.lakehouse.ingest("device_telemetry", &payload).await;
 
     (StatusCode::CREATED, Json(CreateResponse { id, status: "created".into() }))
 }

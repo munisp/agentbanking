@@ -274,9 +274,53 @@ impl StreamProcessor {
     }
 
     fn flush_to_lakehouse(&self, window: &AggregationWindow) {
-        println!("[Lakehouse] Exporting window as Parquet: {} txns, {} regions",
+        println!("[Lakehouse] Exporting window to unified Lakehouse: {} txns, {} regions",
             window.transaction_count, window.by_region.len());
-        // In production: write Parquet file to Lakehouse S3 for Spark/Trino queries
+
+        // POST to unified Lakehouse API for Bronze layer ingestion
+        let payload = serde_json::json!({
+            "table": "billing_stream_windows",
+            "data": {
+                "window_start": window.window_start,
+                "window_end": window.window_end,
+                "granularity": &window.granularity,
+                "transaction_count": window.transaction_count,
+                "total_volume": window.total_volume,
+                "total_platform_revenue": window.total_platform_revenue,
+                "total_client_revenue": window.total_client_revenue,
+                "total_agent_commissions": window.total_agent_commissions,
+                "unique_agents": window.unique_agents,
+                "unique_clients": window.unique_clients,
+                "region_count": window.by_region.len(),
+            },
+            "source": "billing-stream-processor"
+        });
+
+        let lakehouse_url = self.config.lakehouse_endpoint.clone();
+        std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            for attempt in 0..3u8 {
+                match client.post(format!("{}/v1/ingest", lakehouse_url))
+                    .json(&payload).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("[Lakehouse] Ingested billing window successfully");
+                        return;
+                    },
+                    Ok(resp) => {
+                        println!("[Lakehouse] Ingest returned {} (attempt {})", resp.status(), attempt + 1);
+                    },
+                    Err(e) => {
+                        println!("[Lakehouse] Ingest failed: {} (attempt {})", e, attempt + 1);
+                    },
+                }
+                std::thread::sleep(Duration::from_millis(100 * (attempt as u64 + 1)));
+            }
+            println!("[Lakehouse] DEAD-LETTER: billing window ingest failed after 3 attempts");
+        });
+
         if let Ok(mut m) = self.metrics.write() {
             m.lakehouse_exports += 1;
         }

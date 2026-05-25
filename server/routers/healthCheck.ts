@@ -256,9 +256,10 @@ export const healthCheckRouter = router({
       connections: {
         active: activeConnections,
         max: maxConnections,
-        utilization: maxConnections > 0
-          ? `${((activeConnections / maxConnections) * 100).toFixed(1)}%`
-          : "unknown",
+        utilization:
+          maxConnections > 0
+            ? `${((activeConnections / maxConnections) * 100).toFixed(1)}%`
+            : "unknown",
       },
       database: {
         sizeBytes: dbSizeBytes,

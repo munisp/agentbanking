@@ -23,7 +23,7 @@ export const artRobustnessRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db
@@ -119,7 +119,7 @@ export const artRobustnessRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db
@@ -149,7 +149,7 @@ export const artRobustnessRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db

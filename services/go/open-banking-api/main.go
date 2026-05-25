@@ -429,23 +429,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"open_banking_partners", "api_keys", "api_consents", "api_usage_logs", "api_rate_limits"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS open_banking_partners (
+    id SERIAL PRIMARY KEY,
+    partner_name VARCHAR(200) NOT NULL,
+    callback_url VARCHAR(500),
+    api_version VARCHAR(20) DEFAULT 'v1',
+    consent_type VARCHAR(50) CHECK (consent_type IN ('accounts','transactions','payments','funds_confirmation')),
+    monthly_requests BIGINT DEFAULT 0,
+    rate_limit INTEGER DEFAULT 1000,
+    certificate_hash VARCHAR(128),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table open_banking_partners creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table open_banking_partners ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

@@ -426,23 +426,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"carbon_projects", "carbon_credits", "carbon_trades", "carbon_retirements", "carbon_verifications"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS carbon_trades (
+    id SERIAL PRIMARY KEY,
+    project_name VARCHAR(200) NOT NULL,
+    project_type VARCHAR(50) CHECK (project_type IN ('reforestation','solar','wind','cookstove','methane_capture')),
+    credits_tonnes NUMERIC(12,4) NOT NULL,
+    price_per_tonne NUMERIC(10,2) NOT NULL,
+    buyer_id INTEGER,
+    seller_id INTEGER,
+    verification_standard VARCHAR(100),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table carbon_trades creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table carbon_trades ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

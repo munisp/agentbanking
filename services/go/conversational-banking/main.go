@@ -426,23 +426,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"chat_sessions", "chat_messages", "chat_commands", "chat_intents", "chat_templates"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS chat_intents (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(100) NOT NULL,
+    channel VARCHAR(50) NOT NULL DEFAULT 'whatsapp',
+    intent VARCHAR(100),
+    confidence NUMERIC(5,4) DEFAULT 0,
+    message_count INTEGER DEFAULT 0,
+    resolved BOOLEAN DEFAULT false,
+    language VARCHAR(10) DEFAULT 'en',
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table chat_intents creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table chat_intents ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

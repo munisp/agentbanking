@@ -425,23 +425,26 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"anaas_tenants", "anaas_agent_assignments", "anaas_usage_records", "anaas_invoices", "anaas_sla_configs"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS embedded_analytics (
+    id SERIAL PRIMARY KEY,
+    partner_name VARCHAR(200) NOT NULL,
+    api_key_hash VARCHAR(128),
+    product_type VARCHAR(50) CHECK (product_type IN ('lending','insurance','savings','payments','kyc')),
+    monthly_api_calls BIGINT DEFAULT 0,
+    monthly_revenue NUMERIC(15,2) DEFAULT 0,
+    integration_status VARCHAR(50) DEFAULT 'pending',
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table embedded_analytics creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table embedded_analytics ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

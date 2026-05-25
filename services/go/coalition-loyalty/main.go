@@ -426,23 +426,26 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"loyalty_members", "loyalty_points_ledger", "loyalty_partners", "loyalty_tiers", "loyalty_campaigns"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS loyalty_coalitions (
+    id SERIAL PRIMARY KEY,
+    coalition_name VARCHAR(200) NOT NULL,
+    partner_count INTEGER DEFAULT 0,
+    total_points_issued BIGINT DEFAULT 0,
+    total_points_redeemed BIGINT DEFAULT 0,
+    exchange_rate NUMERIC(10,4) DEFAULT 1.0,
+    tier VARCHAR(20) DEFAULT 'bronze',
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table loyalty_coalitions creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table loyalty_coalitions ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

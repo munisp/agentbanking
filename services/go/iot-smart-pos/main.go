@@ -426,23 +426,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"iot_devices", "iot_telemetry", "iot_alerts", "iot_maintenance_records", "iot_firmware_versions"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS iot_devices (
+    id SERIAL PRIMARY KEY,
+    device_serial VARCHAR(64) NOT NULL UNIQUE,
+    device_model VARCHAR(100),
+    firmware_version VARCHAR(50),
+    battery_level INTEGER DEFAULT 100,
+    signal_strength INTEGER DEFAULT 0,
+    last_heartbeat TIMESTAMPTZ,
+    location_lat NUMERIC(10,7),
+    location_lng NUMERIC(10,7),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table iot_devices creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table iot_devices ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

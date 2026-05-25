@@ -426,23 +426,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"health_policies", "health_claims", "health_providers", "health_premiums", "health_nhis_enrollments"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS health_claims (
+    id SERIAL PRIMARY KEY,
+    policy_number VARCHAR(50) NOT NULL,
+    patient_name VARCHAR(200),
+    diagnosis_code VARCHAR(20),
+    claim_amount NUMERIC(15,2) NOT NULL,
+    approved_amount NUMERIC(15,2) DEFAULT 0,
+    hospital_name VARCHAR(200),
+    claim_type VARCHAR(50) CHECK (claim_type IN ('outpatient','inpatient','dental','optical','maternity')),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table health_claims creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table health_claims ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

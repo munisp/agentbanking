@@ -425,23 +425,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"wearable_devices", "wearable_tokens", "wearable_transactions", "wearable_balances"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS wearable_transactions (
+    id SERIAL PRIMARY KEY,
+    device_type VARCHAR(50) CHECK (device_type IN ('smartwatch','ring','band','pendant','glasses')),
+    device_id VARCHAR(128) NOT NULL,
+    amount NUMERIC(15,2) NOT NULL,
+    currency VARCHAR(8) DEFAULT 'NGN',
+    merchant_name VARCHAR(200),
+    nfc_protocol VARCHAR(20) DEFAULT 'HCE',
+    auth_method VARCHAR(50) DEFAULT 'biometric',
+    battery_at_tx INTEGER,
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table wearable_transactions creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table wearable_transactions ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

@@ -427,23 +427,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"agri_farms", "agri_cooperatives", "agri_inputs", "agri_crop_sales", "agri_subsidies"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS agri_farms (
+    id SERIAL PRIMARY KEY,
+    farm_name VARCHAR(200) NOT NULL,
+    farmer_name VARCHAR(200) NOT NULL,
+    location VARCHAR(200),
+    size_hectares NUMERIC(10,2) DEFAULT 0,
+    crop_type VARCHAR(100),
+    cooperative_id INTEGER,
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    input_purchases NUMERIC(15,2) DEFAULT 0,
+    crop_sales NUMERIC(15,2) DEFAULT 0,
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table agri_farms creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table agri_farms ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

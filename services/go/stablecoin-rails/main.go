@@ -426,23 +426,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"stable_wallets", "stable_transactions", "stable_mint_burns", "stable_reserves", "stable_corridors"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS stablecoin_transfers (
+    id SERIAL PRIMARY KEY,
+    from_wallet VARCHAR(128) NOT NULL,
+    to_wallet VARCHAR(128) NOT NULL,
+    amount NUMERIC(18,8) NOT NULL,
+    token_symbol VARCHAR(20) NOT NULL CHECK (token_symbol IN ('cNGN','USDT','USDC','DAI')),
+    chain VARCHAR(50) DEFAULT 'ethereum',
+    tx_hash VARCHAR(128),
+    gas_fee NUMERIC(18,8) DEFAULT 0,
+    peg_rate NUMERIC(10,6) DEFAULT 1.0,
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table stablecoin_transfers creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table stablecoin_transfers ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

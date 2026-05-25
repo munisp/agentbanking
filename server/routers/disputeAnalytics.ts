@@ -60,7 +60,7 @@ export const disputeAnalyticsRouter = router({
           .where(
             gte(
               disputes.createdAt,
-              sql`NOW() - INTERVAL '${sql.raw(String(input?.days ?? 30))} days'`
+              sql`NOW() - MAKE_INTERVAL(days => ${Math.max(1, Math.min(365, Number(input?.days) || 30))})`
             )
           )
           .groupBy(sql`DATE(${disputes.createdAt})`)

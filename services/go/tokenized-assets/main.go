@@ -426,23 +426,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"tokenized_assets", "token_holdings", "token_transfers", "token_dividends", "token_valuations"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS tokenized_assets (
+    id SERIAL PRIMARY KEY,
+    asset_name VARCHAR(200) NOT NULL,
+    asset_type VARCHAR(50) CHECK (asset_type IN ('real_estate','equity','bond','commodity','art','collectible')),
+    total_tokens BIGINT NOT NULL,
+    token_price NUMERIC(15,8) NOT NULL,
+    tokens_sold BIGINT DEFAULT 0,
+    underlying_value NUMERIC(18,2),
+    issuer_name VARCHAR(200),
+    contract_address VARCHAR(128),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table tokenized_assets creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table tokenized_assets ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

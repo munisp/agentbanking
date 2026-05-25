@@ -425,23 +425,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"mini_apps", "mini_app_installs", "mini_app_permissions", "mini_app_sessions"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS super_app_services (
+    id SERIAL PRIMARY KEY,
+    service_name VARCHAR(200) NOT NULL,
+    service_type VARCHAR(50) CHECK (service_type IN ('payments','lending','insurance','marketplace','transport','delivery')),
+    provider_name VARCHAR(200),
+    monthly_active_users INTEGER DEFAULT 0,
+    monthly_transactions BIGINT DEFAULT 0,
+    revenue_share_percent NUMERIC(5,2) DEFAULT 0,
+    api_endpoint VARCHAR(500),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table super_app_services creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table super_app_services ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

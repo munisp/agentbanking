@@ -424,23 +424,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"satellite_links", "satellite_sessions", "satellite_usage", "satellite_coverage_map"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS satellite_links (
+    id SERIAL PRIMARY KEY,
+    terminal_id VARCHAR(64) NOT NULL,
+    satellite_provider VARCHAR(50) CHECK (satellite_provider IN ('starlink','vsat','thuraya','iridium')),
+    bandwidth_mbps NUMERIC(8,2) DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    uptime_percent NUMERIC(5,2) DEFAULT 0,
+    location_lat NUMERIC(10,7),
+    location_lng NUMERIC(10,7),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table satellite_links creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table satellite_links ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

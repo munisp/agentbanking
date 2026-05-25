@@ -425,23 +425,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"nfc_terminals", "nfc_transactions", "nfc_card_tokens", "nfc_device_keys"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS nfc_transactions (
+    id SERIAL PRIMARY KEY,
+    card_token_hash VARCHAR(128) NOT NULL,
+    terminal_id VARCHAR(64) NOT NULL,
+    amount NUMERIC(15,2) NOT NULL,
+    currency VARCHAR(8) DEFAULT 'NGN',
+    card_type VARCHAR(20) CHECK (card_type IN ('debit','credit','prepaid')),
+    network VARCHAR(20) CHECK (network IN ('visa','mastercard','verve')),
+    response_code VARCHAR(10),
+    auth_code VARCHAR(20),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table nfc_transactions creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table nfc_transactions ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

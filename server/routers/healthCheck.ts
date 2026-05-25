@@ -186,4 +186,88 @@ export const healthCheckRouter = router({
     }
     return { services, timestamp: new Date().toISOString() };
   }),
+
+  dbHealth: publicProcedure.query(async () => {
+    const { getPool } = await import("../db");
+    const pool = await getPool();
+    if (!pool) {
+      return {
+        status: "unavailable",
+        message: "No database connection configured",
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const poolStats = {
+      totalCount: pool.totalCount,
+      idleCount: pool.idleCount,
+      waitingCount: pool.waitingCount,
+    };
+
+    let queryLatencyMs = 0;
+    let replicationLag: string | null = null;
+    let dbSizeBytes: number | null = null;
+    let activeConnections = 0;
+    let maxConnections = 0;
+
+    try {
+      const start = Date.now();
+      const client = await pool.connect();
+      queryLatencyMs = Date.now() - start;
+
+      try {
+        const connResult = await client.query(
+          "SELECT count(*) as active FROM pg_stat_activity WHERE state = 'active'"
+        );
+        activeConnections = parseInt(connResult.rows[0]?.active ?? "0");
+
+        const maxResult = await client.query("SHOW max_connections");
+        maxConnections = parseInt(maxResult.rows[0]?.max_connections ?? "0");
+
+        const sizeResult = await client.query(
+          "SELECT pg_database_size(current_database()) as size"
+        );
+        dbSizeBytes = parseInt(sizeResult.rows[0]?.size ?? "0");
+
+        try {
+          const lagResult = await client.query(
+            "SELECT CASE WHEN pg_is_in_recovery() THEN extract(epoch from (now() - pg_last_xact_replay_timestamp()))::text ELSE 'primary' END as lag"
+          );
+          replicationLag = lagResult.rows[0]?.lag ?? null;
+        } catch {
+          replicationLag = "unknown";
+        }
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      return {
+        status: "unhealthy",
+        error: (e as Error).message,
+        pool: poolStats,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    return {
+      status: "healthy",
+      queryLatencyMs,
+      pool: poolStats,
+      connections: {
+        active: activeConnections,
+        max: maxConnections,
+        utilization: maxConnections > 0
+          ? `${((activeConnections / maxConnections) * 100).toFixed(1)}%`
+          : "unknown",
+      },
+      database: {
+        sizeBytes: dbSizeBytes,
+        sizeHuman: dbSizeBytes
+          ? `${(dbSizeBytes / 1024 / 1024).toFixed(1)} MB`
+          : null,
+        replicationLag,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }),
 });

@@ -426,23 +426,28 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"payroll_employers", "payroll_employees", "payroll_batches", "payroll_disbursements", "payroll_tax_records"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS payroll_batches (
+    id SERIAL PRIMARY KEY,
+    company_name VARCHAR(200) NOT NULL,
+    batch_ref VARCHAR(64) NOT NULL UNIQUE,
+    employee_count INTEGER DEFAULT 0,
+    total_amount NUMERIC(15,2) NOT NULL,
+    currency VARCHAR(8) DEFAULT 'NGN',
+    disbursed_count INTEGER DEFAULT 0,
+    failed_count INTEGER DEFAULT 0,
+    scheduled_date DATE,
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table payroll_batches creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table payroll_batches ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

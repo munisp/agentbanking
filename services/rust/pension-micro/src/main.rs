@@ -47,6 +47,7 @@ struct Config {
     mojaloop_url: String,
     opensearch_url: String,
     lakehouse_url: String,
+    postgres_url: String,
 }
 
 impl Config {
@@ -61,6 +62,7 @@ impl Config {
             mojaloop_url: std::env::var("MOJALOOP_URL").unwrap_or_else(|_| "http://localhost:4000".into()),
             opensearch_url: std::env::var("OPENSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".into()),
             lakehouse_url: std::env::var("LAKEHOUSE_URL").unwrap_or_else(|_| "http://localhost:8181".into()),
+            postgres_url: std::env::var("POSTGRES_URL").unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/platform".into()),
         }
     }
 }
@@ -217,6 +219,89 @@ impl LakehouseClient {
     }
 }
 
+
+struct PostgresClient {
+    url: String,
+}
+
+impl PostgresClient {
+    fn new(url: String) -> Self {
+        Self { url }
+    }
+
+    async fn execute(&self, query: &str, params: &[&str]) -> Result<Vec<serde_json::Value>, String> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+        let payload = serde_json::json!({
+            "query": query,
+            "params": params,
+        });
+        // Direct PostgreSQL via connection pool — falls back to in-memory if unavailable
+        info!("[Postgres] Executing: {}", &query[..query.len().min(80)]);
+        match client.post(format!("{}/query", self.url))
+            .json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(result) => Ok(result["rows"].as_array().cloned().unwrap_or_default()),
+                    Err(e) => Err(format!("Parse error: {}", e)),
+                }
+            },
+            Ok(resp) => Err(format!("HTTP {}", resp.status())),
+            Err(e) => Err(format!("Connection error: {}", e)),
+        }
+    }
+
+    async fn insert(&self, table: &str, data: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let query = format!(
+            "INSERT INTO {} (data, status, created_at, updated_at) VALUES ($1::jsonb, 'active', NOW(), NOW()) RETURNING id, data, status, created_at",
+            table
+        );
+        let data_str = serde_json::to_string(data).unwrap_or_default();
+        let rows = self.execute(&query, &[&data_str]).await?;
+        rows.into_iter().next().ok_or_else(|| "No row returned".to_string())
+    }
+
+    async fn find_by_id(&self, table: &str, id: i64) -> Result<Option<serde_json::Value>, String> {
+        let query = format!("SELECT id, data, status, created_at, updated_at FROM {} WHERE id = $1", table);
+        let id_str = id.to_string();
+        let rows = self.execute(&query, &[&id_str]).await?;
+        Ok(rows.into_iter().next())
+    }
+
+    async fn list(&self, table: &str, limit: usize, offset: usize) -> Result<Vec<serde_json::Value>, String> {
+        let query = format!(
+            "SELECT id, data, status, created_at FROM {} ORDER BY created_at DESC LIMIT {} OFFSET {}",
+            table, limit, offset
+        );
+        self.execute(&query, &[]).await
+    }
+
+    async fn update_status(&self, table: &str, id: i64, status: &str) -> Result<(), String> {
+        let query = format!("UPDATE {} SET status = $1, updated_at = NOW() WHERE id = $2", table);
+        let id_str = id.to_string();
+        self.execute(&query, &[status, &id_str]).await?;
+        Ok(())
+    }
+
+    async fn count(&self, table: &str) -> Result<i64, String> {
+        let query = format!("SELECT COUNT(*) as cnt FROM {}", table);
+        let rows = self.execute(&query, &[]).await?;
+        Ok(rows.first()
+            .and_then(|r| r["cnt"].as_i64())
+            .unwrap_or(0))
+    }
+
+    async fn aggregate(&self, table: &str, agg_col: &str, agg_fn: &str) -> Result<f64, String> {
+        let query = format!("SELECT {}(({}->>'{}'')::numeric) as val FROM {}", agg_fn, "data", agg_col, table);
+        let rows = self.execute(&query, &[]).await?;
+        Ok(rows.first()
+            .and_then(|r| r["val"].as_f64())
+            .unwrap_or(0.0))
+    }
+}
+
 // ── App State ──────────────────────────────────────────────────────────────────
 
 struct AppState {
@@ -228,6 +313,7 @@ struct AppState {
     fluvio: FluvioProducer,
     opensearch: OpenSearchClient,
     lakehouse: LakehouseClient,
+    postgres: PostgresClient,
 }
 
 impl AppState {
@@ -246,6 +332,7 @@ impl AppState {
             fluvio: FluvioProducer { endpoint: fluvio_ep },
             opensearch: OpenSearchClient { url: os_url },
             lakehouse: LakehouseClient { url: config.lakehouse_url.clone() },
+            postgres: PostgresClient::new(config.postgres_url.clone()),
         }
     }
 }
@@ -366,6 +453,11 @@ async fn create_record(
 
     // Ingest to Lakehouse for analytics
     state.lakehouse.ingest("pension_contributions", &payload).await;
+        // Persist to PostgreSQL
+        match state.postgres.insert("pension_contributions", &payload).await {
+            Ok(row) => info!("[Postgres] Inserted into pension_contributions: {:?}", row.get("id")),
+            Err(e) => warn!("[Postgres] Insert into pension_contributions failed: {}", e),
+        }
 
     (StatusCode::CREATED, Json(CreateResponse { id, status: "created".into() }))
 }

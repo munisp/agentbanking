@@ -426,23 +426,26 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"edu_schools", "edu_students", "edu_fees", "edu_payments", "edu_exam_registrations"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS education_payments (
+    id SERIAL PRIMARY KEY,
+    institution_name VARCHAR(200) NOT NULL,
+    student_id VARCHAR(100),
+    payment_type VARCHAR(50) CHECK (payment_type IN ('tuition','books','accommodation','exam_fee','transport')),
+    amount NUMERIC(15,2) NOT NULL,
+    academic_session VARCHAR(20),
+    semester VARCHAR(20),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table education_payments creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table education_payments ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

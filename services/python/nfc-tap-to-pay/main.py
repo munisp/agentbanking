@@ -211,6 +211,174 @@ class MojaloopClient:
             return []
 
 
+
+class PostgresClient:
+    """Async PostgreSQL client with connection pooling and retry logic."""
+
+    def __init__(self, database_url: str, table_name: str, pool_size: int = 10):
+        self.database_url = database_url
+        self.table_name = table_name
+        self.pool_size = pool_size
+        self._pool = None
+        self._fallback = True  # Use in-memory fallback if connection fails
+
+    async def _get_pool(self):
+        if self._pool is not None:
+            return self._pool
+        try:
+            import asyncpg
+            self._pool = await asyncpg.create_pool(
+                self.database_url,
+                min_size=2,
+                max_size=self.pool_size,
+                command_timeout=30,
+                statement_cache_size=100,
+            )
+            self._fallback = False
+            logger.info(f"[Postgres] Connected to database (pool_size={self.pool_size})")
+            # Ensure table exists
+            async with self._pool.acquire() as conn:
+                await conn.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{{}}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id VARCHAR(100) DEFAULT 'default',
+                        agent_id INTEGER,
+                        metadata JSONB DEFAULT '{{}}'
+                    )
+                """)
+                await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_created
+                    ON {self.table_name} (created_at DESC)
+                """)
+                await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_status
+                    ON {self.table_name} (status)
+                """)
+                await conn.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_tenant
+                    ON {self.table_name} (tenant_id)
+                """)
+            logger.info(f"[Postgres] Table {self.table_name} ready with indexes")
+            return self._pool
+        except ImportError:
+            logger.warning("[Postgres] asyncpg not installed — using in-memory fallback")
+            self._fallback = True
+            return None
+        except Exception as e:
+            logger.warning(f"[Postgres] Connection failed: {e} — using in-memory fallback")
+            self._fallback = True
+            return None
+
+    async def insert(self, data: dict, status: str = "active", agent_id: int = None) -> Optional[dict]:
+        pool = await self._get_pool()
+        if pool is None:
+            return None
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"""INSERT INTO {self.table_name} (data, status, agent_id, created_at, updated_at)
+                        VALUES ($1::jsonb, $2, $3, NOW(), NOW())
+                        RETURNING id, data, status, created_at""",
+                    json.dumps(data), status, agent_id
+                )
+                logger.info(f"[Postgres] Inserted into {self.table_name}: id={row['id']}")
+                return dict(row)
+        except Exception as e:
+            logger.warning(f"[Postgres] Insert failed: {e}")
+            return None
+
+    async def find_by_id(self, record_id: int) -> Optional[dict]:
+        pool = await self._get_pool()
+        if pool is None:
+            return None
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"SELECT * FROM {self.table_name} WHERE id = $1", record_id
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.warning(f"[Postgres] find_by_id failed: {e}")
+            return None
+
+    async def list_records(self, limit: int = 50, offset: int = 0, status: str = None) -> List[dict]:
+        pool = await self._get_pool()
+        if pool is None:
+            return []
+        try:
+            async with pool.acquire() as conn:
+                if status:
+                    rows = await conn.fetch(
+                        f"SELECT * FROM {self.table_name} WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                        status, limit, offset
+                    )
+                else:
+                    rows = await conn.fetch(
+                        f"SELECT * FROM {self.table_name} ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                        limit, offset
+                    )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.warning(f"[Postgres] list_records failed: {e}")
+            return []
+
+    async def count(self, status: str = None) -> int:
+        pool = await self._get_pool()
+        if pool is None:
+            return 0
+        try:
+            async with pool.acquire() as conn:
+                if status:
+                    row = await conn.fetchrow(
+                        f"SELECT COUNT(*) as cnt FROM {self.table_name} WHERE status = $1", status
+                    )
+                else:
+                    row = await conn.fetchrow(f"SELECT COUNT(*) as cnt FROM {self.table_name}")
+                return row["cnt"] if row else 0
+        except Exception as e:
+            logger.warning(f"[Postgres] count failed: {e}")
+            return 0
+
+    async def aggregate(self, json_field: str, agg_fn: str = "SUM") -> float:
+        pool = await self._get_pool()
+        if pool is None:
+            return 0.0
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"SELECT {agg_fn}((data->>$1)::numeric) as val FROM {self.table_name}",
+                    json_field
+                )
+                return float(row["val"]) if row and row["val"] else 0.0
+        except Exception as e:
+            logger.warning(f"[Postgres] aggregate failed: {e}")
+            return 0.0
+
+    async def update_status(self, record_id: int, status: str) -> bool:
+        pool = await self._get_pool()
+        if pool is None:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    f"UPDATE {self.table_name} SET status = $1, updated_at = NOW() WHERE id = $2",
+                    status, record_id
+                )
+                return True
+        except Exception as e:
+            logger.warning(f"[Postgres] update_status failed: {e}")
+            return False
+
+    async def close(self):
+        if self._pool:
+            await self._pool.close()
+            logger.info("[Postgres] Connection pool closed")
+
+
 # Initialize clients
 dapr = DaprClient(DAPR_HTTP_PORT)
 cache = RedisCache()
@@ -219,6 +387,8 @@ temporal = TemporalClient(TEMPORAL_HOST)
 opensearch = OpenSearchClient(OPENSEARCH_URL)
 lakehouse = LakehouseClient(LAKEHOUSE_URL)
 mojaloop = MojaloopClient(MOJALOOP_URL)
+
+pg_client = PostgresClient(DATABASE_URL, "nfc_analytics")
 
 # ── In-Memory Data Store ────────────────────────────────────────────────────────
 

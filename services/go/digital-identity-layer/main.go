@@ -425,23 +425,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"did_identities", "did_credentials", "did_verifications", "did_nin_records", "did_audit_log"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS digital_identities (
+    id SERIAL PRIMARY KEY,
+    identity_hash VARCHAR(128) NOT NULL UNIQUE,
+    verification_level VARCHAR(20) DEFAULT 'basic' CHECK (verification_level IN ('none','basic','enhanced','full')),
+    bvn_verified BOOLEAN DEFAULT false,
+    nin_verified BOOLEAN DEFAULT false,
+    face_match_score NUMERIC(5,4) DEFAULT 0,
+    liveness_passed BOOLEAN DEFAULT false,
+    document_type VARCHAR(50),
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table digital_identities creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table digital_identities ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

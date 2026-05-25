@@ -425,23 +425,27 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		for _, table := range []string{"pension_accounts", "pension_contributions", "pension_withdrawals", "pension_projections", "pension_pencom_filings"} {
-			_, err := db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-				id SERIAL PRIMARY KEY,
-				data JSONB NOT NULL DEFAULT '{}',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				updated_at TIMESTAMPTZ DEFAULT NOW(),
-				tenant_id VARCHAR(100) DEFAULT 'default',
-				agent_id INTEGER,
-				metadata JSONB DEFAULT '{}'
-			)`, table))
-			if err != nil {
-				log.Printf("[Postgres] Table %s creation failed: %v", table, err)
-			} else {
-				log.Printf("[Postgres] Table %s ready", table)
-			}
-		}
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS pension_contributions (
+    id SERIAL PRIMARY KEY,
+    contributor_name VARCHAR(200) NOT NULL,
+    pension_id VARCHAR(50) NOT NULL,
+    contribution_amount NUMERIC(15,2) NOT NULL CHECK (contribution_amount BETWEEN 100 AND 1000000),
+    employer_match NUMERIC(15,2) DEFAULT 0,
+    fund_type VARCHAR(50) CHECK (fund_type IN ('conservative','balanced','growth','aggressive')),
+    accumulated_balance NUMERIC(18,2) DEFAULT 0,
+    years_to_retirement INTEGER,
+    agent_id INTEGER,
+    status VARCHAR(50) DEFAULT 'active',
+    data JSONB DEFAULT '{}',
+    tenant_id VARCHAR(100) DEFAULT 'default',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+    if err != nil {
+        log.Printf("[Postgres] Table pension_contributions creation failed: %v", err)
+    } else {
+        log.Printf("[Postgres] Table pension_contributions ready (typed schema)")
+    }
 	}
 
 	return &DataStore{

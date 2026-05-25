@@ -53,6 +53,8 @@ type Config struct {
 	ApisixAdminURL  string
 	MojaloopURL     string
 	OpenSearchURL   string
+	APISIXAdminURL string
+	OpenAppSecURL  string
 	LakehouseURL    string
 	Environment     string
 }
@@ -674,6 +676,71 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
+
+type APISIXClient struct{ adminURL, apiKey string }
+
+func NewAPISIXClient(adminURL string) *APISIXClient {
+	apiKey := os.Getenv("APISIX_ADMIN_KEY")
+	if apiKey == "" {
+		apiKey = "edd1c9f034335f136f87ad84b625c8f1"
+	}
+	return &APISIXClient{adminURL: adminURL, apiKey: apiKey}
+}
+
+func (a *APISIXClient) RegisterUpstream(upstreamID string, nodes map[string]int) error {
+	body, _ := json.Marshal(map[string]interface{}{"type": "roundrobin", "nodes": nodes})
+	req, _ := http.NewRequest("PUT", fmt.Sprintf("%s/apisix/admin/upstreams/%s", a.adminURL, upstreamID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", a.apiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("[APISIX] Register upstream failed: %v", err)
+		return err
+	}
+	defer resp.Body.Close()
+	log.Printf("[APISIX] Upstream %s registered: %d", upstreamID, resp.StatusCode)
+	return nil
+}
+
+func (a *APISIXClient) GetRoutes() ([]map[string]interface{}, error) {
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/apisix/admin/routes", a.adminURL), nil)
+	req.Header.Set("X-API-KEY", a.apiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result struct{ List []map[string]interface{} `json:"list"` }
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.List, nil
+}
+
+type OpenAppSecClient struct{ url string }
+
+func NewOpenAppSecClient(url string) *OpenAppSecClient {
+	return &OpenAppSecClient{url: url}
+}
+
+func (w *OpenAppSecClient) Health() bool {
+	resp, err := http.Get(fmt.Sprintf("%s/health", w.url))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+func (w *OpenAppSecClient) GetPolicy() (map[string]interface{}, error) {
+	resp, err := http.Get(fmt.Sprintf("%s/api/v1/policy", w.url))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var policy map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&policy)
+	return policy, nil
+}
+
 
 func main() {
 	cfg := loadConfig()

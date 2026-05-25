@@ -62,6 +62,12 @@ impl Config {
             mojaloop_url: std::env::var("MOJALOOP_URL").unwrap_or_else(|_| "http://localhost:4000".into()),
             opensearch_url: std::env::var("OPENSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".into()),
             lakehouse_url: std::env::var("LAKEHOUSE_URL").unwrap_or_else(|_| "http://localhost:8181".into()),
+            keycloak_url: std::env::var("KEYCLOAK_URL").unwrap_or_else(|_| "http://localhost:8080".into()),
+            permify_host: std::env::var("PERMIFY_HOST").unwrap_or_else(|_| "localhost".into()),
+            permify_port: std::env::var("PERMIFY_PORT").unwrap_or_else(|_| "3476".into()).parse().unwrap_or(3476),
+            apisix_admin_url: std::env::var("APISIX_ADMIN_URL").unwrap_or_else(|_| "http://localhost:9180".into()),
+            mojaloop_url: std::env::var("MOJALOOP_URL").unwrap_or_else(|_| "http://localhost:4000".into()),
+            openappsec_url: std::env::var("OPENAPPSEC_URL").unwrap_or_else(|_| "http://localhost:8085".into()),
             postgres_url: std::env::var("POSTGRES_URL").unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/platform".into()),
         }
     }
@@ -219,6 +225,88 @@ impl LakehouseClient {
     }
 }
 
+struct KeycloakClient { url: String, realm: String, client: reqwest::Client }
+impl KeycloakClient {
+    fn new(url: String) -> Self {
+        Self { url, realm: "pos-shell".into(), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap() }
+    }
+    async fn verify_token(&self, token: &str) -> Option<serde_json::Value> {
+        let url = format!("{}/realms/{}/protocol/openid-connect/userinfo", self.url, self.realm);
+        match self.client.get(&url).header("Authorization", format!("Bearer {}", token)).send().await {
+            Ok(resp) if resp.status().is_success() => resp.json().await.ok(),
+            _ => None,
+        }
+    }
+}
+
+struct PermifyClient { base_url: String, client: reqwest::Client }
+impl PermifyClient {
+    fn new(host: String, port: u16) -> Self {
+        Self { base_url: format!("http://{}:{}", host, port), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().unwrap() }
+    }
+    async fn check_permission(&self, tenant_id: &str, entity_type: &str, entity_id: &str, permission: &str, subject_type: &str, subject_id: &str) -> bool {
+        let url = format!("{}/v1/tenants/{}/permissions/check", self.base_url, tenant_id);
+        let body = serde_json::json!({"metadata": {"snap_token": "", "schema_version": "", "depth": 20}, "entity": {"type": entity_type, "id": entity_id}, "permission": permission, "subject": {"type": subject_type, "id": subject_id, "relation": ""}});
+        match self.client.post(&url).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(data) = resp.json::<serde_json::Value>().await { data["can"] == "CHECK_RESULT_ALLOWED" } else { false }
+            }
+            _ => false,
+        }
+    }
+    async fn write_relationship(&self, tenant_id: &str, entity_type: &str, entity_id: &str, relation: &str, subject_type: &str, subject_id: &str) -> bool {
+        let url = format!("{}/v1/tenants/{}/relationships/write", self.base_url, tenant_id);
+        let body = serde_json::json!({"metadata": {"schema_version": ""}, "tuples": [{"entity": {"type": entity_type, "id": entity_id}, "relation": relation, "subject": {"type": subject_type, "id": subject_id, "relation": ""}}]});
+        matches!(self.client.post(&url).json(&body).send().await, Ok(resp) if resp.status().is_success())
+    }
+}
+
+struct MojaloopClient { hub_url: String, dfsp_id: String, client: reqwest::Client }
+impl MojaloopClient {
+    fn new(hub_url: String) -> Self {
+        Self { hub_url, dfsp_id: "pos-shell-dfsp".into(), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().unwrap() }
+    }
+    async fn initiate_transfer(&self, payer_fsp: &str, payee_fsp: &str, amount: &str, currency: &str, transfer_id: &str) -> Option<serde_json::Value> {
+        let url = format!("{}/transfers", self.hub_url);
+        let body = serde_json::json!({"payerFsp": payer_fsp, "payeeFsp": payee_fsp, "amount": {"amount": amount, "currency": currency}, "transferId": transfer_id});
+        match self.client.post(&url).header("Content-Type", "application/vnd.interoperability.transfers+json;version=1.1").header("FSPIOP-Source", &self.dfsp_id).header("FSPIOP-Destination", payee_fsp).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => resp.json().await.ok(),
+            _ => None,
+        }
+    }
+    async fn lookup_party(&self, id_type: &str, id_value: &str) -> Option<serde_json::Value> {
+        let url = format!("{}/parties/{}/{}", self.hub_url, id_type, id_value);
+        match self.client.get(&url).header("FSPIOP-Source", &self.dfsp_id).send().await {
+            Ok(resp) if resp.status().is_success() => resp.json().await.ok(),
+            _ => None,
+        }
+    }
+}
+
+struct APISIXClient { admin_url: String, api_key: String, client: reqwest::Client }
+impl APISIXClient {
+    fn new(admin_url: String) -> Self {
+        Self { admin_url, api_key: std::env::var("APISIX_ADMIN_KEY").unwrap_or_else(|_| "edd1c9f034335f136f87ad84b625c8f1".into()), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap() }
+    }
+    async fn register_upstream(&self, upstream_id: &str, nodes: &serde_json::Value) -> bool {
+        let url = format!("{}/apisix/admin/upstreams/{}", self.admin_url, upstream_id);
+        let body = serde_json::json!({"type": "roundrobin", "nodes": nodes});
+        matches!(self.client.put(&url).header("X-API-KEY", &self.api_key).json(&body).send().await, Ok(resp) if resp.status().is_success())
+    }
+}
+
+struct OpenAppSecClient { url: String, client: reqwest::Client }
+impl OpenAppSecClient {
+    fn new(url: String) -> Self {
+        Self { url, client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().unwrap() }
+    }
+    async fn health(&self) -> bool {
+        matches!(self.client.get(&format!("{}/health", self.url)).send().await, Ok(resp) if resp.status().is_success())
+    }
+}
+
+
+
 
 struct PostgresClient {
     url: String,
@@ -313,6 +401,11 @@ struct AppState {
     fluvio: FluvioProducer,
     opensearch: OpenSearchClient,
     lakehouse: LakehouseClient,
+    keycloak: KeycloakClient,
+    permify: PermifyClient,
+    mojaloop: MojaloopClient,
+    apisix: APISIXClient,
+    waf: OpenAppSecClient,
     postgres: PostgresClient,
 }
 

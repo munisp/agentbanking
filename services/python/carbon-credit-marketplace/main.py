@@ -54,6 +54,12 @@ OPENSEARCH_URL = os.getenv("OPENSEARCH_URL", "http://localhost:9200")
 MOJALOOP_URL = os.getenv("MOJALOOP_URL", "http://localhost:4000")
 LAKEHOUSE_URL = os.getenv("LAKEHOUSE_URL", "http://localhost:8181")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:password@localhost:5432/ngapp")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
+PERMIFY_HOST = os.getenv("PERMIFY_HOST", "localhost")
+PERMIFY_PORT = int(os.getenv("PERMIFY_PORT", "3476"))
+TIGERBEETLE_SIDECAR_URL = os.getenv("TIGERBEETLE_SIDECAR_URL", "http://localhost:7070")
+APISIX_ADMIN_URL = os.getenv("APISIX_ADMIN_URL", "http://localhost:9180")
+OPENAPPSEC_URL = os.getenv("OPENAPPSEC_URL", "http://localhost:8085")
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
@@ -388,7 +394,183 @@ opensearch = OpenSearchClient(OPENSEARCH_URL)
 lakehouse = LakehouseClient(LAKEHOUSE_URL)
 mojaloop = MojaloopClient(MOJALOOP_URL)
 
+
+
+class KeycloakClient:
+    """Keycloak JWT verification and user management."""
+
+    def __init__(self, url: str, realm: str = "pos-shell"):
+        self.url = url
+        self.realm = realm
+        self.client = httpx.AsyncClient(timeout=5.0)
+        self._jwks_cache = None
+
+    async def verify_token(self, token: str) -> Optional[dict]:
+        try:
+            url = f"{self.url}/realms/{self.realm}/protocol/openid-connect/userinfo"
+            resp = await self.client.get(url, headers={"Authorization": f"Bearer {token}"})
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            logger.warning(f"[Keycloak] Token verification failed: {e}")
+        return None
+
+    async def get_user(self, user_id: str, admin_token: str) -> Optional[dict]:
+        try:
+            url = f"{self.url}/admin/realms/{self.realm}/users/{user_id}"
+            resp = await self.client.get(url, headers={"Authorization": f"Bearer {admin_token}"})
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            logger.warning(f"[Keycloak] Get user failed: {e}")
+        return None
+
+
+class PermifyClient:
+    """Permify authorization check and relationship management."""
+
+    def __init__(self, host: str = "localhost", port: int = 3476):
+        self.base_url = f"http://{host}:{port}"
+        self.client = httpx.AsyncClient(timeout=3.0)
+
+    async def check_permission(self, tenant_id: str, entity_type: str, entity_id: str,
+                                permission: str, subject_type: str, subject_id: str) -> bool:
+        try:
+            url = f"{self.base_url}/v1/tenants/{tenant_id}/permissions/check"
+            resp = await self.client.post(url, json={
+                "metadata": {"snap_token": "", "schema_version": "", "depth": 20},
+                "entity": {"type": entity_type, "id": entity_id},
+                "permission": permission,
+                "subject": {"type": subject_type, "id": subject_id, "relation": ""},
+            })
+            if resp.status_code == 200:
+                return resp.json().get("can") == "CHECK_RESULT_ALLOWED"
+        except Exception as e:
+            logger.warning(f"[Permify] Permission check failed: {e}")
+        return False
+
+    async def write_relationship(self, tenant_id: str, entity_type: str, entity_id: str,
+                                  relation: str, subject_type: str, subject_id: str) -> bool:
+        try:
+            url = f"{self.base_url}/v1/tenants/{tenant_id}/relationships/write"
+            resp = await self.client.post(url, json={
+                "metadata": {"schema_version": ""},
+                "tuples": [{"entity": {"type": entity_type, "id": entity_id},
+                            "relation": relation,
+                            "subject": {"type": subject_type, "id": subject_id, "relation": ""}}],
+            })
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning(f"[Permify] Write relationship failed: {e}")
+        return False
+
+
+class TigerBeetleClient:
+    """TigerBeetle sidecar HTTP client for double-entry ledger operations."""
+
+    def __init__(self, sidecar_url: str = "http://localhost:7070"):
+        self.url = sidecar_url
+        self.client = httpx.AsyncClient(timeout=2.0)
+
+    async def create_transfer(self, debit_account: str, credit_account: str,
+                               amount_kobo: int, ref: str = "") -> Optional[dict]:
+        try:
+            resp = await self.client.post(f"{self.url}/transfers", json={
+                "debitAccountId": debit_account,
+                "creditAccountId": credit_account,
+                "amount": amount_kobo,
+                "ref": ref,
+            })
+            if resp.status_code == 200:
+                logger.info(f"[TigerBeetle] Transfer committed: {amount_kobo} kobo")
+                return resp.json()
+        except Exception as e:
+            logger.warning(f"[TigerBeetle] Transfer failed: {e}")
+        return None
+
+    async def get_balance(self, agent_code: str) -> Optional[dict]:
+        try:
+            resp = await self.client.get(f"{self.url}/agent/{agent_code}/balance")
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return None
+
+    async def health(self) -> bool:
+        try:
+            resp = await self.client.get(f"{self.url}/health")
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+
+class APISIXClient:
+    """APISIX API Gateway admin client for dynamic route management."""
+
+    def __init__(self, admin_url: str = "http://localhost:9180",
+                 api_key: str = "edd1c9f034335f136f87ad84b625c8f1"):
+        self.admin_url = admin_url
+        self.api_key = api_key
+        self.client = httpx.AsyncClient(timeout=5.0)
+
+    async def register_upstream(self, upstream_id: str, nodes: dict, lb_type: str = "roundrobin") -> bool:
+        try:
+            resp = await self.client.put(
+                f"{self.admin_url}/apisix/admin/upstreams/{upstream_id}",
+                headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"},
+                json={"type": lb_type, "nodes": nodes},
+            )
+            return resp.status_code in (200, 201)
+        except Exception as e:
+            logger.warning(f"[APISIX] Register upstream failed: {e}")
+        return False
+
+    async def get_routes(self) -> list:
+        try:
+            resp = await self.client.get(
+                f"{self.admin_url}/apisix/admin/routes",
+                headers={"X-API-KEY": self.api_key},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("list", data.get("node", {}).get("nodes", []))
+        except Exception:
+            pass
+        return []
+
+
+class OpenAppSecClient:
+    """OpenAppSec WAF health check and dynamic policy management."""
+
+    def __init__(self, mgmt_url: str = "http://localhost:8085"):
+        self.url = mgmt_url
+        self.client = httpx.AsyncClient(timeout=3.0)
+
+    async def health(self) -> bool:
+        try:
+            resp = await self.client.get(f"{self.url}/health")
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    async def get_policy(self) -> Optional[dict]:
+        try:
+            resp = await self.client.get(f"{self.url}/api/v1/policy")
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return None
+
+
 pg_client = PostgresClient(DATABASE_URL, "carbon_analytics")
+
+keycloak_client = KeycloakClient(KEYCLOAK_URL)
+permify_client = PermifyClient(PERMIFY_HOST, PERMIFY_PORT)
+tb_client = TigerBeetleClient(TIGERBEETLE_SIDECAR_URL)
+apisix_client = APISIXClient(APISIX_ADMIN_URL)
+waf_client = OpenAppSecClient(OPENAPPSEC_URL)
 
 # ── In-Memory Data Store ────────────────────────────────────────────────────────
 

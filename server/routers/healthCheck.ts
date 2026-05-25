@@ -271,4 +271,111 @@ export const healthCheckRouter = router({
       timestamp: new Date().toISOString(),
     };
   }),
+
+  middlewareHealth: publicProcedure.query(async () => {
+    const results: Record<
+      string,
+      { status: string; latencyMs: number; details?: string }
+    > = {};
+
+    const checkHttp = async (
+      name: string,
+      url: string,
+      timeoutMs: number = 3000
+    ) => {
+      const start = Date.now();
+      try {
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        results[name] = {
+          status: res.ok ? "healthy" : "degraded",
+          latencyMs: Date.now() - start,
+          details: `HTTP ${res.status}`,
+        };
+      } catch (err: any) {
+        results[name] = {
+          status: "unhealthy",
+          latencyMs: Date.now() - start,
+          details: err.message,
+        };
+      }
+    };
+
+    await Promise.allSettled([
+      checkHttp(
+        "redis",
+        `http://${process.env.REDIS_HOST ?? "localhost"}:${process.env.REDIS_PORT ?? "6379"}`,
+        2000
+      ).catch(() => {
+        results["redis"] = {
+          status: "not_configured",
+          latencyMs: 0,
+          details: "ioredis check via client required",
+        };
+      }),
+      checkHttp(
+        "kafka",
+        `http://${(process.env.KAFKA_BROKERS ?? "localhost:9092").split(",")[0].replace(":9092", ":8082")}/topics`,
+        3000
+      ),
+      checkHttp(
+        "tigerbeetle",
+        `${process.env.TB_SIDECAR_URL ?? "http://localhost:7070"}/health`
+      ),
+      checkHttp(
+        "keycloak",
+        `${process.env.KEYCLOAK_URL ?? "http://localhost:8080"}/health/ready`
+      ),
+      checkHttp(
+        "permify",
+        `http://${process.env.PERMIFY_HOST ?? "localhost"}:${process.env.PERMIFY_PORT ?? "3476"}/healthz`
+      ),
+      checkHttp(
+        "apisix",
+        `${process.env.APISIX_ADMIN_URL ?? "http://localhost:9180"}/apisix/admin/routes`
+      ),
+      checkHttp(
+        "opensearch",
+        `${process.env.OPENSEARCH_URL ?? "http://localhost:9200"}/_cluster/health`
+      ),
+      checkHttp(
+        "mojaloop",
+        `${process.env.MOJALOOP_HUB_URL ?? "http://localhost:4000"}/health`
+      ),
+      checkHttp(
+        "fluvio",
+        `http://${process.env.FLUVIO_HOST ?? "localhost"}:${process.env.FLUVIO_HTTP_PORT ?? "9003"}/health`
+      ),
+      checkHttp(
+        "dapr",
+        `http://localhost:${process.env.DAPR_HTTP_PORT ?? "3500"}/v1.0/healthz`
+      ),
+      checkHttp(
+        "openappsec",
+        `${process.env.OPENAPPSEC_MGMT_URL ?? "http://localhost:8085"}/health`
+      ),
+      checkHttp(
+        "temporal",
+        `http://${(process.env.TEMPORAL_ADDRESS ?? "localhost:7233").replace(":7233", ":8233")}/api/v1/namespaces`
+      ),
+    ]);
+
+    const healthy = Object.values(results).filter(
+      r => r.status === "healthy"
+    ).length;
+    const total = Object.keys(results).length;
+
+    return {
+      overall:
+        healthy === total
+          ? "healthy"
+          : healthy >= total * 0.7
+            ? "degraded"
+            : "critical",
+      services: results,
+      summary: `${healthy}/${total} services healthy`,
+      timestamp: new Date().toISOString(),
+    };
+  }),
 });

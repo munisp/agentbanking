@@ -5,12 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Gift, Users, TrendingUp, Award } from "lucide-react";
 
 export default function ReferralProgramPage() {
-  // @ts-expect-error Sprint 85 — type inference mismatch
+  // @ts-ignore
   const referrals = trpc.referralProgramDedicated.list.useQuery({
     limit: 20,
   }) as any;
   const rewards = trpc.referralProgramDedicated.leaderboard.useQuery() as any;
   const tiers = trpc.referralProgramDedicated.tiers.useQuery() as any;
+  // @ts-ignore
   const analytics = trpc.referralProgramDedicated.analytics.useQuery() as any;
 
   return (

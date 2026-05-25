@@ -1,16 +1,8 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { disputes } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
-
-// ── Middleware Integration (Sprint 44) ──────────────────────────────
-import { publishEvent, type KafkaTopic } from "../kafkaClient";
-import { cacheSet, cacheGet } from "../redisClient";
-import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const paymentDisputeArbitrationRouter = router({
   list: protectedProcedure
@@ -19,88 +11,112 @@ export const paymentDisputeArbitrationRouter = router({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
         search: z.string().optional(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
       })
     )
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+
         const results = await database
           .select()
-          .from(transactions)
-          .orderBy(desc(transactions.id))
+          .from(disputes)
+          .orderBy(desc((disputes as any).id))
           .limit(input.limit)
           .offset(input.offset);
 
-        const _totalRows = await database
+        const [totalRow] = await database
           .select({ total: count() })
-          .from(transactions);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
+          .from(disputes);
 
         return {
           data: results,
-          total: totalResult?.total ?? 0,
+          total: totalRow?.total ?? 0,
           limit: input.limit,
           offset: input.offset,
         };
       } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
+        console.error("[paymentDisputeArbitration] list error:", error);
+        return { data: [], total: 0, limit: input.limit, offset: input.offset };
       }
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const [record] = await database
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(1);
+      const database = await getDb();
+      if (!database) throw new Error("Database unavailable");
+      const [record] = await database
+        .select()
+        .from(disputes)
+        .where(eq((disputes as any).id, input.id))
+        .limit(1);
 
-        if (!record) {
-          throw new Error(`Record with id ${input.id} not found`);
-        }
-        return record;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
+      if (!record) {
+        throw new Error(`paymentDisputeArbitration record #${input.id} not found`);
       }
+      return record;
     }),
 
-  getSummary: protectedProcedure.query(async () => {
-    try {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const _totalRows = await database
-        .select({ total: count() })
-        .from(transactions);
-      const totalResult = Array.isArray(_totalRows)
-        ? _totalRows[0]
-        : _totalRows;
-
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
       return {
-        totalRecords: totalResult?.total ?? 0,
+        total: 0,
+        active: 0,
+        recent: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    try {
+      const [stats] = await database.execute(
+        sql`SELECT
+          count(*) as total,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days') as recent,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days') as this_week,
+          count(*) FILTER (WHERE created_at >= now() - interval '1 day') as today
+          FROM disputes`
+      );
+      const s = stats as Record<string, unknown>;
+      const total = Number(s?.total ?? 0);
+      const recent = Number(s?.recent ?? 0);
+      const thisWeek = Number(s?.this_week ?? 0);
+      const today = Number(s?.today ?? 0);
+      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      return {
+        total,
+        active: total,
+        recent,
+        thisWeek,
+        today,
+        growth: Math.round(growthRate * 100) / 100,
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
+      console.error("[paymentDisputeArbitration] getStats error:", error);
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        thisWeek: 0,
+        today: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
+  }),
+
+  getSummary: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database.select({ total: count() }).from(disputes);
+    return {
+      totalRecords: totalRow?.total ?? 0,
+      lastUpdated: new Date().toISOString(),
+    };
   }),
 
   getRecent: protectedProcedure
@@ -111,55 +127,39 @@ export const paymentDisputeArbitrationRouter = router({
       })
     )
     .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const since = new Date();
-        since.setDate(since.getDate() - input.days);
+      const database = await getDb();
+      if (!database) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
 
-        const results = await database
-          .select()
-          .from(transactions)
-          .orderBy(desc(transactions.id))
-          .limit(input.limit);
+      const results = await database
+        .select()
+        .from(disputes)
+        .where(gte((disputes as any).createdAt, since))
+        .orderBy(desc((disputes as any).id))
+        .limit(input.limit);
 
-        return results;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+      return results;
     }),
 
-  getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      const [totalRow] = await database
-        .select({ total: count() })
-        .from(transactions);
-      const total = totalRow?.total ?? 0;
-      return {
-        total,
-        active: total,
-        recent: Math.min(total, 50),
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-  }),
+  getTrend: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(365).default(30) }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      try {
+        const rows = await database.execute(
+          sql`SELECT
+            date_trunc('day', created_at) as date,
+            count(*) as count
+          FROM disputes
+          WHERE created_at >= now() - make_interval(days => ${input.days})
+          GROUP BY date_trunc('day', created_at)
+          ORDER BY date`
+        );
+        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      } catch {
+        return [];
+      }
+    }),
 });

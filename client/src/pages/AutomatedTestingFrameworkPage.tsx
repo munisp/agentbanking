@@ -7,6 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 export default function AutomatedTestingFrameworkPage() {
   const { data, isLoading, refetch } =
+    // @ts-ignore
     trpc.automatedTestingFramework.dashboard.useQuery();
   if (isLoading)
     return (

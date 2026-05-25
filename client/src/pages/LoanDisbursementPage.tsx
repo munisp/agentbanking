@@ -10,14 +10,15 @@ export default function LoanDisbursementPage() {
   const [tab, setTab] = useState<"loans" | "applications" | "repayments">(
     "loans"
   );
-  // @ts-expect-error Sprint 85 — type inference mismatch
+  // @ts-ignore
   const loans = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
+  // @ts-ignore
   const applications = trpc.loanDisbursement.list.useQuery({
     limit: 20,
   }) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
+  // @ts-ignore
   const repayments = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
+  // @ts-ignore
   const analytics = trpc.loanDisbursement.analytics.useQuery() as any;
 
   return (

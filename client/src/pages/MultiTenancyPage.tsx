@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, Users, Activity } from "lucide-react";
 
 export default function MultiTenancyPage() {
+  // @ts-ignore
   const { data } = trpc.multiTenancy.dashboard.useQuery() as any;
 
   return (

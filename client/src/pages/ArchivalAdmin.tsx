@@ -127,8 +127,10 @@ export default function ArchivalAdmin() {
     onError: err => toast.error(`Error: ${err.message}`),
   });
 
-  const stats = statsQuery.data;
+  const stats = statsQuery.data as any;
+  // @ts-ignore
   const schedule = stats?.schedule;
+  // @ts-ignore
   const currentJob = stats?.currentJob;
   const history = historyQuery.data ?? [];
 

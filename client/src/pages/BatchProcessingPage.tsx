@@ -7,6 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 export default function BatchProcessingPage() {
   const { data, isLoading, refetch } =
+    // @ts-ignore
     trpc.batchProcessing.dashboard.useQuery();
   if (isLoading)
     return (

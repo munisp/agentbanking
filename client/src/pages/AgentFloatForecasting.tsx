@@ -259,7 +259,6 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                ₦{(stats.data?.predictedDemand7d ?? 85000000).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">Across 23 agents</p>
             </CardContent>
@@ -272,7 +271,6 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                {stats.data?.avgAccuracy ?? 94.7}%
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>

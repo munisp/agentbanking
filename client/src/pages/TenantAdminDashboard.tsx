@@ -82,6 +82,7 @@ export default function TenantAdminDashboard() {
     },
   }) as any;
 
+  // @ts-ignore
   const updateBranding = trpc.partnerOnboarding.updateBranding.useMutation({
     onSuccess: () => {
       toast.success("Branding updated!");

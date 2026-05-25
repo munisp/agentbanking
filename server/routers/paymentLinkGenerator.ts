@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { shareableLinks } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const paymentLinkGeneratorRouter = router({
@@ -11,34 +11,36 @@ export const paymentLinkGeneratorRouter = router({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
         search: z.string().optional(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
       })
     )
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+
         const results = await database
           .select()
-          .from(transactions)
-          .orderBy(desc(transactions.id))
+          .from(shareableLinks)
+          .orderBy(desc((shareableLinks as any).id))
           .limit(input.limit)
           .offset(input.offset);
 
-        const _totalRows = await database
+        const [totalRow] = await database
           .select({ total: count() })
-          .from(transactions);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
+          .from(shareableLinks);
 
         return {
           data: results,
-          total: totalResult?.total ?? 0,
+          total: totalRow?.total ?? 0,
           limit: input.limit,
           offset: input.offset,
         };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
+      } catch (error) {
+        console.error("[paymentLinkGenerator] list error:", error);
+        return { data: [], total: 0, limit: input.limit, offset: input.offset };
       }
     }),
 
@@ -46,29 +48,73 @@ export const paymentLinkGeneratorRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) throw new Error("Database unavailable");
       const [record] = await database
         .select()
-        .from(transactions)
-        .where(eq(transactions.id, input.id))
+        .from(shareableLinks)
+        .where(eq((shareableLinks as any).id, input.id))
         .limit(1);
 
       if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
+        throw new Error(`paymentLinkGenerator record #${input.id} not found`);
       }
       return record;
     }),
 
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    try {
+      const [stats] = await database.execute(
+        sql`SELECT
+          count(*) as total,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days') as recent,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days') as this_week,
+          count(*) FILTER (WHERE created_at >= now() - interval '1 day') as today
+          FROM shareable_links`
+      );
+      const s = stats as Record<string, unknown>;
+      const total = Number(s?.total ?? 0);
+      const recent = Number(s?.recent ?? 0);
+      const thisWeek = Number(s?.this_week ?? 0);
+      const today = Number(s?.today ?? 0);
+      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      return {
+        total,
+        active: total,
+        recent,
+        thisWeek,
+        today,
+        growth: Math.round(growthRate * 100) / 100,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("[paymentLinkGenerator] getStats error:", error);
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        thisWeek: 0,
+        today: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+  }),
+
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database
-      .select({ total: count() })
-      .from(transactions);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
+    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database.select({ total: count() }).from(shareableLinks);
     return {
-      totalRecords: totalResult?.total ?? 0,
+      totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
     };
   }),
@@ -82,46 +128,38 @@ export const paymentLinkGeneratorRouter = router({
     )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) return [];
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 
       const results = await database
         .select()
-        .from(transactions)
-        .orderBy(desc(transactions.id))
+        .from(shareableLinks)
+        .where(gte((shareableLinks as any).createdAt, since))
+        .orderBy(desc((shareableLinks as any).id))
         .limit(input.limit);
 
       return results;
     }),
 
-  getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      const [totalRow] = await database
-        .select({ total: count() })
-        .from(transactions);
-      const total = totalRow?.total ?? 0;
-      return {
-        total,
-        active: total,
-        recent: Math.min(total, 50),
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-  }),
+  getTrend: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(365).default(30) }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      try {
+        const rows = await database.execute(
+          sql`SELECT
+            date_trunc('day', created_at) as date,
+            count(*) as count
+          FROM shareable_links
+          WHERE created_at >= now() - make_interval(days => ${input.days})
+          GROUP BY date_trunc('day', created_at)
+          ORDER BY date`
+        );
+        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      } catch {
+        return [];
+      }
+    }),
 });

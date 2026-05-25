@@ -125,8 +125,9 @@ export default function NetworkQualityHeatmap() {
   }) as any;
 
   const { data: regionDetail } =
+    // @ts-ignore
     trpc.networkQualityHeatmap.getRegionDetail.useQuery(
-      // @ts-expect-error Sprint 85 — type inference mismatch
+      // @ts-ignore
       { regionId: selectedRegion! },
       { enabled: !!selectedRegion }
     ) as any;

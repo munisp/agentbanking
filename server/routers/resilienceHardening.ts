@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog, platform_health_checks } from "../../drizzle/schema";
+import { platform_health_checks } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const resilienceHardeningRouter = router({
@@ -11,34 +11,36 @@ export const resilienceHardeningRouter = router({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
         search: z.string().optional(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
       })
     )
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+
         const results = await database
           .select()
           .from(platform_health_checks)
-          .orderBy(desc(auditLog.id))
+          .orderBy(desc((platform_health_checks as any).id))
           .limit(input.limit)
           .offset(input.offset);
 
-        const _totalRows = await database
+        const [totalRow] = await database
           .select({ total: count() })
           .from(platform_health_checks);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
 
         return {
           data: results,
-          total: totalResult?.total ?? 0,
+          total: totalRow?.total ?? 0,
           limit: input.limit,
           offset: input.offset,
         };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
+      } catch (error) {
+        console.error("[resilienceHardening] list error:", error);
+        return { data: [], total: 0, limit: input.limit, offset: input.offset };
       }
     }),
 
@@ -46,29 +48,73 @@ export const resilienceHardeningRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) throw new Error("Database unavailable");
       const [record] = await database
         .select()
         .from(platform_health_checks)
-        .where(eq(auditLog.id, input.id))
+        .where(eq((platform_health_checks as any).id, input.id))
         .limit(1);
 
       if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
+        throw new Error(`resilienceHardening record #${input.id} not found`);
       }
       return record;
     }),
 
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    try {
+      const [stats] = await database.execute(
+        sql`SELECT
+          count(*) as total,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days') as recent,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days') as this_week,
+          count(*) FILTER (WHERE created_at >= now() - interval '1 day') as today
+          FROM platform_health_checks`
+      );
+      const s = stats as Record<string, unknown>;
+      const total = Number(s?.total ?? 0);
+      const recent = Number(s?.recent ?? 0);
+      const thisWeek = Number(s?.this_week ?? 0);
+      const today = Number(s?.today ?? 0);
+      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      return {
+        total,
+        active: total,
+        recent,
+        thisWeek,
+        today,
+        growth: Math.round(growthRate * 100) / 100,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("[resilienceHardening] getStats error:", error);
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        thisWeek: 0,
+        today: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+  }),
+
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database
-      .select({ total: count() })
-      .from(platform_health_checks);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
+    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database.select({ total: count() }).from(platform_health_checks);
     return {
-      totalRecords: totalResult?.total ?? 0,
+      totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
     };
   }),
@@ -82,58 +128,86 @@ export const resilienceHardeningRouter = router({
     )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) return [];
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 
       const results = await database
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.id))
+        .where(gte((platform_health_checks as any).createdAt, since))
+        .orderBy(desc((platform_health_checks as any).id))
         .limit(input.limit);
 
       return results;
     }),
-  getConnectionProfile: protectedProcedure.query(async () => ({
+
+  getTrend: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(365).default(30) }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      try {
+        const rows = await database.execute(
+          sql`SELECT
+            date_trunc('day', created_at) as date,
+            count(*) as count
+          FROM platform_health_checks
+          WHERE created_at >= now() - make_interval(days => ${input.days})
+          GROUP BY date_trunc('day', created_at)
+          ORDER BY date`
+        );
+        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      } catch {
+        return [];
+      }
+    }),
+
+
+    getConnectionProfile: protectedProcedure.query(async () => ({
     connectionType: "4G",
     latencyMs: 50,
     bandwidthMbps: 10,
     isOfflineCapable: true,
   })),
-  getWebSocketConfig: protectedProcedure.query(async () => ({
+
+
+    getWebSocketConfig: protectedProcedure.query(async () => ({
     enabled: true,
     heartbeatInterval: 30000,
     reconnectDelay: 5000,
     maxRetries: 10,
   })),
-  getOfflineQueueStatus: protectedProcedure.query(async () => ({
+
+
+    getOfflineQueueStatus: protectedProcedure.query(async () => ({
     enabled: true,
     queuedItems: 0,
     maxQueueSize: 1000,
     syncInterval: 60000,
   })),
-  getCompressionConfig: protectedProcedure.query(async () => ({
+
+
+    getCompressionConfig: protectedProcedure.query(async () => ({
     enabled: true,
     algorithm: "gzip",
     level: 6,
     minSizeBytes: 1024,
   })),
-  getDegradationConfig: protectedProcedure.query(async () => ({
+
+
+    getDegradationConfig: protectedProcedure.query(async () => ({
     enabled: true,
     threshold: 0.8,
     fallbackMode: "cached",
     maxDegradationLevel: 3,
   })),
-  getResilienceMetrics: protectedProcedure.query(async () => ({
+
+
+    getResilienceMetrics: protectedProcedure.query(async () => ({
     uptime: 99.9,
     failoverCount: 0,
     recoveryTimeMs: 500,
     circuitBreakerTrips: 0,
-  })),
-  getServiceWorkerConfig: protectedProcedure.query(async () => ({
-    enabled: true,
-    cacheStrategy: "network-first",
-    maxCacheSizeMb: 50,
-    syncInterval: 30000,
   })),
 });

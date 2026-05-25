@@ -1,8 +1,7 @@
-// @ts-nocheck
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog, platform_health_checks } from "../../drizzle/schema";
+import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const securityHardeningRouter = router({
@@ -12,34 +11,36 @@ export const securityHardeningRouter = router({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
         search: z.string().optional(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
       })
     )
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+
         const results = await database
           .select()
-          .from(platform_health_checks)
-          .orderBy(desc(auditLog.id))
+          .from(auditLog)
+          .orderBy(desc((auditLog as any).id))
           .limit(input.limit)
           .offset(input.offset);
 
-        const _totalRows = await database
+        const [totalRow] = await database
           .select({ total: count() })
-          .from(platform_health_checks);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
+          .from(auditLog);
 
         return {
           data: results,
-          total: totalResult?.total ?? 0,
+          total: totalRow?.total ?? 0,
           limit: input.limit,
           offset: input.offset,
         };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
+      } catch (error) {
+        console.error("[securityHardening] list error:", error);
+        return { data: [], total: 0, limit: input.limit, offset: input.offset };
       }
     }),
 
@@ -47,29 +48,73 @@ export const securityHardeningRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) throw new Error("Database unavailable");
       const [record] = await database
         .select()
-        .from(platform_health_checks)
-        .where(eq(auditLog.id, input.id))
+        .from(auditLog)
+        .where(eq((auditLog as any).id, input.id))
         .limit(1);
 
       if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
+        throw new Error(`securityHardening record #${input.id} not found`);
       }
       return record;
     }),
 
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    try {
+      const [stats] = await database.execute(
+        sql`SELECT
+          count(*) as total,
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days') as recent,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days') as this_week,
+          count(*) FILTER (WHERE created_at >= now() - interval '1 day') as today
+          FROM audit_log`
+      );
+      const s = stats as Record<string, unknown>;
+      const total = Number(s?.total ?? 0);
+      const recent = Number(s?.recent ?? 0);
+      const thisWeek = Number(s?.this_week ?? 0);
+      const today = Number(s?.today ?? 0);
+      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      return {
+        total,
+        active: total,
+        recent,
+        thisWeek,
+        today,
+        growth: Math.round(growthRate * 100) / 100,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("[securityHardening] getStats error:", error);
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        thisWeek: 0,
+        today: 0,
+        growth: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+  }),
+
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database
-      .select({ total: count() })
-      .from(platform_health_checks);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
+    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database.select({ total: count() }).from(auditLog);
     return {
-      totalRecords: totalResult?.total ?? 0,
+      totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
     };
   }),
@@ -83,75 +128,38 @@ export const securityHardeningRouter = router({
     )
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database) return [];
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 
       const results = await database
         .select()
-        .from(platform_health_checks)
-        .orderBy(desc(auditLog.id))
+        .from(auditLog)
+        .where(gte((auditLog as any).createdAt, since))
+        .orderBy(desc((auditLog as any).id))
         .limit(input.limit);
 
       return results;
     }),
 
-  cbnCompliance: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
-  }),
-
-  owaspTop10: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  pciDssCompliance: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  recentScans: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
-  }),
-
-  runScan: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      return { success: true };
+  getTrend: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(365).default(30) }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      try {
+        const rows = await database.execute(
+          sql`SELECT
+            date_trunc('day', created_at) as date,
+            count(*) as count
+          FROM audit_log
+          WHERE created_at >= now() - make_interval(days => ${input.days})
+          GROUP BY date_trunc('day', created_at)
+          ORDER BY date`
+        );
+        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      } catch {
+        return [];
+      }
     }),
-  getDDoSConfig: protectedProcedure.query(async () => ({
-    enabled: true,
-    rateLimit: 1000,
-    windowMs: 60000,
-    blockDuration: 300000,
-  })),
-  getRansomwareGuardStatus: protectedProcedure.query(async () => ({
-    enabled: true,
-    lastScan: new Date().toISOString(),
-    threats: 0,
-  })),
-  evaluatePolicy: protectedProcedure
-    .input(
-      z.object({ policyId: z.string(), context: z.record(z.any()).optional() })
-    )
-    .mutation(async ({ input }) => ({
-      policyId: input.policyId,
-      allowed: true,
-      reason: "Policy evaluation passed",
-    })),
-  getEncryptionStatus: protectedProcedure.query(async () => ({
-    atRest: true,
-    inTransit: true,
-    algorithm: "AES-256-GCM",
-    keyRotation: "30d",
-  })),
 });

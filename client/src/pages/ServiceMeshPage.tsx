@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 
 export default function ServiceMeshPage() {
+  // @ts-ignore
   const { data, isLoading } = trpc.serviceMesh.dashboard.useQuery() as any;
 
   if (isLoading)

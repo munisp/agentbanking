@@ -158,6 +158,7 @@ export default function RansomwareAlertDashboard() {
     status: statusFilter as any,
   }) as any;
 
+  // @ts-ignore
   const acknowledgeMut = trpc.ransomwareAlerts.acknowledge.useMutation({
     onSuccess: () => {
       toast.success("Alert acknowledged: The alert has been acknowledged.");

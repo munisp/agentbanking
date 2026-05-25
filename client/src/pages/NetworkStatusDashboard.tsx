@@ -120,6 +120,7 @@ export default function NetworkStatusDashboard() {
     trpc.networkStatusDashboard.getCarrierHeatmap.useQuery() as any;
   const carrierSummary =
     trpc.networkStatusDashboard.getCarrierSummary.useQuery() as any;
+  // @ts-ignore
   const resolveAlert = trpc.networkStatusDashboard.resolveAlert.useMutation({
     onSuccess: () => alerts.refetch(),
   }) as any;

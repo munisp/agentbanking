@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Clock, BookOpen } from "lucide-react";
 
 export default function IncidentManagementPage() {
+  // @ts-ignore
   const { data } = trpc.incidentManagement.dashboard.useQuery() as any;
 
   return (

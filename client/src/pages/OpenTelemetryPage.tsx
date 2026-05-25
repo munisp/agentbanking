@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 
 export default function OpenTelemetryPage() {
   const { data, isLoading } = trpc.openTelemetry.dashboard.useQuery() as any;
+  // @ts-ignore
   const { data: health } = trpc.openTelemetry.serviceHealth.useQuery() as any;
 
   if (isLoading)

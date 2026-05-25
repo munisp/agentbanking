@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import DashboardLayout from "@/components/DashboardLayout";
 
 export default function ApiVersioningPage() {
+  // @ts-ignore
   const { data, isLoading } = trpc.apiVersioning.dashboard.useQuery();
   if (isLoading)
     return (

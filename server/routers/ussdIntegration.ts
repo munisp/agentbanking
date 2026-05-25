@@ -19,7 +19,13 @@ export const ussdIntegrationRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const ussdIntegrationRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,8 +118,11 @@ export const ussdIntegrationRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalRow] = await database.select({ total: count() }).from(transactions);
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database
+      .select({ total: count() })
+      .from(transactions);
     return {
       totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
@@ -157,14 +167,13 @@ export const ussdIntegrationRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    startSession: protectedProcedure
+  startSession: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       return {
@@ -175,8 +184,7 @@ export const ussdIntegrationRouter = router({
       };
     }),
 
-
-    processInput: protectedProcedure
+  processInput: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       return {

@@ -19,7 +19,13 @@ export const billingProductionRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const billingProductionRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,8 +118,11 @@ export const billingProductionRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalRow] = await database.select({ total: count() }).from(platformBillingLedger);
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database
+      .select({ total: count() })
+      .from(platformBillingLedger);
     return {
       totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
@@ -157,64 +167,53 @@ export const billingProductionRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    generateMonthlyInvoices: protectedProcedure.mutation(async () => ({
+  generateMonthlyInvoices: protectedProcedure.mutation(async () => ({
     generated: 0,
     period: new Date().toISOString(),
   })),
 
+  getPaymentMethods: protectedProcedure.query(async () => ({ methods: [] })),
 
-    getPaymentMethods: protectedProcedure.query(async () => ({ methods: [] })),
-
-
-    addPaymentMethod: protectedProcedure
+  addPaymentMethod: protectedProcedure
     .input(z.object({ type: z.string(), token: z.string() }))
     .mutation(async ({ input }) => ({ success: true, type: input.type })),
 
+  getBillingAlerts: protectedProcedure.query(async () => ({ alerts: [] })),
 
-    getBillingAlerts: protectedProcedure.query(async () => ({ alerts: [] })),
-
-
-    configureBillingAlerts: protectedProcedure
+  configureBillingAlerts: protectedProcedure
     .input(z.object({ threshold: z.number(), enabled: z.boolean() }))
     .mutation(async () => ({ success: true })),
 
-
-    getDunningStatus: protectedProcedure.query(async () => ({
+  getDunningStatus: protectedProcedure.query(async () => ({
     status: "healthy",
     overdue: 0,
   })),
 
-
-    applyGracePeriod: protectedProcedure
+  applyGracePeriod: protectedProcedure
     .input(z.object({ invoiceId: z.string(), days: z.number() }))
     .mutation(async () => ({ success: true })),
 
-
-    getReconciliationSchedule: protectedProcedure.query(async () => ({
+  getReconciliationSchedule: protectedProcedure.query(async () => ({
     schedule: "daily",
     lastRun: new Date().toISOString(),
   })),
 
-
-    triggerReconciliation: protectedProcedure.mutation(async () => ({
+  triggerReconciliation: protectedProcedure.mutation(async () => ({
     triggered: true,
     timestamp: new Date().toISOString(),
   })),
 
-
-    getRateLimits: protectedProcedure.query(async () => ({
+  getRateLimits: protectedProcedure.query(async () => ({
     limits: { perMinute: 60, perHour: 1000 },
   })),
 
-
-    updateRateLimits: protectedProcedure
+  updateRateLimits: protectedProcedure
     .input(
       z.object({
         perMinute: z.number().optional(),
@@ -223,49 +222,41 @@ export const billingProductionRouter = router({
     )
     .mutation(async () => ({ success: true })),
 
-
-    createDispute: protectedProcedure
+  createDispute: protectedProcedure
     .input(z.object({ invoiceId: z.string(), reason: z.string() }))
     .mutation(async () => ({ success: true, disputeId: "DSP-001" })),
 
+  getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
 
-    getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
-
-
-    getRevenueForecast: protectedProcedure.query(async () => ({
+  getRevenueForecast: protectedProcedure.query(async () => ({
     forecast: [],
     period: "monthly",
   })),
 
-
-    calculateTax: protectedProcedure
+  calculateTax: protectedProcedure
     .input(z.object({ amount: z.number(), region: z.string() }))
     .query(async ({ input }) => ({
       taxAmount: input.amount * 0.15,
       rate: 0.15,
     })),
 
-
-    migratePlan: protectedProcedure
+  migratePlan: protectedProcedure
     .input(z.object({ fromPlan: z.string(), toPlan: z.string() }))
     .mutation(async () => ({
       success: true,
       effectiveDate: new Date().toISOString(),
     })),
 
-
-    generateInvoicePdf: protectedProcedure
+  generateInvoicePdf: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
     .mutation(async () => ({ url: "", generated: true })),
 
-
-    getCohortAnalytics: protectedProcedure.query(async () => ({
+  getCohortAnalytics: protectedProcedure.query(async () => ({
     cohorts: [],
     period: "monthly",
   })),
 
-
-    getCreditBalance: protectedProcedure.query(async () => ({
+  getCreditBalance: protectedProcedure.query(async () => ({
     balance: 0,
     currency: "USD",
   })),

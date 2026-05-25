@@ -19,7 +19,13 @@ export const eventDrivenArchRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const eventDrivenArchRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,7 +118,8 @@ export const eventDrivenArchRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
     const [totalRow] = await database.select({ total: count() }).from(auditLog);
     return {
       totalRecords: totalRow?.total ?? 0,
@@ -157,35 +165,31 @@ export const eventDrivenArchRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    dashboard: protectedProcedure
+  dashboard: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    listTopics: protectedProcedure
+  listTopics: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    getDeadLetterQueue: protectedProcedure
+  getDeadLetterQueue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    retryDeadLetter: protectedProcedure
+  retryDeadLetter: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       return { success: true, status: "ok" };

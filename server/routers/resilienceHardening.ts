@@ -19,7 +19,13 @@ export const resilienceHardeningRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const resilienceHardeningRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,8 +118,11 @@ export const resilienceHardeningRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalRow] = await database.select({ total: count() }).from(platform_health_checks);
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database
+      .select({ total: count() })
+      .from(platform_health_checks);
     return {
       totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
@@ -157,54 +167,48 @@ export const resilienceHardeningRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    getConnectionProfile: protectedProcedure.query(async () => ({
+  getConnectionProfile: protectedProcedure.query(async () => ({
     connectionType: "4G",
     latencyMs: 50,
     bandwidthMbps: 10,
     isOfflineCapable: true,
   })),
 
-
-    getWebSocketConfig: protectedProcedure.query(async () => ({
+  getWebSocketConfig: protectedProcedure.query(async () => ({
     enabled: true,
     heartbeatInterval: 30000,
     reconnectDelay: 5000,
     maxRetries: 10,
   })),
 
-
-    getOfflineQueueStatus: protectedProcedure.query(async () => ({
+  getOfflineQueueStatus: protectedProcedure.query(async () => ({
     enabled: true,
     queuedItems: 0,
     maxQueueSize: 1000,
     syncInterval: 60000,
   })),
 
-
-    getCompressionConfig: protectedProcedure.query(async () => ({
+  getCompressionConfig: protectedProcedure.query(async () => ({
     enabled: true,
     algorithm: "gzip",
     level: 6,
     minSizeBytes: 1024,
   })),
 
-
-    getDegradationConfig: protectedProcedure.query(async () => ({
+  getDegradationConfig: protectedProcedure.query(async () => ({
     enabled: true,
     threshold: 0.8,
     fallbackMode: "cached",
     maxDegradationLevel: 3,
   })),
 
-
-    getResilienceMetrics: protectedProcedure.query(async () => ({
+  getResilienceMetrics: protectedProcedure.query(async () => ({
     uptime: 99.9,
     failoverCount: 0,
     recoveryTimeMs: 500,

@@ -258,8 +258,7 @@ export default function AgentFloatForecasting() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-500">
-              </div>
+              <div className="text-2xl font-bold text-amber-500"></div>
               <p className="text-xs text-muted-foreground">Across 23 agents</p>
             </CardContent>
           </Card>
@@ -270,8 +269,7 @@ export default function AgentFloatForecasting() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-500">
-              </div>
+              <div className="text-2xl font-bold text-green-500"></div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
           </Card>

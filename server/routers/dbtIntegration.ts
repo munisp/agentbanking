@@ -19,7 +19,13 @@ export const dbtIntegrationRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const dbtIntegrationRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,7 +118,8 @@ export const dbtIntegrationRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
     const [totalRow] = await database.select({ total: count() }).from(auditLog);
     return {
       totalRecords: totalRow?.total ?? 0,
@@ -157,14 +165,13 @@ export const dbtIntegrationRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    getProjectInfo: protectedProcedure.query(async () => {
+  getProjectInfo: protectedProcedure.query(async () => {
     return {
       name: "ngapp_analytics",
       version: "1.0.0",
@@ -174,8 +181,7 @@ export const dbtIntegrationRouter = router({
     };
   }),
 
-
-    listModels: protectedProcedure.query(async () => {
+  listModels: protectedProcedure.query(async () => {
     return {
       models: [
         {
@@ -188,49 +194,42 @@ export const dbtIntegrationRouter = router({
     };
   }),
 
-
-    runTests: protectedProcedure.mutation(async () => {
+  runTests: protectedProcedure.mutation(async () => {
     return { passed: 118, failed: 2, total: 120, duration: 45 };
   }),
 
-
-    getLineage: protectedProcedure.query(async () => {
+  getLineage: protectedProcedure.query(async () => {
     return {
       nodes: [{ name: "fct_transactions", type: "model" }],
       edges: [{ from: "stg_transactions", to: "fct_transactions" }],
     };
   }),
 
-
-    projectInfo: protectedProcedure
+  projectInfo: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    triggerRun: protectedProcedure
+  triggerRun: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       return { success: true, status: "ok" };
     }),
 
-
-    listTests: protectedProcedure
+  listTests: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    lineage: protectedProcedure
+  lineage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
 
-
-    listSources: protectedProcedure
+  listSources: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };

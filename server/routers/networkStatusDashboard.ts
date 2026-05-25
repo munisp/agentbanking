@@ -19,7 +19,13 @@ export const networkStatusDashboardRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const networkStatusDashboardRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,8 +118,11 @@ export const networkStatusDashboardRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalRow] = await database.select({ total: count() }).from(connectivityLog);
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database
+      .select({ total: count() })
+      .from(connectivityLog);
     return {
       totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
@@ -157,14 +167,13 @@ export const networkStatusDashboardRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
     }),
 
-
-    getAlerts: protectedProcedure.query(async () => {
+  getAlerts: protectedProcedure.query(async () => {
     return {
       alerts: [] as Array<{
         id: string;
@@ -178,8 +187,7 @@ export const networkStatusDashboardRouter = router({
     };
   }),
 
-
-    getCarrierHeatmap: protectedProcedure.query(async () => {
+  getCarrierHeatmap: protectedProcedure.query(async () => {
     return {
       data: [] as Array<{
         carrier: string;
@@ -190,8 +198,7 @@ export const networkStatusDashboardRouter = router({
     };
   }),
 
-
-    getCarrierSummary: protectedProcedure.query(async () => {
+  getCarrierSummary: protectedProcedure.query(async () => {
     return {
       carriers: [] as Array<{
         name: string;
@@ -203,8 +210,7 @@ export const networkStatusDashboardRouter = router({
     };
   }),
 
-
-    getOverview: protectedProcedure.query(async () => {
+  getOverview: protectedProcedure.query(async () => {
     return {
       totalCarriers: 0,
       healthyCarriers: 0,
@@ -214,8 +220,7 @@ export const networkStatusDashboardRouter = router({
     };
   }),
 
-
-    getRegions: protectedProcedure.query(async () => {
+  getRegions: protectedProcedure.query(async () => {
     return {
       regions: [] as Array<{
         name: string;
@@ -226,8 +231,7 @@ export const networkStatusDashboardRouter = router({
     };
   }),
 
-
-    getTimeSeries: protectedProcedure.query(async () => {
+  getTimeSeries: protectedProcedure.query(async () => {
     return {
       data: [] as Array<{
         timestamp: string;

@@ -19,7 +19,13 @@ export const announcementReactionsRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const announcementReactionsRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,7 +118,8 @@ export const announcementReactionsRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
     const [totalRow] = await database.select({ total: count() }).from(auditLog);
     return {
       totalRecords: totalRow?.total ?? 0,
@@ -157,7 +165,7 @@ export const announcementReactionsRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }
@@ -185,8 +193,12 @@ export const announcementReactionsRouter = router({
           LIMIT 50`
         );
         return {
-          reactions: Array.isArray(reactions) ? reactions : (reactions as any).rows ?? [],
-          comments: Array.isArray(comments) ? comments : (comments as any).rows ?? [],
+          reactions: Array.isArray(reactions)
+            ? reactions
+            : ((reactions as any).rows ?? []),
+          comments: Array.isArray(comments)
+            ? comments
+            : ((comments as any).rows ?? []),
         };
       } catch {
         return { reactions: [], comments: [] };
@@ -194,10 +206,12 @@ export const announcementReactionsRouter = router({
     }),
 
   react: protectedProcedure
-    .input(z.object({
-      announcementId: z.union([z.string(), z.number()]),
-      emoji: z.string().min(1).max(10),
-    }))
+    .input(
+      z.object({
+        announcementId: z.union([z.string(), z.number()]),
+        emoji: z.string().min(1).max(10),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { success: false };
@@ -205,16 +219,21 @@ export const announcementReactionsRouter = router({
       await database.insert(auditLog).values({
         action: `reaction_${input.emoji}`,
         userId,
-        details: { announcement_id: String(input.announcementId), emoji: input.emoji },
+        details: {
+          announcement_id: String(input.announcementId),
+          emoji: input.emoji,
+        },
       } as any);
       return { success: true };
     }),
 
   comment: protectedProcedure
-    .input(z.object({
-      announcementId: z.union([z.string(), z.number()]),
-      text: z.string().min(1).max(1000),
-    }))
+    .input(
+      z.object({
+        announcementId: z.union([z.string(), z.number()]),
+        text: z.string().min(1).max(1000),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { success: false };
@@ -222,7 +241,10 @@ export const announcementReactionsRouter = router({
       await database.insert(auditLog).values({
         action: "comment",
         userId,
-        details: { announcement_id: String(input.announcementId), text: input.text },
+        details: {
+          announcement_id: String(input.announcementId),
+          text: input.text,
+        },
       } as any);
       return { success: true };
     }),

@@ -19,7 +19,13 @@ export const merchantAnalyticsDashRouter = router({
     .query(async ({ input }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
+        if (!database)
+          return {
+            data: [],
+            total: 0,
+            limit: input.limit,
+            offset: input.offset,
+          };
 
         const results = await database
           .select()
@@ -85,7 +91,8 @@ export const merchantAnalyticsDashRouter = router({
       const recent = Number(s?.recent ?? 0);
       const thisWeek = Number(s?.this_week ?? 0);
       const today = Number(s?.today ?? 0);
-      const growthRate = total > 0 ? ((recent / Math.max(total - recent, 1)) * 100) : 0;
+      const growthRate =
+        total > 0 ? (recent / Math.max(total - recent, 1)) * 100 : 0;
       return {
         total,
         active: total,
@@ -111,8 +118,11 @@ export const merchantAnalyticsDashRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
-    const [totalRow] = await database.select({ total: count() }).from(merchants);
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    const [totalRow] = await database
+      .select({ total: count() })
+      .from(merchants);
     return {
       totalRecords: totalRow?.total ?? 0,
       lastUpdated: new Date().toISOString(),
@@ -157,7 +167,7 @@ export const merchantAnalyticsDashRouter = router({
           GROUP BY date_trunc('day', created_at)
           ORDER BY date`
         );
-        return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+        return Array.isArray(rows) ? rows : ((rows as any).rows ?? []);
       } catch {
         return [];
       }

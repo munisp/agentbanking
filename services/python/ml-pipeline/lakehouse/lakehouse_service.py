@@ -53,6 +53,14 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
+# Try Delta Lake for ACID transactions, time-travel, and schema evolution
+try:
+    from deltalake import DeltaTable, write_deltalake
+    import pyarrow as pa
+    DELTA_AVAILABLE = True
+except ImportError:
+    DELTA_AVAILABLE = False
+
 LAKEHOUSE_ROOT = Path(os.getenv("LAKEHOUSE_ROOT",
     str(Path(__file__).parent.parent / "models" / "lakehouse")))
 LAKEHOUSE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -64,7 +72,9 @@ GOLD_PATH = LAKEHOUSE_ROOT / "gold"
 CATALOG_PATH = LAKEHOUSE_ROOT / "_catalog"
 QUALITY_PATH = LAKEHOUSE_ROOT / "_quality"
 
-for p in [BRONZE_PATH, SILVER_PATH, GOLD_PATH, CATALOG_PATH, QUALITY_PATH]:
+TXLOG_PATH = LAKEHOUSE_ROOT / "_txlog"
+
+for p in [BRONZE_PATH, SILVER_PATH, GOLD_PATH, CATALOG_PATH, QUALITY_PATH, TXLOG_PATH]:
     p.mkdir(parents=True, exist_ok=True)
 
 
@@ -87,6 +97,7 @@ class QueryRequest(BaseModel):
     sql: str = Field(..., description="SQL query to execute")
     layer: str = Field("gold", description="Which layer to query: bronze, silver, gold")
     limit: int = Field(1000, description="Max rows to return")
+    as_of_version: Optional[int] = Field(None, description="Time-travel: read table at specific version")
 
 class QueryResponse(BaseModel):
     results: List[Dict[str, Any]]
@@ -108,6 +119,8 @@ class TableSchema(BaseModel):
     versions: int
     last_updated: str
     partitions: List[str]
+    delta_enabled: bool = False
+    delta_version: Optional[int] = None
 
 class QualityReport(BaseModel):
     table_name: str
@@ -295,69 +308,305 @@ class CatalogManager:
         return None
 
 
+# ======================== Delta Lake Transaction Manager ========================
+
+class DeltaLakeManager:
+    """ACID transaction manager with time-travel and schema evolution.
+
+    When the `deltalake` package is available, writes use Delta Lake format
+    (Parquet + _delta_log) for ACID, time-travel, and schema evolution.
+    Otherwise falls back to versioned Parquet with a JSON transaction log.
+    """
+
+    def __init__(self):
+        self.txlog_path = TXLOG_PATH
+
+    def write_delta(self, df: pd.DataFrame, table_path: Path,
+                    mode: str = "append", schema_evolution: bool = True) -> Dict[str, Any]:
+        """Write DataFrame using Delta Lake ACID transactions when available."""
+        table_path.mkdir(parents=True, exist_ok=True)
+        tx_start = time.time()
+
+        if DELTA_AVAILABLE:
+            return self._write_with_delta(df, table_path, mode, schema_evolution, tx_start)
+        else:
+            return self._write_with_txlog(df, table_path, mode, tx_start)
+
+    def _write_with_delta(self, df: pd.DataFrame, table_path: Path,
+                          mode: str, schema_evolution: bool, tx_start: float) -> Dict[str, Any]:
+        """Write using real Delta Lake ACID transactions."""
+        arrow_table = pa.Table.from_pandas(df)
+        delta_path = str(table_path)
+
+        if DeltaTable.is_deltatable(delta_path):
+            dt = DeltaTable(delta_path)
+            current_version = dt.version()
+
+            if schema_evolution:
+                write_deltalake(
+                    delta_path, arrow_table, mode=mode,
+                    schema_mode="merge",  # additive column changes
+                )
+            else:
+                write_deltalake(delta_path, arrow_table, mode=mode)
+
+            dt.update_incremental()
+            new_version = dt.version()
+        else:
+            write_deltalake(delta_path, arrow_table, mode=mode)
+            dt = DeltaTable(delta_path)
+            current_version = 0
+            new_version = dt.version()
+
+        tx_duration = time.time() - tx_start
+        self._log_transaction(table_path.name, "delta_write", {
+            "mode": mode,
+            "rows": len(df),
+            "prev_version": current_version,
+            "new_version": new_version,
+            "schema_evolution": schema_evolution,
+            "duration_ms": round(tx_duration * 1000, 2),
+            "acid": True,
+        })
+
+        logger.info(f"[Delta] ACID write to {table_path.name}: v{current_version}→v{new_version} "
+                     f"({len(df)} rows, {tx_duration*1000:.0f}ms)")
+
+        return {
+            "engine": "delta_lake",
+            "version": new_version,
+            "prev_version": current_version,
+            "rows": len(df),
+            "acid": True,
+            "path": delta_path,
+        }
+
+    def _write_with_txlog(self, df: pd.DataFrame, table_path: Path,
+                          mode: str, tx_start: float) -> Dict[str, Any]:
+        """Fallback: versioned Parquet with JSON transaction log for ACID-like semantics."""
+        version = int(time.time())
+
+        if mode == "overwrite":
+            for f in table_path.glob("*.parquet"):
+                f.unlink()
+
+        parquet_path = table_path / f"v{version}.parquet"
+        df.to_parquet(parquet_path, index=False)
+
+        # Compute previous version
+        all_versions = sorted([int(f.stem[1:]) for f in table_path.glob("v*.parquet")])
+        prev_version = all_versions[-2] if len(all_versions) > 1 else 0
+
+        tx_duration = time.time() - tx_start
+        self._log_transaction(table_path.name, "parquet_write", {
+            "mode": mode,
+            "rows": len(df),
+            "prev_version": prev_version,
+            "new_version": version,
+            "duration_ms": round(tx_duration * 1000, 2),
+            "acid": False,
+        })
+
+        return {
+            "engine": "parquet_versioned",
+            "version": version,
+            "prev_version": prev_version,
+            "rows": len(df),
+            "acid": False,
+            "path": str(parquet_path),
+        }
+
+    def read_at_version(self, table_path: Path, version: int = None) -> pd.DataFrame:
+        """Time-travel: read table at a specific version."""
+        delta_path = str(table_path)
+
+        if DELTA_AVAILABLE and DeltaTable.is_deltatable(delta_path):
+            if version is not None:
+                dt = DeltaTable(delta_path, version=version)
+            else:
+                dt = DeltaTable(delta_path)
+            return dt.to_pandas()
+        else:
+            # Parquet fallback: find specific version file
+            if version is not None:
+                target = table_path / f"v{version}.parquet"
+                if target.exists():
+                    return pd.read_parquet(target)
+                # Find closest version
+                all_files = sorted(table_path.glob("v*.parquet"))
+                candidates = [f for f in all_files if int(f.stem[1:]) <= version]
+                if candidates:
+                    return pd.read_parquet(candidates[-1])
+                raise FileNotFoundError(f"No version <= {version} for {table_path.name}")
+            else:
+                # Latest version
+                all_files = sorted(table_path.rglob("*.parquet"))
+                if not all_files:
+                    raise FileNotFoundError(f"No data in {table_path.name}")
+                return pd.read_parquet(all_files[-1])
+
+    def get_table_history(self, table_path: Path) -> List[Dict[str, Any]]:
+        """Get version history for a table (Delta log or txlog)."""
+        delta_path = str(table_path)
+
+        if DELTA_AVAILABLE and DeltaTable.is_deltatable(delta_path):
+            dt = DeltaTable(delta_path)
+            return [
+                {
+                    "version": entry["version"],
+                    "timestamp": entry.get("timestamp", ""),
+                    "operation": entry.get("operation", ""),
+                    "parameters": entry.get("operationParameters", {}),
+                }
+                for entry in dt.history()
+            ]
+        else:
+            # Fallback: read from JSON txlog
+            log_file = self.txlog_path / f"{table_path.name}.jsonl"
+            if not log_file.exists():
+                return []
+            history = []
+            with open(log_file) as f:
+                for line in f:
+                    if line.strip():
+                        history.append(json.loads(line))
+            return list(reversed(history))
+
+    def get_schema_versions(self, table_path: Path) -> List[Dict[str, Any]]:
+        """Track schema evolution across versions."""
+        delta_path = str(table_path)
+
+        if DELTA_AVAILABLE and DeltaTable.is_deltatable(delta_path):
+            dt = DeltaTable(delta_path)
+            schema = dt.schema()
+            return [{
+                "version": dt.version(),
+                "columns": {f.name: str(f.type) for f in schema.fields},
+                "field_count": len(schema.fields),
+            }]
+        else:
+            schemas = []
+            for pf in sorted(table_path.rglob("*.parquet")):
+                try:
+                    df_sample = pd.read_parquet(pf, nrows=0)
+                    version_str = pf.stem.replace("v", "")
+                    schemas.append({
+                        "version": int(version_str) if version_str.isdigit() else 0,
+                        "columns": {col: str(dtype) for col, dtype in df_sample.dtypes.items()},
+                        "field_count": len(df_sample.columns),
+                    })
+                except Exception:
+                    pass
+            return schemas
+
+    def compact_table(self, table_path: Path, target_size_mb: int = 128) -> Dict[str, Any]:
+        """Compact small Parquet files into larger ones (Delta Lake optimize)."""
+        delta_path = str(table_path)
+
+        if DELTA_AVAILABLE and DeltaTable.is_deltatable(delta_path):
+            dt = DeltaTable(delta_path)
+            metrics = dt.optimize.compact()
+            dt.vacuum(retention_hours=168, enforce_retention_duration=False, dry_run=False)
+            return {
+                "engine": "delta_optimize",
+                "metrics": str(metrics),
+                "vacuumed": True,
+            }
+        else:
+            # Merge all parquet files into one
+            all_files = sorted(table_path.rglob("*.parquet"))
+            if len(all_files) <= 1:
+                return {"engine": "parquet_noop", "files": len(all_files)}
+
+            dfs = [pd.read_parquet(f) for f in all_files]
+            merged = pd.concat(dfs, ignore_index=True)
+
+            # Remove old files
+            for f in all_files:
+                f.unlink()
+
+            # Write compacted file
+            version = int(time.time())
+            merged.to_parquet(table_path / f"v{version}.parquet", index=False)
+
+            return {
+                "engine": "parquet_compact",
+                "files_before": len(all_files),
+                "files_after": 1,
+                "rows": len(merged),
+            }
+
+    def _log_transaction(self, table_name: str, operation: str, details: Dict):
+        """Append to JSON-lines transaction log."""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "table": table_name,
+            "operation": operation,
+            **details,
+        }
+        log_file = self.txlog_path / f"{table_name}.jsonl"
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+
+
 # ======================== ETL Pipeline (Bronze → Silver → Gold) ========================
 
 class MedallionETL:
-    """Bronze → Silver → Gold ETL pipeline"""
+    """Bronze → Silver → Gold ETL pipeline with Delta Lake ACID support"""
 
     def __init__(self):
         self.quality_engine = DataQualityEngine()
         self.catalog = CatalogManager()
+        self.delta = DeltaLakeManager()
 
     def ingest_to_bronze(self, table: str, records: List[Dict[str, Any]], source: str = None) -> Dict:
-        """Ingest raw records into Bronze layer (append-only)"""
+        """Ingest raw records into Bronze layer using Delta Lake ACID transactions."""
         table_dir = BRONZE_PATH / table
         table_dir.mkdir(parents=True, exist_ok=True)
 
         # Add ingestion metadata
         ingestion_ts = datetime.now().isoformat()
+        partition = datetime.now().strftime("%Y-%m-%d")
         for r in records:
             r["_ingested_at"] = ingestion_ts
             r["_source"] = source or "unknown"
             r["_record_id"] = hashlib.md5(json.dumps(r, sort_keys=True, default=str).encode()).hexdigest()[:16]
+            r["_partition_date"] = partition
 
-        # Write as partitioned Parquet (by date)
         df = pd.DataFrame(records)
-        partition = datetime.now().strftime("%Y-%m-%d")
-        version = int(time.time())
 
-        partition_dir = table_dir / f"date={partition}"
-        partition_dir.mkdir(parents=True, exist_ok=True)
-        parquet_path = partition_dir / f"v{version}.parquet"
-        df.to_parquet(parquet_path, index=False)
+        # Write via DeltaLakeManager (ACID when deltalake available, versioned Parquet otherwise)
+        write_result = self.delta.write_delta(df, table_dir, mode="append", schema_evolution=True)
 
         # Register in catalog
         columns = {col: str(dtype) for col, dtype in df.dtypes.items()}
         self.catalog.register_table(
             table_name=table, layer="bronze", columns=columns,
-            row_count=len(df), size_bytes=parquet_path.stat().st_size, version=version,
+            row_count=len(df), size_bytes=df.memory_usage(deep=True).sum(), version=write_result["version"],
         )
 
-        logger.info(f"[Bronze] Ingested {len(records)} records to {table} (partition={partition})")
+        logger.info(f"[Bronze] Ingested {len(records)} records to {table} "
+                     f"(engine={write_result['engine']}, acid={write_result['acid']})")
 
         return {
             "layer": "bronze",
             "table": table,
             "records": len(records),
-            "version": version,
+            "version": write_result["version"],
             "partition": partition,
-            "path": str(parquet_path),
+            "path": write_result["path"],
+            "engine": write_result["engine"],
+            "acid": write_result["acid"],
         }
 
     def promote_to_silver(self, table: str) -> Dict:
-        """Promote Bronze → Silver (deduplicate, clean nulls, enforce types)"""
+        """Promote Bronze → Silver (deduplicate, clean nulls, enforce types) with ACID."""
         bronze_dir = BRONZE_PATH / table
         if not bronze_dir.exists():
             raise FileNotFoundError(f"No bronze data for table: {table}")
 
-        # Read all bronze partitions
-        parquet_files = list(bronze_dir.rglob("*.parquet"))
-        if not parquet_files:
-            raise FileNotFoundError(f"No parquet files in bronze/{table}")
-
-        dfs = [pd.read_parquet(f) for f in parquet_files]
-        df = pd.concat(dfs, ignore_index=True)
-
+        # Read bronze data (Delta time-travel aware)
+        df = self.delta.read_at_version(bronze_dir)
         original_count = len(df)
 
         # Deduplication
@@ -376,22 +625,20 @@ class MedallionETL:
 
         deduped_count = len(df)
 
-        # Write Silver
+        # Write Silver via Delta Lake ACID
         silver_dir = SILVER_PATH / table
-        silver_dir.mkdir(parents=True, exist_ok=True)
-        version = int(time.time())
-        silver_path = silver_dir / f"v{version}.parquet"
-        df.to_parquet(silver_path, index=False)
+        write_result = self.delta.write_delta(df, silver_dir, mode="overwrite", schema_evolution=True)
 
         # Register
         columns = {col: str(dtype) for col, dtype in df.dtypes.items()}
         self.catalog.register_table(
             table_name=table, layer="silver", columns=columns,
-            row_count=len(df), size_bytes=silver_path.stat().st_size, version=version,
+            row_count=len(df), size_bytes=df.memory_usage(deep=True).sum(),
+            version=write_result["version"],
         )
 
         logger.info(f"[Silver] Promoted {table}: {original_count} → {deduped_count} rows "
-                     f"(removed {original_count - deduped_count} duplicates/nulls)")
+                     f"(engine={write_result['engine']}, acid={write_result['acid']})")
 
         return {
             "layer": "silver",
@@ -399,22 +646,19 @@ class MedallionETL:
             "original_rows": original_count,
             "silver_rows": deduped_count,
             "removed": original_count - deduped_count,
-            "version": version,
+            "version": write_result["version"],
+            "engine": write_result["engine"],
+            "acid": write_result["acid"],
         }
 
     def promote_to_gold(self, table: str) -> Dict:
-        """Promote Silver → Gold (aggregate metrics, build materialized views)"""
+        """Promote Silver → Gold (aggregate metrics, build materialized views) with ACID."""
         silver_dir = SILVER_PATH / table
         if not silver_dir.exists():
             raise FileNotFoundError(f"No silver data for table: {table}")
 
-        parquet_files = list(silver_dir.glob("*.parquet"))
-        if not parquet_files:
-            raise FileNotFoundError(f"No parquet files in silver/{table}")
-
-        # Read latest silver version
-        latest = sorted(parquet_files)[-1]
-        df = pd.read_parquet(latest)
+        # Read silver data (Delta time-travel aware)
+        df = self.delta.read_at_version(silver_dir)
 
         gold_tables = {}
 
@@ -426,29 +670,33 @@ class MedallionETL:
         else:
             gold_tables.update(self._aggregate_generic(table, df))
 
-        # Write all gold tables
-        version = int(time.time())
+        # Write all gold tables via Delta Lake ACID
         results = {}
+        last_version = 0
+        acid_used = False
         for gold_name, gold_df in gold_tables.items():
             gold_dir = GOLD_PATH / gold_name
-            gold_dir.mkdir(parents=True, exist_ok=True)
-            gold_path = gold_dir / f"v{version}.parquet"
-            gold_df.to_parquet(gold_path, index=False)
+            write_result = self.delta.write_delta(gold_df, gold_dir, mode="overwrite")
+            last_version = write_result["version"]
+            acid_used = write_result["acid"]
 
             columns = {col: str(dtype) for col, dtype in gold_df.dtypes.items()}
             self.catalog.register_table(
                 table_name=gold_name, layer="gold", columns=columns,
-                row_count=len(gold_df), size_bytes=gold_path.stat().st_size, version=version,
+                row_count=len(gold_df), size_bytes=gold_df.memory_usage(deep=True).sum(),
+                version=write_result["version"],
             )
             results[gold_name] = len(gold_df)
 
-        logger.info(f"[Gold] Promoted {table} → {len(gold_tables)} gold tables")
+        logger.info(f"[Gold] Promoted {table} → {len(gold_tables)} gold tables "
+                     f"(acid={acid_used})")
 
         return {
             "layer": "gold",
             "source_table": table,
             "gold_tables": results,
-            "version": version,
+            "version": last_version,
+            "acid": acid_used,
         }
 
     def _aggregate_events(self, table: str, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -535,8 +783,9 @@ class MedallionETL:
 class QueryEngine:
     """SQL query engine using DuckDB for Parquet files"""
 
-    def execute(self, sql_query: str, layer: str = "gold", limit: int = 1000) -> Dict:
-        """Execute SQL query against Lakehouse Parquet files"""
+    def execute(self, sql_query: str, layer: str = "gold", limit: int = 1000,
+                as_of_version: int = None) -> Dict:
+        """Execute SQL query against Lakehouse (supports time-travel via as_of_version)."""
         layer_path = {"bronze": BRONZE_PATH, "silver": SILVER_PATH, "gold": GOLD_PATH}.get(layer)
         if not layer_path:
             raise ValueError(f"Unknown layer: {layer}")
@@ -544,21 +793,33 @@ class QueryEngine:
         start = time.time()
 
         if DUCKDB_AVAILABLE:
-            return self._execute_duckdb(sql_query, layer_path, limit, start)
+            return self._execute_duckdb(sql_query, layer_path, limit, start, as_of_version)
         else:
             return self._execute_pandas(sql_query, layer_path, limit, start)
 
-    def _execute_duckdb(self, sql_query: str, layer_path: Path, limit: int, start: float) -> Dict:
-        """Execute via DuckDB (fast, supports full SQL)"""
+    def _execute_duckdb(self, sql_query: str, layer_path: Path, limit: int, start: float,
+                        as_of_version: int = None) -> Dict:
+        """Execute via DuckDB with optional Delta Lake time-travel."""
         con = duckdb.connect()
+        delta_mgr = DeltaLakeManager()
 
-        # Register all Parquet files as views
+        # Register all tables as views (with time-travel support)
         for table_dir in layer_path.iterdir():
             if table_dir.is_dir() and not table_dir.name.startswith("_"):
+                safe_name = table_dir.name.replace("-", "_").replace(".", "_")
+
+                # Try Delta Lake time-travel first
+                if as_of_version is not None and DELTA_AVAILABLE:
+                    try:
+                        df = delta_mgr.read_at_version(table_dir, version=as_of_version)
+                        con.register(safe_name, df)
+                        continue
+                    except Exception:
+                        pass  # Fall back to standard Parquet
+
                 parquet_files = list(table_dir.rglob("*.parquet"))
                 if parquet_files:
                     latest = sorted(parquet_files)[-1]
-                    safe_name = table_dir.name.replace("-", "_").replace(".", "_")
                     con.execute(f"CREATE VIEW \"{safe_name}\" AS SELECT * FROM read_parquet('{latest}')")
 
         # Execute query with limit
@@ -709,9 +970,10 @@ async def ingest(req: IngestRequest):
 
 @app.post("/v1/query", response_model=QueryResponse)
 async def query(req: QueryRequest):
-    """Execute SQL query against Lakehouse"""
+    """Execute SQL query against Lakehouse (supports time-travel via as_of_version)"""
     try:
-        result = query_engine.execute(req.sql, layer=req.layer, limit=req.limit)
+        result = query_engine.execute(req.sql, layer=req.layer, limit=req.limit,
+                                       as_of_version=req.as_of_version)
         return QueryResponse(**result)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -821,6 +1083,136 @@ async def layer_stats():
     return stats
 
 
+# ======================== Delta Lake Endpoints ========================
+
+delta_mgr = DeltaLakeManager()
+
+
+@app.get("/v1/delta/status")
+async def delta_status():
+    """Check Delta Lake availability and engine status"""
+    return {
+        "delta_lake_available": DELTA_AVAILABLE,
+        "duckdb_available": DUCKDB_AVAILABLE,
+        "engine": "delta_lake" if DELTA_AVAILABLE else "parquet_versioned",
+        "features": {
+            "acid_transactions": DELTA_AVAILABLE,
+            "time_travel": True,  # Available via versioned Parquet or Delta
+            "schema_evolution": DELTA_AVAILABLE,
+            "compaction": True,
+            "vacuum": DELTA_AVAILABLE,
+        },
+    }
+
+
+@app.get("/v1/delta/history/{table_name}")
+async def table_history(table_name: str, layer: str = "bronze"):
+    """Get version history for a table (Delta log or transaction log)"""
+    layer_path = {"bronze": BRONZE_PATH, "silver": SILVER_PATH, "gold": GOLD_PATH}.get(layer)
+    if not layer_path:
+        raise HTTPException(status_code=400, detail=f"Unknown layer: {layer}")
+
+    table_dir = layer_path / table_name
+    if not table_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{table_name}")
+
+    history = delta_mgr.get_table_history(table_dir)
+    return {
+        "table": table_name,
+        "layer": layer,
+        "history": history,
+        "total_versions": len(history),
+    }
+
+
+@app.get("/v1/delta/time-travel/{table_name}")
+async def time_travel_read(table_name: str, layer: str = "bronze",
+                           version: Optional[int] = None):
+    """Read a table at a specific version (time-travel)"""
+    layer_path = {"bronze": BRONZE_PATH, "silver": SILVER_PATH, "gold": GOLD_PATH}.get(layer)
+    if not layer_path:
+        raise HTTPException(status_code=400, detail=f"Unknown layer: {layer}")
+
+    table_dir = layer_path / table_name
+    if not table_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{table_name}")
+
+    try:
+        df = delta_mgr.read_at_version(table_dir, version=version)
+        results = df.head(1000).to_dict(orient="records")
+        return {
+            "table": table_name,
+            "layer": layer,
+            "version": version or "latest",
+            "rows": len(results),
+            "total_rows": len(df),
+            "columns": list(df.columns),
+            "data": results,
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/v1/delta/schema/{table_name}")
+async def schema_evolution(table_name: str, layer: str = "bronze"):
+    """Track schema evolution across versions for a table"""
+    layer_path = {"bronze": BRONZE_PATH, "silver": SILVER_PATH, "gold": GOLD_PATH}.get(layer)
+    if not layer_path:
+        raise HTTPException(status_code=400, detail=f"Unknown layer: {layer}")
+
+    table_dir = layer_path / table_name
+    if not table_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{table_name}")
+
+    schemas = delta_mgr.get_schema_versions(table_dir)
+    return {
+        "table": table_name,
+        "layer": layer,
+        "schema_versions": schemas,
+        "total_versions": len(schemas),
+        "evolution_detected": len(set(s["field_count"] for s in schemas)) > 1 if schemas else False,
+    }
+
+
+@app.post("/v1/delta/compact/{table_name}")
+async def compact_table(table_name: str, layer: str = "bronze"):
+    """Compact small files into larger ones (Delta Lake optimize or Parquet merge)"""
+    layer_path = {"bronze": BRONZE_PATH, "silver": SILVER_PATH, "gold": GOLD_PATH}.get(layer)
+    if not layer_path:
+        raise HTTPException(status_code=400, detail=f"Unknown layer: {layer}")
+
+    table_dir = layer_path / table_name
+    if not table_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Table not found: {layer}/{table_name}")
+
+    result = delta_mgr.compact_table(table_dir)
+    return {
+        "table": table_name,
+        "layer": layer,
+        **result,
+    }
+
+
+@app.get("/v1/delta/txlog/{table_name}")
+async def transaction_log(table_name: str):
+    """View the ACID transaction log for a table"""
+    log_file = TXLOG_PATH / f"{table_name}.jsonl"
+    if not log_file.exists():
+        return {"table": table_name, "transactions": [], "total": 0}
+
+    transactions = []
+    with open(log_file) as f:
+        for line in f:
+            if line.strip():
+                transactions.append(json.loads(line))
+
+    return {
+        "table": table_name,
+        "transactions": transactions,
+        "total": len(transactions),
+    }
+
+
 # ======================== CLI Entry Point ========================
 
 if __name__ == "__main__":
@@ -828,5 +1220,6 @@ if __name__ == "__main__":
     port = int(os.getenv("LAKEHOUSE_PORT", "8156"))
     logger.info(f"Starting Lakehouse Service on port {port}")
     logger.info(f"Root: {LAKEHOUSE_ROOT}")
-    logger.info(f"Engine: {'DuckDB' if DUCKDB_AVAILABLE else 'Pandas fallback'}")
+    logger.info(f"Delta Lake: {'available (ACID enabled)' if DELTA_AVAILABLE else 'not installed (Parquet fallback)'}")
+    logger.info(f"DuckDB: {'available' if DUCKDB_AVAILABLE else 'not available (Pandas fallback)'}")
     uvicorn.run(app, host="0.0.0.0", port=port)

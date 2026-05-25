@@ -28,7 +28,10 @@
             "status": { "type": "keyword" },
             "amount": { "type": "scaled_float", "scaling_factor": 100 },
             "currency": { "type": "keyword" },
-            "description": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+            "description": {
+              "type": "text",
+              "fields": { "raw": { "type": "keyword" } }
+            },
             "customerPhone": { "type": "keyword" },
             "customerName": { "type": "text" },
             "paymentMethod": { "type": "keyword" },
@@ -111,7 +114,10 @@
             "transactionCount": { "type": "integer" },
             "totalVolume": { "type": "scaled_float", "scaling_factor": 100 },
             "avgTransactionValue": { "type": "float" },
-            "commissionEarned": { "type": "scaled_float", "scaling_factor": 100 },
+            "commissionEarned": {
+              "type": "scaled_float",
+              "scaling_factor": 100
+            },
             "floatBalance": { "type": "scaled_float", "scaling_factor": 100 },
             "uptime": { "type": "float" },
             "errorRate": { "type": "float" },
@@ -135,7 +141,9 @@
             "actions": [
               { "rollover": { "min_size": "50gb", "min_index_age": "1d" } }
             ],
-            "transitions": [{ "state_name": "warm", "conditions": { "min_index_age": "7d" } }]
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "7d" } }
+            ]
           },
           {
             "name": "warm",
@@ -143,12 +151,19 @@
               { "replica_count": { "number_of_replicas": 0 } },
               { "force_merge": { "max_num_segments": 1 } }
             ],
-            "transitions": [{ "state_name": "cold", "conditions": { "min_index_age": "30d" } }]
+            "transitions": [
+              { "state_name": "cold", "conditions": { "min_index_age": "30d" } }
+            ]
           },
           {
             "name": "cold",
             "actions": [{ "read_only": {} }],
-            "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "365d" } }]
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "365d" }
+              }
+            ]
           },
           {
             "name": "delete",
@@ -166,18 +181,35 @@
         "states": [
           {
             "name": "hot",
-            "actions": [{ "rollover": { "min_size": "30gb", "min_index_age": "1d" } }],
-            "transitions": [{ "state_name": "warm", "conditions": { "min_index_age": "30d" } }]
+            "actions": [
+              { "rollover": { "min_size": "30gb", "min_index_age": "1d" } }
+            ],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "30d" } }
+            ]
           },
           {
             "name": "warm",
-            "actions": [{ "replica_count": { "number_of_replicas": 0 } }, { "force_merge": { "max_num_segments": 1 } }],
-            "transitions": [{ "state_name": "cold", "conditions": { "min_index_age": "180d" } }]
+            "actions": [
+              { "replica_count": { "number_of_replicas": 0 } },
+              { "force_merge": { "max_num_segments": 1 } }
+            ],
+            "transitions": [
+              {
+                "state_name": "cold",
+                "conditions": { "min_index_age": "180d" }
+              }
+            ]
           },
           {
             "name": "cold",
             "actions": [{ "read_only": {} }],
-            "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "2555d" } }]
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "2555d" }
+              }
+            ]
           },
           { "name": "delete", "actions": [{ "delete": {} }], "transitions": [] }
         ]
@@ -191,18 +223,29 @@
         "states": [
           {
             "name": "hot",
-            "actions": [{ "rollover": { "min_size": "20gb", "min_index_age": "1d" } }],
-            "transitions": [{ "state_name": "warm", "conditions": { "min_index_age": "14d" } }]
+            "actions": [
+              { "rollover": { "min_size": "20gb", "min_index_age": "1d" } }
+            ],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "14d" } }
+            ]
           },
           {
             "name": "warm",
             "actions": [{ "replica_count": { "number_of_replicas": 0 } }],
-            "transitions": [{ "state_name": "cold", "conditions": { "min_index_age": "90d" } }]
+            "transitions": [
+              { "state_name": "cold", "conditions": { "min_index_age": "90d" } }
+            ]
           },
           {
             "name": "cold",
             "actions": [{ "read_only": {} }],
-            "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "1095d" } }]
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "1095d" }
+              }
+            ]
           },
           { "name": "delete", "actions": [{ "delete": {} }], "transitions": [] }
         ]

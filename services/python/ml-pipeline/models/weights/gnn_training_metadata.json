@@ -1,0 +1,35 @@
+{
+  "training_timestamp": "2026-05-25T11:36:05.605404",
+  "training_duration_seconds": 167.8983108997345,
+  "n_nodes": 21000,
+  "n_edges": 397964,
+  "n_features": 16,
+  "fraud_rate": 0.24304762482643127,
+  "device": "cpu",
+  "results": {
+    "gcn": {
+      "auc": 0.6366895493347584,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "best_epoch": 25.0,
+      "best_val_auc": 0.6325147414442673
+    },
+    "gat": {
+      "auc": 0.5301963524753017,
+      "f1": 0.3910043444927166,
+      "precision": 0.24301143583227447,
+      "recall": 1.0,
+      "best_epoch": 0.0,
+      "best_val_auc": 0.538605663080239
+    },
+    "graphsage": {
+      "auc": 0.5660739096477164,
+      "f1": 0.3683274021352313,
+      "precision": 0.2791638570465273,
+      "recall": 0.5411764705882353,
+      "best_epoch": 181.0,
+      "best_val_auc": 0.5651169896787986
+    }
+  }
+}

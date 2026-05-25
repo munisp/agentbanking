@@ -2,7 +2,11 @@
 """
 Master Training Script — Trains All ML/DL/GNN Models
 
-This script:
+This script supports two modes:
+A) Fresh training (default) — trains from scratch on generated synthetic data
+B) Continue training (--resume-from) — loads existing weights and fine-tunes on new data
+
+Fresh training:
 1. Generates realistic Nigerian synthetic training data
 2. Trains fraud detection models (XGBoost, LightGBM, RF, DNN, IsolationForest)
 3. Trains GNN models (GCN, GAT, GraphSAGE) on transaction graphs
@@ -11,9 +15,25 @@ This script:
 6. Registers all models in the model registry
 7. Persists weights to disk (.pt, .joblib files)
 
+Continue training:
+1. Loads existing model weights from --resume-from directory
+2. Generates or ingests new training data
+3. Fine-tunes PyTorch models with lower LR (--lr-multiplier)
+4. Uses warm_start for XGBoost/LightGBM (incremental boosting)
+5. Evaluates improvement, registers new version if above threshold
+6. Sets up A/B test (champion vs challenger)
+
 Usage:
+    # Fresh training
     python train_all_models.py
     python train_all_models.py --n-transactions 500000 --n-customers 50000
+
+    # Continue training from existing weights
+    python train_all_models.py --resume-from models/weights --n-transactions 50000
+    python train_all_models.py --resume-from models/weights --lr-multiplier 0.05
+
+    # Continue training from production data
+    python continue_training.py --mode production --db-url postgresql://...
 
 Output:
     models/weights/  - All trained model weight files
@@ -61,7 +81,38 @@ def main():
     parser.add_argument("--skip-gnn", action="store_true", help="Skip GNN training")
     parser.add_argument("--output-dir", type=str, default=str(MODELS_DIR),
                        help="Output directory for model weights")
+    # Continue training arguments
+    parser.add_argument("--resume-from", type=str, default=None,
+                       help="Path to existing weights directory to resume training from")
+    parser.add_argument("--lr-multiplier", type=float, default=0.1,
+                       help="Learning rate multiplier for continue training (default: 0.1 = 10%% of original)")
+    parser.add_argument("--improvement-threshold", type=float, default=0.005,
+                       help="Min AUC improvement to register new model version")
     args = parser.parse_args()
+
+    # If --resume-from is provided, delegate to continue_training module
+    if args.resume_from:
+        from continue_training import ContinualTrainer
+        logger.info("=" * 70)
+        logger.info("54LINK ML PIPELINE — CONTINUE TRAINING (--resume-from)")
+        logger.info("=" * 70)
+        logger.info(f"Resuming from: {args.resume_from}")
+        logger.info(f"LR multiplier: {args.lr_multiplier}")
+        logger.info(f"New data: {args.n_transactions} synthetic transactions")
+
+        trainer = ContinualTrainer(
+            models_dir=Path(args.resume_from),
+            lr_multiplier=args.lr_multiplier,
+            improvement_threshold=args.improvement_threshold,
+        )
+        summary = trainer.run(
+            mode="synthetic",
+            models=["fraud", "credit"] if args.skip_gnn else ["fraud", "gnn", "credit"],
+            n_transactions=args.n_transactions,
+            seed=args.seed if args.seed != 42 else None,
+        )
+        logger.info(f"\nContinue training complete: {summary['models_improved']}/{summary['models_trained']} improved")
+        return
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

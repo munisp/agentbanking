@@ -10,13 +10,13 @@ export default function CardRequestPage() {
   const [tab, setTab] = useState<"requests" | "inventory" | "delivery">(
     "requests"
   );
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const requests = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const inventory = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const deliveries = trpc.cardRequest.list.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const analytics = trpc.cardRequest.analytics.useQuery() as any;
 
   return (

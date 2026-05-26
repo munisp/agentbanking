@@ -158,7 +158,7 @@ export default function RansomwareAlertDashboard() {
     status: statusFilter as any,
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const acknowledgeMut = trpc.ransomwareAlerts.acknowledge.useMutation({
     onSuccess: () => {
       toast.success("Alert acknowledged: The alert has been acknowledged.");

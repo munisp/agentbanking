@@ -119,9 +119,9 @@ export default function OfflineQueueDashboard() {
     page,
     pageSize: 15,
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const networkMetrics = trpc.offlineQueue.getNetworkMetrics.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const retryMutation = trpc.offlineQueue.retryFailed.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Retry initiated: ${data.retried} items queued for retry`);
@@ -132,7 +132,7 @@ export default function OfflineQueueDashboard() {
       toast.error("Retry failed: Could not retry failed items");
     },
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const clearMutation = trpc.offlineQueue.clearSynced.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Cleanup complete: ${data.cleared} synced items removed`);

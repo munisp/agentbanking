@@ -4,10 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Cpu, HardDrive, Activity, Gauge } from "lucide-react";
 
 export default function PerformanceProfilerPage() {
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data } = trpc.performanceProfiler.dashboard.useQuery() as any;
   const { data: mem } =
-    // @ts-ignore
+    // @ts-ignore — Sprint 85: strict-mode suppression
     trpc.performanceProfiler.memoryProfile.useQuery() as any;
 
   return (

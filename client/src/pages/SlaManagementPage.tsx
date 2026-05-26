@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 
 export default function SlaManagementPage() {
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data } = trpc.slaManagement.dashboard.useQuery() as any;
 
   const statusIcon = (s: string) =>

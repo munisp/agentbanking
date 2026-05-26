@@ -5,17 +5,17 @@ import { Badge } from "@/components/ui/badge";
 
 export default function SecurityDashboardPage() {
   const { data, isLoading } =
-    // @ts-ignore
+    // @ts-ignore — Sprint 85: strict-mode suppression
     trpc.securityHardening.dashboard.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const owasp = trpc.securityHardening.owaspTop10.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const pci = trpc.securityHardening.pciDssCompliance.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const cbn = trpc.securityHardening.cbnCompliance.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const scans = trpc.securityHardening.recentScans.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const runScan = trpc.securityHardening.runScan.useMutation() as any;
 
   if (isLoading)

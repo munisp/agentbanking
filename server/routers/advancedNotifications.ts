@@ -142,17 +142,17 @@ export const advancedNotificationsRouter = router({
     return { data: [], total: 0 };
   }),
   sendNotification: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
+    .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async () => {
       return { success: true, status: "ok" };
     }),
   listHistory: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
+    .input(z.object({ id: z.string().optional() }).optional())
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
   getPreferences: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).default({}))
+    .input(z.object({ id: z.string().optional() }).optional())
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),

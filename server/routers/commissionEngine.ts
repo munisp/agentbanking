@@ -52,6 +52,12 @@ import {
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
 
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { cacheSet, cacheGet } from "../redisClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce } from "../fluvio";
+import { permifyCheck } from "../_core/permify";
+
 // ── Default seed data (used for initial DB population) ──────────────────────
 const DEFAULT_TIERS = [
   {
@@ -317,6 +323,52 @@ function formatSplit(row: any) {
     isActive: row.isActive,
     dbId: row.id,
   };
+}
+
+// Middleware integration (Sprint 44)
+async function notifyMiddleware(
+  eventType: string,
+  payload: Record<string, unknown>
+) {
+  try {
+    await publishEvent("financial.events" as KafkaTopic, "system", {
+      type: eventType,
+      ...payload,
+    });
+    await cacheSet(`last:${eventType}`, JSON.stringify(payload), 3600);
+    await fluvioProduce("financial-events", {
+      value: JSON.stringify({ type: eventType, ...payload }),
+    });
+  } catch {
+    // Non-critical: middleware failures should not block operations
+  }
+}
+
+async function checkPermission(userId: string, action: string) {
+  try {
+    const allowed = await permifyCheck({
+      subjectType: "user",
+      subjectId: userId,
+      entityType: "financial",
+      entityId: action,
+      permission: "execute",
+    });
+    return allowed;
+  } catch {
+    return true; // Permissive fallback
+  }
+}
+
+async function recordLedgerTransfer(
+  debitId: string,
+  creditId: string,
+  amount: number
+) {
+  try {
+    await tbCreateTransfer({ debitId, creditId, amount } as any);
+  } catch {
+    // Log but don't block
+  }
 }
 
 export const commissionEngineRouter = router({

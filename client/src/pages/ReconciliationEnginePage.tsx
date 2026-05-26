@@ -109,35 +109,35 @@ export default function ReconciliationEnginePage() {
         {[
           {
             label: "Total Batches",
-            // @ts-ignore
+            // @ts-ignore — Sprint 85: strict-mode suppression
             value: stats?.totalBatches ?? 0,
             icon: FileSpreadsheet,
             color: "text-teal-400",
           },
           {
             label: "Matched",
-            // @ts-ignore
+            // @ts-ignore — Sprint 85: strict-mode suppression
             value: stats?.matched ?? 0,
             icon: CheckCircle,
             color: "text-emerald-400",
           },
           {
             label: "Mismatched",
-            // @ts-ignore
+            // @ts-ignore — Sprint 85: strict-mode suppression
             value: stats?.mismatched ?? 0,
             icon: XCircle,
             color: "text-red-400",
           },
           {
             label: "In Progress",
-            // @ts-ignore
+            // @ts-ignore — Sprint 85: strict-mode suppression
             value: stats?.inProgress ?? 0,
             icon: Clock,
             color: "text-blue-400",
           },
           {
             label: "Match Rate",
-            // @ts-ignore
+            // @ts-ignore — Sprint 85: strict-mode suppression
             value: `${(stats?.matchRate ?? 0).toFixed(1)}%`,
             icon: GitCompare,
             color: "text-emerald-400",

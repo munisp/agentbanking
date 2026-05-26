@@ -152,13 +152,13 @@ export default function WeeklyReports() {
     limit: 20,
     offset: 0,
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const latestQ = trpc.weeklyReports.latest.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const scheduleQ = trpc.weeklyReports.getSchedule.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const emailConfigQ = trpc.weeklyReports.getEmailConfig.useQuery() as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const recipientsQ = trpc.weeklyReports.listRecipients.useQuery() as any;
 
   const reportDetailQ = trpc.weeklyReports.getById.useQuery(
@@ -168,28 +168,28 @@ export default function WeeklyReports() {
   ) as any;
 
   // Mutations
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const generateM = trpc.weeklyReports.generate.useMutation({
     onSuccess: () => {
       toast.success("Weekly report generated successfully");
       utils.weeklyReports.list.invalidate();
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.latest.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateScheduleM = trpc.weeklyReports.updateSchedule.useMutation({
     onSuccess: () => {
       toast.success("Schedule updated");
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.getSchedule.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const sendEmailM = trpc.weeklyReports.sendEmail.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Email sent to ${data.sent} recipient(s)`);
@@ -197,45 +197,45 @@ export default function WeeklyReports() {
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateEmailConfigM = trpc.weeklyReports.updateEmailConfig.useMutation({
     onSuccess: () => {
       toast.success("Email settings updated");
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.getEmailConfig.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const addRecipientM = trpc.weeklyReports.addRecipient.useMutation({
     onSuccess: () => {
       toast.success("Recipient added");
       setNewRecipientEmail("");
       setNewRecipientName("");
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.listRecipients.invalidate();
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.getEmailConfig.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const removeRecipientM = trpc.weeklyReports.removeRecipient.useMutation({
     onSuccess: () => {
       toast.success("Recipient removed");
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.listRecipients.invalidate();
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       utils.weeklyReports.getEmailConfig.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const pdfHtmlQ = trpc.weeklyReports.getPdfHtml.useQuery(
-    // @ts-ignore
+    // @ts-ignore — Sprint 85: strict-mode suppression
     { reportId: selectedReportId ?? "" },
     { enabled: false }
   ) as any;
@@ -248,7 +248,7 @@ export default function WeeklyReports() {
       const result = await utils.weeklyReports.getPdfHtml.fetch({
         reportId: selectedReportId,
       });
-      // @ts-ignore
+      // @ts-ignore — Sprint 85: strict-mode suppression
       const blob = new Blob([result.html], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url, "_blank");

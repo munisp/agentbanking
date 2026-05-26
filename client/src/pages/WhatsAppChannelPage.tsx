@@ -15,7 +15,7 @@ export default function WhatsAppChannelPage() {
   const templates = trpc.whatsappChannel.templates.useQuery() as any;
   // @ts-expect-error Sprint 85 — type inference mismatch
   const contacts = trpc.whatsappChannel.messages.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const analytics = trpc.whatsappChannel.analytics.useQuery() as any;
 
   return (

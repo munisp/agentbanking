@@ -329,7 +329,7 @@ export const workflowEngineRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       try {

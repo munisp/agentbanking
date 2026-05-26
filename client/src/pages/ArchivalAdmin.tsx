@@ -128,11 +128,11 @@ export default function ArchivalAdmin() {
   });
 
   const stats = statsQuery.data as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const schedule = stats?.schedule;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const currentJob = stats?.currentJob;
-  const history = historyQuery.data ?? [];
+  const history = (historyQuery.data as any) ?? [];
 
   // Sync schedule state when data loads
   if (schedule && !scheduleOpen) {

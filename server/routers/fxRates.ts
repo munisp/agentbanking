@@ -122,7 +122,7 @@ export const fxRatesRouter = router({
           target: z.string().default("USD"),
           days: z.number().default(30),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       // Frankfurter API (https://api.frankfurter.app) / ECB exchangerate data

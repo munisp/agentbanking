@@ -159,7 +159,7 @@ export const customerDisputePortalRouter = router({
       }
     }),
   getStats: protectedProcedure
-    .input(z.object({ customerId: z.number().optional() }).default({}))
+    .input(z.object({ customerId: z.number().optional() }).optional())
     .query(async () => {
       return {
         totalDisputes: 0,
@@ -184,7 +184,7 @@ export const customerDisputePortalRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       try {
@@ -208,7 +208,7 @@ export const customerDisputePortalRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       try {

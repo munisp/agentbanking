@@ -277,6 +277,6 @@ export const tenantAdminRouter = router({
     )
     .mutation(async () => ({ success: true })),
   activityLog: protectedProcedure
-    .input(z.object({ limit: z.number().default(50) }).default({}))
+    .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async () => ({ entries: [], total: 0 })),
 });

@@ -31,7 +31,7 @@ export default function AnnouncementReactions() {
     },
     onError: (e: any) => toast.error(e.message),
   });
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const commentMut = trpc.announcementReactions.comment.useMutation({
     onSuccess: () => {
       toast.success("Comment added");
@@ -84,7 +84,7 @@ export default function AnnouncementReactions() {
                     reactMut.mutate({
                       // @ts-ignore Sprint 85
                       announcementId,
-                      // @ts-ignore
+                      // @ts-ignore — Sprint 85: strict-mode suppression
                       userId: user?.keycloakSub || "anonymous",
                       emoji: key as
                         | "thumbsUp"
@@ -139,7 +139,7 @@ export default function AnnouncementReactions() {
                   commentMut.mutate({
                     // @ts-ignore Sprint 85
                     announcementId,
-                    // @ts-ignore
+                    // @ts-ignore — Sprint 85: strict-mode suppression
                     userId: user?.keycloakSub || "anonymous",
                     userName: user?.name || "Anonymous",
                     text: comment,

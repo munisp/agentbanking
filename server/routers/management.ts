@@ -1756,7 +1756,7 @@ export const managementRouter = router({
           toName: z.string().optional(),
           subject: z.string().min(1).max(256),
           templateName: z.string().min(1).max(64),
-          templateData: z.record(z.string(), z.unknown()).default({}),
+          templateData: z.record(z.string(), z.unknown()).optional(),
           tenantId: z.number().optional(),
         })
       )

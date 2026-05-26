@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Clock, BookOpen } from "lucide-react";
 
 export default function IncidentManagementPage() {
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data } = trpc.incidentManagement.dashboard.useQuery() as any;
 
   return (

@@ -33,7 +33,7 @@ export default function UserNotifSettings() {
   const { data: prefs, isLoading } =
     trpc.userNotifPrefs.getPreferences.useQuery() as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateCategory = trpc.userNotifPrefs.updateCategory.useMutation({
     onSuccess: () => utils.userNotifPrefs.getPreferences.invalidate(),
   }) as any;

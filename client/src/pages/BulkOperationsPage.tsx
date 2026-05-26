@@ -13,14 +13,14 @@ export default function BulkOperationsPage() {
     type: filter || undefined,
     limit: 20,
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const analytics = trpc.bulkOps.analytics.useQuery() as any;
   const utils = trpc.useUtils();
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const cancelJob = trpc.bulkOps.cancel.useMutation({
     onSuccess: () => utils.bulkOps.list.invalidate(),
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const retryJob = trpc.bulkOps.retry.useMutation({
     onSuccess: () => utils.bulkOps.list.invalidate(),
   }) as any;

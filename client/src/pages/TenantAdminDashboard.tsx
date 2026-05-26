@@ -82,7 +82,7 @@ export default function TenantAdminDashboard() {
     },
   }) as any;
 
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateBranding = trpc.partnerOnboarding.updateBranding.useMutation({
     onSuccess: () => {
       toast.success("Branding updated!");

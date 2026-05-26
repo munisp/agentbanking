@@ -10,15 +10,15 @@ export default function LoanDisbursementPage() {
   const [tab, setTab] = useState<"loans" | "applications" | "repayments">(
     "loans"
   );
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const loans = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const applications = trpc.loanDisbursement.list.useQuery({
     limit: 20,
   }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const repayments = trpc.loanDisbursement.list.useQuery({ limit: 20 }) as any;
-  // @ts-ignore
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const analytics = trpc.loanDisbursement.analytics.useQuery() as any;
 
   return (

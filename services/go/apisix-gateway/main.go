@@ -15,6 +15,9 @@
 package main
 
 import (
+	"syscall"
+	"os/signal"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -297,4 +300,20 @@ func main() {
 	log.Printf("[%s] v%s starting on port %s", ServiceName, ServiceVersion, port)
 	log.Printf("[%s] Routes: %d, Consumers: %d", ServiceName, len(gateway.routes), len(gateway.consumers))
 	log.Fatal(http.ListenAndServe(":"+port, mux))
+}
+
+// --- Production: Graceful Shutdown ---
+func setupGracefulShutdown(srv *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-quit
+		log.Printf("[shutdown] Received signal %s, shutting down gracefully...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[shutdown] Server forced to shutdown: %v", err)
+		}
+		log.Println("[shutdown] Server exited")
+	}()
 }

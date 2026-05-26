@@ -11,10 +11,10 @@ global:
 mysql:
   enabled: true
   auth:
-    rootPassword: "rootpassword"
+    rootPassword: ""  # REQUIRED: Set via --set mysql.auth.rootPassword or K8S_MOJALOOP_DB_ROOT_PASSWORD secret
     database: "mojaloop"
     username: "mojaloop"
-    password: "password"
+    password: ""  # REQUIRED: Set via --set mysql.auth.password or K8S_MOJALOOP_DB_PASSWORD secret
 
 kafka:
   enabled: true

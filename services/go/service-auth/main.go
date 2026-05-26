@@ -1,6 +1,9 @@
 package main
 
 import (
+	"syscall"
+	"os/signal"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -354,4 +357,20 @@ func main() {
 
 	log.Printf("Service Auth running on :%s with %d pre-registered services", port, len(registry.services))
 	log.Fatal(http.ListenAndServe(":"+port, mux))
+}
+
+// --- Production: Graceful Shutdown ---
+func setupGracefulShutdown(srv *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-quit
+		log.Printf("[shutdown] Received signal %s, shutting down gracefully...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[shutdown] Server forced to shutdown: %v", err)
+		}
+		log.Println("[shutdown] Server exited")
+	}()
 }

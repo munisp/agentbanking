@@ -1,6 +1,9 @@
 package main
 
 import (
+	"syscall"
+	"os/signal"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -112,4 +115,20 @@ func main() {
 
 	log.Printf("Mojaloop Connector POS starting on port %s", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
+}
+
+// --- Production: Graceful Shutdown ---
+func setupGracefulShutdown(srv *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-quit
+		log.Printf("[shutdown] Received signal %s, shutting down gracefully...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[shutdown] Server forced to shutdown: %v", err)
+		}
+		log.Println("[shutdown] Server exited")
+	}()
 }

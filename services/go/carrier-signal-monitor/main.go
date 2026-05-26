@@ -16,6 +16,10 @@
 package main
 
 import (
+	"syscall"
+	"os/signal"
+	"os"
+	"context"
 	"fmt"
 	"crypto/rand"
 	"encoding/hex"
@@ -457,4 +461,20 @@ func main() {
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+// --- Production: Graceful Shutdown ---
+func setupGracefulShutdown(srv *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-quit
+		log.Printf("[shutdown] Received signal %s, shutting down gracefully...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[shutdown] Server forced to shutdown: %v", err)
+		}
+		log.Println("[shutdown] Server exited")
+	}()
 }

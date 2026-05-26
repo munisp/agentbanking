@@ -1,4 +1,31 @@
 import sys as _sys, os as _os
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks

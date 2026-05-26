@@ -25,6 +25,33 @@ from jose import jwt, JWTError
 import asyncpg
 import logging
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 # Configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/security_alerts")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")

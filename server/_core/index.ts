@@ -233,6 +233,15 @@ async function startServer() {
   // ── Compression ─────────────────────────────────────────────────
   app.use(compression());
 
+  // ── ETag / Conditional HTTP responses ──────────────────────────
+  try {
+    const { etagMiddleware } = require("../middleware/etagMiddleware");
+    app.use(etagMiddleware());
+    console.log("[ETag] Conditional response middleware registered");
+  } catch (e) {
+    console.warn("[ETag] Setup failed:", (e as any).message);
+  }
+
   // ── Rate limiting ────────────────────────────────────────────────────────────
   // Use Redis store in production for distributed rate limiting across replicas.
   // Falls back to in-memory store if Redis is unavailable.
@@ -747,6 +756,12 @@ async function startServer() {
     startErpRetryWorker();
     // Start archival cron worker (S60-3)
     startArchivalCronWorker();
+    // Cache warming — preload hot data into Redis
+    import("../lib/cacheWarming")
+      .then(m => m.warmCaches())
+      .catch(err =>
+        console.warn("[CacheWarming] Skipped:", (err as Error).message)
+      );
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     startTemporalWorker().catch(err =>

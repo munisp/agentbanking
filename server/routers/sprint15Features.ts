@@ -472,34 +472,91 @@ export const serviceHealthRouter = router({
   }),
 });
 
-// Cache Router
+// Cache Router — real Redis integration
 export const cacheRouter = router({
   getStats: protectedProcedure.query(async () => {
+    const { getCacheMetrics } = await import("../lib/cacheAside");
+    const { redisIsHealthy } = await import("../redisClient");
+    const healthy = await redisIsHealthy();
+    const m = getCacheMetrics();
     return {
-      hitRate: 0.95,
-      missRate: 0.05,
-      totalKeys: 0,
+      hitRate: m.hitRate,
+      missRate: m.total > 0 ? m.misses / m.total : 0,
+      totalKeys: m.total,
+      hits: m.hits,
+      misses: m.misses,
+      errors: m.errors,
+      stampedePrevented: m.stampedePrevented,
       memoryUsageMb: 0,
       evictions: 0,
+      redisConnected: healthy,
     };
+  }),
+  list: protectedProcedure.query(async () => {
+    const { getCacheMetrics } = await import("../lib/cacheAside");
+    const m = getCacheMetrics();
+    return [
+      {
+        id: "system-config",
+        name: "System Config",
+        prefix: "config:",
+        ttl: 3600,
+        strategy: "write_through",
+        entries: m.total,
+      },
+      {
+        id: "commission-rules",
+        name: "Commission Rules",
+        prefix: "commission:",
+        ttl: 1800,
+        strategy: "ttl",
+        entries: 0,
+      },
+      {
+        id: "exchange-rates",
+        name: "Exchange Rates",
+        prefix: "fx:",
+        ttl: 900,
+        strategy: "ttl",
+        entries: 0,
+      },
+      {
+        id: "platform-settings",
+        name: "Platform Settings",
+        prefix: "platform:",
+        ttl: 1800,
+        strategy: "event_driven",
+        entries: 0,
+      },
+      {
+        id: "session-data",
+        name: "Session Data",
+        prefix: "session:",
+        ttl: 86400,
+        strategy: "ttl",
+        entries: 0,
+      },
+    ];
   }),
   flush: protectedProcedure
     .input(z.object({ pattern: z.string().optional() }))
     .mutation(async ({ input }) => {
-      try {
-        return { success: true, flushedKeys: 0, pattern: input.pattern ?? "*" };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      const { invalidateCache, invalidateCacheByPrefix } = await import(
+        "../lib/cacheAside"
+      );
+      const pattern = input.pattern ?? "*";
+      const count = pattern.includes("*")
+        ? await invalidateCacheByPrefix(pattern.replace("*", ""))
+        : await invalidateCache(pattern);
+      return { success: true, flushedKeys: count, pattern };
     }),
   invalidate: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      if (input?.id) {
+        const { invalidateCache } = await import("../lib/cacheAside");
+        await invalidateCache(input.id);
+      }
       return {
         success: true,
         action: "invalidate",
@@ -510,9 +567,12 @@ export const cacheRouter = router({
   invalidateAll: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      const { invalidateCacheByPrefix } = await import("../lib/cacheAside");
+      await invalidateCacheByPrefix("");
       return {
         success: true,
         action: "invalidateAll",
+        invalidated: 1,
         id: input?.id ?? null,
         timestamp: new Date().toISOString(),
       };

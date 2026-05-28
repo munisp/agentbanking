@@ -2181,6 +2181,42 @@ function AuthenticatedApp() {
           path="/platform-health-monitor"
           component={PlatformHealthMonitor}
         />
+        {/* ── Future-Proofing Features ── */}
+        <Route path="/future/open-banking" component={OpenBankingApiPage} />
+        <Route path="/future/bnpl" component={BnplEnginePage} />
+        <Route path="/future/nfc-tap-to-pay" component={NfcTapToPayPage} />
+        <Route path="/future/ai-credit-scoring" component={AiCreditScoringPage} />
+        <Route path="/future/agritech" component={AgritechPaymentsPage} />
+        <Route path="/future/super-app" component={SuperAppFrameworkPage} />
+        <Route path="/future/anaas" component={EmbeddedFinanceAnaasPage} />
+        <Route path="/future/payroll" component={PayrollDisbursementPage} />
+        <Route
+          path="/future/health-insurance"
+          component={HealthInsuranceMicroPage}
+        />
+        <Route path="/future/education" component={EducationPaymentsPage} />
+        <Route
+          path="/future/conversational-banking"
+          component={ConversationalBankingPage}
+        />
+        <Route path="/future/stablecoin" component={StablecoinRailsPage} />
+        <Route path="/future/iot-pos" component={IotSmartPosPage} />
+        <Route path="/future/wearable" component={WearablePaymentsPage} />
+        <Route path="/future/satellite" component={SatelliteConnectivityPage} />
+        <Route
+          path="/future/digital-identity"
+          component={DigitalIdentityLayerPage}
+        />
+        <Route path="/future/pension" component={PensionMicroPage} />
+        <Route
+          path="/future/carbon-credits"
+          component={CarbonCreditMarketplacePage}
+        />
+        <Route
+          path="/future/tokenized-assets"
+          component={TokenizedAssetsPage}
+        />
+        <Route path="/future/loyalty" component={CoalitionLoyaltyPage} />
         {/* Fallback — POSShell handles named screens */}
         <Route path="/:screen" component={POSShell} />
       </Switch>

@@ -21,24 +21,24 @@ module.exports = {
 
     return {
       "CallExpression[callee.property.name='query'] > ArrowFunctionExpression[async=true]"(
-        node,
+        node
       ) {
         const body = node.body;
         if (body.type !== "BlockStatement") return;
         const hasTryCatch = body.body.some(
-          (stmt) => stmt.type === "TryStatement",
+          stmt => stmt.type === "TryStatement"
         );
         if (!hasTryCatch && body.body.length > 3) {
           context.report({ node, messageId: "noUnhandledAsync" });
         }
       },
       "CallExpression[callee.property.name='mutation'] > ArrowFunctionExpression[async=true]"(
-        node,
+        node
       ) {
         const body = node.body;
         if (body.type !== "BlockStatement") return;
         const hasTryCatch = body.body.some(
-          (stmt) => stmt.type === "TryStatement",
+          stmt => stmt.type === "TryStatement"
         );
         if (!hasTryCatch && body.body.length > 3) {
           context.report({ node, messageId: "noUnhandledAsync" });

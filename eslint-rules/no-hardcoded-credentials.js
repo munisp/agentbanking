@@ -41,11 +41,11 @@ module.exports = {
         if (!parent) return;
 
         const src = context.getSourceCode().getText(parent);
-        const isMatch = PATTERNS.some((p) => p.test(src));
+        const isMatch = PATTERNS.some(p => p.test(src));
         if (!isMatch) return;
 
-        const isAllowed = ALLOW_LIST.some((a) =>
-          node.value.toLowerCase().includes(a),
+        const isAllowed = ALLOW_LIST.some(a =>
+          node.value.toLowerCase().includes(a)
         );
         if (isAllowed) return;
 

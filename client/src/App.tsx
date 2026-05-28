@@ -2185,7 +2185,10 @@ function AuthenticatedApp() {
         <Route path="/future/open-banking" component={OpenBankingApiPage} />
         <Route path="/future/bnpl" component={BnplEnginePage} />
         <Route path="/future/nfc-tap-to-pay" component={NfcTapToPayPage} />
-        <Route path="/future/ai-credit-scoring" component={AiCreditScoringPage} />
+        <Route
+          path="/future/ai-credit-scoring"
+          component={AiCreditScoringPage}
+        />
         <Route path="/future/agritech" component={AgritechPaymentsPage} />
         <Route path="/future/super-app" component={SuperAppFrameworkPage} />
         <Route path="/future/anaas" component={EmbeddedFinanceAnaasPage} />

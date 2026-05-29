@@ -3,6 +3,17 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, observabilityAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // Metric categories: "transactions", "agents", "risk", "finance", "system"
 // Operators: "gt", "lt", "gte", "lte", "eq", "neq", "pct_change_up", "pct_change_down"

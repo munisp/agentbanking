@@ -20,6 +20,17 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const MM_PROVIDERS = [
   { code: "OPAY", name: "OPay", active: true },

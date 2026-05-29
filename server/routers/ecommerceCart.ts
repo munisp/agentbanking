@@ -8,6 +8,17 @@ import {
   type EcommerceCartItem,
 } from "../../drizzle/schema";
 import { eq, and, sql, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const CART_SERVICE_URL =
   process.env.CART_SERVICE_URL || "http://localhost:8102";

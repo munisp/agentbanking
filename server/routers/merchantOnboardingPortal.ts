@@ -4,6 +4,15 @@ import { getDb } from "../db";
 import { eq, desc, sql, count } from "drizzle-orm";
 import { merchants, merchantKycDocs, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "rejected", "suspended"],
+  "active": ["suspended", "terminated"],
+  "suspended": ["active", "terminated"],
+  "rejected": [],
+  "terminated": []
+};
 
 export const merchantOnboardingPortalRouter = router({
   listApplications: protectedProcedure

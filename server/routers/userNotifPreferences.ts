@@ -3,6 +3,17 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, notification_channels } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // Notification categories (16 across 4 groups):
 // Transactions: txn_success, txn_failed, txn_pending, txn_reversed

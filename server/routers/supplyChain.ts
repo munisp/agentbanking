@@ -2,6 +2,17 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { resilientFetch } from "../lib/resilientFetch";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const SC_URL = process.env.SUPPLY_CHAIN_URL || "http://localhost:8200";
 

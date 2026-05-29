@@ -9,6 +9,17 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { notificationDispatchLog } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [60, 300, 900]; // seconds: 1min, 5min, 15min

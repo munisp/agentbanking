@@ -4,6 +4,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import {
+
   deepfaceVerify,
   deepfaceEnsembleVerify,
   deepfaceAnalyze,
@@ -13,6 +14,17 @@ import {
   deepfaceEnroll,
   deepfaceSearch,
 } from "../_core/kycClient";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const DEEPFACE_MODELS = [
   "VGG-Face",

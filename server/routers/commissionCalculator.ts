@@ -8,6 +8,15 @@ import {
 import { getDb } from "../db";
 import { commissionRules } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["approved", "rejected"],
+  "approved": ["paid", "clawed_back"],
+  "paid": ["clawed_back"],
+  "rejected": [],
+  "clawed_back": []
+};
 
 export const commissionCalculatorRouter = router({
   list: protectedProcedure

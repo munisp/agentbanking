@@ -22,6 +22,17 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // ── Guard: agent-only procedure ──────────────────────────────────────────────
 // Agents authenticate via PIN cookie (agentAuth middleware), not Manus OAuth.

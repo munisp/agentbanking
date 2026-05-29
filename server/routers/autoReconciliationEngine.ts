@@ -4,6 +4,16 @@ import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { sql, desc, eq, and, between } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["in_progress", "skipped"],
+  "in_progress": ["completed", "failed", "partially_matched"],
+  "completed": [],
+  "failed": ["pending"],
+  "partially_matched": ["in_progress", "completed"],
+  "skipped": []
+};
 
 export const autoReconciliationEngineRouter = router({
   reconcile: protectedProcedure

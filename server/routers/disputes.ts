@@ -4,6 +4,16 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { disputes } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "open": ["investigating", "resolved", "rejected"],
+  "investigating": ["resolved", "rejected", "escalated"],
+  "escalated": ["resolved", "rejected"],
+  "resolved": ["reopened"],
+  "rejected": ["reopened"],
+  "reopened": ["investigating"]
+};
 
 export const disputesRouter = router({
   list: protectedProcedure

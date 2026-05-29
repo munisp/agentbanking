@@ -3,6 +3,16 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["processing", "cancelled"],
+  "processing": ["completed", "failed"],
+  "completed": ["refunded"],
+  "failed": ["pending"],
+  "cancelled": [],
+  "refunded": []
+};
 
 export const wearablePaymentsRouter = router({
   getStats: protectedProcedure.query(async () => {

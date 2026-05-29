@@ -9,6 +9,15 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { merchantKycDocs } from "../../drizzle/schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "rejected", "suspended"],
+  "active": ["suspended", "terminated"],
+  "suspended": ["active", "terminated"],
+  "rejected": [],
+  "terminated": []
+};
 
 const KYC_DOC_TYPES = [
   "cac_certificate",

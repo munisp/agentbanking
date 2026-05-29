@@ -21,6 +21,15 @@ import {
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import crypto from "crypto";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "rejected", "suspended"],
+  "active": ["suspended", "terminated"],
+  "suspended": ["active", "terminated"],
+  "rejected": [],
+  "terminated": []
+};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 

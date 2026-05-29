@@ -5,6 +5,17 @@ import { getDb } from "../db";
 import { realtime_tx_alerts } from "../../drizzle/schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const VELOCITY_RULES = [
   { name: "high_frequency", threshold: 10, windowMinutes: 5, action: "flag" },

@@ -3,6 +3,20 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "draft": ["submitted"],
+  "submitted": ["under_review", "rejected"],
+  "under_review": ["approved", "rejected"],
+  "approved": ["active"],
+  "active": ["claimed", "expired", "cancelled"],
+  "claimed": ["settled", "rejected"],
+  "settled": [],
+  "expired": [],
+  "cancelled": [],
+  "rejected": []
+};
 
 export const healthInsuranceMicroRouter = router({
   getStats: protectedProcedure.query(async () => {

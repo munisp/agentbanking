@@ -3,6 +3,17 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "draft": ["sent", "cancelled"],
+  "sent": ["paid", "overdue", "cancelled"],
+  "paid": ["refunded"],
+  "overdue": ["paid", "written_off"],
+  "cancelled": [],
+  "refunded": [],
+  "written_off": []
+};
 
 export const billingProductionRouter = router({
   list: protectedProcedure

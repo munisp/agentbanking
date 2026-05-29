@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { resilientFetch } from "../lib/resilientFetch";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const MKT_URL = process.env.MARKETPLACE_URL || "http://localhost:8201";
 

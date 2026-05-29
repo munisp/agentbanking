@@ -15,6 +15,15 @@ import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["processing", "cancelled"],
+  "processing": ["settled", "failed"],
+  "settled": [],
+  "failed": ["pending"],
+  "cancelled": []
+};
 
 export const settlementNettingEngineRouter = router({
   getStats: protectedProcedure.query(async () => {

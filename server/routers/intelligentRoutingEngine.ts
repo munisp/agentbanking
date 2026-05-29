@@ -3,6 +3,17 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // Payment routing engine: selects optimal payment provider based on cost, latency, and success rate
 export const intelligentRoutingEngineRouter = router({

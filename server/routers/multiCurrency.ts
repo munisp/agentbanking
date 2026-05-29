@@ -4,6 +4,16 @@ import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { transactions, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["processing", "cancelled"],
+  "processing": ["completed", "failed"],
+  "completed": ["refunded"],
+  "failed": ["pending"],
+  "cancelled": [],
+  "refunded": []
+};
 
 export const multiCurrencyRouter = router({
   listBalances: protectedProcedure

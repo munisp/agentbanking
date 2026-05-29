@@ -5,6 +5,20 @@ import { getDb } from "../db";
 import { agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "draft": ["submitted", "cancelled"],
+  "submitted": ["under_review", "rejected"],
+  "under_review": ["approved", "rejected"],
+  "approved": ["disbursed"],
+  "disbursed": ["repaying"],
+  "repaying": ["completed", "defaulted"],
+  "completed": [],
+  "defaulted": ["repaying"],
+  "rejected": [],
+  "cancelled": []
+};
 
 const listApplications = protectedProcedure
   .input(

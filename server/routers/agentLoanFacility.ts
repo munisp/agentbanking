@@ -8,6 +8,20 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { agentLoans, agents, transactions } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, avg, sql } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "draft": ["submitted", "cancelled"],
+  "submitted": ["under_review", "rejected"],
+  "under_review": ["approved", "rejected"],
+  "approved": ["disbursed"],
+  "disbursed": ["repaying"],
+  "repaying": ["completed", "defaulted"],
+  "completed": [],
+  "defaulted": ["repaying"],
+  "rejected": [],
+  "cancelled": []
+};
 
 // Business rules
 const INTEREST_RATES = {

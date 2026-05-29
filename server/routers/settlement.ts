@@ -48,6 +48,15 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["processing", "cancelled"],
+  "processing": ["settled", "failed"],
+  "settled": [],
+  "failed": ["pending"],
+  "cancelled": []
+};
 
 const agentAdminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const agent = await getAgentFromCookie(ctx.req);

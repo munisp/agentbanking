@@ -11,6 +11,16 @@ import { eq, desc, count } from "drizzle-orm";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "open": ["investigating", "resolved", "rejected"],
+  "investigating": ["resolved", "rejected", "escalated"],
+  "escalated": ["resolved", "rejected"],
+  "resolved": ["reopened"],
+  "rejected": ["reopened"],
+  "reopened": ["investigating"]
+};
 
 let notificationLog: Array<{
   id: number;

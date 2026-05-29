@@ -19,6 +19,15 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "rejected", "suspended"],
+  "active": ["suspended", "terminated"],
+  "suspended": ["active", "terminated"],
+  "rejected": [],
+  "terminated": []
+};
 
 export const merchantPaymentsRouter = router({
   processPayment: protectedProcedure

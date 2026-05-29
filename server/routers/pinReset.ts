@@ -18,6 +18,17 @@ import { agents, otpTokens } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { sendSms } from "../termii";
 import crypto from "crypto";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY: Use crypto.randomInt for cryptographically secure OTP generation
 function generateOtp(): string {

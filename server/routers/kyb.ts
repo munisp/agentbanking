@@ -30,6 +30,17 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getDb, writeAuditLog } from "../db.js";
 import { merchantKycDocs } from "../../drizzle/schema.js";
 import { eq, desc } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // ─── Service URLs ────────────────────────────────────────────────────────────
 

@@ -17,6 +17,15 @@ import {
   streamCommissionEvent,
 } from "../middleware/commissionMiddleware";
 import logger from "../_core/logger";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["approved", "rejected"],
+  "approved": ["paid", "clawed_back"],
+  "paid": ["clawed_back"],
+  "rejected": [],
+  "clawed_back": []
+};
 
 export const commissionClawbackRouter = router({
   getStats: protectedProcedure.query(async () => {

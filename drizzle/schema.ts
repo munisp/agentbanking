@@ -5139,3 +5139,65 @@ export const deliveryTracking = pgTable(
   })
 );
 export type DeliveryTrackingRecord = typeof deliveryTracking.$inferSelect;
+
+// ─── AML Screening Tables ───────────────────────────────────────────────────
+export const amlScreenings = pgTable(
+  "aml_screenings",
+  {
+    id: serial("id").primaryKey(),
+    entityName: varchar("entity_name", { length: 200 }).notNull(),
+    entityType: varchar("entity_type", { length: 20 }).notNull(),
+    country: varchar("country", { length: 2 }),
+    nationalId: varchar("national_id", { length: 50 }),
+    riskScore: integer("risk_score").notNull().default(0),
+    status: varchar("status", { length: 20 }).notNull().default("clear"),
+    sanctionsMatch: boolean("sanctions_match").notNull().default(false),
+    pepMatch: boolean("pep_match").notNull().default(false),
+    adverseMediaMatch: boolean("adverse_media_match").notNull().default(false),
+    highRiskCountry: boolean("high_risk_country").notNull().default(false),
+    screenedAt: timestamp("screened_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    statusIdx: index("aml_status_idx").on(t.status),
+    entityIdx: index("aml_entity_idx").on(t.entityName),
+    riskIdx: index("aml_risk_idx").on(t.riskScore),
+  })
+);
+
+export const amlWatchlistEntries = pgTable(
+  "aml_watchlist_entries",
+  {
+    id: serial("id").primaryKey(),
+    entityName: varchar("entity_name", { length: 200 }).notNull(),
+    aliases: text("aliases"),
+    listType: varchar("list_type", { length: 30 }).notNull(),
+    sourceList: varchar("source_list", { length: 100 }),
+    country: varchar("country", { length: 2 }),
+    dateAdded: timestamp("date_added").defaultNow().notNull(),
+    active: boolean("active").notNull().default(true),
+  },
+  t => ({
+    nameIdx: index("awl_name_idx").on(t.entityName),
+    listIdx: index("awl_list_idx").on(t.listType),
+  })
+);
+
+// ─── Idempotency Keys Table ────────────────────────────────────────────────
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    id: serial("id").primaryKey(),
+    idempotencyKey: varchar("idempotency_key", { length: 128 })
+      .notNull()
+      .unique(),
+    responseData: text("response_data"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  t => ({
+    keyIdx: uniqueIndex("idem_key_idx").on(t.idempotencyKey),
+    expiryIdx: index("idem_expiry_idx").on(t.expiresAt),
+  })
+);

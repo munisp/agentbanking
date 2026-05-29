@@ -48,11 +48,23 @@ import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
 import crypto from "crypto";
 import {
+
   transactionsTotal,
   transactionErrorsTotal,
   transactionDurationMs,
   floatLocksTotal,
 } from "../metrics";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 // ─── Commission & loyalty rates ───────────────────────────────────────────────
 const COMMISSION_RATES: Record<string, number> = {
   "Cash In": 0.003,

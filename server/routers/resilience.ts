@@ -30,6 +30,17 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)

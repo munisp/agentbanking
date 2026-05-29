@@ -42,6 +42,17 @@ import {
 import { writeAuditLog } from "../db";
 import { sql, gte, lte, and, eq, desc } from "drizzle-orm";
 import logger from "../_core/logger";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 // ── Python lakehouse-service proxy ────────────────────────────────────────────
 const LAKEHOUSE_SERVICE_URL =

@@ -10,6 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { getCacheMetrics } from "../lib/cacheAside";
 import { redisIsHealthy } from "../redisClient";
 import { getQueryMetrics } from "../middleware/queryTracker";
+import { getHardeningMetrics } from "../middleware/productionHardeningMiddleware";
 import { getDb } from "../db";
 import { count } from "drizzle-orm";
 import { users, transactions, agents, auditLog } from "../../drizzle/schema";
@@ -304,5 +305,9 @@ export const platformHealthRouter = router({
       lastChecked: new Date().toISOString(),
       checkMethod: "CI: vite-bundle-visualizer",
     };
+  }),
+
+  hardeningMetrics: protectedProcedure.query(async () => {
+    return getHardeningMetrics();
   }),
 });

@@ -13,6 +13,17 @@ import {
   fraudAlerts,
 } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte, count, sum, avg } from "drizzle-orm";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "pending": ["active", "completed", "cancelled", "rejected"],
+  "active": ["completed", "suspended", "cancelled"],
+  "completed": ["archived"],
+  "suspended": ["active", "cancelled"],
+  "cancelled": [],
+  "rejected": [],
+  "archived": []
+};
 
 const VELOCITY_THRESHOLD_TPS = 50;
 const AMOUNT_THRESHOLD_NGN = 5_000_000;

@@ -19,6 +19,17 @@ import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
 import { Client, Connection } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  "draft": ["sent", "cancelled"],
+  "sent": ["paid", "overdue", "cancelled"],
+  "paid": ["refunded"],
+  "overdue": ["paid", "written_off"],
+  "cancelled": [],
+  "refunded": [],
+  "written_off": []
+};
 
 // Temporal client singleton for billing provisioning
 let temporalClient: Client | null = null;

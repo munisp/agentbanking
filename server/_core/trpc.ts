@@ -6,6 +6,7 @@ import { permifyCheck } from "../_core/permify";
 import { createObservabilityMiddleware } from "../middleware/observabilityMiddleware";
 import { createSidecarMiddleware } from "../middleware/sidecarIntegration";
 import { createTrpcCacheMiddleware } from "../middleware/trpcCacheMiddleware";
+import { createProductionHardeningMiddleware } from "../middleware/productionHardeningMiddleware";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -19,12 +20,14 @@ export const middleware = t.middleware;
 const observability = createObservabilityMiddleware(t);
 const sidecarMiddleware = createSidecarMiddleware(t);
 const trpcCache = createTrpcCacheMiddleware(t);
+const productionHardening = createProductionHardeningMiddleware(t);
 
 // Base: t.procedure.use(observability) applied to all procedure levels
 export const publicProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware)
-  .use(trpcCache);
+  .use(trpcCache)
+  .use(productionHardening);
 
 // ── requireUser: verify JWT session ──────────────────────────────────────────
 const requireUser = t.middleware(async opts => {
@@ -82,6 +85,7 @@ export const protectedProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware)
   .use(trpcCache)
+  .use(productionHardening)
   .use(requireUser)
   .use(requirePermify);
 

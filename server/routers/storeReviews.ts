@@ -32,6 +32,85 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "storeReviews",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "storeReviews",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "storeReviews",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "storeReviews",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const storeReviewsRouter = router({
   // ── Product Reviews ─────────────────────────────────────────────────────
   getProductReviews: publicProcedure

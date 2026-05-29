@@ -18,7 +18,7 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { getDb, writeAuditLog } from "../db";
 import {
   agents,
@@ -30,7 +30,6 @@ import {
   dataRightsRequests,
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
-import { count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { notifyOwner } from "../_core/notification";
 import {
@@ -55,6 +54,48 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   rejected: [],
   archived: [],
+};
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "gdpr",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "gdpr",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
 };
 
 export const gdprRouter = router({

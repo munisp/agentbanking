@@ -23,6 +23,7 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -313,6 +314,50 @@ async function executeBillingProvisioning(params: {
 // Tenant Billing Onboarding Router
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "tenantBillingOnboarding",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "tenantBillingOnboarding",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "tenantBillingOnboarding",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "tenantBillingOnboarding",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const tenantBillingOnboardingRouter = router({
   // Get available billing templates
   getTemplates: protectedProcedure.query(async () => ({

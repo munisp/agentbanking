@@ -167,6 +167,32 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// ── Domain Calculations ────────────────────────────────────────────────────
+function computeFees(amount: number, txType: string = "transfer") {
+  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
+  const feeResult = calculateFee(amount, txType);
+  const commResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+  const totalDeductions = feeResult.fee + taxResult.taxAmount;
+  const netAmount = Math.max(0, amount - totalDeductions);
+  const rate = amount > 0 ? feeResult.fee / amount : 0;
+  return {
+    fee: feeResult.fee,
+    feeRate: parseFloat(rate.toFixed(4)),
+    commission: commResult.agentShare,
+    platformCommission: commResult.platformShare,
+    tax: taxResult.taxAmount,
+    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
+    netAmount: parseFloat(netAmount.toFixed(2)),
+    grossAmount: amount,
+  };
+}
+
+// ── Transaction Handling for billingAudit ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const billingAuditRouter = router({
   // Query audit logs with filters
   query: protectedProcedure

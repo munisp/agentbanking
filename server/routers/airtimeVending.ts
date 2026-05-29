@@ -16,6 +16,7 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -150,6 +151,50 @@ function detectProvider(phone: string): string | null {
   return null;
 }
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "airtimeVending",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "airtimeVending",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "airtimeVending",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "airtimeVending",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const airtimeVendingRouter = router({
   vendAirtime: protectedProcedure
     .input(

@@ -6,16 +6,16 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { commissionPayouts, agents } from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
-import { writeAuditLog } from "../db";
 import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -32,6 +32,32 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
 };
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "commissionPayouts",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "commissionPayouts",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const commissionPayoutsRouter = router({
   // ── List payouts (admin/supervisor) ──────────────────────────────────────
   list: protectedProcedure

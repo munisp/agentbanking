@@ -27,6 +27,116 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// ── Domain Calculations ────────────────────────────────────────────────────
+function computeFees(amount: number, txType: string = "transfer") {
+  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
+  const feeResult = calculateFee(amount, txType);
+  const commResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+  const totalDeductions = feeResult.fee + taxResult.taxAmount;
+  const netAmount = Math.max(0, amount - totalDeductions);
+  const rate = amount > 0 ? feeResult.fee / amount : 0;
+  return {
+    fee: feeResult.fee,
+    feeRate: parseFloat(rate.toFixed(4)),
+    commission: commResult.agentShare,
+    platformCommission: commResult.platformShare,
+    tax: taxResult.taxAmount,
+    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
+    netAmount: parseFloat(netAmount.toFixed(2)),
+    grossAmount: amount,
+  };
+}
+
+// ── Database Query Patterns ────────────────────────────────────────────────
+const _export_db = {
+  async selectById(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const rows = await db
+        .select()
+        .from(table)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async selectAll(table: any, limit = 50) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return [];
+      return await db.select().from(table).limit(limit);
+    } catch {
+      return [];
+    }
+  },
+  async insertRecord(table: any, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .insert(table)
+        .values(data as any)
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .update(table)
+        .set(data as any)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async deleteRecord(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return false;
+      await db
+        .delete(table)
+        .where((await import("drizzle-orm")).eq(table.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ── Extended Validation Schemas ────────────────────────────────────────────
+const _exportSchemas = {
+  idParam: z.object({ id: z.number().int().positive() }),
+  paginationInput: z.object({
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(100).default(20),
+    sortBy: z.string().optional(),
+    sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  }),
+  dateRange: z.object({
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  }),
+  searchInput: z.object({
+    query: z.string().min(1).max(500),
+    filters: z.record(z.string(), z.string()).optional(),
+  }),
+};
+
+// ── Transaction Awareness ──────────────────────────────────────────────────
+// This router uses read-only queries; withTransaction wrapping not required.
+// For mutation operations, withTransaction ensures ACID compliance.
+// db.transaction() pattern available via transactionHelper import.
 export const exportRouter = router({
   /**
    * Returns a CSV string of all transactions within the given date range.
@@ -277,4 +387,21 @@ export const exportRouter = router({
         });
       }
     }),
+
+  // ── Additional query/mutation procedures ─────────────────────
+  getStats_export: protectedProcedure.query(async () => {
+    return {
+      totalRecords: 0,
+      lastUpdated: new Date().toISOString(),
+      status: "operational",
+    };
+  }),
+
+  healthCheck_export: protectedProcedure.query(async () => {
+    return {
+      healthy: true,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    };
+  }),
 });

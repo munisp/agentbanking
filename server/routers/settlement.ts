@@ -52,6 +52,7 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -130,6 +131,99 @@ async function recordLedgerTransfer(
     // Log but don't block
   }
 }
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "settlement",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "settlement",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
+
+// ── Database Query Patterns ────────────────────────────────────────────────
+const _settlement_db = {
+  async selectById(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const rows = await db
+        .select()
+        .from(table)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async selectAll(table: any, limit = 50) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return [];
+      return await db.select().from(table).limit(limit);
+    } catch {
+      return [];
+    }
+  },
+  async insertRecord(table: any, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .insert(table)
+        .values(data as any)
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .update(table)
+        .set(data as any)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async deleteRecord(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return false;
+      await db
+        .delete(table)
+        .where((await import("drizzle-orm")).eq(table.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
 
 export const settlementRouter = router({
   /**

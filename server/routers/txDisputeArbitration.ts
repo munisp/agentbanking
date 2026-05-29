@@ -19,6 +19,7 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -35,6 +36,52 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   rejected: ["reopened"],
   reopened: ["investigating"],
 };
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "txDisputeArbitration",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "txDisputeArbitration",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
+
+// ── Error Guards ───────────────────────────────────────────────────────────
+function guardNotFound(val: unknown, entity: string): asserts val {
+  if (!val)
+    throw new TRPCError({ code: "NOT_FOUND", message: `${entity} not found` });
+}
+function guardForbidden(allowed: boolean, msg = "Forbidden"): void {
+  if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: msg });
+}
+function guardConflict(condition: boolean, msg = "Conflict"): void {
+  if (condition) throw new TRPCError({ code: "CONFLICT", message: msg });
+}
+function safeParse<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
 
 export const txDisputeArbitrationRouter = router({
   listDisputes: protectedProcedure

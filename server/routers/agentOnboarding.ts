@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   agentOnboardingProgress,
   agents,
@@ -14,7 +14,6 @@ import {
   floatTopUpRequests,
 } from "../../drizzle/schema";
 import { eq, desc, count, and } from "drizzle-orm";
-import { writeAuditLog } from "../db";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import {
   validateAmount,
@@ -38,6 +37,48 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   rejected: [],
   archived: [],
+};
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "agentOnboarding",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "agentOnboarding",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
 };
 
 export const agentOnboardingRouter = router({

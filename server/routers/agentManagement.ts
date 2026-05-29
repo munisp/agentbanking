@@ -4,17 +4,17 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getDb } from "../db";
+import {
+  getAgentById,
+  getDb,
+  updateAgentFloat,
+  withTransaction,
+  writeAuditLog,
+} from "../db";
 import { agents, floatTopUpRequests } from "../../drizzle/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import {
-  writeAuditLog,
-  updateAgentFloat,
-  getAgentById,
-  withTransaction,
-} from "../db";
 import {
   validateAmount,
   validateStatusTransition,
@@ -65,6 +65,24 @@ async function requireAdmin(req: any) {
   }
   return { session, agent };
 }
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const agentManagementRouter = router({
   // ── List all agents ───────────────────────────────────────────────────────

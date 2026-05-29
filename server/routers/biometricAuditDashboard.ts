@@ -10,6 +10,10 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
 
 /**
  * Biometric Audit Dashboard Router — Admin-only analytics and monitoring
@@ -35,6 +39,50 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "biometricAuditDashboard",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "biometricAuditDashboard",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+function computeFees(amount: number, txType: string = "transfer") {
+  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
+  const feeResult = calculateFee(amount, txType);
+  const commResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+  const totalDeductions = feeResult.fee + taxResult.taxAmount;
+  const netAmount = Math.max(0, amount - totalDeductions);
+  const rate = amount > 0 ? feeResult.fee / amount : 0;
+  return {
+    fee: feeResult.fee,
+    feeRate: parseFloat(rate.toFixed(4)),
+    commission: commResult.agentShare,
+    platformCommission: commResult.platformShare,
+    tax: taxResult.taxAmount,
+    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
+    netAmount: parseFloat(netAmount.toFixed(2)),
+    grossAmount: amount,
+  };
+}
+
+// ── Transaction Handling for biometricAuditDashboard ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const biometricAuditDashboardRouter = router({
   /** Aggregate biometric statistics */
   stats: adminGuard

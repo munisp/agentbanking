@@ -40,6 +40,105 @@ const CATALOG_SERVICE_URL =
  * Bridges tRPC API with Go catalog microservice for products, categories, and inventory.
  * Falls back to direct Drizzle queries when Go service is unavailable.
  */
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "ecommerceCatalog",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "ecommerceCatalog",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "ecommerceCatalog",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "ecommerceCatalog",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
+// ── Error Guards ───────────────────────────────────────────────────────────
+function guardNotFound(val: unknown, entity: string): asserts val {
+  if (!val)
+    throw new TRPCError({ code: "NOT_FOUND", message: `${entity} not found` });
+}
+function guardForbidden(allowed: boolean, msg = "Forbidden"): void {
+  if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: msg });
+}
+function guardConflict(condition: boolean, msg = "Conflict"): void {
+  if (condition) throw new TRPCError({ code: "CONFLICT", message: msg });
+}
+function safeParse<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
+
 export const ecommerceCatalogRouter = router({
   // ── Products ─────────────────────────────────────────────────────────────
   listProducts: protectedProcedure

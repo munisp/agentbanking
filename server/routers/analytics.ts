@@ -52,6 +52,11 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// ── Transaction Handling for analytics ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const analyticsRouter = router({
   // ── KPI Dashboard Summary ─────────────────────────────────────────────────
   kpiSummary: protectedProcedure

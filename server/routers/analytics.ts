@@ -28,6 +28,12 @@ import {
 } from "../../drizzle/schema";
 import { gte, lte, sql, eq, and, desc, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 function startOfDay(daysAgo = 0): Date {
   const d = new Date();
@@ -35,6 +41,16 @@ function startOfDay(daysAgo = 0): Date {
   d.setUTCDate(d.getUTCDate() - daysAgo);
   return d;
 }
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const analyticsRouter = router({
   // ── KPI Dashboard Summary ─────────────────────────────────────────────────

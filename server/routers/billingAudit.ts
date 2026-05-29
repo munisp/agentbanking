@@ -12,6 +12,12 @@ import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
 import { requireBillingPermission } from "./billingRbac";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Audit Middleware — auto-logs all billing mutations
@@ -150,6 +156,16 @@ async function sendBillingNotifications(
 // ═══════════════════════════════════════════════════════════════════════════════
 // Billing Audit Router
 // ═══════════════════════════════════════════════════════════════════════════════
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const billingAuditRouter = router({
   // Query audit logs with filters

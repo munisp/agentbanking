@@ -4,6 +4,12 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { biometricAuditEvents, faceEnrollments } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte, count } from "drizzle-orm";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 /**
  * Biometric Audit Dashboard Router — Admin-only analytics and monitoring
@@ -18,6 +24,16 @@ const adminGuard = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const biometricAuditDashboardRouter = router({
   /** Aggregate biometric statistics */

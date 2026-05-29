@@ -1,11 +1,21 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { getDb } from "../db";
 import { resilientFetch } from "../lib/resilientFetch";
 import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "completed", "cancelled", "rejected"],

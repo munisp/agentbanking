@@ -2,8 +2,16 @@
  * Item 24: API Documentation Generation
  * Provides OpenAPI/Swagger spec for all tRPC endpoints and microservices.
  */
+import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { getDb } from "../db";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const API_SPEC = {
   openapi: "3.1.0",
@@ -121,6 +129,16 @@ const API_SPEC = {
     },
   },
 } as const;
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const apiDocsRouter = router({
   getSpec: protectedProcedure.query(() => API_SPEC),

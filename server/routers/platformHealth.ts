@@ -14,6 +14,12 @@ import { getHardeningMetrics } from "../middleware/productionHardeningMiddleware
 import { getDb } from "../db";
 import { count } from "drizzle-orm";
 import { users, transactions, agents, auditLog } from "../../drizzle/schema";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 interface ServiceHealth {
   name: string;
@@ -117,6 +123,16 @@ async function checkServiceHealth(svc: {
     };
   }
 }
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const platformHealthRouter = router({
   overview: protectedProcedure.query(async () => {

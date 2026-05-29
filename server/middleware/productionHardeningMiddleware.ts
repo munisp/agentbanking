@@ -128,19 +128,17 @@ export function createProductionHardeningMiddleware(t: {
 
     totalMutations++;
 
-    // ── 1. Idempotency check (financial mutations only) ─────────────────
-    if (isFinancial) {
-      const idempotencyKey =
-        (rawInput as any)?.idempotencyKey ??
-        (ctx as any)?.req?.headers?.["x-idempotency-key"];
+    // ── 1. Idempotency check (all mutations with idempotency key) ────────
+    const idempotencyKey =
+      (rawInput as any)?.idempotencyKey ??
+      (ctx as any)?.req?.headers?.["x-idempotency-key"];
 
-      if (idempotencyKey) {
-        const cacheKey = `${path}:${idempotencyKey}`;
-        const cached = idempotencyCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-          idempotencyHits++;
-          return { ok: true, data: cached.result } as any;
-        }
+    if (idempotencyKey) {
+      const cacheKey = `${path}:${idempotencyKey}`;
+      const cached = idempotencyCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        idempotencyHits++;
+        return { ok: true, data: cached.result } as any;
       }
     }
 
@@ -160,13 +158,11 @@ export function createProductionHardeningMiddleware(t: {
       }
     }
 
-    // ── 3. Execute mutation (with transaction tracking for financial paths)
+    // ── 3. Execute mutation (with transaction tracking) ─────────────────
     let result: any;
+    transactionWrapped++;
 
     try {
-      if (isFinancial) {
-        transactionWrapped++;
-      }
       result = await next();
     } catch (err) {
       // Log failed mutations
@@ -211,19 +207,13 @@ export function createProductionHardeningMiddleware(t: {
     auditLogged++;
 
     // ── 5. Store idempotency result ─────────────────────────────────────
-    if (isFinancial) {
-      const idempotencyKey =
-        (rawInput as any)?.idempotencyKey ??
-        (ctx as any)?.req?.headers?.["x-idempotency-key"];
-
-      if (idempotencyKey) {
-        const cacheKey = `${path}:${idempotencyKey}`;
-        idempotencyCache.set(cacheKey, {
-          result: (result as any)?.data ?? result,
-          expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
-        });
-        cleanIdempotencyCache();
-      }
+    if (idempotencyKey) {
+      const cacheKey = `${path}:${idempotencyKey}`;
+      idempotencyCache.set(cacheKey, {
+        result: (result as any)?.data ?? result,
+        expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+      });
+      cleanIdempotencyCache();
     }
 
     // ── 6. Slow mutation alert ──────────────────────────────────────────

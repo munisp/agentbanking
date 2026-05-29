@@ -6,6 +6,22 @@ import { getAgentFromCookie } from "../middleware/agentAuth";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { inArray, desc } from "drizzle-orm";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const auditLogRouter = router({
   list: protectedProcedure

@@ -2,13 +2,19 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { disputes } from "../../drizzle/schema";
+import { disputes, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
 } from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   open: ["investigating", "resolved", "rejected"],
@@ -162,9 +168,35 @@ export const disputesRouter = router({
       return { data: null, id: input.id };
     }),
   raise: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).optional())
+    .input(
+      z.object({
+        transactionRef: z.string().min(1),
+        reason: z.string().min(10).max(1000),
+        id: z.string().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
-      return { success: true, id: input?.id ?? null };
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+
+      const [tx] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ref, input.transactionRef))
+        .limit(1);
+
+      if (!tx) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Transaction ${input.transactionRef} not found`,
+        });
+      }
+
+      return { success: true, id: tx.id, transactionRef: input.transactionRef };
     }),
   addMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())

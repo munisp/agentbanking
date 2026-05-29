@@ -6,6 +6,12 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 interface ServiceHealth {
   name: string;
@@ -71,6 +77,16 @@ async function checkService(service: {
     };
   }
 }
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const serviceHealthAggregatorRouter = router({
   checkAll: protectedProcedure.query(async () => {

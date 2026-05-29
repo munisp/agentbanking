@@ -5,6 +5,12 @@ import { getDb } from "../db";
 import { platformSettings } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const getMfaStatus = protectedProcedure
   .input(
@@ -204,6 +210,16 @@ const getBackupCodes = protectedProcedure
       });
     }
   });
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const mfaManagerRouter = router({
   getMfaStatus,

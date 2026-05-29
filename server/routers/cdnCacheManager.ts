@@ -10,7 +10,15 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
+  withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "completed", "cancelled", "rejected"],
@@ -99,13 +107,22 @@ export const cdnCacheManagerRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
-      const healthy = await redisIsHealthy();
-      return {
-        id: input.id,
-        redisConnected: healthy,
-        metrics: getCacheMetrics(),
-        timestamp: new Date().toISOString(),
-      };
+      try {
+        const healthy = await redisIsHealthy();
+        return {
+          id: input.id,
+          redisConnected: healthy,
+          metrics: getCacheMetrics(),
+          timestamp: new Date().toISOString(),
+        };
+      } catch {
+        return {
+          id: input.id,
+          redisConnected: false,
+          metrics: getCacheMetrics(),
+          timestamp: new Date().toISOString(),
+        };
+      }
     }),
 
   getSummary: protectedProcedure.query(async () => {

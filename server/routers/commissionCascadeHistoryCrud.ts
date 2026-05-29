@@ -5,6 +5,12 @@ import { getDb } from "../db";
 import { commissionCascadeHistory } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   agent: 0.6,
@@ -12,6 +18,16 @@ const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   regional_manager: 0.12,
   state_manager: 0.05,
   national: 0.03,
+};
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
 
 export const commissionCascadeHistoryRouter = router({

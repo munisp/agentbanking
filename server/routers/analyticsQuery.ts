@@ -11,6 +11,12 @@ import { getDb } from "../db";
 import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
 import { desc, count, sql, gte, and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 // OpenSearch adapter (connects to opensearch-indexer Python service)
 async function queryOpenSearch(
@@ -32,6 +38,16 @@ async function queryOpenSearch(
     return null;
   }
 }
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
+};
 
 export const analyticsQueryRouter = router({
   // ── Transaction Volume Metrics ────────────────────────────────────────────────

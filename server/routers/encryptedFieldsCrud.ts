@@ -110,7 +110,22 @@ export const encryptedFieldsRouter = router({
         plaintext: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "encryptedFieldsCrud",
+        "mutation",
+        "Executed encryptedFieldsCrud mutation"
+      );
+
       try {
         const db = (await getDb())!;
         const { encrypted, iv, tag } = encrypt(input.plaintext);

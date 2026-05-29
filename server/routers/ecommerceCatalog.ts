@@ -132,7 +132,22 @@ export const ecommerceCatalogRouter = router({
         attributes: z.record(z.string(), z.string()).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "ecommerceCatalog",
+        "mutation",
+        "Executed ecommerceCatalog mutation"
+      );
+
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 

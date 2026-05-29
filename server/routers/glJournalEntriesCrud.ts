@@ -93,7 +93,22 @@ export const gl_journal_entriesRouter = router({
         reference: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "glJournalEntriesCrud",
+        "mutation",
+        "Executed glJournalEntriesCrud mutation"
+      );
+
       try {
         const db = (await getDb())!;
         const amount = parseFloat(input.amount);

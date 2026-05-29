@@ -35,7 +35,22 @@ export const autoReconciliationEngineRouter = router({
         tolerance: z.number().default(0.01),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "autoReconciliationEngine",
+        "mutation",
+        "Executed autoReconciliationEngine mutation"
+      );
+
       try {
         const db = (await getDb())!;
         const start = new Date(input.startDate);

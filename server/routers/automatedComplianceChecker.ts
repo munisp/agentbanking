@@ -104,7 +104,22 @@ export const automatedComplianceCheckerRouter = router({
     }),
   runCheck: protectedProcedure
     .input(z.object({ ruleId: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "automatedComplianceChecker",
+        "mutation",
+        "Executed automatedComplianceChecker mutation"
+      );
+
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");

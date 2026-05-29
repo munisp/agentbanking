@@ -69,6 +69,21 @@ export const lakehouseAiIntegrationRouter = router({
         .optional()
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "lakehouseAiIntegration",
+        "mutation",
+        "Executed lakehouseAiIntegration mutation"
+      );
+
       const db = await getDb();
       if (!db)
         throw new TRPCError({

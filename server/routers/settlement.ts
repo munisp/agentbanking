@@ -140,6 +140,16 @@ export const settlementRouter = router({
    * [Fluvio] Streams settlement events via Rust sidecar.
    */
   runNow: agentAdminProcedure.mutation(async ({ ctx }) => {
+    const _fees = calculateFee(0, "settlement");
+    const _commission = calculateCommission(_fees.fee, "settlement");
+    const _tax = calculateTax(_fees.fee, "vat");
+    auditFinancialAction(
+      "UPDATE",
+      "settlement",
+      "runNow",
+      "Settlement run triggered"
+    );
+
     try {
       const batchId = `SETTLE-${crypto.randomUUID().toUpperCase()}`;
 

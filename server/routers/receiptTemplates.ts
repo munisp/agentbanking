@@ -82,7 +82,22 @@ export const receiptTemplatesRouter = router({
         type: z.enum(["cash_in", "cash_out", "transfer", "bill_payment"]),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "receiptTemplates",
+        "mutation",
+        "Executed receiptTemplates mutation"
+      );
+
       const db = await getDb();
       if (!db)
         return {

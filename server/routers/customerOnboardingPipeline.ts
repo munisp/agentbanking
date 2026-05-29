@@ -100,6 +100,21 @@ export const customerOnboardingPipelineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "customerOnboardingPipeline",
+        "mutation",
+        "Executed customerOnboardingPipeline mutation"
+      );
+
       try {
         // @ts-expect-error auto-fix
         const fromIdx = STAGES.indexOf(input.fromStage);

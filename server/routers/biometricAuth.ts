@@ -70,7 +70,22 @@ export const biometricAuthRouter = router({
   // ── Passive Liveness Check ──────────────────────────────────────────────
   passiveLiveness: protectedProcedure
     .input(z.object({ imageBase64: z.string().min(100) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "biometricAuth",
+        "mutation",
+        "Executed biometricAuth mutation"
+      );
+
       try {
         const result = await callService(
           `${LIVENESS_SERVICE_URL}/liveness/passive`,

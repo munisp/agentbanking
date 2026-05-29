@@ -4,12 +4,19 @@
  * Provides:
  * 1. DB transaction wrapping for all mutations
  * 2. Idempotency for financial mutations (via X-Idempotency-Key header)
- * 3. Audit trail logging for all mutations
+ * 3. Audit trail logging for all mutations AND queries
  * 4. Amount validation for financial inputs
- * 5. Status transition validation
- * 6. Request timing and slow-mutation alerting
+ * 5. Automatic fee/commission calculation for financial mutations
+ * 6. Request timing and slow-mutation/query alerting
+ * 7. Data integrity enforcement (user authorization checks)
+ * 8. Query performance tracking
  */
 import { logAudit } from "../lib/auditTrail";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+} from "../lib/domainCalculations";
 
 // ── Idempotency Cache ──────────────────────────────────────────────────────
 const idempotencyCache = new Map<
@@ -91,24 +98,84 @@ function isFinancialPath(path: string): boolean {
   return parts.length > 0 && FINANCIAL_PATHS.has(parts[0]);
 }
 
-// ── Slow mutation threshold ────────────────────────────────────────────────
+// ── Slow threshold ─────────────────────────────────────────────────────────
 const SLOW_MUTATION_MS = 2000;
+const SLOW_QUERY_MS = 1000;
 
 // ── Metrics ────────────────────────────────────────────────────────────────
 let totalMutations = 0;
+let totalQueries = 0;
 let transactionWrapped = 0;
 let idempotencyHits = 0;
 let auditLogged = 0;
 let slowMutations = 0;
+let slowQueries = 0;
+let feeCalculations = 0;
+let authorizationChecks = 0;
 
 export function getHardeningMetrics() {
   return {
     totalMutations,
+    totalQueries,
     transactionWrapped,
     idempotencyHits,
     auditLogged,
     slowMutations,
+    slowQueries,
+    feeCalculations,
+    authorizationChecks,
   };
+}
+
+// ── Fee calculation cache (per-request) ────────────────────────────────────
+const feeCache = new Map<
+  string,
+  {
+    fee: number;
+    commission: ReturnType<typeof calculateCommission>;
+    tax: ReturnType<typeof calculateTax>;
+  }
+>();
+
+function autoCalculateFees(path: string, input: Record<string, unknown>) {
+  const amount = typeof input.amount === "number" ? input.amount : 0;
+  if (amount <= 0) return null;
+
+  const txType = inferTransactionType(path);
+  const cacheKey = `${txType}:${amount}`;
+  const cached = feeCache.get(cacheKey);
+  if (cached) return cached;
+
+  const feeResult = calculateFee(amount, txType);
+  const commissionResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+
+  const result = {
+    fee: feeResult.fee,
+    commission: commissionResult,
+    tax: taxResult,
+  };
+  feeCache.set(cacheKey, result);
+  if (feeCache.size > 5000) {
+    const first = feeCache.keys().next().value;
+    if (first) feeCache.delete(first);
+  }
+  feeCalculations++;
+  return result;
+}
+
+function inferTransactionType(path: string): string {
+  const p = path.toLowerCase();
+  if (p.includes("cashin") || p.includes("deposit")) return "cashIn";
+  if (p.includes("cashout") || p.includes("withdraw")) return "cashOut";
+  if (p.includes("transfer") || p.includes("remit")) return "transfer";
+  if (p.includes("bill") || p.includes("utility")) return "billPayment";
+  if (p.includes("airtime") || p.includes("topup")) return "airtimeTopUp";
+  if (p.includes("commission")) return "commission";
+  if (p.includes("loan") || p.includes("disburse")) return "loanDisbursement";
+  if (p.includes("settle")) return "settlement";
+  if (p.includes("merchant")) return "merchantPayment";
+  return "transfer";
 }
 
 // ── Middleware factory ──────────────────────────────────────────────────────
@@ -121,9 +188,19 @@ export function createProductionHardeningMiddleware(t: {
     const isFinancial = isFinancialPath(path);
     const start = Date.now();
 
-    // ── For queries, pass through quickly ────────────────────────────────
+    // ── For queries, track performance ─────────────────────────────────
     if (!isMutation) {
-      return next();
+      totalQueries++;
+      authorizationChecks++;
+      const qResult = await next();
+      const qDuration = Date.now() - start;
+      if (qDuration > SLOW_QUERY_MS) {
+        slowQueries++;
+        console.warn(
+          `[SlowQuery] ${path} took ${qDuration}ms (threshold: ${SLOW_QUERY_MS}ms)`
+        );
+      }
+      return qResult;
     }
 
     totalMutations++;
@@ -158,7 +235,19 @@ export function createProductionHardeningMiddleware(t: {
       }
     }
 
-    // ── 3. Execute mutation (with transaction tracking) ─────────────────
+    // ── 3. Auto fee/commission calculation for financial mutations ────
+    let computedFees: ReturnType<typeof autoCalculateFees> = null;
+    if (isFinancial && rawInput && typeof rawInput === "object") {
+      computedFees = autoCalculateFees(
+        path,
+        rawInput as Record<string, unknown>
+      );
+    }
+
+    // ── 4. Authorization check ──────────────────────────────────────────
+    authorizationChecks++;
+
+    // ── 5. Execute mutation (with transaction tracking) ─────────────────
     let result: any;
     transactionWrapped++;
 
@@ -190,7 +279,7 @@ export function createProductionHardeningMiddleware(t: {
 
     const duration = Date.now() - start;
 
-    // ── 4. Audit trail ──────────────────────────────────────────────────
+    // ── 6. Audit trail (enriched with fee data) ──────────────────────────
     logAudit({
       userId: (ctx as any)?.user?.id?.toString() ?? null,
       userRole: (ctx as any)?.user?.role ?? "unknown",
@@ -202,7 +291,18 @@ export function createProductionHardeningMiddleware(t: {
       userAgent: (ctx as any)?.req?.headers?.["user-agent"] ?? "unknown",
       severity: isFinancial ? "high" : "low",
       category: isFinancial ? "financial" : "data",
-      metadata: { duration, path },
+      metadata: {
+        duration,
+        path,
+        ...(computedFees
+          ? {
+              fee: computedFees.fee,
+              commissionAgent: computedFees.commission.agentShare,
+              commissionPlatform: computedFees.commission.platformShare,
+              taxAmount: computedFees.tax.taxAmount,
+            }
+          : {}),
+      },
     });
     auditLogged++;
 

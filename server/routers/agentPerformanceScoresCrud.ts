@@ -139,7 +139,22 @@ export const agentPerformanceScoresRouter = router({
     }),
   calculateForAgent: protectedProcedure
     .input(z.object({ agentId: z.number(), period: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "agentPerformanceScoresCrud",
+        "mutation",
+        "Executed agentPerformanceScoresCrud mutation"
+      );
+
       try {
         const db = (await getDb())!;
         // Check if score already exists for this period

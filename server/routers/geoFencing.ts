@@ -70,7 +70,22 @@ export const geoFencingRouter = router({
         coordinates: z.array(z.object({ lat: z.number(), lng: z.number() })),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "geoFencing",
+        "mutation",
+        "Executed geoFencing mutation"
+      );
+
       const db = await getDb();
       if (!db) return { id: "zone-1", name: input.name, created: true };
       const [zone] = await db

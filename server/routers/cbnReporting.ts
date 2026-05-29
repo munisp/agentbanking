@@ -155,7 +155,22 @@ export const cbnReportingRouter = router({
         institutionName: z.string().default("54Link Agency Banking Platform"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "cbnReporting",
+        "mutation",
+        "Executed cbnReporting mutation"
+      );
+
       try {
         const svc = await callCbnService(
           "/api/v1/cbn-reports/monthly-activity",

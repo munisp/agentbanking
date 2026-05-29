@@ -114,7 +114,22 @@ export const tenantFeeOverridesRouter = router({
         description: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "tenantFeeOverridesCrud",
+        "mutation",
+        "Executed tenantFeeOverridesCrud mutation"
+      );
+
       try {
         const db = (await getDb())!;
         if (!TX_TYPES.includes(input.txType))

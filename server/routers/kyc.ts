@@ -100,7 +100,22 @@ export const kycRouter = router({
   /** Admin: clear cooldown for a specific user */
   adminClearCooldown: adminProcedure
     .input(z.object({ userId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "kyc",
+        "mutation",
+        "Executed kyc mutation"
+      );
+
       try {
         const cleared = clearCooldown(input.userId);
         return { cleared, userId: input.userId };

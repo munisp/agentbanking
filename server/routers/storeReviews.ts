@@ -86,7 +86,22 @@ export const storeReviewsRouter = router({
         images: z.array(z.string()).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "storeReviews",
+        "mutation",
+        "Executed storeReviews mutation"
+      );
+
       const database = await getDb();
       if (!database)
         throw new TRPCError({

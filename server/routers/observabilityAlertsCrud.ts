@@ -117,7 +117,22 @@ export const observabilityAlertsRouter = router({
         currentValue: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "observabilityAlertsCrud",
+        "mutation",
+        "Executed observabilityAlertsCrud mutation"
+      );
+
       try {
         const db = (await getDb())!;
         // Deduplication: check for same alert within window

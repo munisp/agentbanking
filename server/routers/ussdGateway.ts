@@ -128,7 +128,22 @@ export const ussdGatewayRouter = router({
         sessionId: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "ussdGateway",
+        "mutation",
+        "Executed ussdGateway mutation"
+      );
+
       return {
         text: "Welcome to AgentPOS\n1. Cash In\n2. Cash Out\n3. Balance",
         sessionId: input.sessionId || "USSD-" + Date.now(),

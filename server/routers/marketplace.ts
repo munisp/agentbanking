@@ -60,7 +60,22 @@ export const marketplaceRouter = router({
         platform: z.enum(["jumia", "konga", "amazon", "ebay"]),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "marketplace",
+        "mutation",
+        "Executed marketplace mutation"
+      );
+
       return mktFetch("/api/v1/connections", "POST", input);
     }),
 

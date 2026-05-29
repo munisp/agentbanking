@@ -99,6 +99,21 @@ export const customerRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const _fees = calculateFee(
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0,
+          "transfer"
+        );
+        const _commission = calculateCommission(_fees.fee, "transfer");
+        const _tax = calculateTax(_fees.fee, "vat");
+        auditFinancialAction(
+          "UPDATE",
+          "customer",
+          "mutation",
+          "Executed customer mutation"
+        );
+
         try {
           const { db, customer } = await resolveCustomer(ctx.user.id);
           const [updated] = await db

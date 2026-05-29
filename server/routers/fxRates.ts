@@ -97,7 +97,22 @@ export const fxRatesRouter = router({
     }),
   updateRates: protectedProcedure
     .input(z.object({ rates: z.record(z.string(), z.number()) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "fxRates",
+        "mutation",
+        "Executed fxRates mutation"
+      );
+
       try {
         const db = (await getDb())!;
         await db

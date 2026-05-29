@@ -45,7 +45,22 @@ export const bulkNotifRouter = router({
         channel: z.enum(["sms", "email", "push"]).default("push"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "sprint15Features",
+        "mutation",
+        "Executed sprint15Features mutation"
+      );
+
       try {
         return {
           sent: input.agentIds.length,

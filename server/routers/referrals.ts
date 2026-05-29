@@ -41,7 +41,22 @@ export const referralsRouter = router({
   // ── Generate a referral code for an agent ────────────────────────────────
   generateCode: protectedProcedure
     .input(z.object({ agentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "referrals",
+        "mutation",
+        "Executed referrals mutation"
+      );
+
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

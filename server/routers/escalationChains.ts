@@ -119,7 +119,22 @@ export const escalationChainsRouter = router({
     }),
   acknowledgeEvent: protectedProcedure
     .input(z.object({ eventId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "escalationChains",
+        "mutation",
+        "Executed escalationChains mutation"
+      );
+
       return { success: true, eventId: input.eventId };
     }),
   listChains: protectedProcedure.query(async () => {

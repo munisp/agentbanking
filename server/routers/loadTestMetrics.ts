@@ -333,7 +333,22 @@ export const loadTestMetricsRouter = router({
         merchantCount: z.number().min(1).max(1000).default(50),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "loadTestMetrics",
+        "mutation",
+        "Executed loadTestMetrics mutation"
+      );
+
       if (activeLoadTest) {
         throw new Error("A load test is already running");
       }

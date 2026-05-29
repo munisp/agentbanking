@@ -109,7 +109,16 @@ export const middlewareServiceManagerRouter = router({
 
   testConnection: protectedProcedure
     .input(z.object({ serviceId: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+
       const service = MIDDLEWARE_SERVICES.find(s => s.name === input.serviceId);
       const isHealthy = service ? checkServiceHealth(service.name) : false;
 

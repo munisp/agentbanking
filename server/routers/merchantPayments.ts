@@ -51,6 +51,21 @@ export const merchantPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "merchantPayments",
+        "mutation",
+        "Executed merchantPayments mutation"
+      );
+
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)

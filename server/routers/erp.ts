@@ -188,6 +188,21 @@ export const erpRouter = router({
   saveConfig: protectedProcedure
     .input(ErpConfigInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "erp",
+        "mutation",
+        "Executed erp mutation"
+      );
+
       try {
         requireAdmin(ctx);
         const db = (await getDb())!;

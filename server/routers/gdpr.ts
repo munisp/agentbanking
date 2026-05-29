@@ -192,6 +192,21 @@ export const gdprRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "gdpr",
+        "mutation",
+        "Executed gdpr mutation"
+      );
+
       try {
         const agent = await getAgentFromCookie(ctx.req);
         if (!agent)

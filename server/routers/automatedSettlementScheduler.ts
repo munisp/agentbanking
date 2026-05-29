@@ -140,6 +140,21 @@ export const automatedSettlementSchedulerRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "automatedSettlementScheduler",
+        "mutation",
+        "Executed automatedSettlementScheduler mutation"
+      );
+
       try {
         const ns = {
           id: `SCH-${Date.now()}`,

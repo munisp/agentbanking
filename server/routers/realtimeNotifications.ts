@@ -65,7 +65,22 @@ export const realtimeNotificationsRouter = router({
     }),
   markRead: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "realtimeNotifications",
+        "mutation",
+        "Executed realtimeNotifications mutation"
+      );
+
       try {
         const db = (await getDb())!;
         await db

@@ -123,7 +123,22 @@ export const bnplEngineRouter = router({
 
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "bnplEngine",
+        "mutation",
+        "Executed bnplEngine mutation"
+      );
+
       const db = (await getDb())!;
 
       const amount = Number(input.data.amount);

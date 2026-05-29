@@ -188,7 +188,22 @@ export const cdnCacheManagerRouter = router({
 
   purge: protectedProcedure
     .input(z.object({ zoneId: z.string(), pattern: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "cdnCacheManager",
+        "mutation",
+        "Executed cdnCacheManager mutation"
+      );
+
       const key = input.pattern
         ? `${input.zoneId}:${input.pattern}`
         : input.zoneId;

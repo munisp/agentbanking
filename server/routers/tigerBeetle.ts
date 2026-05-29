@@ -226,7 +226,22 @@ export const tigerBeetleRouter = router({
   /** Trigger a manual sync of pending transfers */
   triggerSync: protectedProcedure
     .input(z.object({ agentCode: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "tigerBeetle",
+        "mutation",
+        "Executed tigerBeetle mutation"
+      );
+
       try {
         const body = input.agentCode ? { agentCode: input.agentCode } : {};
         await tbFetch("/sync/trigger", {

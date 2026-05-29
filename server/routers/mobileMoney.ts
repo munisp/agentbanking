@@ -75,6 +75,13 @@ export const mobileMoneyRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      auditFinancialAction(
+        "UPDATE",
+        "mobileMoney",
+        "mutation",
+        "Executed mobileMoney mutation"
+      );
+
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)

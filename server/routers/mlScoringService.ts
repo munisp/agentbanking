@@ -200,7 +200,22 @@ export const mlScoringServiceRouter = router({
     }),
   scoreTransaction: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "mlScoringService",
+        "mutation",
+        "Executed mlScoringService mutation"
+      );
+
       return {
         success: true,
         action: "scoreTransaction",

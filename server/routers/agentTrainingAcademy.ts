@@ -99,7 +99,22 @@ export const agentTrainingAcademyRouter = router({
     }),
   enrollAgent: protectedProcedure
     .input(z.object({ agentId: z.number(), courseId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "agentTrainingAcademy",
+        "mutation",
+        "Executed agentTrainingAcademy mutation"
+      );
+
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");

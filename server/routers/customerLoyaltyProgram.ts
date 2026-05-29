@@ -98,7 +98,22 @@ export const customerLoyaltyProgramRouter = router({
         reason: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "customerLoyaltyProgram",
+        "mutation",
+        "Executed customerLoyaltyProgram mutation"
+      );
+
       try {
         const db = (await getDb())!;
         const [entry] = await db

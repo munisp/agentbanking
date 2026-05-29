@@ -8,14 +8,18 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { merchantPayouts } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["processing", "cancelled"],
-  "processing": ["settled", "failed"],
-  "settled": [],
-  "failed": ["pending"],
-  "cancelled": []
+  pending: ["processing", "cancelled"],
+  processing: ["settled", "failed"],
+  settled: [],
+  failed: ["pending"],
+  cancelled: [],
 };
 
 export const merchantPayoutSettlementRouter = router({

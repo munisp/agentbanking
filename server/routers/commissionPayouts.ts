@@ -12,14 +12,18 @@ import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
 import { writeAuditLog } from "../db";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["processing", "cancelled"],
-  "processing": ["settled", "failed"],
-  "settled": [],
-  "failed": ["pending"],
-  "cancelled": []
+  pending: ["processing", "cancelled"],
+  processing: ["settled", "failed"],
+  settled: [],
+  failed: ["pending"],
+  cancelled: [],
 };
 
 export const commissionPayoutsRouter = router({

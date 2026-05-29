@@ -8,16 +8,20 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { glEntries } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sum, sql } from "drizzle-orm";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["active", "completed", "cancelled", "rejected"],
-  "active": ["completed", "suspended", "cancelled"],
-  "completed": ["archived"],
-  "suspended": ["active", "cancelled"],
-  "cancelled": [],
-  "rejected": [],
-  "archived": []
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
 
 const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"];

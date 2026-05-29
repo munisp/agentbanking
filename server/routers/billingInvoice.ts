@@ -9,16 +9,20 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "draft": ["sent", "cancelled"],
-  "sent": ["paid", "overdue", "cancelled"],
-  "paid": ["refunded"],
-  "overdue": ["paid", "written_off"],
-  "cancelled": [],
-  "refunded": [],
-  "written_off": []
+  draft: ["sent", "cancelled"],
+  sent: ["paid", "overdue", "cancelled"],
+  paid: ["refunded"],
+  overdue: ["paid", "written_off"],
+  cancelled: [],
+  refunded: [],
+  written_off: [],
 };
 
 let _stripe: Stripe | null = null;

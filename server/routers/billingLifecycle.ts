@@ -5,16 +5,20 @@ import { getDb } from "../db";
 import { billingRevenuePeriods } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "draft": ["sent", "cancelled"],
-  "sent": ["paid", "overdue", "cancelled"],
-  "paid": ["refunded"],
-  "overdue": ["paid", "written_off"],
-  "cancelled": [],
-  "refunded": [],
-  "written_off": []
+  draft: ["sent", "cancelled"],
+  sent: ["paid", "overdue", "cancelled"],
+  paid: ["refunded"],
+  overdue: ["paid", "written_off"],
+  cancelled: [],
+  refunded: [],
+  written_off: [],
 };
 
 const renewContract = protectedProcedure

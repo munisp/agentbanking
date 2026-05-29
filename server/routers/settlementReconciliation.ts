@@ -21,15 +21,19 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["in_progress", "skipped"],
-  "in_progress": ["completed", "failed", "partially_matched"],
-  "completed": [],
-  "failed": ["pending"],
-  "partially_matched": ["in_progress", "completed"],
-  "skipped": []
+  pending: ["in_progress", "skipped"],
+  in_progress: ["completed", "failed", "partially_matched"],
+  completed: [],
+  failed: ["pending"],
+  partially_matched: ["in_progress", "completed"],
+  skipped: [],
 };
 
 export const settlementReconciliationRouter = router({

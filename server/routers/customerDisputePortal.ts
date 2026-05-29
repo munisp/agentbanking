@@ -11,15 +11,19 @@ import {
   auditLog,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "open": ["investigating", "resolved", "rejected"],
-  "investigating": ["resolved", "rejected", "escalated"],
-  "escalated": ["resolved", "rejected"],
-  "resolved": ["reopened"],
-  "rejected": ["reopened"],
-  "reopened": ["investigating"]
+  open: ["investigating", "resolved", "rejected"],
+  investigating: ["resolved", "rejected", "escalated"],
+  escalated: ["resolved", "rejected"],
+  resolved: ["reopened"],
+  rejected: ["reopened"],
+  reopened: ["investigating"],
 };
 
 export const customerDisputePortalRouter = router({

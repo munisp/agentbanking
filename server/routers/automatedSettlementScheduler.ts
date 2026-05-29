@@ -16,14 +16,18 @@ import {
   tbRecordSettlementTransfer,
 } from "../middleware/settlementMiddleware";
 import logger from "../_core/logger";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["processing", "cancelled"],
-  "processing": ["settled", "failed"],
-  "settled": [],
-  "failed": ["pending"],
-  "cancelled": []
+  pending: ["processing", "cancelled"],
+  processing: ["settled", "failed"],
+  settled: [],
+  failed: ["pending"],
+  cancelled: [],
 };
 
 // Schedule state backed by DB batch counts + configurable defaults

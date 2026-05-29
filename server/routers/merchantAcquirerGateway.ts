@@ -4,18 +4,21 @@ import { getDb } from "../db";
 import { merchants } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["active", "completed", "cancelled", "rejected"],
-  "active": ["completed", "suspended", "cancelled"],
-  "completed": ["archived"],
-  "suspended": ["active", "cancelled"],
-  "cancelled": [],
-  "rejected": [],
-  "archived": []
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
-
 
 export const merchantAcquirerGatewayRouter = router({
   list: protectedProcedure

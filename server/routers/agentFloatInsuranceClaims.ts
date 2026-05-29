@@ -16,19 +16,23 @@ import {
 } from "drizzle-orm";
 import { floatReconciliations, agents, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "draft": ["submitted"],
-  "submitted": ["under_review", "rejected"],
-  "under_review": ["approved", "rejected"],
-  "approved": ["active"],
-  "active": ["claimed", "expired", "cancelled"],
-  "claimed": ["settled", "rejected"],
-  "settled": [],
-  "expired": [],
-  "cancelled": [],
-  "rejected": []
+  draft: ["submitted"],
+  submitted: ["under_review", "rejected"],
+  under_review: ["approved", "rejected"],
+  approved: ["active"],
+  active: ["claimed", "expired", "cancelled"],
+  claimed: ["settled", "rejected"],
+  settled: [],
+  expired: [],
+  cancelled: [],
+  rejected: [],
 };
 
 export const agentFloatInsuranceClaimsRouter = router({

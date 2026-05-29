@@ -5,16 +5,20 @@ import { eq, desc, and, sql, count } from "drizzle-orm";
 import { chatSessions, chatMessages, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { getIO } from "../socketSingleton";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["active", "completed", "cancelled", "rejected"],
-  "active": ["completed", "suspended", "cancelled"],
-  "completed": ["archived"],
-  "suspended": ["active", "cancelled"],
-  "cancelled": [],
-  "rejected": [],
-  "archived": []
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
 
 export const chatRouter = router({

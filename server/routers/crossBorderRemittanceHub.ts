@@ -11,15 +11,19 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["processing", "cancelled"],
-  "processing": ["completed", "failed"],
-  "completed": ["refunded"],
-  "failed": ["pending"],
-  "cancelled": [],
-  "refunded": []
+  pending: ["processing", "cancelled"],
+  processing: ["completed", "failed"],
+  completed: ["refunded"],
+  failed: ["pending"],
+  cancelled: [],
+  refunded: [],
 };
 
 export const crossBorderRemittanceHubRouter = router({

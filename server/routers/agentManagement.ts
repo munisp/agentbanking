@@ -10,22 +10,25 @@ import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
-
   writeAuditLog,
   updateAgentFloat,
   getAgentById,
   withTransaction,
 } from "../db";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["active", "completed", "cancelled", "rejected"],
-  "active": ["completed", "suspended", "cancelled"],
-  "completed": ["archived"],
-  "suspended": ["active", "cancelled"],
-  "cancelled": [],
-  "rejected": [],
-  "archived": []
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
 
 async function requireAdmin(req: any) {

@@ -23,7 +23,6 @@ import {
   storeComplianceRecord,
 } from "../_core/kycClient.js";
 import {
-
   isLockedOut,
   recordLivenessFailure,
   recordLivenessSuccess,
@@ -42,16 +41,20 @@ import {
   getHighRiskCorrelations,
   clearGeoIpData,
 } from "../middleware/livenessSecurityEnhancements.js";
-import { validateAmount, validateStatusTransition, auditFinancialAction } from "../lib/transactionHelper";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  "pending": ["active", "completed", "cancelled", "rejected"],
-  "active": ["completed", "suspended", "cancelled"],
-  "completed": ["archived"],
-  "suspended": ["active", "cancelled"],
-  "cancelled": [],
-  "rejected": [],
-  "archived": []
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
+  cancelled: [],
+  rejected: [],
+  archived: [],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

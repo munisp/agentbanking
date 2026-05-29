@@ -1,4 +1,5 @@
 # 54Link Agency Banking Platform — Comprehensive Changelog
+
 ## May 15–29, 2026 (2-Week Sprint)
 
 **298 commits** | **52,390 file changes** | **+5,181,250 / −398,651 lines** | **PR #37**
@@ -14,11 +15,13 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 ## Week 1: May 15–21 (232 commits)
 
 ### May 15 — Infrastructure Architecture Documentation
+
 - Added HA infrastructure sizing documentation — 142 servers across 2 data centers for 99.99% uptime
 - MicroCloud + Cozystack integration architecture — 84 servers (41% reduction from baseline)
 - Proxmox vs MicroCloud detailed comparison (cost, performance, manageability)
 
 ### May 16 — Insurance Platform & Liveness Detection (20 commits)
+
 - **Liveness Detection System**: Complete anti-spoofing system with TinyLiveness, face motion detection, and mediapipe integration
 - **Insurance Platform**: Implemented all 8 strategic pillars (33 microservices) for premiere insurance platform
 - **PWA Showcase**: Added showcase pages for all 8 pillars and 33 microservices
@@ -29,6 +32,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **Fixes**: React 19 + Vite hook error, USSD Gateway short session IDs, mediapipe API compatibility, Rust CI toolchain
 
 ### May 17 — KYC/KYB & Domain Logic (37 commits)
+
 - **KYC/KYB System**: World-class implementation with DeepFace, PaddleOCR, VLM, Docling
   - KYC/KYB enforcement layer — gateway middleware, service-level checks, Kafka event consumers
   - goAML integration, fail-closed gateway, AML case management, CBN tier engine, sanctions re-screener
@@ -42,6 +46,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **424 Routers → Real DB**: Converted all routers to real DB queries via Drizzle ORM (Sprint 96)
 
 ### May 18 — Production Hardening & Microservices (93 commits)
+
 - **Sprint 96 Router Conversion**: All 118 generic CRUD stub routers converted to production-grade with real DB queries and domain logic
 - **183 Thin Routers Expanded**: Real DB queries, pagination, and domain logic added
 - **POS Enhancements**: 18 POS enhancement routers + Go/Rust/Python microservices (Sprint 96)
@@ -67,6 +72,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **7 Interactive UIs**: Replaced generic CRUD shells with domain-specific interfaces
 
 ### May 19 — CI/CD & Security (68 commits)
+
 - **Security Hardening**: Circuit breakers, integration tests, fail-closed middleware
   - All 13 secrets enforced at startup, fail-closed for financial middleware
   - `Math.random/math/rand` replaced with crypto-secure alternatives across Go/Rust/Python/TS
@@ -81,6 +87,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **Router Scaffold Elimination**: 116 scaffold routers replaced with domain-specific implementations
 
 ### May 20 — E-Commerce & KYC Services (26 commits)
+
 - **E-Commerce Stack**: Full implementation across Go (catalog), Rust (cart/checkout), Python (intelligence)
   - Supply chain modules
   - Storefront templates
@@ -90,6 +97,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **100+ Missing Procedures**: Added to routers, page-router API aligned, `@ts-nocheck` removed from clean files
 
 ### May 21 — Mobile UX & E-Commerce Integration (19 commits)
+
 - **Mobile UX + POS Customization**: P0–P3 priority tile customization
 - **Agent E-Commerce System**: Store registration, discovery, public storefronts, payment splitting, analytics
   - Integrated into dashboard with role-based access
@@ -106,6 +114,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 ## Week 2: May 22–29 (66 commits)
 
 ### May 22 — Future-Proofing Features (6 commits)
+
 - **20 Future Features Implemented**:
   - Open Banking (PSD2/PSD3)
   - Buy Now Pay Later (BNPL)
@@ -132,6 +141,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - Go future-feature microservices added
 
 ### May 25 — AI/ML & Data Infrastructure (12 commits)
+
 - **AI/ML/DL/GNN Training Pipeline**: Full pipeline with real trained weights, continual training with warm_start, fine-tuning, and retraining workflow
 - **Lakehouse**: Delta Lake ACID transactions, time-travel queries, schema evolution, unified API service, Bronze/Silver/Gold ETL, data quality, cross-layer integration
 - **PostgreSQL**: 10 gaps closed — real connections, transactions, RLS, SSL, read-replica routing, health endpoint
@@ -140,12 +150,14 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - **Bug Fixes**: Wrong-table-orderby bugs fixed in 6 routers
 
 ### May 26 — Production Readiness & Python Services (5 commits)
+
 - **Production Readiness**: 7 areas completed + Docker optimization
 - **311 Python Services**: Graceful shutdown handlers added
 - **Router Content Restoration**: Domain-specific content restored, healthCheck duplicate fixed, ts-ignore comments annotated
 - **Testing SKILL.md**: Updated with production readiness testing patterns
 
 ### May 28 — Caching & Navigation (5 commits)
+
 - **Production Caching Infrastructure** (10 components):
   1. Cache-aside wrapper with singleflight stampede protection
   2. ETag middleware — generates ETag, returns 304 Not Modified
@@ -169,6 +181,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
   8. CI Integration — 3 new jobs (orphan-scan, dead-code, bundle-budget)
 
 ### May 29 — Business Logic 10/10 (7 commits)
+
 - **Production Hardening Middleware**: Auto-applied to all 477 routers
   - Transaction middleware wrapping all financial mutations
   - Universal idempotency (55 financial paths → all mutations)
@@ -203,21 +216,22 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 
 ### Before (May 15) → After (May 29)
 
-| Dimension | Before | After |
-|-----------|--------|-------|
-| DB Operations | 6.5 | 9.6 |
-| Validation Depth | 9.5 | 9.8 |
-| Business Enforcement | 7.0 | 10.0 |
-| Error Quality | 6.7 | 10.0 |
-| Calculations | 1.2 | 9.9 |
-| Audit Trail | 3.8 | 9.6 |
-| Transaction Safety | 0.0 | 10.0 |
-| Data Integrity | 3.2 | 10.0 |
-| Response Quality | 9.6 | 9.8 |
-| Completeness | 9.7 | 10.0 |
-| **Overall** | **5.6** | **9.8** |
+| Dimension            | Before  | After   |
+| -------------------- | ------- | ------- |
+| DB Operations        | 6.5     | 9.6     |
+| Validation Depth     | 9.5     | 9.8     |
+| Business Enforcement | 7.0     | 10.0    |
+| Error Quality        | 6.7     | 10.0    |
+| Calculations         | 1.2     | 9.9     |
+| Audit Trail          | 3.8     | 9.6     |
+| Transaction Safety   | 0.0     | 10.0    |
+| Data Integrity       | 3.2     | 10.0    |
+| Response Quality     | 9.6     | 9.8     |
+| Completeness         | 9.7     | 10.0    |
+| **Overall**          | **5.6** | **9.8** |
 
 ### Score Distribution (477 routers)
+
 - **10.0/10**: 162 routers (34%)
 - **9.0–9.9/10**: 315 routers (66%)
 - **Below 9.0/10**: 0 routers (0%)
@@ -226,28 +240,29 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 
 ## CI/CD Status (Final)
 
-| Check | Status |
-|-------|--------|
-| Lint & Type Check | ✅ Pass |
-| Test Suite (4,277 tests) | ✅ Pass |
-| Build Application | ✅ Pass |
-| Trivy Container Scan | ✅ Pass |
-| Checkov IaC Security | ✅ Pass |
-| Secret Detection | ✅ Pass |
-| Dependency Audit | ✅ Pass |
+| Check                        | Status  |
+| ---------------------------- | ------- |
+| Lint & Type Check            | ✅ Pass |
+| Test Suite (4,277 tests)     | ✅ Pass |
+| Build Application            | ✅ Pass |
+| Trivy Container Scan         | ✅ Pass |
+| Checkov IaC Security         | ✅ Pass |
+| Secret Detection             | ✅ Pass |
+| Dependency Audit             | ✅ Pass |
 | CodeQL JavaScript/TypeScript | ✅ Pass |
-| Helm Chart Validation | ✅ Pass |
-| Terraform Validation | ✅ Pass |
-| Sidecar Compose Validation | ✅ Pass |
-| Orphan Scanner | ✅ Pass |
-| Dead Code Detection | ✅ Pass |
-| Bundle Size Budget | ✅ Pass |
+| Helm Chart Validation        | ✅ Pass |
+| Terraform Validation         | ✅ Pass |
+| Sidecar Compose Validation   | ✅ Pass |
+| Orphan Scanner               | ✅ Pass |
+| Dead Code Detection          | ✅ Pass |
+| Bundle Size Budget           | ✅ Pass |
 
 ---
 
 ## Files Added (Key New Files)
 
 ### Libraries
+
 - `server/lib/domainCalculations.ts` — Financial calculation engine
 - `server/lib/transactionHelper.ts` — Transaction safety utilities
 - `server/lib/circuitBreaker.ts` — Circuit breaker with exponential backoff
@@ -256,6 +271,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - `server/lib/resilientHttpClient.ts` — HTTP client with retry/timeout
 
 ### Middleware
+
 - `server/middleware/productionHardeningMiddleware.ts` — Universal middleware for all 477 routers
 - `server/middleware/productionDegradation.ts` — Graceful degradation
 - `server/middleware/etagMiddleware.ts` — ETag/304 support
@@ -263,6 +279,7 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - `server/middleware/trpcCacheMiddleware.ts` — Auto-caching for tRPC queries
 
 ### Mobile Navigation
+
 - `mobile-flutter/lib/widgets/AppDrawer.dart` — Flutter drawer navigation
 - `mobile-flutter/lib/widgets/MainShell.dart` — Flutter shell with role-based nav
 - `mobile-flutter/lib/config/role_nav_config.dart` — Flutter navigation config
@@ -271,11 +288,13 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - `mobile-rn/src/navigation/roleNavConfig.ts` — RN role-based config
 
 ### gRPC
+
 - `server/grpc/server.go` — Go gRPC server for hot-path operations
 - `server/grpc/client.rs` — Rust gRPC client
 - `server/grpc/bridge.ts` — TypeScript bridge
 
 ### CI & Quality
+
 - `scripts/orphan-scanner.sh` — Detect unregistered screens/routers/pages
 - `scripts/dead-code-detector.sh` — Find unused exports and stubs
 - `scripts/bundle-budget.sh` — Enforce JS bundle size limits
@@ -284,15 +303,18 @@ Over 2 weeks, the 54Link Agency Banking Platform underwent a complete production
 - `eslint-rules/no-hardcoded-credentials.js` — Block hardcoded secrets
 
 ### Platform Health
+
 - `client/src/pages/PlatformHealthDash.tsx` — Real-time health dashboard
 - `server/routers/platformHealth.ts` — Health metrics tRPC router
 
 ### Schema
+
 - `aml_screenings` table — AML screening results with 7-factor risk scoring
 - `aml_watchlist_entries` table — Sanctions/PEP watchlist
 - `idempotency_keys` table — Duplicate request protection
 
 ### Infrastructure
+
 - `infra/redis-production.conf` — Production Redis (2GB, allkeys-lru, keyspace notifications)
 - `infra/Dockerfile.consolidated` — Multi-language build (Go/Python/Rust)
 - `tests/cross-service-contracts.test.ts` — Cross-service integration tests

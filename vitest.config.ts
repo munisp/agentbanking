@@ -30,11 +30,7 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "tests/**/*.spec.ts",
     ],
-    exclude: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "tests/e2e/**",
-    ],
+    exclude: ["**/node_modules/**", "**/dist/**", "tests/e2e/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

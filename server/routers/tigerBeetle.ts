@@ -530,4 +530,85 @@ export const tigerBeetleRouter = router({
   start: protectedProcedure.mutation(async () => {
     return { success: true, startedAt: new Date().toISOString() };
   }),
+
+  // ── Middleware Integration ─────────────────────────────────────────────────
+  // Routes to Go Hub (Kafka, Dapr, Temporal, Mojaloop, APISIX, Keycloak, Permify, OpenAppSec),
+  // Rust Bridge (Kafka, Redis, OpenSearch, Lakehouse, OpenAppSec),
+  // Python Orchestrator (Kafka, Temporal, Fluvio, OpenSearch, Lakehouse, Mojaloop)
+
+  middlewareStatus: protectedProcedure.query(async () => {
+    const { getAllMiddlewareStatus } = await import(
+      "../adapters/tigerbeetleMiddlewareAdapter"
+    );
+    return getAllMiddlewareStatus();
+  }),
+
+  middlewareMetrics: protectedProcedure.query(async () => {
+    const { getAllMetrics } = await import(
+      "../adapters/tigerbeetleMiddlewareAdapter"
+    );
+    return getAllMetrics();
+  }),
+
+  middlewareTransfer: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        debit_account_id: z.string(),
+        credit_account_id: z.string(),
+        amount: z.number().positive(),
+        currency: z.string().default("NGN"),
+        ledger: z.number().default(1000),
+        code: z.number().default(1),
+        reference: z.string().optional(),
+        agent_code: z.string().optional(),
+        tx_type: z.string().default("transfer"),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { fanOutTransfer } = await import(
+        "../adapters/tigerbeetleMiddlewareAdapter"
+      );
+      const result = await fanOutTransfer(input);
+      try {
+        const { auditFinancialAction: audit } = await import(
+          "../lib/transactionHelper"
+        );
+        audit(
+          "CREATE",
+          "middleware_transfer",
+          input.id,
+          `Transfer ${input.amount} via middleware fan-out`
+        );
+      } catch {}
+      return result;
+    }),
+
+  middlewareSearch: protectedProcedure
+    .input(
+      z.object({
+        query: z.record(z.string(), z.any()).optional(),
+        size: z.number().min(1).max(100).default(20),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { orchestratorSearch } = await import(
+        "../adapters/tigerbeetleMiddlewareAdapter"
+      );
+      const result = await orchestratorSearch({
+        query: input.query || { match_all: {} },
+        size: input.size,
+      });
+      return result.ok
+        ? result.data
+        : { hits: { hits: [], total: { value: 0 } } };
+    }),
+
+  middlewareReconcile: protectedProcedure.mutation(async () => {
+    const { orchestratorReconcile } = await import(
+      "../adapters/tigerbeetleMiddlewareAdapter"
+    );
+    const result = await orchestratorReconcile();
+    return result.ok ? result.data : { status: "unavailable", total_runs: 0 };
+  }),
 });

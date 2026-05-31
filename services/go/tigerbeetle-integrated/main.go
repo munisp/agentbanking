@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,9 +26,13 @@ import (
 // TigerBeetle integrated service
 
 type Service struct {
-	Name        string
-	Version     string
-	StartTime   time.Time
+	Name           string
+	Version        string
+	StartTime      time.Time
+	RequestsTotal  int64
+	RequestsOK     int64
+	RequestsFailed int64
+	TotalLatencyNs int64
 }
 
 type HealthResponse struct {
@@ -81,7 +86,7 @@ func main() {
 	}
 
 	log.Printf("Starting %s on port %s\n", service.Name, port)
-	log.Fatal(http.ListenAndServe(":"+port, router))
+	log.Fatal(http.ListenAndServe(":"+port, service.metricsMiddleware(router)))
 }
 
 func (s *Service) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -122,16 +127,52 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	metrics := map[string]interface{}{
-		"requests_total":    1000,
-		"requests_success":  950,
-		"requests_failed":   50,
-		"avg_response_time": "45ms",
-		"uptime_seconds":    int(time.Since(s.StartTime).Seconds()),
+	total := atomic.LoadInt64(&s.RequestsTotal)
+	ok := atomic.LoadInt64(&s.RequestsOK)
+	failed := atomic.LoadInt64(&s.RequestsFailed)
+	latencyNs := atomic.LoadInt64(&s.TotalLatencyNs)
+
+	var avgMs float64
+	if total > 0 {
+		avgMs = float64(latencyNs) / float64(total) / 1e6
 	}
-	
+
+	metrics := map[string]interface{}{
+		"requests_total":      total,
+		"requests_success":    ok,
+		"requests_failed":     failed,
+		"avg_response_time_ms": avgMs,
+		"uptime_seconds":      int(time.Since(s.StartTime).Seconds()),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(metrics)
+}
+
+// metricsMiddleware records request counts and latency for live /api/v1/metrics.
+func (s *Service) metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &statusWriter{ResponseWriter: w, status: 200}
+		next.ServeHTTP(rw, r)
+		atomic.AddInt64(&s.RequestsTotal, 1)
+		if rw.status >= 400 {
+			atomic.AddInt64(&s.RequestsFailed, 1)
+		} else {
+			atomic.AddInt64(&s.RequestsOK, 1)
+		}
+		atomic.AddInt64(&s.TotalLatencyNs, int64(time.Since(start)))
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	sw.status = code
+	sw.ResponseWriter.WriteHeader(code)
 }
 
 // initTracer initialises the OTLP trace exporter.

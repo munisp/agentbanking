@@ -139,7 +139,10 @@ func NewAppState() *AppState {
 	}
 }
 
-var state *AppState
+var (
+	state     *AppState
+	persistDB *PersistenceDB
+)
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -169,6 +172,19 @@ func transferHandler(w http.ResponseWriter, r *http.Request) {
 	updateAccount(entry.DebitAccountID, entry.Currency, -entry.Amount, entry.Pending)
 	// Update credit account
 	updateAccount(entry.CreditAccountID, entry.Currency, entry.Amount, entry.Pending)
+
+	// Persist to SQLite
+	if persistDB != nil {
+		if err := persistDB.SaveEntry(entry); err != nil {
+			log.Printf("[persist] entry save failed: %v", err)
+		}
+		if acct, ok := state.accounts[entry.DebitAccountID]; ok {
+			persistDB.SaveBalance(*acct)
+		}
+		if acct, ok := state.accounts[entry.CreditAccountID]; ok {
+			persistDB.SaveBalance(*acct)
+		}
+	}
 	state.mu.Unlock()
 
 	state.transferCount.Add(1)
@@ -532,6 +548,19 @@ func main() {
 	}
 
 	state = NewAppState()
+
+	// Initialize SQLite persistence
+	dbPath := GetDBPath()
+	db, err := OpenPersistence(dbPath)
+	if err != nil {
+		log.Printf("[main] SQLite persistence unavailable (%v) — running in-memory only", err)
+	} else {
+		persistDB = db
+		defer db.Close()
+		if err := HydrateState(db, state); err != nil {
+			log.Printf("[main] State hydration error: %v", err)
+		}
+	}
 
 	mux := http.NewServeMux()
 

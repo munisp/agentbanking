@@ -343,6 +343,20 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/configs", handleListConfigs)

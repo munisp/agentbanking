@@ -47,6 +47,11 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 SETTINGS_CACHE_TTL = int(os.getenv("SETTINGS_CACHE_TTL", "300"))
 
 app = FastAPI(title="Settings Service", version="1.0.0")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "settings-service"}
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────

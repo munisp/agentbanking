@@ -45,6 +45,11 @@ init_db()
 
 # Initialize FastAPI application
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "papss-integration"}
+
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     version="1.0.0",

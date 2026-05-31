@@ -159,6 +159,20 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 var startTime = time.Now()
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -4,6 +4,14 @@
 use pos_fraud_smartmodule::{evaluate_transaction, FraudAction, TransactionEvent};
 use std::io::{self, BufRead};
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "fluvio-smartmodule"
+    }))
+}
+
 fn main() {
     let stdin = io::stdin();
     let mut allowed = 0usize;

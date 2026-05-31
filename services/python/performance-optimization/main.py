@@ -42,6 +42,11 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "performance-optimization"}
+
     title=settings.APP_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

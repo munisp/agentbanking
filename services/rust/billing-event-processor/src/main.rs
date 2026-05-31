@@ -165,6 +165,14 @@ impl EventProcessor {
     }
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "billing-event-processor"
+    }))
+}
+
 fn main() {
     let port = env::var("PORT").unwrap_or_else(|_| "8095".to_string());
     let processor = EventProcessor::new();

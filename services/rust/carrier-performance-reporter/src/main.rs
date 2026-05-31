@@ -112,6 +112,14 @@ impl ReportGenerator {
     }
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "carrier-performance-reporter"
+    }))
+}
+
 fn main() {
     let generator = Arc::new(Mutex::new(ReportGenerator::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());

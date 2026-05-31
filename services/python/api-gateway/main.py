@@ -63,6 +63,11 @@ async def lifespan(app: FastAPI) -> None:
 
 # --- FastAPI Application Initialization ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "api-gateway"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

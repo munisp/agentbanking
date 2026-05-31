@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
 database.create_db_and_tables()
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "multi-currency-accounts"}
+
     title=settings.APP_NAME,
     version=settings.VERSION,
     description="API for managing multi-currency accounts and balances.",

@@ -58,6 +58,11 @@ async def lifespan(app: FastAPI) -> None:
 # --- FastAPI Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "integrations"}
+
     title=settings.APP_NAME,
     description="API service for managing third-party integrations and logging their activity.",
     version="1.0.0",

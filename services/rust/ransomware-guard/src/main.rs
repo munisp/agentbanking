@@ -164,6 +164,14 @@ impl RansomwareGuard {
     }
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "ransomware-guard"
+    }))
+}
+
 fn main() {
     let guard = Arc::new(Mutex::new(RansomwareGuard::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());

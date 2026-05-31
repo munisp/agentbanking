@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 
 # --- FastAPI Application Initialization ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "upi-connector"}
+
     title=settings.APP_NAME,
     description="A robust and production-ready FastAPI service for connecting to the UPI payment network.",
     version="1.0.0",

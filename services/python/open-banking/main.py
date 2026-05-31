@@ -40,6 +40,11 @@ log = logging.getLogger(__name__)
 
 # --- Application Setup ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "open-banking"}
+
     title=settings.SERVICE_NAME,
     version=settings.VERSION,
     description="A production-ready Open Banking API built with FastAPI and SQLAlchemy.",

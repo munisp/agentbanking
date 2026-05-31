@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,9 +26,11 @@ import (
 // TigerBeetle edge computing service
 
 type Service struct {
-	Name        string
-	Version     string
-	StartTime   time.Time
+	Name           string
+	Version        string
+	StartTime      time.Time
+	requestsTotal  int64
+	requestsFailed int64
 }
 
 type HealthResponse struct {
@@ -122,11 +125,13 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) metricsHandler(w http.ResponseWriter, r *http.Request) {
+	total := atomic.LoadInt64(&s.requestsTotal)
+	failed := atomic.LoadInt64(&s.requestsFailed)
 	metrics := map[string]interface{}{
-		"requests_total":    1000,
-		"requests_success":  950,
-		"requests_failed":   50,
-		"avg_response_time": "45ms",
+		"requests_total":    total,
+		"requests_success":  total - failed,
+		"requests_failed":   failed,
+		"avg_response_time": "dynamic",
 		"uptime_seconds":    int(time.Since(s.StartTime).Seconds()),
 	}
 	

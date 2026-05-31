@@ -103,6 +103,14 @@ struct RateEntry {
     rate: f64,
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "multi-currency-engine"
+    }))
+}
+
 fn main() {
     let engine = CurrencyEngine::new();
     // Smoke test conversions

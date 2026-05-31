@@ -52,6 +52,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "agent-scorecard"}
+
     title="Agent Scorecard Service",
     description=(
         "Holistic 360-degree agent performance scoring across 5 weighted dimensions: "

@@ -162,6 +162,14 @@ impl FeeSplitter {
     }
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "fee-splitter-realtime"
+    }))
+}
+
 fn main() {
     let port = env::var("PORT").unwrap_or_else(|_| "8096".to_string());
     let splitter = FeeSplitter::new();

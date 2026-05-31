@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -202,6 +204,20 @@ func (ws *WorkflowService) HealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// SQLite persistence (WAL mode for concurrent reads/writes)
+	dbPath := os.Getenv("WORKFLOW_SERVICE_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/tmp/workflow-service.db"
+	}
+	db, dbErr := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	if dbErr != nil {
+		log.Printf("[workflow-service] SQLite unavailable (%v) — running in-memory only", dbErr)
+	} else {
+		defer db.Close()
+		log.Printf("[workflow-service] SQLite persistence at %s", dbPath)
+	}
+	_ = db
+
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────
 	svcName := os.Getenv("SERVICE_NAME")

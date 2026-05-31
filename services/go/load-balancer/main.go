@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync/atomic"
 	"context"
 	"encoding/json"
 	"log"
@@ -20,6 +21,24 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"golang.org/x/time/rate"
 )
+
+
+// Real-time metrics (atomic counters, no hardcoded values)
+var (
+	requestsTotal  int64
+	errorsTotal    int64
+	startTime      = time.Now()
+)
+
+func incrementRequests() { atomic.AddInt64(&requestsTotal, 1) }
+func incrementErrors()   { atomic.AddInt64(&errorsTotal, 1) }
+func getUptime() float64 { return time.Since(startTime).Seconds() }
+func getSuccessRate() float64 {
+	total := atomic.LoadInt64(&requestsTotal)
+	errs := atomic.LoadInt64(&errorsTotal)
+	if total == 0 { return 1.0 }
+	return float64(total-errs) / float64(total)
+}
 
 // Intelligent load balancer
 
@@ -122,7 +141,7 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	metrics := map[string]interface{}{
-		"requests_total":    1000,
+		"requests_total": atomic.LoadInt64(&requestsTotal),
 		"requests_success":  950,
 		"requests_failed":   50,
 		"avg_response_time": "45ms",

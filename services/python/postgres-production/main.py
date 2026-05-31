@@ -39,6 +39,11 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 # --- Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "postgres-production"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description=settings.DESCRIPTION,

@@ -302,6 +302,12 @@ func (he *HierarchyEngine) GetMaxDepth(ctx context.Context) (int, error) {
 	return maxDepth, nil
 }
 
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"hierarchy-engine"}`))
+}
+
 func main() {
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────

@@ -336,6 +336,20 @@ func (e *BillingChaosEngine) rollback(exp *ChaosExperiment) {
 	log.Printf("[Chaos] Rollback complete for %s", exp.Name)
 }
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	engine := NewBillingChaosEngine()
 	mux := http.NewServeMux()

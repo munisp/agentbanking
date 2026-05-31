@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 init_db()
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "user-onboarding-enhanced"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="FastAPI service for Enhanced User Onboarding with KYC and Document Verification.",

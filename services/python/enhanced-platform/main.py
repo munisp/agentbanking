@@ -54,6 +54,11 @@ async def lifespan(app: FastAPI) -> None:
     logger.info("Application shutdown.")
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "enhanced-platform"}
+
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="API for the Enhanced Land Management Platform",

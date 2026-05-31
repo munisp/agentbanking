@@ -53,6 +53,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "agent-embedded-finance"}
+
     title="Agent Embedded Finance Service",
     description=(
         "Provides Micro-Credit and BNPL capabilities for the 54link agent network. "

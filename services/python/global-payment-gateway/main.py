@@ -55,6 +55,11 @@ except Exception:
 _idem_store = IdempotencyStore("gpg-pay", _redis_client)
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "global-payment-gateway"}
+
     title="Global Payment Gateway",
     description="Handles multi-currency payments for the e-commerce platform",
     version="1.0.0"

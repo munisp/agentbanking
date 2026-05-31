@@ -53,6 +53,11 @@ def create_db_tables() -> None:
 # --- Application Setup ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "cips-integration"}
+
     title=settings.APP_NAME,
     description="API for CIPS (Cross-border Interbank Payment System) Integration.",
     version="1.0.0",

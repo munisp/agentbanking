@@ -573,6 +573,12 @@ func (s *TigerBeetleService) getBalance(w http.ResponseWriter, r *http.Request) 
 // Add many more comprehensive methods to reach substantial file size...
 // [Additional 2000+ lines of comprehensive implementation would continue here]
 
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"tigerbeetle-comprehensive"}`))
+}
+
 func main() {
     service := NewTigerBeetleService("3000")
 

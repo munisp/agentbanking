@@ -58,6 +58,11 @@ async def lifespan(app: FastAPI) -> None:
     logger.info("Application shutdown.")
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "rewards"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

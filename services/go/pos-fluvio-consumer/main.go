@@ -410,6 +410,12 @@ func (fp *FluvioProducer) SendPriceUpdate(price map[string]interface{}) error {
 // MAIN
 // ============================================================================
 
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"pos-fluvio-consumer"}`))
+}
+
 func main() {
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────

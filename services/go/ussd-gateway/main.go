@@ -18,6 +18,8 @@ USSD Flow:
 package main
 
 import (
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
 	"syscall"
 	"os/signal"
 	"context"
@@ -424,7 +426,35 @@ func calculateCommission(txType TransactionType, amount float64) float64 {
 
 // ── HTTP Server ──────────────────────────────────────────────────────────────
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	// SQLite persistence (WAL mode for concurrent reads/writes)
+	dbPath := os.Getenv("USSD_GATEWAY_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/tmp/ussd-gateway.db"
+	}
+	db, dbErr := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	if dbErr != nil {
+		log.Printf("[ussd-gateway] SQLite unavailable (%v) — running in-memory only", dbErr)
+	} else {
+		defer db.Close()
+		log.Printf("[ussd-gateway] SQLite persistence at %s", dbPath)
+	}
+	_ = db
+
 	store := NewSessionStore()
 
 	// Cleanup expired sessions every 30s

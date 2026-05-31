@@ -17,6 +17,9 @@ HTTP API (port 8071):
   GET  /api/health             — liveness check
 */
 
+// PERSISTENCE: This service should use sqlx/rusqlite for data persistence.
+// Currently uses in-memory state — data is lost on restart.
+
 use std::collections::{HashMap, BTreeMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};

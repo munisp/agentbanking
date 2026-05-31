@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
 # --- Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "cross-border"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

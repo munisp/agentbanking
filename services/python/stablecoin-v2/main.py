@@ -55,6 +55,11 @@ async def lifespan(app: FastAPI) -> None:
 
 # --- FastAPI Application Instance ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "stablecoin-v2"}
+
     title=settings.APP_NAME,
     description="A production-ready FastAPI service for Stablecoin V2 management, including users, vaults, and transactions.",
     version="2.0.0",

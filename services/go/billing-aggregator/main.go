@@ -661,6 +661,20 @@ func (le *LakehouseExporter) ExportPeriodData(periodKey string, agg *PeriodAggre
 // Main
 // ═══════════════════════════════════════════════════════════════════════════════
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	cfg := loadConfig()
 	log.Printf("Starting Billing Aggregator on port %s", cfg.Port)

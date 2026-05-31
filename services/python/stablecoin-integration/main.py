@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 
 # --- Application Initialization ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "stablecoin-integration"}
+
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     debug=settings.DEBUG

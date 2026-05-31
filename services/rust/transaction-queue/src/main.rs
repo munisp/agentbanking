@@ -9,6 +9,9 @@
 // - Circuit breaker pattern for downstream service protection
 // - Batch processing for high-throughput scenarios
 
+// PERSISTENCE: This service should use sqlx/rusqlite for data persistence.
+// Currently uses in-memory state — data is lost on restart.
+
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::cmp::Ordering;
 use std::sync::{Arc, Mutex, atomic::{AtomicU64, AtomicBool, Ordering as AtomicOrdering}};

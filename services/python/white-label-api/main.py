@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "white-label-api"}
+
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,
     description="A production-ready white-label API for identity verification (KYC/KYB).",

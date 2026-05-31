@@ -67,6 +67,11 @@ async def lifespan(app: FastAPI) -> None:
 # --- FastAPI Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "payment-processing"}
+
     title=f"{settings.SERVICE_NAME.title()} API",
     description="A production-ready FastAPI service for payment processing, handling transactions, refunds, merchants, and payment methods.",
     version="1.0.0",

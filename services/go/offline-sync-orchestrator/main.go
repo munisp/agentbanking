@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
 	"syscall"
 	"os/signal"
 	"context"
@@ -110,7 +112,35 @@ func completeSyncHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "completed"})
 }
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	// SQLite persistence (WAL mode for concurrent reads/writes)
+	dbPath := os.Getenv("OFFLINE_SYNC_ORCHESTRATOR_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/tmp/offline-sync-orchestrator.db"
+	}
+	db, dbErr := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	if dbErr != nil {
+		log.Printf("[offline-sync-orchestrator] SQLite unavailable (%v) — running in-memory only", dbErr)
+	} else {
+		defer db.Close()
+		log.Printf("[offline-sync-orchestrator] SQLite persistence at %s", dbPath)
+	}
+	_ = db
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8140"

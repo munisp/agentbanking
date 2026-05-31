@@ -61,6 +61,11 @@ async def lifespan(app: FastAPI) -> None:
 
 # --- FastAPI Application Instance ---
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "sepa-instant"}
+
     title=settings.SERVICE_NAME.replace('-', ' ').title(),
     version=settings.VERSION,
     description=settings.DESCRIPTION,

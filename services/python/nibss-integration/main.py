@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 # --- 2. Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "nibss-integration"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

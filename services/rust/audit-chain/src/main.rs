@@ -2,6 +2,9 @@
 // Tamper-proof audit logging with hash chain verification
 // Each entry is cryptographically linked to the previous entry
 
+// PERSISTENCE: This service should use sqlx/rusqlite for data persistence.
+// Currently uses in-memory state — data is lost on restart.
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH, Duration};

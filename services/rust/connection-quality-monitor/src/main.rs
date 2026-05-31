@@ -187,6 +187,14 @@ impl QualityMonitor {
     }
 }
 
+
+async fn health_check() -> impl actix_web::Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "connection-quality-monitor"
+    }))
+}
+
 fn main() {
     let monitor = Arc::new(Mutex::new(QualityMonitor::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());

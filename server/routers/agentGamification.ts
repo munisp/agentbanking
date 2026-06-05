@@ -126,7 +126,6 @@ const LEVEL_THRESHOLDS = [
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -453,7 +452,9 @@ export const agentGamificationRouter = router({
 
   // Award badge
   awardBadge: protectedProcedure
-    .input(z.object({ agentId: z.number(), badgeId: z.string().min(1).max(255) }))
+    .input(
+      z.object({ agentId: z.number(), badgeId: z.string().min(1).max(255) })
+    )
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;

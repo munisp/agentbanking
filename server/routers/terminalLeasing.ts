@@ -41,7 +41,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -345,7 +344,12 @@ export const terminalLeasingRouter = router({
     }),
 
   terminateLease: protectedProcedure
-    .input(z.object({ leaseId: z.string().min(1).max(255), reason: z.string().max(256) }))
+    .input(
+      z.object({
+        leaseId: z.string().min(1).max(255),
+        reason: z.string().max(256),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);

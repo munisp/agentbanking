@@ -17,7 +17,6 @@ import {
 import { auditFinancialAction } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
   pending_approval: ["approved", "rejected"],
@@ -53,7 +52,6 @@ async function tryDb() {
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {

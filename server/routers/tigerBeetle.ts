@@ -88,7 +88,6 @@ async function tbFetch(path: string, opts?: RequestInit): Promise<unknown> {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();

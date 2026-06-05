@@ -18,7 +18,6 @@ import {
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -49,7 +48,6 @@ async function scFetch<T>(
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {

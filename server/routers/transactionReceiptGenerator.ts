@@ -43,7 +43,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -299,7 +298,10 @@ export const transactionReceiptGeneratorRouter = router({
     }),
   generateReceipt: protectedProcedure
     .input(
-      z.object({ transactionId: z.number(), templateId: z.string().min(1).max(255).optional() })
+      z.object({
+        transactionId: z.number(),
+        templateId: z.string().min(1).max(255).optional(),
+      })
     )
     .mutation(async ({ input }) => {
       try {

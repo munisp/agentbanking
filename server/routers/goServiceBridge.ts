@@ -123,7 +123,6 @@ export const settlementGateway = { name: "settlementGateway" };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -438,7 +437,9 @@ export const goServiceBridgeRouter = router({
   }),
   workflowList: protectedProcedure.query(async () => ({ workflows: [] })),
   ledgerTransfer: protectedProcedure
-    .input(z.object({ from: z.string(), to: z.string(), amount: z.number().min(0) }))
+    .input(
+      z.object({ from: z.string(), to: z.string(), amount: z.number().min(0) })
+    )
     .mutation(async () => ({ transferId: "txn-1", status: "pending" })),
   ledgerBalance: protectedProcedure
     .input(z.object({ accountId: z.string().min(1).max(255) }))
@@ -471,11 +472,18 @@ export const goServiceBridgeRouter = router({
     .input(z.object({ msisdn: z.string() }))
     .mutation(async () => ({ sessionId: "sess-1" })),
   ussdProcess: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1).max(255), input: z.string() }))
+    .input(
+      z.object({ sessionId: z.string().min(1).max(255), input: z.string() })
+    )
     .mutation(async () => ({ response: "Welcome", continueSession: true })),
   orgTree: protectedProcedure.query(async () => ({ nodes: [], depth: 0 })),
   settlementInitiate: protectedProcedure
-    .input(z.object({ batchId: z.string().min(1).max(255), amount: z.number().min(0) }))
+    .input(
+      z.object({
+        batchId: z.string().min(1).max(255),
+        amount: z.number().min(0),
+      })
+    )
     .mutation(async () => ({ settlementId: "stl-1", status: "initiated" })),
   settlementBatch: protectedProcedure
     .input(z.object({ date: z.string() }))

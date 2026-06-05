@@ -151,7 +151,6 @@ async function generateQuarterlyFraudReportFromDb(
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -469,7 +468,12 @@ export const cbnReportingRouter = router({
 
   // ── Mark report as submitted ───────────────────────────────────────────────
   markSubmitted: protectedProcedure
-    .input(z.object({ reportId: z.string().min(1).max(255), cbnReference: z.string().min(5) }))
+    .input(
+      z.object({
+        reportId: z.string().min(1).max(255),
+        cbnReference: z.string().min(5),
+      })
+    )
     .mutation(async ({ input }) => {
       try {
         const svc = await callCbnService(

@@ -31,7 +31,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Domain Calculations ────────────────────────────────────────────────────
 function computeFees(amount: number, txType: string = "transfer") {
   if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };

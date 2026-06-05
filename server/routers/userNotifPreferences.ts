@@ -40,7 +40,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -367,7 +366,9 @@ export const userNotifPreferencesRouter = router({
     };
   }),
   updateCategory: protectedProcedure
-    .input(z.object({ categoryId: z.string().min(1).max(255), enabled: z.boolean() }))
+    .input(
+      z.object({ categoryId: z.string().min(1).max(255), enabled: z.boolean() })
+    )
     .mutation(async ({ input, ctx }) => {
       const _fees = calculateFee(
         typeof input === "object" && "amount" in input

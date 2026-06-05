@@ -57,7 +57,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -338,7 +337,9 @@ export const advancedRateLimiterRouter = router({
       }
     }),
   toggleRule: protectedProcedure
-    .input(z.object({ ruleId: z.string().min(1).max(255), enabled: z.boolean() }))
+    .input(
+      z.object({ ruleId: z.string().min(1).max(255), enabled: z.boolean() })
+    )
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();

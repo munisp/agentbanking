@@ -373,7 +373,12 @@ export const billPaymentsRouter = router({
     }),
 
   validateCustomer: protectedProcedure
-    .input(z.object({ billerId: z.string().min(1).max(255), customerReference: z.string() }))
+    .input(
+      z.object({
+        billerId: z.string().min(1).max(255),
+        customerReference: z.string(),
+      })
+    )
     .query(async ({ input }) => {
       try {
         const biller = BILLER_CATALOG.find(b => b.id === input.billerId);

@@ -40,7 +40,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -195,7 +194,10 @@ export const settlementNettingEngineRouter = router({
   listSessions: protectedProcedure
     .input(
       z
-        .object({ page: z.number().min(1).max(10000).optional(), limit: z.number().min(1).max(100).optional() })
+        .object({
+          page: z.number().min(1).max(10000).optional(),
+          limit: z.number().min(1).max(100).optional(),
+        })
         .optional()
     )
     .query(async ({ input }) => {

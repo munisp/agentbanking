@@ -19,7 +19,6 @@ import {
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
   pending_review: ["approved", "rejected"],
@@ -33,7 +32,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {

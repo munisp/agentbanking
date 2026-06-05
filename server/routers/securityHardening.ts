@@ -35,7 +35,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -383,7 +382,10 @@ export const securityHardeningRouter = router({
   })),
   evaluatePolicy: protectedProcedure
     .input(
-      z.object({ policyId: z.string().min(1).max(255), context: z.record(z.any()).optional() })
+      z.object({
+        policyId: z.string().min(1).max(255),
+        context: z.record(z.any()).optional(),
+      })
     )
     .mutation(async ({ input }) => ({
       policyId: input.policyId,

@@ -617,7 +617,12 @@ export const loyaltyRouter = router({
 
   // ── Claim challenge reward ────────────────────────────────────────────────
   claimChallenge: protectedProcedure
-    .input(z.object({ challengeId: z.string().min(1).max(255), points: z.number().positive() }))
+    .input(
+      z.object({
+        challengeId: z.string().min(1).max(255),
+        points: z.number().positive(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);

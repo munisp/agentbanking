@@ -35,7 +35,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -362,7 +361,12 @@ export const networkStatusDashboardRouter = router({
     };
   }),
   resolveAlert: protectedProcedure
-    .input(z.object({ alertId: z.string().min(1).max(255), resolution: z.string().optional() }))
+    .input(
+      z.object({
+        alertId: z.string().min(1).max(255),
+        resolution: z.string().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const _fees = calculateFee(
         typeof input === "object" && "amount" in input

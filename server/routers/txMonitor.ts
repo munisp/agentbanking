@@ -50,7 +50,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -330,7 +329,9 @@ export const txMonitorRouter = router({
       }
     }),
   toggleRule: protectedProcedure
-    .input(z.object({ ruleId: z.string().min(1).max(255), enabled: z.boolean() }))
+    .input(
+      z.object({ ruleId: z.string().min(1).max(255), enabled: z.boolean() })
+    )
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -493,7 +494,9 @@ export const txMonitorRouter = router({
     }),
 
   resolveAlert: openProcedure
-    .input(z.object({ alertId: z.string().min(1).max(255), resolution: z.string() }))
+    .input(
+      z.object({ alertId: z.string().min(1).max(255), resolution: z.string() })
+    )
     .mutation(async ({ input }) => {
       return {
         success: true,

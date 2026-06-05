@@ -41,7 +41,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -355,7 +354,9 @@ export const webhookNotificationsRouter = router({
     };
   }),
   toggleWebhook: protectedProcedure
-    .input(z.object({ webhookId: z.string().min(1).max(255), active: z.boolean() }))
+    .input(
+      z.object({ webhookId: z.string().min(1).max(255), active: z.boolean() })
+    )
     .mutation(async ({ input }) => {
       return {
         success: true,

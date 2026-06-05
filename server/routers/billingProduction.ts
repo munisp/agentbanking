@@ -31,7 +31,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -335,7 +334,9 @@ export const billingProductionRouter = router({
     overdue: 0,
   })),
   applyGracePeriod: protectedProcedure
-    .input(z.object({ invoiceId: z.string().min(1).max(255), days: z.number() }))
+    .input(
+      z.object({ invoiceId: z.string().min(1).max(255), days: z.number() })
+    )
     .mutation(async () => ({ success: true })),
   getReconciliationSchedule: protectedProcedure.query(async () => ({
     schedule: "daily",
@@ -357,7 +358,9 @@ export const billingProductionRouter = router({
     )
     .mutation(async () => ({ success: true })),
   createDispute: protectedProcedure
-    .input(z.object({ invoiceId: z.string().min(1).max(255), reason: z.string() }))
+    .input(
+      z.object({ invoiceId: z.string().min(1).max(255), reason: z.string() })
+    )
     .mutation(async () => ({ success: true, disputeId: "DSP-001" })),
   getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
   getRevenueForecast: protectedProcedure.query(async () => ({

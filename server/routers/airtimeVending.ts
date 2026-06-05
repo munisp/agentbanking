@@ -577,7 +577,9 @@ export const airtimeVendingRouter = router({
     };
   }),
   dataBundles: publicProcedure
-    .input(z.object({ networkId: z.string().min(1).max(255).optional() }).optional())
+    .input(
+      z.object({ networkId: z.string().min(1).max(255).optional() }).optional()
+    )
     .query(async () => {
       return {
         bundles: [

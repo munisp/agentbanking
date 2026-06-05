@@ -44,7 +44,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -241,7 +240,10 @@ export const bulkNotifRouter = router({
     }),
   getHistory: protectedProcedure
     .input(
-      z.object({ page: z.number().min(1).max(10000).optional(), limit: z.number().min(1).max(100).optional() })
+      z.object({
+        page: z.number().min(1).max(10000).optional(),
+        limit: z.number().min(1).max(100).optional(),
+      })
     )
     .query(async ({ input }) => {
       try {
@@ -562,7 +564,10 @@ export const dataExportRouter = router({
 export const changelogRouter = router({
   list: protectedProcedure
     .input(
-      z.object({ page: z.number().min(1).max(10000).optional(), limit: z.number().min(1).max(100).optional() })
+      z.object({
+        page: z.number().min(1).max(10000).optional(),
+        limit: z.number().min(1).max(100).optional(),
+      })
     )
     .query(async ({ input }) => {
       try {

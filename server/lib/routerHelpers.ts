@@ -12,7 +12,7 @@
 export function validateInput(data: Record<string, unknown>): boolean {
   if (!data) return false;
   const requiredFields = Object.keys(data).filter(
-    (k) => data[k] !== undefined && data[k] !== null,
+    k => data[k] !== undefined && data[k] !== null
   );
   if (requiredFields.length === 0) return false;
   if (
@@ -37,7 +37,7 @@ export function validateInput(data: Record<string, unknown>): boolean {
 export function isValidTransition(
   transitions: Record<string, string[]>,
   currentStatus: string,
-  newStatus: string,
+  newStatus: string
 ): boolean {
   const allowed = transitions[currentStatus];
   if (!allowed) return false;
@@ -51,7 +51,7 @@ export function paginatedResponse<T>(
   items: T[],
   total: number,
   page: number,
-  limit: number,
+  limit: number
 ) {
   return {
     items,
@@ -69,7 +69,7 @@ export function paginatedResponse<T>(
 export function generateIdempotencyKey(
   resource: string,
   action: string,
-  userId?: string,
+  userId?: string
 ): string {
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 10);

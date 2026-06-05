@@ -58,7 +58,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -320,7 +319,10 @@ export const transactionEnrichmentServiceRouter = router({
     }),
   toggleRule: protectedProcedure
     .input(
-      z.object({ ruleId: z.string().min(1).max(255), status: z.enum(["active", "paused"]) })
+      z.object({
+        ruleId: z.string().min(1).max(255),
+        status: z.enum(["active", "paused"]),
+      })
     )
     .mutation(async ({ input }) => {
       try {

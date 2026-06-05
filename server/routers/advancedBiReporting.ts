@@ -44,7 +44,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -362,7 +361,9 @@ export const advancedBiReportingRouter = router({
     };
   }),
   generateReport: publicProcedure
-    .input(z.object({ templateId: z.string().min(1).max(255).optional() }).optional())
+    .input(
+      z.object({ templateId: z.string().min(1).max(255).optional() }).optional()
+    )
     .mutation(async () => {
       return {
         reportId: "RPT-" + Date.now(),

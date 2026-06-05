@@ -48,7 +48,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {
   const auditEntry = {

@@ -34,7 +34,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -395,7 +394,9 @@ export const partnerOnboardingRouter = router({
       inviteCode: input.inviteCode,
     })),
   getProgress: protectedProcedure
-    .input(z.object({ tenantId: z.string().min(1).max(255).optional() }).default({}))
+    .input(
+      z.object({ tenantId: z.string().min(1).max(255).optional() }).default({})
+    )
     .query(async () => ({ step: 1, totalSteps: 5, complete: false })),
   removeCorridor: protectedProcedure
     .input(z.object({ corridorId: z.string().min(1).max(255) }))

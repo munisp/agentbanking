@@ -33,7 +33,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -358,7 +357,12 @@ export const escalationChainsRouter = router({
     };
   }),
   resolveEvent: protectedProcedure
-    .input(z.object({ eventId: z.string().min(1).max(255), resolution: z.string().optional() }))
+    .input(
+      z.object({
+        eventId: z.string().min(1).max(255),
+        resolution: z.string().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
       return { success: true, eventId: input.eventId };
     }),
@@ -366,7 +370,9 @@ export const escalationChainsRouter = router({
     return { triggered: 0, checked: 0 };
   }),
   toggleChain: protectedProcedure
-    .input(z.object({ chainId: z.string().min(1).max(255), enabled: z.boolean() }))
+    .input(
+      z.object({ chainId: z.string().min(1).max(255), enabled: z.boolean() })
+    )
     .mutation(async ({ input }) => {
       return { success: true, chainId: input.chainId, enabled: input.enabled };
     }),

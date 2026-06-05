@@ -481,7 +481,11 @@ export const agentManagementRouter = router({
   submitTopUpRequest: protectedProcedure
     .input(
       z.object({
-        amount: z.number().min(0).positive().min(1000, "Minimum top-up is ₦1,000"),
+        amount: z
+          .number()
+          .min(0)
+          .positive()
+          .min(1000, "Minimum top-up is ₦1,000"),
         notes: z.string().max(500).optional(),
       })
     )

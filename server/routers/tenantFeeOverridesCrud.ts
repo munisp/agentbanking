@@ -297,7 +297,11 @@ export const tenantFeeOverridesRouter = router({
     }),
   calculateFee: protectedProcedure
     .input(
-      z.object({ tenantId: z.number(), txType: z.string(), amount: z.number().min(0) })
+      z.object({
+        tenantId: z.number(),
+        txType: z.string(),
+        amount: z.number().min(0),
+      })
     )
     .query(async ({ input }) => {
       try {

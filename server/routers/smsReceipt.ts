@@ -115,7 +115,6 @@ function buildReceiptSMS(data: {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -508,7 +507,9 @@ export const smsReceiptRouter = router({
       }
     }),
   addMessage: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1).max(255), content: z.string() }))
+    .input(
+      z.object({ sessionId: z.string().min(1).max(255), content: z.string() })
+    )
     .mutation(async ({ input }) => {
       return {
         messageId: `msg-${Date.now()}`,
@@ -613,7 +614,12 @@ export const smsReceiptRouter = router({
     };
   }),
   processInput: protectedProcedure
-    .input(z.object({ input: z.string(), sessionId: z.string().min(1).max(255).optional() }))
+    .input(
+      z.object({
+        input: z.string(),
+        sessionId: z.string().min(1).max(255).optional(),
+      })
+    )
     .mutation(async ({ input }) => {
       return { response: "", type: "text" as const };
     }),

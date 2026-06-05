@@ -33,7 +33,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -338,7 +337,9 @@ export const sharedLayoutsRouter = router({
     permissions: ["view-only", "can-edit", "can-fork"],
   })),
   share: protectedProcedure
-    .input(z.object({ id: z.string(), targetUserId: z.string().min(1).max(255) }))
+    .input(
+      z.object({ id: z.string(), targetUserId: z.string().min(1).max(255) })
+    )
     .mutation(async ({ input }) => ({ shared: true, id: input.id })),
   import: protectedProcedure
     .input(z.object({ layoutId: z.string().min(1).max(255) }))

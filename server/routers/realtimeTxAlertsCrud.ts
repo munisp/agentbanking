@@ -50,7 +50,6 @@ const VELOCITY_RULES = [
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -289,7 +288,11 @@ export const realtime_tx_alertsRouter = router({
     }),
   evaluateTransaction: protectedProcedure
     .input(
-      z.object({ agentId: z.number(), amount: z.number().min(0), txType: z.string() })
+      z.object({
+        agentId: z.number(),
+        amount: z.number().min(0),
+        txType: z.string(),
+      })
     )
     .mutation(async ({ input, ctx }) => {
       const _fees = calculateFee(

@@ -36,7 +36,12 @@ import {
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   not_started: ["documents_submitted"],
   documents_submitted: ["under_review"],
-  under_review: ["additional_info_required", "verified", "rejected", "escalated"],
+  under_review: [
+    "additional_info_required",
+    "verified",
+    "rejected",
+    "escalated",
+  ],
   additional_info_required: ["documents_submitted"],
   verified: ["active", "expired"],
   active: ["renewal_pending", "suspended", "revoked"],
@@ -50,7 +55,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {

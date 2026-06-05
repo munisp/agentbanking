@@ -104,7 +104,6 @@ let scheduleState = DEFAULT_SCHEDULES.map((s, i) => ({
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
-
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const startTime = Date.now();
@@ -368,7 +367,10 @@ export const automatedSettlementSchedulerRouter = router({
 
   toggleSchedule: protectedProcedure
     .input(
-      z.object({ scheduleId: z.string().min(1).max(255), action: z.enum(["pause", "resume"]) })
+      z.object({
+        scheduleId: z.string().min(1).max(255),
+        action: z.enum(["pause", "resume"]),
+      })
     )
     .mutation(async ({ input, ctx }) => {
       try {

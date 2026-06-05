@@ -27,7 +27,6 @@ import {
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   connected: ["disconnected", "degraded", "maintenance"],
   disconnected: ["connected"],
@@ -52,7 +51,6 @@ const MIDDLEWARE_SERVICES = [
 ] as const;
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -352,7 +350,9 @@ export const middlewareServiceManagerRouter = router({
     }),
 
   updateUrl: protectedProcedure
-    .input(z.object({ serviceId: z.string().min(1).max(255), url: z.string().url() }))
+    .input(
+      z.object({ serviceId: z.string().min(1).max(255), url: z.string().url() })
+    )
     .mutation(async ({ input }) => {
       auditFinancialAction(
         "UPDATE",

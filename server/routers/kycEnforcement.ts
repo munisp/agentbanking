@@ -20,7 +20,12 @@ import {
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   not_started: ["documents_submitted"],
   documents_submitted: ["under_review"],
-  under_review: ["additional_info_required", "verified", "rejected", "escalated"],
+  under_review: [
+    "additional_info_required",
+    "verified",
+    "rejected",
+    "escalated",
+  ],
   additional_info_required: ["documents_submitted"],
   verified: ["active", "expired"],
   active: ["renewal_pending", "suspended", "revoked"],
@@ -69,7 +74,6 @@ async function serviceCall(
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -338,7 +342,9 @@ export const kycEnforcementRouter = router({
     }),
 
   checkKYCStatus: protectedProcedure
-    .input(z.object({ customerId: z.string().min(1).max(255), level: z.string() }))
+    .input(
+      z.object({ customerId: z.string().min(1).max(255), level: z.string() })
+    )
     .query(async ({ input }) => {
       return serviceCall(
         `${KYC_ENFORCEMENT_URL}/api/v1/enforce/check`,

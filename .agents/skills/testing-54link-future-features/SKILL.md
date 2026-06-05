@@ -52,6 +52,7 @@ The server may auto-increment port if 5000 is busy (check output for "Port X is 
 ## Testing Strategy
 
 ### Infrastructure Component Health
+
 ```bash
 # Authenticate first
 curl -sf -c /tmp/cookies.txt -L "http://localhost:<port>/api/dev-login?returnTo=/" -o /dev/null
@@ -64,6 +65,7 @@ curl -sf -b /tmp/cookies.txt "http://localhost:<port>/api/trpc/healthCheck.middl
 ```
 
 ### Microservice Client Coverage
+
 ```bash
 # Python: 20 services × 5 clients = 100
 for svc in agritech-payments bnpl-engine ...; do
@@ -85,6 +87,7 @@ done
 ```
 
 ### Middleware Connector Stub Verification
+
 ```bash
 # Verify NO stubs remain in middlewareConnectors.ts
 grep -c '// In production:' server/middleware/middlewareConnectors.ts  # Expect: 0
@@ -94,6 +97,7 @@ grep -c 'tigerbeetle-node' server/middleware/middlewareConnectors.ts  # Expect: 
 ```
 
 ### Gap 1: Real SQL Aggregations
+
 ```bash
 # Verify domain-specific stats fields in API response
 curl -s http://localhost:<port>/api/trpc/openBankingApi.getStats -b /tmp/cookies.txt | python3 -m json.tool
@@ -105,6 +109,7 @@ grep -l "Promise.all" server/routers/openBankingApi.ts  # Should match
 ```
 
 ### Gap 2: Business Validation
+
 ```bash
 # Test BNPL amount validation (min ₦1,000)
 curl -s -X POST http://localhost:<port>/api/trpc/bnplEngine.create \
@@ -120,6 +125,7 @@ curl -s -X POST http://localhost:<port>/api/trpc/bnplEngine.updateStatus \
 ```
 
 ### Gap 3 & 4: Flutter/RN Domain Components
+
 ```bash
 # Flutter: check for domain-specific _build methods
 grep -c "_buildInstallmentProgress" mobile-flutter/lib/screens/bnpl_screen.dart
@@ -137,18 +143,21 @@ grep -rl "Object.entries" mobile-rn/src/screens/*Screen.tsx  # Should return 0
 ```
 
 ### Gap 5: Integration Test Suite
+
 ```bash
 npx vitest run tests/integration/future-features.test.ts --reporter=verbose
 # Expect: 16/16 tests pass
 ```
 
 ### Docker Compose Validation
+
 ```bash
 grep -c "^  [a-z].*:" docker-compose.integration-test.yml  # Expect >= 63
 grep -c "healthcheck:" docker-compose.integration-test.yml  # Expect >= 60
 ```
 
 ### OpenSearch & Dapr Config Validation
+
 ```bash
 # OpenSearch index templates and ILM policies
 python3 -c "import json; d=json.load(open('infra/opensearch/index-templates.json')); print(len(d['index_templates']), 'templates,', len(d['ilm_policies']), 'ILM policies')"
@@ -175,6 +184,7 @@ grep -c 'topic: pos\.' infra/dapr/subscriptions.yaml
 This section covers testing the production hardening changes: observability, resilient HTTP, graceful degradation, shutdown handlers, gRPC, security, and Docker optimization.
 
 ### Observability Module
+
 ```bash
 # Must use npx tsx (not node) since these are TypeScript modules
 npx tsx -e "
@@ -188,6 +198,7 @@ console.log('Total exports verified:', fns.length - missing.length);
 ```
 
 ### Span Tracking E2E
+
 ```bash
 npx tsx -e "
 import {startSpan, endSpan, resetMetrics, getEngineMetrics, exportPrometheusMetrics} from './server/lib/observability';
@@ -205,12 +216,14 @@ console.log('prometheus:', prom.includes('fiveforlink_settlement_operations_tota
 ```
 
 ### Cross-Service Contract Tests
+
 ```bash
 npx vitest run tests/integration/cross-service-contracts.test.ts --reporter=verbose
 # Expect: 15/15 tests pass (proto, HTTP resilience, degradation, shutdown, security, Docker, DB)
 ```
 
 ### Docker Optimization
+
 ```bash
 # Count service definitions excluding YAML config keys and volume definitions
 node -e "
@@ -229,6 +242,7 @@ console.log('Optimized:', count(opt), 'Original:', count(orig), 'Ratio:', (count
 ```
 
 ### Shutdown Handler Coverage
+
 ```bash
 # Python (target >= 90%)
 TOTAL=$(find services/python -name "main.py" -not -path "*/test*" | wc -l)
@@ -247,6 +261,7 @@ echo "Rust: $WITH/$TOTAL"
 ```
 
 ### Security — No Hardcoded Passwords
+
 ```bash
 grep -n 'password:' k8s/charts/keycloak/values.yaml k8s/charts/mojaloop/values.yaml | grep -v '""' | grep -v "REQUIRED" | grep -v "#"
 # Expect: no output (exit code 1)

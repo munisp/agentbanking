@@ -21,6 +21,8 @@ import {
 } from "drizzle-orm";
 import { transactions, auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -36,36 +38,18 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateTxmonitorInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -346,7 +330,7 @@ export const txMonitorRouter = router({
       }
     }),
   toggleRule: protectedProcedure
-    .input(z.object({ ruleId: z.string(), enabled: z.boolean() }))
+    .input(z.object({ ruleId: z.string().min(1).max(255), enabled: z.boolean() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -498,7 +482,7 @@ export const txMonitorRouter = router({
     }),
 
   acknowledgeAlert: openProcedure
-    .input(z.object({ alertId: z.string() }))
+    .input(z.object({ alertId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       return {
         success: true,
@@ -509,7 +493,7 @@ export const txMonitorRouter = router({
     }),
 
   resolveAlert: openProcedure
-    .input(z.object({ alertId: z.string(), resolution: z.string() }))
+    .input(z.object({ alertId: z.string().min(1).max(255), resolution: z.string() }))
     .mutation(async ({ input }) => {
       return {
         success: true,

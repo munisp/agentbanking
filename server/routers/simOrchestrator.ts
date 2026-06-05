@@ -40,12 +40,16 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  initiated: ["menu_displayed"],
+  menu_displayed: ["input_received"],
+  input_received: ["processing"],
+  processing: ["confirmation_pending", "completed", "failed"],
+  confirmation_pending: ["completed", "cancelled", "timed_out"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry", "cancelled"],
+  retry: ["processing"],
+  timed_out: ["cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -67,7 +71,7 @@ const SimReadingSchema = z.object({
 
 const ProbePayloadSchema = z.object({
   agentCode: z.string().max(32),
-  terminalId: z.string().max(32),
+  terminalId: z.string().min(1).max(255).max(32),
   timestampUtc: z.number().int(),
   latE6: z.number().int().optional(),
   lonE6: z.number().int().optional(),
@@ -226,7 +230,7 @@ export const simOrchestratorRouter = router({
   getConfig: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         apiKey: z.string().max(128),
       })
     )
@@ -417,7 +421,7 @@ export const simOrchestratorRouter = router({
   upsertConfig: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         probeIntervalMs: z.number().int().min(5000).max(300000).default(30000),
         relayEndpoint: z
           .string()
@@ -578,7 +582,7 @@ export const simOrchestratorRouter = router({
   reportFailover: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         agentCode: z.string().max(32),
         fromSlot: z.number().int().min(0).max(3),
         toSlot: z.number().int().min(0).max(3),
@@ -700,7 +704,7 @@ export const simOrchestratorRouter = router({
   getFailoverHistory: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32).optional(),
+        terminalId: z.string().min(1).max(255).max(32).optional(),
         limit: z.number().int().min(1).max(500).default(100),
       })
     )

@@ -17,6 +17,8 @@ import {
   streamCommissionEvent,
 } from "../middleware/commissionMiddleware";
 import logger from "../_core/logger";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -39,28 +41,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateCommissionclawbackInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -192,7 +173,7 @@ export const commissionClawbackRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        page: z.number().optional(),
+        page: z.number().min(1).max(10000).optional(),
         status: z.string().optional(),
         limit: z.number().min(1).max(100).optional(),
       })
@@ -238,7 +219,7 @@ export const commissionClawbackRouter = router({
     .input(
       z.object({
         agentId: z.number(),
-        amount: z.number(),
+        amount: z.number().min(0),
         reason: z.string(),
         transactionId: z.number().optional(),
       })

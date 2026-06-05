@@ -503,9 +503,9 @@ export const settlementRouter = router({
   initiateIlpTransfer: agentAdminProcedure
     .input(
       z.object({
-        batchId: z.string(),
+        batchId: z.string().min(1).max(255),
         payeeFsp: z.string(),
-        amount: z.number(),
+        amount: z.number().min(0),
         currency: z.string().default("NGN"),
       })
     )

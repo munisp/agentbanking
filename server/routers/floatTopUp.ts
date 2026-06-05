@@ -42,12 +42,26 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -170,7 +184,7 @@ export const floatTopUpRouter = router({
   submit: protectedProcedure
     .input(
       z.object({
-        amount: z.number().positive().max(10_000_000),
+        amount: z.number().min(0).positive().max(10_000_000),
         notes: z.string().max(256).optional(),
       })
     )

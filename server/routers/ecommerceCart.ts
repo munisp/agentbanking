@@ -24,12 +24,13 @@ import {
 import { TRPCError } from "@trpc/server";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -400,7 +401,7 @@ export const ecommerceCartRouter = router({
             merchantId: z.number(),
           })
         ),
-        deviceId: z.string(),
+        deviceId: z.string().min(1).max(255),
         checksum: z.string(),
         strategy: z
           .enum([

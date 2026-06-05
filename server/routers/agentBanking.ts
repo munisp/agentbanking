@@ -37,13 +37,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 // ── Guard: agent-only procedure ──────────────────────────────────────────────
@@ -734,7 +736,7 @@ export const agentBankingRouter = router({
           agentId: z.number(),
           name: z.string().optional(),
           phone: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           location: z.string().optional(),
         })
       )

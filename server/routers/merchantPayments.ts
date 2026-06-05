@@ -156,7 +156,7 @@ export const merchantPaymentsRouter = router({
     .input(
       z.object({
         merchantCode: z.string().min(4).max(32),
-        amount: z.number().positive().max(10_000_000),
+        amount: z.number().min(0).positive().max(10_000_000),
         customerPhone: z.string().max(20).optional(),
         customerName: z.string().max(128).optional(),
         narration: z.string().max(256).optional(),

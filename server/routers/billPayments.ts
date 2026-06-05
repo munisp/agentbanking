@@ -25,12 +25,26 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -240,9 +254,9 @@ export const billPaymentsRouter = router({
   payBill: protectedProcedure
     .input(
       z.object({
-        billerId: z.string(),
+        billerId: z.string().min(1).max(255),
         customerReference: z.string().min(6).max(20),
-        amount: z.number().positive().max(5_000_000),
+        amount: z.number().min(0).positive().max(5_000_000),
         customerName: z.string().max(128).optional(),
         customerPhone: z.string().max(20).optional(),
       })
@@ -359,7 +373,7 @@ export const billPaymentsRouter = router({
     }),
 
   validateCustomer: protectedProcedure
-    .input(z.object({ billerId: z.string(), customerReference: z.string() }))
+    .input(z.object({ billerId: z.string().min(1).max(255), customerReference: z.string() }))
     .query(async ({ input }) => {
       try {
         const biller = BILLER_CATALOG.find(b => b.id === input.billerId);
@@ -396,7 +410,7 @@ export const billPaymentsRouter = router({
       z.object({
         limit: z.number().default(50),
         offset: z.number().default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input, ctx }) => {

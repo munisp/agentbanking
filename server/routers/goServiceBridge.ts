@@ -9,6 +9,8 @@ import {
   transactions,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -24,13 +26,16 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  proposed: ["review"],
+  review: ["approved", "rejected"],
+  approved: ["deploying"],
+  deploying: ["active", "rollback"],
+  active: ["deprecated", "updated"],
+  deprecated: ["removed"],
+  updated: ["active"],
+  rollback: ["review"],
+  removed: [],
   rejected: [],
-  archived: [],
 };
 
 // Service adapter imports — ../adapters/ barrel for typed Go microservice connectors
@@ -117,26 +122,7 @@ export const revenueReconciler = { name: "revenueReconciler" };
 export const settlementGateway = { name: "settlementGateway" };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateGoservicebridgeInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -452,13 +438,13 @@ export const goServiceBridgeRouter = router({
   }),
   workflowList: protectedProcedure.query(async () => ({ workflows: [] })),
   ledgerTransfer: protectedProcedure
-    .input(z.object({ from: z.string(), to: z.string(), amount: z.number() }))
+    .input(z.object({ from: z.string(), to: z.string(), amount: z.number().min(0) }))
     .mutation(async () => ({ transferId: "txn-1", status: "pending" })),
   ledgerBalance: protectedProcedure
-    .input(z.object({ accountId: z.string() }))
+    .input(z.object({ accountId: z.string().min(1).max(255) }))
     .query(async () => ({ balance: 0, currency: "NGN" })),
   mdmCheckDevice: protectedProcedure
-    .input(z.object({ deviceId: z.string() }))
+    .input(z.object({ deviceId: z.string().min(1).max(255) }))
     .query(async () => ({ enrolled: false, compliant: false })),
   pbacAuthorize: protectedProcedure
     .input(
@@ -485,11 +471,11 @@ export const goServiceBridgeRouter = router({
     .input(z.object({ msisdn: z.string() }))
     .mutation(async () => ({ sessionId: "sess-1" })),
   ussdProcess: protectedProcedure
-    .input(z.object({ sessionId: z.string(), input: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255), input: z.string() }))
     .mutation(async () => ({ response: "Welcome", continueSession: true })),
   orgTree: protectedProcedure.query(async () => ({ nodes: [], depth: 0 })),
   settlementInitiate: protectedProcedure
-    .input(z.object({ batchId: z.string(), amount: z.number() }))
+    .input(z.object({ batchId: z.string().min(1).max(255), amount: z.number().min(0) }))
     .mutation(async () => ({ settlementId: "stl-1", status: "initiated" })),
   settlementBatch: protectedProcedure
     .input(z.object({ date: z.string() }))
@@ -497,7 +483,7 @@ export const goServiceBridgeRouter = router({
   atUssdCallback: protectedProcedure
     .input(
       z.object({
-        sessionId: z.string(),
+        sessionId: z.string().min(1).max(255),
         phoneNumber: z.string(),
         text: z.string(),
       })

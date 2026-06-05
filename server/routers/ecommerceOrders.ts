@@ -27,12 +27,13 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -455,7 +456,7 @@ export const ecommerceOrdersRouter = router({
     .input(
       z.array(
         z.object({
-          clientId: z.string(),
+          clientId: z.string().min(1).max(255),
           customerId: z.number(),
           merchantId: z.number(),
           agentId: z.number().optional(),
@@ -477,7 +478,7 @@ export const ecommerceOrdersRouter = router({
             zipCode: z.string(),
             phone: z.string(),
           }),
-          deviceId: z.string(),
+          deviceId: z.string().min(1).max(255),
           createdAt: z.string(),
         })
       )

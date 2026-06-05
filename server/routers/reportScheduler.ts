@@ -20,21 +20,24 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 const listSchedules = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -65,9 +68,9 @@ const listSchedules = protectedProcedure
 const getSchedule = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -98,9 +101,9 @@ const getSchedule = protectedProcedure
 const dashboard = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })

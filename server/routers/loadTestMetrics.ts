@@ -7,6 +7,8 @@ import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { notifyOwner } from "../_core/notification";
 import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   getAllEngineMetrics,
   exportPrometheusMetrics,
@@ -26,12 +28,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -225,26 +230,7 @@ let activeLoadTest: {
 // -- Router -------------------------------------------------------------------
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateLoadtestmetricsInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -449,7 +435,7 @@ export const loadTestMetricsRouter = router({
     }),
 
   getRunDetails: protectedProcedure
-    .input(z.object({ runId: z.string() }))
+    .input(z.object({ runId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
@@ -603,7 +589,7 @@ export const loadTestMetricsRouter = router({
   recordRun: protectedProcedure
     .input(
       z.object({
-        runId: z.string(),
+        runId: z.string().min(1).max(255),
         status: z.string().default("completed"),
         targetRps: z.number().optional(),
         durationSeconds: z.number().optional(),

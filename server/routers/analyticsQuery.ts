@@ -11,6 +11,8 @@ import { getDb } from "../db";
 import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
 import { desc, count, sql, gte, and, eq, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -44,36 +46,20 @@ async function queryOpenSearch(
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateAnalyticsqueryInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {

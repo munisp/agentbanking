@@ -26,13 +26,27 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
   rejected: [],
-  archived: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
 };
 
 const PROVIDERS = [
@@ -200,7 +214,7 @@ export const airtimeVendingRouter = router({
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        amount: z.number().int().min(50).max(50_000),
+        amount: z.number().min(0).int().min(50).max(50_000),
         provider: z.enum(["MTN", "AIRTEL", "GLO", "9MOBILE"]).optional(),
       })
     )
@@ -318,7 +332,7 @@ export const airtimeVendingRouter = router({
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        bundleId: z.string(),
+        bundleId: z.string().min(1).max(255),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -424,7 +438,7 @@ export const airtimeVendingRouter = router({
       z.object({
         limit: z.number().default(50),
         offset: z.number().default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -563,7 +577,7 @@ export const airtimeVendingRouter = router({
     };
   }),
   dataBundles: publicProcedure
-    .input(z.object({ networkId: z.string().optional() }).optional())
+    .input(z.object({ networkId: z.string().min(1).max(255).optional() }).optional())
     .query(async () => {
       return {
         bundles: [

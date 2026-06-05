@@ -10,6 +10,8 @@ import {
   auditLog,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -22,36 +24,24 @@ import {
 } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  detected: ["under_investigation"],
+  under_investigation: ["confirmed_fraud", "false_positive", "escalated"],
+  escalated: ["under_investigation", "confirmed_fraud"],
+  confirmed_fraud: ["mitigation_in_progress"],
+  mitigation_in_progress: ["resolved", "blocked"],
+  blocked: ["unblocked", "permanently_blocked"],
+  unblocked: ["monitoring"],
+  monitoring: ["cleared", "re_flagged"],
+  re_flagged: ["under_investigation"],
+  cleared: ["closed"],
+  resolved: ["closed"],
+  false_positive: ["closed"],
+  permanently_blocked: [],
+  closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateDisputeanalyticsInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {

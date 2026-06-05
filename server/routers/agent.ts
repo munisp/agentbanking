@@ -52,13 +52,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 // ── CBN Agency Banking Limits ──────────────────────────────────────────────────
@@ -289,7 +291,7 @@ export const agentRouter = router({
         name: z.string().min(2),
         phone: z.string().min(10),
         pin: z.string().min(4).max(8),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         location: z.string().optional(),
       })
     )
@@ -333,7 +335,7 @@ export const agentRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         status: z
           .enum(["all", "active", "suspended", "pending"])
           .default("all"),
@@ -486,7 +488,7 @@ export const agentRouter = router({
         id: z.number().int().positive(),
         name: z.string().min(2).optional(),
         phone: z.string().min(10).optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         location: z.string().optional(),
         tier: z.enum(["Bronze", "Silver", "Gold", "Platinum"]).optional(),
         floatLimit: z.number().positive().optional(),

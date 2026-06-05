@@ -38,12 +38,13 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -111,7 +112,7 @@ export const superAdminRouter = router({
           status: z
             .enum(["trial", "active", "suspended", "churned"])
             .optional(),
-          search: z.string().optional(),
+          search: z.string().min(1).max(500).optional(),
         })
       )
       .query(async ({ input }) => {

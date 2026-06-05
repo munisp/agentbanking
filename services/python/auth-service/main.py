@@ -3,6 +3,12 @@ Authentication and authorization service
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+
+@router.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "auth-service", "timestamp": datetime.utcnow().isoformat()}
+
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel

@@ -11,6 +11,8 @@ import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
 import { ENV } from "../_core/env";
 import { fluvioProduce, type FluvioEvent } from "../lib/fluvioClient";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -26,12 +28,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -66,26 +73,7 @@ const DEFAULT_TOPIC_MAPPINGS = [
 ];
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateMqttbridgeInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -275,7 +263,7 @@ export const mqttBridgeRouter = router({
         useTls: z.boolean().optional(),
         username: z.string().max(128).optional(),
         password: z.string().optional(),
-        clientId: z.string().max(128).optional(),
+        clientId: z.string().min(1).max(255).max(128).optional(),
         topicMappings: z.array(TopicMappingSchema).optional(),
         qos: z.enum(["0", "1", "2"]).optional(),
         keepAliveSeconds: z.number().int().min(10).max(3600).optional(),
@@ -497,7 +485,7 @@ export const mqttBridgeRouter = router({
         username: z.string().optional(),
         password: z.string().optional(),
         useTls: z.boolean().optional(),
-        clientId: z.string().optional(),
+        clientId: z.string().min(1).max(255).optional(),
         topicMappings: z.array(TopicMappingSchema).optional(),
         qos: z.enum(["0", "1", "2"]).optional(),
         keepAliveSeconds: z.number().int().optional(),

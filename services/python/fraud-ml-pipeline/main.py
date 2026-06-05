@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="fraud-ml-pipeline")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "fraud-ml-pipeline", "timestamp": datetime.utcnow().isoformat()}
+
 """
 Fraud ML Scoring Pipeline — Sprint 78
 Real-time fraud detection using ensemble ML models

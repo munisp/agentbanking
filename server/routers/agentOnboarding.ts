@@ -30,13 +30,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
@@ -134,7 +136,7 @@ export const agentOnboardingRouter = router({
         agentCode: z.string(),
         name: z.string().min(2).max(128),
         phone: z.string().min(11).max(20),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         location: z.string().max(128).optional(),
       })
     )
@@ -489,7 +491,7 @@ export const agentOnboardingRouter = router({
       z.object({
         page: z.number().default(1),
         limit: z.number().default(15),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         status: z
           .enum(["not_started", "in_progress", "completed", "on_hold"])
           .optional(),

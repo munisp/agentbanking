@@ -38,13 +38,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 function slugify(text: string): string {
@@ -118,7 +120,7 @@ export const agentStoreRouter = router({
         storeName: z.string().min(2).max(256),
         description: z.string().optional(),
         phone: z.string().optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         address: z.string().optional(),
         city: z.string().optional(),
         state: z.string().optional(),
@@ -236,7 +238,7 @@ export const agentStoreRouter = router({
         themeColor: z.string().optional(),
         aboutHtml: z.string().optional(),
         phone: z.string().optional(),
-        email: z.string().optional(),
+        email: z.string().email().optional(),
         address: z.string().optional(),
         city: z.string().optional(),
         state: z.string().optional(),
@@ -318,7 +320,7 @@ export const agentStoreRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         city: z.string().optional(),
         state: z.string().optional(),
         category: z.string().optional(),
@@ -385,7 +387,7 @@ export const agentStoreRouter = router({
         storeId: z.number(),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         categoryId: z.number().optional(),
       })
     )

@@ -41,12 +41,13 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -135,7 +136,7 @@ export const customerRouter = router({
         z.object({
           firstName: z.string().optional(),
           lastName: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           address: z.string().optional(),
           dateOfBirth: z.string().optional(),
         })
@@ -197,7 +198,7 @@ export const customerRouter = router({
           firstName: z.string(),
           lastName: z.string(),
           phone: z.string(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           bvn: z.string().length(11).optional(),
         })
       )
@@ -554,7 +555,7 @@ export const customerRouter = router({
     registerCredential: customerProcedure
       .input(
         z.object({
-          credentialId: z.string(),
+          credentialId: z.string().min(1).max(255),
           publicKey: z.string(),
           deviceType: z.string().optional(),
           transports: z.array(z.string()).default([]),
@@ -587,7 +588,7 @@ export const customerRouter = router({
         }
       }),
     revokeCredential: customerProcedure
-      .input(z.object({ credentialId: z.string() }))
+      .input(z.object({ credentialId: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => {
         try {
           const db = (await getDb())!;
@@ -872,7 +873,7 @@ export const customerRouter = router({
         z.object({
           firstName: z.string().optional(),
           lastName: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           address: z.string().optional(),
         })
       )

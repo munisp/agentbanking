@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -16,13 +18,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  not_started: ["documents_submitted"],
+  documents_submitted: ["under_review"],
+  under_review: ["additional_info_required", "verified", "rejected", "escalated"],
+  additional_info_required: ["documents_submitted"],
+  verified: ["active", "expired"],
+  active: ["renewal_pending", "suspended", "revoked"],
+  renewal_pending: ["under_review"],
+  expired: ["renewal_pending", "revoked"],
+  suspended: ["under_review", "revoked"],
+  escalated: ["verified", "rejected"],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+  revoked: [],
 };
 
 const KYC_ENFORCEMENT_URL =
@@ -61,26 +69,7 @@ async function serviceCall(
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateKycenforcementInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -288,7 +277,7 @@ export const kycEnforcementRouter = router({
   enforceAccountOpening: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         tier: z.number().min(1).max(3),
         productType: z.string(),
         firstName: z.string(),
@@ -333,9 +322,9 @@ export const kycEnforcementRouter = router({
   enforceLoan: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         loanType: z.string(),
-        amount: z.number(),
+        amount: z.number().min(0),
         currency: z.string().default("NGN"),
       })
     )
@@ -349,7 +338,7 @@ export const kycEnforcementRouter = router({
     }),
 
   checkKYCStatus: protectedProcedure
-    .input(z.object({ customerId: z.string(), level: z.string() }))
+    .input(z.object({ customerId: z.string().min(1).max(255), level: z.string() }))
     .query(async ({ input }) => {
       return serviceCall(
         `${KYC_ENFORCEMENT_URL}/api/v1/enforce/check`,
@@ -361,7 +350,7 @@ export const kycEnforcementRouter = router({
   bureauVerify: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         bvn: z.string(),
         nin: z.string().optional(),
         fullName: z.string(),
@@ -398,11 +387,11 @@ export const kycEnforcementRouter = router({
     .input(
       z.object({
         alertType: z.string(),
-        alertId: z.string(),
+        alertId: z.string().min(1).max(255),
         subject: z.object({
           subjectType: z.string(),
           name: z.string(),
-          customerId: z.string(),
+          customerId: z.string().min(1).max(255),
           bvn: z.string().optional(),
           riskLevel: z.string(),
         }),
@@ -452,7 +441,7 @@ export const kycEnforcementRouter = router({
     }),
 
   getCase: protectedProcedure
-    .input(z.object({ caseId: z.string() }))
+    .input(z.object({ caseId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       return serviceCall(
         `${AML_CASE_MANAGER_URL}/api/v1/cases/${input.caseId}`,
@@ -463,7 +452,7 @@ export const kycEnforcementRouter = router({
   escalateCase: protectedProcedure
     .input(
       z.object({
-        caseId: z.string(),
+        caseId: z.string().min(1).max(255),
         escalatedTo: z.string(),
         reason: z.string(),
         actor: z.string(),
@@ -484,7 +473,7 @@ export const kycEnforcementRouter = router({
   closeCase: protectedProcedure
     .input(
       z.object({
-        caseId: z.string(),
+        caseId: z.string().min(1).max(255),
         resolution: z.string(),
         actor: z.string(),
       })
@@ -505,7 +494,7 @@ export const kycEnforcementRouter = router({
   assessTier: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         hasPhone: z.boolean(),
         hasName: z.boolean(),
         hasDob: z.boolean(),
@@ -541,7 +530,7 @@ export const kycEnforcementRouter = router({
   enforceLimits: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         tier: z.enum(["tier1", "tier2", "tier3"]),
         transactionAmount: z.number(),
         dailyTotalSoFar: z.number(),
@@ -567,7 +556,7 @@ export const kycEnforcementRouter = router({
   complianceScore: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         hasBvn: z.boolean(),
         bvnVerified: z.boolean(),
         hasNin: z.boolean(),
@@ -643,7 +632,7 @@ export const kycEnforcementRouter = router({
   startWorkflow: protectedProcedure
     .input(
       z.object({
-        customerId: z.string(),
+        customerId: z.string().min(1).max(255),
         kycLevel: z.string().default("standard"),
         targetTier: z.string().default("tier_2"),
         triggeredBy: z.string().default("manual"),
@@ -661,7 +650,7 @@ export const kycEnforcementRouter = router({
     }),
 
   getWorkflow: protectedProcedure
-    .input(z.object({ workflowId: z.string() }))
+    .input(z.object({ workflowId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       return serviceCall(
         `${KYC_WORKFLOW_URL}/api/v1/workflow/${input.workflowId}`,
@@ -674,7 +663,7 @@ export const kycEnforcementRouter = router({
       z
         .object({
           status: z.string().optional(),
-          customerId: z.string().optional(),
+          customerId: z.string().min(1).max(255).optional(),
         })
         .optional()
     )
@@ -698,7 +687,7 @@ export const kycEnforcementRouter = router({
   }),
 
   clearCooldown: protectedProcedure
-    .input(z.object({ customerId: z.string() }))
+    .input(z.object({ customerId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       return serviceCall(
         `${KYC_EVENT_CONSUMER_URL}/api/v1/cooldowns/${input.customerId}`,

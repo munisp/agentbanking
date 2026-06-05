@@ -6,6 +6,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -135,36 +137,19 @@ const API_SPEC = {
 } as const;
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  registered: ["configuring"],
+  configuring: ["testing"],
+  testing: ["active", "failed"],
+  active: ["degraded", "suspended", "deprecated"],
+  degraded: ["active", "suspended"],
+  suspended: ["active", "decommissioned"],
+  deprecated: ["decommissioned"],
+  failed: ["configuring", "decommissioned"],
+  decommissioned: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateApidocsInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {

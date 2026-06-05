@@ -16,6 +16,8 @@ import {
 } from "drizzle-orm";
 import { notification_logs, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -31,38 +33,29 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  application_draft: ["submitted"],
+  submitted: ["under_review"],
+  under_review: ["credit_check", "rejected"],
+  credit_check: ["approved", "conditionally_approved", "rejected"],
+  conditionally_approved: ["documents_pending"],
+  documents_pending: ["approved", "rejected"],
+  approved: ["disbursement_pending"],
+  disbursement_pending: ["disbursed", "cancelled"],
+  disbursed: ["repaying"],
+  repaying: ["completed", "overdue", "restructured"],
+  overdue: ["repaying", "defaulted", "restructured"],
+  defaulted: ["collections", "written_off", "restructured"],
+  restructured: ["repaying"],
+  collections: ["repaying", "written_off"],
+  completed: ["closed"],
+  written_off: ["closed"],
+  closed: [],
   rejected: [],
-  archived: [],
+  cancelled: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateAdvancednotificationsInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -258,7 +251,7 @@ export const advancedNotificationsRouter = router({
     .input(
       z
         .object({
-          recipientId: z.string().optional(),
+          recipientId: z.string().min(1).max(255).optional(),
           status: z.string().optional(),
           limit: z.number().default(20),
         })
@@ -293,7 +286,7 @@ export const advancedNotificationsRouter = router({
   send: protectedProcedure
     .input(
       z.object({
-        recipientId: z.string(),
+        recipientId: z.string().min(1).max(255),
         recipientType: z.string().default("user"),
         subject: z.string(),
         body: z.string(),

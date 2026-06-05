@@ -25,12 +25,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 

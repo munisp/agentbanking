@@ -15,15 +15,31 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { auditFinancialAction } from "../lib/transactionHelper";
+import { validateInput } from "../lib/routerHelpers";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
   rejected: [],
-  archived: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
 };
 
 async function tryDb() {
@@ -37,28 +53,7 @@ async function tryDb() {
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateLivebillingdashboardInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {
@@ -158,7 +153,7 @@ export const liveBillingDashboardRouter = router({
       z.object({
         limit: z.number().default(20),
         offset: z.number().default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -251,7 +246,7 @@ export const liveBillingDashboardRouter = router({
   getFinancialModelData: protectedProcedure
     .input(
       z.object({
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         billingModel: z.string(),
         projectionYears: z.number(),
       })
@@ -401,7 +396,7 @@ export const liveBillingDashboardRouter = router({
   getRevenueStream: protectedProcedure
     .input(
       z.object({
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         intervalSeconds: z.number().optional(),
       })
     )
@@ -457,7 +452,7 @@ export const liveBillingDashboardRouter = router({
   exportForFinancialModel: protectedProcedure
     .input(
       z.object({
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         format: z.string().default("json"),
       })
     )

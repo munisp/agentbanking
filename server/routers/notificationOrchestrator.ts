@@ -24,12 +24,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -258,7 +263,7 @@ export const notificationOrchestratorRouter = router({
         recipientId: z.number(),
         recipientType: z.enum(["agent", "customer", "merchant", "admin"]),
         channel: z.enum(["sms", "email", "push", "whatsapp", "in_app"]),
-        templateId: z.string().optional(),
+        templateId: z.string().min(1).max(255).optional(),
         subject: z.string().optional(),
         body: z.string(),
         // @ts-expect-error auto-fix
@@ -332,7 +337,7 @@ export const notificationOrchestratorRouter = router({
         recipientIds: z.array(z.number()),
         recipientType: z.enum(["agent", "customer", "merchant", "admin"]),
         channel: z.enum(["sms", "email", "push", "whatsapp", "in_app"]),
-        templateId: z.string(),
+        templateId: z.string().min(1).max(255),
         // @ts-expect-error auto-fix
         metadata: z.record(z.string(), z.string()).optional(),
       })

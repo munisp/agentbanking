@@ -5,6 +5,8 @@ import { getDb } from "../db";
 import { platformSettings } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -19,9 +21,9 @@ import {
 const getMfaStatus = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -52,9 +54,9 @@ const getMfaStatus = protectedProcedure
 const enableTotp = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -85,9 +87,9 @@ const enableTotp = protectedProcedure
 const verifyTotp = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -118,9 +120,9 @@ const verifyTotp = protectedProcedure
 const enableSms2fa = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -151,9 +153,9 @@ const enableSms2fa = protectedProcedure
 const disableMfa = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -184,9 +186,9 @@ const disableMfa = protectedProcedure
 const getBackupCodes = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -216,36 +218,19 @@ const getBackupCodes = protectedProcedure
   });
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  pending_verification: ["email_verified"],
+  email_verified: ["profile_complete"],
+  profile_complete: ["active"],
+  active: ["suspended", "locked", "deactivated"],
+  suspended: ["active", "deactivated"],
+  locked: ["active", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "permanently_closed"],
+  permanently_closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateMfamanagerInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {

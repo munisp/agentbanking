@@ -22,12 +22,20 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
+  pending: ["batched"],
+  batched: ["processing"],
+  processing: ["settled", "partially_settled", "failed"],
+  settled: ["reconciled"],
+  partially_settled: ["processing", "escalated"],
+  reconciled: ["confirmed", "discrepancy_found"],
+  discrepancy_found: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["confirmed"],
+  confirmed: ["archived"],
+  failed: ["retry_pending", "escalated"],
+  retry_pending: ["processing"],
+  escalated: ["resolved"],
+  resolved: ["confirmed"],
   archived: [],
 };
 
@@ -218,7 +226,7 @@ export const generalLedgerRouter = router({
             accountCode: z.string(),
             accountName: z.string(),
             entryType: z.enum(["debit", "credit"]),
-            amount: z.number().min(0.01),
+            amount: z.number().min(0).min(0.01),
             description: z.string(),
             reference: z.string().optional(),
           })

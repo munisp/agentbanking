@@ -17,6 +17,8 @@ import {
 } from "drizzle-orm";
 import { tenants, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -32,36 +34,20 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  proposed: ["review"],
+  review: ["approved", "rejected"],
+  approved: ["deploying"],
+  deploying: ["active", "rollback"],
+  active: ["deprecated", "updated"],
+  deprecated: ["removed"],
+  updated: ["active"],
+  rollback: ["review"],
+  removed: [],
   rejected: [],
-  archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateTenantadminInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -243,7 +229,7 @@ export const tenantAdminRouter = router({
         slug: z.string(),
         contactEmail: z.string().optional(),
         contactPhone: z.string().optional(),
-        planId: z.string().optional(),
+        planId: z.string().min(1).max(255).optional(),
         country: z.string().default("NGA"),
         currency: z.string().default("NGN"),
       })
@@ -304,7 +290,7 @@ export const tenantAdminRouter = router({
         name: z.string().optional(),
         contactEmail: z.string().optional(),
         contactPhone: z.string().optional(),
-        planId: z.string().optional(),
+        planId: z.string().min(1).max(255).optional(),
         status: z.enum(["active", "suspended", "trial", "churned"]).optional(),
       })
     )
@@ -411,7 +397,7 @@ export const tenantAdminRouter = router({
   updateUser: protectedProcedure
     .input(
       z.object({
-        userId: z.string(),
+        userId: z.string().min(1).max(255),
         role: z.string().optional(),
         name: z.string().optional(),
       })

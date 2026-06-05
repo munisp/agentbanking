@@ -10,6 +10,8 @@ import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { ENV } from "../_core/env";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -25,12 +27,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -107,26 +114,7 @@ function buildReceiptSMS(data: {
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateSmsreceiptInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -424,8 +412,8 @@ export const smsReceiptRouter = router({
         agentCode: z.string(),
         agentName: z.string(),
         type: z.string(),
-        amount: z.number(),
-        fee: z.number().default(0),
+        amount: z.number().min(0),
+        fee: z.number().min(0).default(0),
         customerName: z.string().optional(),
       })
     )
@@ -477,7 +465,7 @@ export const smsReceiptRouter = router({
         recipientPhone: z.string().min(10).max(15),
         ussdCode: z.string().min(1).max(50),
         transactionRef: z.string().optional(),
-        amount: z.number().optional(),
+        amount: z.number().min(0).optional(),
         agentCode: z.string().optional(),
       })
     )
@@ -520,7 +508,7 @@ export const smsReceiptRouter = router({
       }
     }),
   addMessage: protectedProcedure
-    .input(z.object({ sessionId: z.string(), content: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255), content: z.string() }))
     .mutation(async ({ input }) => {
       return {
         messageId: `msg-${Date.now()}`,
@@ -625,7 +613,7 @@ export const smsReceiptRouter = router({
     };
   }),
   processInput: protectedProcedure
-    .input(z.object({ input: z.string(), sessionId: z.string().optional() }))
+    .input(z.object({ input: z.string(), sessionId: z.string().min(1).max(255).optional() }))
     .mutation(async ({ input }) => {
       return { response: "", type: "text" as const };
     }),
@@ -633,7 +621,7 @@ export const smsReceiptRouter = router({
     .input(
       z.object({
         type: z.string(),
-        amount: z.number().optional(),
+        amount: z.number().min(0).optional(),
         description: z.string(),
       })
     )
@@ -656,7 +644,7 @@ export const smsReceiptRouter = router({
       z.object({
         transactionId: z.number(),
         reason: z.string(),
-        amount: z.number().optional(),
+        amount: z.number().min(0).optional(),
       })
     )
     .mutation(async ({ input }) => {

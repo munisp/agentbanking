@@ -67,12 +67,26 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 // ─── Commission & loyalty rates ───────────────────────────────────────────────
@@ -349,7 +363,7 @@ export const transactionsRouter = router({
           "Nano Loan",
           "Insurance",
         ]),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         customerAccount: z.string().optional(),
@@ -2516,7 +2530,7 @@ export const transactionsRouter = router({
       z.object({
         startDate: z.string().optional(),
         endDate: z.string().optional(),
-        agentId: z.string().optional(),
+        agentId: z.string().min(1).max(255).optional(),
       })
     )
     .query(async ({ input, ctx }) => {

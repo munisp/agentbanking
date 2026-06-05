@@ -8,6 +8,8 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { eq, desc, count, sql, and, gte, lte } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -31,28 +33,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateRevenuereconciliationInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -264,7 +245,7 @@ export const revenueReconciliationRouter = router({
   runReconciliation: protectedProcedure
     .input(
       z.object({
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         source: z.string().min(1),
         target: z.string().min(1),
         periodHours: z.number().min(1).max(720),
@@ -337,7 +318,7 @@ export const revenueReconciliationRouter = router({
   getBatches: protectedProcedure
     .input(
       z.object({
-        clientId: z.string().optional(),
+        clientId: z.string().min(1).max(255).optional(),
         limit: z.number().min(1).max(100).default(10),
       })
     )
@@ -374,7 +355,7 @@ export const revenueReconciliationRouter = router({
   getDiscrepancies: protectedProcedure
     .input(
       z.object({
-        batchId: z.string(),
+        batchId: z.string().min(1).max(255),
         page: z.number().min(1).default(1),
         pageSize: z.number().min(1).max(100).default(10),
       })
@@ -399,9 +380,9 @@ export const revenueReconciliationRouter = router({
   resolveDiscrepancy: protectedProcedure
     .input(
       z.object({
-        entryId: z.string().min(1),
+        entryId: z.string().min(1).max(255).min(1),
         resolution: z.string().min(1),
-        amount: z.number().optional(),
+        amount: z.number().min(0).optional(),
         note: z.string().optional(),
       })
     )

@@ -158,13 +158,27 @@ async function sendBillingNotifications(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
   rejected: [],
-  archived: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
 };
 
 // ── Domain Calculations ────────────────────────────────────────────────────
@@ -334,7 +348,7 @@ export const billingAuditRouter = router({
       z.object({
         tenantId: z.number(),
         resourceType: z.string(),
-        resourceId: z.string(),
+        resourceId: z.string().min(1).max(255),
       })
     )
     .query(async ({ ctx, input }) => {

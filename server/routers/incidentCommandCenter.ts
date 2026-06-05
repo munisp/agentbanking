@@ -4,6 +4,8 @@ import { getDb } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { platform_incidents, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -19,38 +21,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  detected: ["analyzing"],
+  analyzing: ["confirmed_threat", "false_alarm"],
+  confirmed_threat: ["containment"],
+  containment: ["eradication"],
+  eradication: ["recovery"],
+  recovery: ["post_incident_review"],
+  post_incident_review: ["closed"],
+  false_alarm: ["closed"],
+  closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateIncidentcommandcenterInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {

@@ -17,38 +17,23 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateAgenthierarchyInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -334,7 +319,7 @@ export const agentHierarchyRouter = router({
         .object({
           role: z.string().optional(),
           territory: z.string().optional(),
-          search: z.string().optional(),
+          search: z.string().min(1).max(500).optional(),
         })
         .optional()
     )

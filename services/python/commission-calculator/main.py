@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="commission-calculator")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "commission-calculator", "timestamp": datetime.utcnow().isoformat()}
+
 """
 Commission Calculator — Sprint 78
 Tiered commission engine for POS agents

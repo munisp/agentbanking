@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="ussd-session-replayer")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "ussd-session-replayer", "timestamp": datetime.utcnow().isoformat()}
+
 """
 USSD Session Replayer — Sprint 78
 Keystroke-by-keystroke playback of USSD sessions for debugging and analytics

@@ -45,12 +45,13 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -184,7 +185,7 @@ export const resilienceRouter = router({
     .input(
       z.object({
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         destinationAccount: z.string().optional(),
         destinationBank: z.string().optional(),
         customerPhone: z.string().optional(),
@@ -252,7 +253,7 @@ export const resilienceRouter = router({
     .input(
       z.object({
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         destinationBank: z.string().optional(),
@@ -713,7 +714,7 @@ export const resilienceRouter = router({
       z.object({
         agentCode: z.string(),
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         ussdString: z.string(),
         instructions: z.string(),
         customerName: z.string().optional(),
@@ -1293,7 +1294,7 @@ export const resilienceRouter = router({
   reportTerminalTelemetry: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string(),
+        terminalId: z.string().min(1).max(255),
         latencyMs: z.number(),
         bandwidthKbps: z.number(),
         packetLossPct: z.number(),

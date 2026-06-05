@@ -145,7 +145,7 @@ export const merchantPayoutSettlementRouter = router({
     .input(
       z.object({
         merchantId: z.number(),
-        amount: z.number().min(100),
+        amount: z.number().min(0).min(100),
         bankCode: z.string(),
         accountNumber: z.string(),
         accountName: z.string(),

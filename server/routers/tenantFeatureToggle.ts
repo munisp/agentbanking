@@ -23,13 +23,16 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  proposed: ["review"],
+  review: ["approved", "rejected"],
+  approved: ["deploying"],
+  deploying: ["active", "rollback"],
+  active: ["deprecated", "updated"],
+  deprecated: ["removed"],
+  updated: ["active"],
+  rollback: ["review"],
+  removed: [],
   rejected: [],
-  archived: [],
 };
 
 // ── Transaction Safety ─────────────────────────────────────────────────────

@@ -270,7 +270,7 @@ export const agentLoanFacilityRouter = router({
 
   // Record repayment
   recordRepayment: protectedProcedure
-    .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
+    .input(z.object({ loanId: z.number(), amount: z.number().min(0).min(1) }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;

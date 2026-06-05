@@ -17,6 +17,8 @@ import {
 } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -32,38 +34,20 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateReporttemplatedesignerInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -343,7 +327,7 @@ export const reportTemplateDesignerRouter = router({
       }
     }),
   deleteTemplate: protectedProcedure
-    .input(z.object({ templateId: z.string() }))
+    .input(z.object({ templateId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -364,7 +348,7 @@ export const reportTemplateDesignerRouter = router({
   generateReport: protectedProcedure
     .input(
       z.object({
-        templateId: z.string(),
+        templateId: z.string().min(1).max(255),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         filters: z.record(z.string(), z.string()).optional(),

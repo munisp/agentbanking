@@ -30,6 +30,8 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getDb, writeAuditLog } from "../db.js";
 import { merchantKycDocs } from "../../drizzle/schema.js";
 import { eq, desc, gte, lte, sql, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -45,13 +47,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  not_started: ["documents_submitted"],
+  documents_submitted: ["under_review"],
+  under_review: ["additional_info_required", "verified", "rejected", "escalated"],
+  additional_info_required: ["documents_submitted"],
+  verified: ["active", "expired"],
+  active: ["renewal_pending", "suspended", "revoked"],
+  renewal_pending: ["under_review"],
+  expired: ["renewal_pending", "revoked"],
+  suspended: ["under_review", "revoked"],
+  escalated: ["verified", "rejected"],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+  revoked: [],
 };
 
 // ─── Service URLs ────────────────────────────────────────────────────────────
@@ -129,26 +137,7 @@ const beneficialOwnerSchema = z.object({
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateKybInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -343,7 +332,7 @@ export const kybRouter = router({
         incorporation_state: z.string().optional(),
         business_address: addressSchema,
         phone: z.string().optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         industry: z.string().optional(),
         annual_revenue: z.number().nonnegative().optional(),
         employee_count: z.number().int().nonnegative().optional(),

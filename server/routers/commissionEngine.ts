@@ -445,7 +445,7 @@ export const commissionEngineRouter = router({
     .input(
       z.object({
         id: z.string(),
-        rate: z.number().optional(),
+        rate: z.number().min(0).optional(),
         flatFee: z.number().optional(),
         bonusRate: z.number().optional(),
         isActive: z.boolean().optional(),
@@ -548,7 +548,7 @@ export const commissionEngineRouter = router({
         transactionType: z.string().min(1),
         minVolume: z.number().min(0),
         maxVolume: z.number().min(0),
-        rate: z.number().min(0).max(100),
+        rate: z.number().min(0).min(0).max(100),
         flatFee: z.number().default(0),
         bonusRate: z.number().default(0),
         agentRole: z.string().default("agent"),
@@ -926,7 +926,7 @@ export const commissionEngineRouter = router({
     .input(
       z.object({
         transactionType: z.string(),
-        amount: z.number(),
+        amount: z.number().min(0),
         agentRole: z.string().default("agent"),
       })
     )
@@ -1326,7 +1326,7 @@ export const commissionEngineRouter = router({
     .input(
       z.object({
         agentCode: z.string(),
-        amount: z.number(),
+        amount: z.number().min(0),
         currency: z.string().default("NGN"),
         payeeFsp: z.string(),
       })

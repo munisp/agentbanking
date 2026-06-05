@@ -16,6 +16,8 @@ import {
 } from "drizzle-orm";
 import { customers, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -31,36 +33,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  pending_verification: ["email_verified"],
+  email_verified: ["profile_complete"],
+  profile_complete: ["active"],
+  active: ["suspended", "locked", "deactivated"],
+  suspended: ["active", "deactivated"],
+  locked: ["active", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "permanently_closed"],
+  permanently_closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateAccountopeningInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -288,7 +273,7 @@ export const accountOpeningRouter = router({
         firstName: z.string(),
         lastName: z.string(),
         phone: z.string(),
-        email: z.string().optional(),
+        email: z.string().email().optional(),
         bvn: z.string().optional(),
         nin: z.string().optional(),
         address: z.string().optional(),

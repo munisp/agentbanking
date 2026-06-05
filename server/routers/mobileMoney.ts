@@ -34,12 +34,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -129,7 +132,7 @@ export const mobileMoneyRouter = router({
       z.object({
         senderPhone: z.string().min(11).max(14),
         recipientPhone: z.string().min(11).max(14),
-        amount: z.number().positive().max(5_000_000),
+        amount: z.number().min(0).positive().max(5_000_000),
         currency: z.string().default("NGN"),
         narration: z.string().max(256).optional(),
       })
@@ -235,7 +238,7 @@ export const mobileMoneyRouter = router({
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        amount: z.number().positive().max(500_000),
+        amount: z.number().min(0).positive().max(500_000),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -317,7 +320,7 @@ export const mobileMoneyRouter = router({
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        amount: z.number().positive().max(5_000_000),
+        amount: z.number().min(0).positive().max(5_000_000),
       })
     )
     .mutation(async ({ input, ctx }) => {

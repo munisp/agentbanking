@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="tx-monitor-alerter")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "tx-monitor-alerter", "timestamp": datetime.utcnow().isoformat()}
+
 """
 Transaction Monitor Alerter — Sprint 78
 Real-time transaction monitoring with configurable alert rules

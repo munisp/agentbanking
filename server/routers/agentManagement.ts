@@ -28,13 +28,15 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
   rejected: [],
-  archived: [],
 };
 
 async function requireAdmin(req: any) {
@@ -479,7 +481,7 @@ export const agentManagementRouter = router({
   submitTopUpRequest: protectedProcedure
     .input(
       z.object({
-        amount: z.number().positive().min(1000, "Minimum top-up is ₦1,000"),
+        amount: z.number().min(0).positive().min(1000, "Minimum top-up is ₦1,000"),
         notes: z.string().max(500).optional(),
       })
     )

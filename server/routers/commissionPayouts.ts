@@ -139,7 +139,7 @@ export const commissionPayoutsRouter = router({
     .input(
       z.object({
         agentCode: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         bankCode: z.string().max(10).optional(),
         accountNumber: z.string().max(20).optional(),
         accountName: z.string().max(100).optional(),

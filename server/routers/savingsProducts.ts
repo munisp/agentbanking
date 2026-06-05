@@ -11,6 +11,8 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -26,36 +28,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  account_opened: ["funding"],
+  funding: ["active"],
+  active: ["partial_withdrawal", "matured", "frozen"],
+  partial_withdrawal: ["active"],
+  matured: ["renewed", "withdrawn"],
+  renewed: ["active"],
+  frozen: ["active", "closed"],
+  withdrawn: ["closed"],
+  closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateSavingsproductsInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -264,7 +249,7 @@ export const savingsProductsRouter = router({
     .input(
       z.object({
         accountId: z.number(),
-        amount: z.number().positive().max(10_000_000),
+        amount: z.number().min(0).positive().max(10_000_000),
         agentId: z.number().optional(),
       })
     )
@@ -330,7 +315,7 @@ export const savingsProductsRouter = router({
     .input(
       z.object({
         accountId: z.number(),
-        amount: z.number().positive().max(5_000_000),
+        amount: z.number().min(0).positive().max(5_000_000),
         agentId: z.number().optional(),
       })
     )

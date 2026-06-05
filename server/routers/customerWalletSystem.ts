@@ -215,7 +215,7 @@ export const customerWalletSystemRouter = router({
     .input(
       z.object({
         customerId: z.number(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         source: z.string(),
       })
     )

@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="kyc-document-verifier")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "kyc-document-verifier", "timestamp": datetime.utcnow().isoformat()}
+
 """
 KYC Document Verifier — Sprint 78
 Automated document verification for agent onboarding

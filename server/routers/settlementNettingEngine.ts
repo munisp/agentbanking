@@ -15,6 +15,8 @@ import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -37,28 +39,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateSettlementnettingengineInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -214,7 +195,7 @@ export const settlementNettingEngineRouter = router({
   listSessions: protectedProcedure
     .input(
       z
-        .object({ page: z.number().optional(), limit: z.number().optional() })
+        .object({ page: z.number().min(1).max(10000).optional(), limit: z.number().min(1).max(100).optional() })
         .optional()
     )
     .query(async ({ input }) => {
@@ -256,7 +237,7 @@ export const settlementNettingEngineRouter = router({
     }),
 
   getSession: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       const db = (await getDb())!;
       const numId = parseInt(input.sessionId.replace(/\D/g, "")) || 0;
@@ -360,7 +341,7 @@ export const settlementNettingEngineRouter = router({
     }),
 
   settleSession: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
       const numId = parseInt(input.sessionId.replace(/\D/g, "")) || 0;

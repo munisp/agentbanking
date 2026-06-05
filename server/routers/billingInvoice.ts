@@ -9,6 +9,8 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, gte, lte, sql, desc, count } from "drizzle-orm";
 import Stripe from "stripe";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -80,26 +82,7 @@ interface Invoice {
 }
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateBillinginvoiceInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -273,7 +256,7 @@ export const billingInvoiceRouter = router({
     .input(
       z.object({
         tenantId: z.number(),
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         periodStart: z.string(),
         periodEnd: z.string(),
         currency: z.string().default("NGN"),
@@ -452,7 +435,7 @@ export const billingInvoiceRouter = router({
     }),
 
   getInvoice: protectedProcedure
-    .input(z.object({ invoiceId: z.string() }))
+    .input(z.object({ invoiceId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       try {
         return { invoice: null, found: false };
@@ -469,7 +452,7 @@ export const billingInvoiceRouter = router({
   markPaid: protectedProcedure
     .input(
       z.object({
-        invoiceId: z.string(),
+        invoiceId: z.string().min(1).max(255),
         paymentRef: z.string(),
         paidAt: z.string().optional(),
       })
@@ -495,8 +478,8 @@ export const billingInvoiceRouter = router({
   generateCreditNote: protectedProcedure
     .input(
       z.object({
-        invoiceId: z.string(),
-        amount: z.number(),
+        invoiceId: z.string().min(1).max(255),
+        amount: z.number().min(0),
         reason: z.string(),
       })
     )
@@ -547,7 +530,7 @@ export const billingInvoiceRouter = router({
   convertCurrency: protectedProcedure
     .input(
       z.object({
-        amount: z.number(),
+        amount: z.number().min(0),
         from: z.string().default("NGN"),
         to: z.string(),
       })
@@ -586,7 +569,7 @@ export const billingInvoiceRouter = router({
     .input(
       z.object({
         tenantId: z.number(),
-        clientId: z.string(),
+        clientId: z.string().min(1).max(255),
         periodStart: z.string(),
         periodEnd: z.string(),
         currency: z.string().default("usd"),
@@ -595,7 +578,7 @@ export const billingInvoiceRouter = router({
         lineItems: z.array(
           z.object({
             description: z.string(),
-            amount: z.number(),
+            amount: z.number().min(0),
             quantity: z.number().default(1),
           })
         ),
@@ -671,7 +654,7 @@ export const billingInvoiceRouter = router({
     }),
 
   collectPayment: protectedProcedure
-    .input(z.object({ stripeInvoiceId: z.string() }))
+    .input(z.object({ stripeInvoiceId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const invoice = await getStripe().invoices.pay(input.stripeInvoiceId);
@@ -692,7 +675,7 @@ export const billingInvoiceRouter = router({
     }),
 
   getStripeInvoiceStatus: protectedProcedure
-    .input(z.object({ stripeInvoiceId: z.string() }))
+    .input(z.object({ stripeInvoiceId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       try {
         const invoice = await getStripe().invoices.retrieve(
@@ -727,8 +710,8 @@ export const billingInvoiceRouter = router({
     .input(
       z.object({
         tenantId: z.number(),
-        invoiceId: z.string(),
-        amount: z.number(),
+        invoiceId: z.string().min(1).max(255),
+        amount: z.number().min(0),
         currency: z.string().default("usd"),
         customerEmail: z.string(),
         description: z.string(),

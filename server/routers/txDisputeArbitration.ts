@@ -149,7 +149,7 @@ export const txDisputeArbitrationRouter = router({
     }),
 
   getDispute: protectedProcedure
-    .input(z.object({ disputeId: z.string() }))
+    .input(z.object({ disputeId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       const db = (await getDb())!;
       const numId = parseInt(input.disputeId.replace(/\D/g, "")) || 0;
@@ -221,7 +221,7 @@ export const txDisputeArbitrationRouter = router({
   resolveDispute: protectedProcedure
     .input(
       z.object({
-        disputeId: z.string(),
+        disputeId: z.string().min(1).max(255),
         outcome: z.enum([
           "claimant_favor",
           "respondent_favor",
@@ -327,7 +327,7 @@ export const txDisputeArbitrationRouter = router({
   escalateDispute: protectedProcedure
     .input(
       z.object({
-        disputeId: z.string(),
+        disputeId: z.string().min(1).max(255),
         reason: z.string(),
         escalateTo: z.enum([
           "senior_investigator",

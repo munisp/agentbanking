@@ -8,6 +8,8 @@ import {
 import { getDb } from "../db";
 import { auditLog, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -16,38 +18,19 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  pending_verification: ["email_verified"],
+  email_verified: ["profile_complete"],
+  profile_complete: ["active"],
+  active: ["suspended", "locked", "deactivated"],
+  suspended: ["active", "deactivated"],
+  locked: ["active", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "permanently_closed"],
+  permanently_closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateUssdsessionreplayInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Domain Calculations ────────────────────────────────────────────────────
 function computeFees(amount: number, txType: string = "transfer") {
@@ -211,7 +194,7 @@ export const ussdSessionReplayRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -395,7 +378,7 @@ export const ussdSessionReplayRouter = router({
     }),
 
   getSession: openProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       const sessions: Record<
         string,
@@ -474,7 +457,7 @@ export const ussdSessionReplayRouter = router({
     }),
 
   replaySession: openProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       const sessions: Record<
         string,

@@ -27,19 +27,20 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 const offlineTxSchema = z.object({
-  localId: z.string(),
+  localId: z.string().min(1).max(255),
   type: z.enum(["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"]),
-  amount: z.number().positive().max(10_000_000),
+  amount: z.number().min(0).positive().max(10_000_000),
   customerName: z.string().max(128).optional(),
   customerPhone: z.string().max(20).optional(),
   customerAccount: z.string().max(20).optional(),
@@ -114,7 +115,7 @@ export const offlineSyncRouter = router({
   syncBatch: protectedProcedure
     .input(
       z.object({
-        sessionId: z.string(),
+        sessionId: z.string().min(1).max(255),
         transactions: z.array(offlineTxSchema).min(1).max(200),
         deviceToken: z.string().optional(),
       })
@@ -274,7 +275,7 @@ export const offlineSyncRouter = router({
     }),
 
   getSessionStatus: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .query(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);
@@ -372,7 +373,7 @@ export const offlineSyncRouter = router({
     }),
 
   retryFailed: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);

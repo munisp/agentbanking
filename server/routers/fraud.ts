@@ -12,6 +12,8 @@ import {
 import { fraudAlerts, fraudRules } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -27,36 +29,24 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  detected: ["under_investigation"],
+  under_investigation: ["confirmed_fraud", "false_positive", "escalated"],
+  escalated: ["under_investigation", "confirmed_fraud"],
+  confirmed_fraud: ["mitigation_in_progress"],
+  mitigation_in_progress: ["resolved", "blocked"],
+  blocked: ["unblocked", "permanently_blocked"],
+  unblocked: ["monitoring"],
+  monitoring: ["cleared", "re_flagged"],
+  re_flagged: ["under_investigation"],
+  cleared: ["closed"],
+  resolved: ["closed"],
+  false_positive: ["closed"],
+  permanently_blocked: [],
+  closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateFraudInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -230,7 +220,7 @@ export const fraudRouter = router({
         status: z.string().optional(),
         page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(200).default(50),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -330,7 +320,7 @@ export const fraudRouter = router({
         severity: z.enum(["critical", "high", "medium", "low"]),
         type: z.string(),
         customerName: z.string().optional(),
-        amount: z.number().optional(),
+        amount: z.number().min(0).optional(),
         reason: z.string(),
         agentId: z.number().optional(),
         transactionId: z.number().optional(),

@@ -31,9 +31,9 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 const renewContract = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -121,9 +121,9 @@ const suspendBilling = protectedProcedure
 const terminateContract = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -197,8 +197,8 @@ const getAlerts = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -287,9 +287,9 @@ const configureAlertThresholds = protectedProcedure
 const getSlaMetrics = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })
@@ -323,9 +323,9 @@ const getSlaMetrics = protectedProcedure
 const listWebhooks = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -356,9 +356,9 @@ const listWebhooks = protectedProcedure
 const registerWebhook = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -516,8 +516,8 @@ const getNotificationPreferences = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -607,8 +607,8 @@ const getRevenueForecast = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -655,9 +655,9 @@ const getRevenueForecast = protectedProcedure
 const fileDispute = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -688,9 +688,9 @@ const fileDispute = protectedProcedure
 const listDisputes = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {

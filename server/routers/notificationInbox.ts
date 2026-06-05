@@ -31,12 +31,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -195,7 +200,7 @@ const _txPatterns = {
 
 export const notificationInboxRouter = router({
   getStats: protectedProcedure
-    .input(z.object({ userId: z.string() }))
+    .input(z.object({ userId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
       try {
         const db = await getDb();
@@ -232,7 +237,7 @@ export const notificationInboxRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        userId: z.string(),
+        userId: z.string().min(1).max(255),
         status: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
@@ -302,7 +307,7 @@ export const notificationInboxRouter = router({
       }
     }),
   markAllRead: protectedProcedure
-    .input(z.object({ userId: z.string() }))
+    .input(z.object({ userId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();

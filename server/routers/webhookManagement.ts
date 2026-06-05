@@ -25,12 +25,17 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -258,7 +263,7 @@ export const webhookManagementRouter = router({
   updateWebhook: protectedProcedure
     .input(
       z.object({
-        webhookId: z.string(),
+        webhookId: z.string().min(1).max(255),
         name: z.string().optional(),
         url: z.string().url().optional(),
         events: z.array(z.string()).optional(),
@@ -291,7 +296,7 @@ export const webhookManagementRouter = router({
     }),
 
   deleteWebhook: protectedProcedure
-    .input(z.object({ webhookId: z.string() }))
+    .input(z.object({ webhookId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const id = parseInt(input.webhookId.replace("WH-", ""), 10);
@@ -310,7 +315,7 @@ export const webhookManagementRouter = router({
     }),
 
   testWebhook: protectedProcedure
-    .input(z.object({ webhookId: z.string() }))
+    .input(z.object({ webhookId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const id = parseInt(input.webhookId.replace("WH-", ""), 10);
@@ -348,7 +353,7 @@ export const webhookManagementRouter = router({
     }),
 
   retryFailed: protectedProcedure
-    .input(z.object({ deliveryId: z.string() }))
+    .input(z.object({ deliveryId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
         const id = parseInt(input.deliveryId.replace("WD-", ""), 10);

@@ -40,12 +40,13 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
   completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
@@ -578,7 +579,7 @@ export const loyaltyRouter = router({
     .input(
       z.object({
         category: z.string().optional(),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(50).default(20),
       })
@@ -616,7 +617,7 @@ export const loyaltyRouter = router({
 
   // ── Claim challenge reward ────────────────────────────────────────────────
   claimChallenge: protectedProcedure
-    .input(z.object({ challengeId: z.string(), points: z.number().positive() }))
+    .input(z.object({ challengeId: z.string().min(1).max(255), points: z.number().positive() }))
     .mutation(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);
@@ -674,7 +675,7 @@ export const loyaltyRouter = router({
   redeemReward: protectedProcedure
     .input(
       z.object({
-        rewardId: z.string(),
+        rewardId: z.string().min(1).max(255),
         pointsCost: z.number().positive(),
         rewardName: z.string(),
       })
@@ -753,7 +754,7 @@ export const loyaltyRouter = router({
   adminSummary: protectedProcedure
     .input(
       z.object({
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         tier: z
           .enum(["all", "Bronze", "Silver", "Gold", "Platinum"])
           .default("all"),

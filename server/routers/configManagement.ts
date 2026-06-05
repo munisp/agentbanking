@@ -6,6 +6,8 @@ import { getDb } from "../db";
 import { tenants } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -21,21 +23,24 @@ import {
 } from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
+  proposed: ["review"],
+  review: ["approved", "rejected"],
+  approved: ["deploying"],
+  deploying: ["active", "rollback"],
+  active: ["deprecated", "updated"],
+  deprecated: ["removed"],
+  updated: ["active"],
+  rollback: ["review"],
+  removed: [],
   rejected: [],
-  archived: [],
 };
 
 const dashboard = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })
@@ -70,8 +75,8 @@ const getConfigs = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -176,8 +181,8 @@ const getHistory = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -223,26 +228,7 @@ const getHistory = protectedProcedure
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateConfigmanagementInput(data: Record<string, unknown>): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
+
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {

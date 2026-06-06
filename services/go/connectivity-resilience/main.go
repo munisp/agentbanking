@@ -35,7 +35,8 @@ import (
 	"io"
 	"log"
 	"math"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"os"
 	"sort"
@@ -145,7 +146,7 @@ func (rs RetryStrategy) NextDelay(attempt int) time.Duration {
 		delay = float64(rs.MaxDelayMs)
 	}
 	// Add jitter: delay ± (jitterFraction * delay)
-	jitter := delay * rs.JitterFraction * (2*rand.Float64() - 1)
+	jitter := delay * rs.JitterFraction * (2*func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }() - 1)
 	delay += jitter
 	if delay < 0 {
 		delay = float64(rs.BaseDelayMs)

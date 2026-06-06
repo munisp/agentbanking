@@ -9,7 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"os"
@@ -191,7 +192,7 @@ func (e *BillingChaosEngine) PredefinedExperiments() []ChaosExperiment {
 // RunExperiment executes a chaos experiment with safety checks
 func (e *BillingChaosEngine) RunExperiment(ctx context.Context, exp *ChaosExperiment) error {
 	e.mu.Lock()
-	exp.ID = fmt.Sprintf("chaos-%d-%d", time.Now().Unix(), rand.Intn(10000))
+	exp.ID = fmt.Sprintf("chaos-%d-%d", time.Now().Unix(), func() int { n, _ := rand.Int(rand.Reader, big.NewInt(int64(10000))); return int(n.Int64()) }())
 	exp.Status = StatusRunning
 	exp.StartTime = time.Now()
 	e.experiments[exp.ID] = exp

@@ -9,7 +9,8 @@ import (
 	"encoding/json"
 	"log"
 	"math"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -70,7 +71,7 @@ func init() {
 }
 
 func addJitter(base float64) float64 {
-	jitter := (rand.Float64() - 0.5) * 0.1 * base
+	jitter := (func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }() - 0.5) * 0.1 * base
 	return math.Round((base+jitter)*100) / 100
 }
 

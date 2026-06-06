@@ -31,7 +31,8 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"os"
@@ -184,15 +185,15 @@ func (tc *TelemetryCollector) Probe() ProbeResult {
 
 	// Estimate bandwidth (simplified: based on latency heuristic)
 	if result.LatencyMs < 50 {
-		result.BandwidthKbps = 50000 + rand.Float64()*50000 // WiFi/5G
+		result.BandwidthKbps = 50000 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*50000 // WiFi/5G
 	} else if result.LatencyMs < 100 {
-		result.BandwidthKbps = 10000 + rand.Float64()*40000 // 4G
+		result.BandwidthKbps = 10000 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*40000 // 4G
 	} else if result.LatencyMs < 300 {
-		result.BandwidthKbps = 500 + rand.Float64()*9500 // 3G
+		result.BandwidthKbps = 500 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*9500 // 3G
 	} else if result.LatencyMs < 800 {
-		result.BandwidthKbps = 50 + rand.Float64()*450 // 2G EDGE
+		result.BandwidthKbps = 50 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*450 // 2G EDGE
 	} else {
-		result.BandwidthKbps = 5 + rand.Float64()*45 // 2G GPRS
+		result.BandwidthKbps = 5 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*45 // 2G GPRS
 	}
 
 	// Classify network tier
@@ -258,7 +259,7 @@ func (tc *TelemetryCollector) AdaptInterval() int {
 func (tc *TelemetryCollector) detectCarrier() string {
 	// In production, this reads from device APIs (Android TelephonyManager, etc.)
 	carriers := []string{"MTN", "Airtel", "Glo", "9mobile", "Safaricom", "Vodacom", "Orange"}
-	return carriers[rand.Intn(len(carriers))]
+	return carriers[func() int { n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(carriers))); return int(n.Int64()) }())]
 }
 
 func classifyTier(bandwidthKbps float64) string {

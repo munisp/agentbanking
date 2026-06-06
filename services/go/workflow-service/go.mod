@@ -3,7 +3,7 @@ module workflow-service
 go 1.25.0
 
 require (
-	github.com/mattn/go-sqlite3 v1.14.38
+	github.com/lib/pq v1.10.9
 	github.com/gorilla/mux v1.8.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0

@@ -348,7 +348,15 @@ export const dataExportRouter = router({
     .input(z.object({}).optional())
     .query(async ({ ctx }) => {
       try {
-        return {};
+        const db = getDb();
+        const tableList = [
+          { name: 'transactions', description: 'Financial transactions', exportable: true },
+          { name: 'agents', description: 'Agent records', exportable: true },
+          { name: 'merchants', description: 'Merchant records', exportable: true },
+          { name: 'disputes', description: 'Dispute cases', exportable: true },
+          { name: 'auditLog', description: 'Audit trail', exportable: true },
+        ];
+        return { tables: tableList, total: tableList.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -391,7 +399,9 @@ export const dataExportRouter = router({
     .input(z.object({}).optional())
     .query(async ({ ctx }) => {
       try {
-        return {};
+        const db = getDb();
+        const jobs = await db.select().from(auditLog).where(eq(auditLog.action, 'data_export')).orderBy(desc(auditLog.createdAt)).limit(50);
+        return { jobs, total: jobs.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

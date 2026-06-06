@@ -9,7 +9,7 @@
  * Middleware: Kafka (event publishing), TigerBeetle (ledger), Stripe (invoicing)
  *
  * Setup via CLI:
- *   manus-heartbeat create \
+ *   platform-heartbeat create \
  *     --name monthly-invoice-generation \
  *     --cron "0 0 2 1 * *" \
  *     --path /api/scheduled/monthly-invoices \
@@ -295,7 +295,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
     return res.status(500).json({
       error: err.message,
       stack: err.stack?.slice(0, 500),
-      context: { url: req.url, taskUid: req.headers["x-manus-cron-task-uid"] },
+      context: { url: req.url, taskUid: req.headers["x-platform-cron-task-uid"] },
       timestamp: new Date().toISOString(),
     });
   }

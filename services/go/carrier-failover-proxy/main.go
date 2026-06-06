@@ -10,7 +10,8 @@ import (
 	"encoding/json"
 	"log"
 	"math"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"os"
@@ -131,9 +132,9 @@ func (fp *FailoverProxy) ExecuteWithFailover(primaryCarrier string, payload []by
 	for _, c := range fp.carriers {
 		if c.Name == primaryCarrier && c.Breaker.Allow() {
 			// Simulate request with jitter
-			latency := time.Duration(50+rand.Intn(200)) * time.Millisecond
+			latency := time.Duration(50+func() int { n, _ := rand.Int(rand.Reader, big.NewInt(int64(200))); return int(n.Int64()) }()) * time.Millisecond
 			time.Sleep(latency)
-			success := rand.Float64() > 0.1 // 90% success rate simulation
+			success := func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }() > 0.1 // 90% success rate simulation
 			if success {
 				c.Breaker.RecordSuccess()
 				result.Success = true
@@ -156,7 +157,7 @@ func (fp *FailoverProxy) ExecuteWithFailover(primaryCarrier string, payload []by
 			}
 			backoff := time.Duration(math.Pow(2, float64(attempt))*100) * time.Millisecond
 			time.Sleep(backoff)
-			success := rand.Float64() > 0.05
+			success := func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }() > 0.05
 			if success {
 				c.Breaker.RecordSuccess()
 				result.Success = true

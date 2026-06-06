@@ -11,7 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"os"
@@ -78,8 +79,8 @@ func (s *DiagnosticService) RunPing(target string, count int) PingResult {
 	lost := 0
 	rtts := make([]float64, 0, count)
 	for i := 0; i < count; i++ {
-		rtt := 20.0 + rand.Float64()*180.0
-		if rand.Float64() < 0.05 {
+		rtt := 20.0 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*180.0
+		if func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }() < 0.05 {
 			lost++
 		} else {
 			totalRTT += rtt
@@ -107,22 +108,22 @@ func (s *DiagnosticService) RunPing(target string, count int) PingResult {
 
 func (s *DiagnosticService) RunSpeedTest(carrier, region string) SpeedTestResult {
 	return SpeedTestResult{
-		DownloadKbps: 500 + rand.Float64()*9500,
-		UploadKbps:   200 + rand.Float64()*4800,
-		LatencyMs:    20 + rand.Float64()*180,
-		JitterMs:     5 + rand.Float64()*45,
+		DownloadKbps: 500 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*9500,
+		UploadKbps:   200 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*4800,
+		LatencyMs:    20 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*180,
+		JitterMs:     5 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*45,
 		ServerRegion: region, Carrier: carrier,
 		Timestamp: time.Now().UnixMilli(),
 	}
 }
 
 func (s *DiagnosticService) RunTraceroute(target string) []TracerouteHop {
-	hops := 8 + rand.Intn(8)
+	hops := 8 + func() int { n, _ := rand.Int(rand.Reader, big.NewInt(int64(8))); return int(n.Int64()) }()
 	result := make([]TracerouteHop, hops)
 	for i := 0; i < hops; i++ {
 		result[i] = TracerouteHop{
-			Hop: i + 1, Address: fmt.Sprintf("10.%d.%d.%d", rand.Intn(255), rand.Intn(255), rand.Intn(255)),
-			RTTMs: float64(i+1)*15 + rand.Float64()*30, Status: "ok",
+			Hop: i + 1, Address: fmt.Sprintf("10.%d.%d.%d", func() int { n, _ := rand.Int(rand.Reader, big.NewInt(int64(255))); return int(n.Int64()) }(), rand.Intn(255), rand.Intn(255)),
+			RTTMs: float64(i+1)*15 + func() float64 { n, _ := rand.Int(rand.Reader, big.NewInt(1000000)); return float64(n.Int64()) / 1000000.0 }()*30, Status: "ok",
 		}
 	}
 	result[hops-1].Address = target

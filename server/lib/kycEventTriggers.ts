@@ -64,7 +64,7 @@ export interface KycTriggerResult {
  */
 export async function triggerKycOnRegistration(
   agentId: number,
-  agentCode: string,
+  agentCode: string
 ): Promise<KycTriggerResult> {
   const db = await getDb();
   if (!db) {
@@ -81,7 +81,7 @@ export async function triggerKycOnRegistration(
     .select()
     .from(kycSessions)
     .where(
-      and(eq(kycSessions.agentId, agentId), eq(kycSessions.status, "approved")),
+      and(eq(kycSessions.agentId, agentId), eq(kycSessions.status, "approved"))
     )
     .limit(1);
 
@@ -122,7 +122,7 @@ export async function triggerKycOnRegistration(
 export async function checkTransactionThreshold(
   agentId: number,
   transactionAmount: number,
-  currentKycTier: number,
+  currentKycTier: number
 ): Promise<KycTriggerResult> {
   const db = await getDb();
   if (!db) {
@@ -142,7 +142,7 @@ export async function checkTransactionThreshold(
   // Check single transaction limit
   if (transactionAmount > tierLimits.single) {
     const requiredTier = Object.entries(CBN_TIER_LIMITS).find(
-      ([, v]) => v.single >= transactionAmount,
+      ([, v]) => v.single >= transactionAmount
     );
     const newTier = requiredTier ? parseInt(requiredTier[0]) : 3;
 
@@ -175,17 +175,14 @@ export async function checkTransactionThreshold(
     .select({ total: sql<number>`COALESCE(SUM(${transactions.amount}), 0)` })
     .from(transactions)
     .where(
-      and(
-        eq(transactions.agentId, agentId),
-        gte(transactions.createdAt, today),
-      ),
+      and(eq(transactions.agentId, agentId), gte(transactions.createdAt, today))
     );
 
   const dailyTotal = Number(dailyResult?.total ?? 0) + transactionAmount;
 
   if (dailyTotal > tierLimits.daily) {
     const requiredTier = Object.entries(CBN_TIER_LIMITS).find(
-      ([, v]) => v.daily >= dailyTotal,
+      ([, v]) => v.daily >= dailyTotal
     );
     const newTier = requiredTier ? parseInt(requiredTier[0]) : 3;
 
@@ -226,7 +223,7 @@ export async function triggerKycOnSuspiciousActivity(
   agentId: number,
   fraudAlertId: number,
   fraudScore: number,
-  reason: string,
+  reason: string
 ): Promise<KycTriggerResult> {
   const db = await getDb();
   if (!db) {
@@ -268,7 +265,7 @@ export async function triggerKycOnSuspiciousActivity(
  */
 export async function triggerKybOnMerchantOnboarding(
   merchantId: number,
-  businessType: string,
+  businessType: string
 ): Promise<KycTriggerResult> {
   const db = await getDb();
   if (!db) {
@@ -309,7 +306,7 @@ export async function triggerKybOnMerchantOnboarding(
 export async function triggerKycOnCrossBorder(
   agentId: number,
   corridorCode: string,
-  amount: number,
+  amount: number
 ): Promise<KycTriggerResult> {
   const db = await getDb();
   if (!db) {
@@ -330,8 +327,8 @@ export async function triggerKycOnCrossBorder(
       and(
         eq(kycSessions.agentId, agentId),
         eq(kycSessions.status, "approved"),
-        sql`(${kycSessions.type})::text LIKE '%tier_3%' OR (${kycSessions.type})::text = 'enhanced_due_diligence'`,
-      ),
+        sql`(${kycSessions.type})::text LIKE '%tier_3%' OR (${kycSessions.type})::text = 'enhanced_due_diligence'`
+      )
     )
     .limit(1);
 
@@ -379,9 +376,7 @@ export async function runPeriodicReKycCheck(): Promise<{
   if (!db) return { triggered: 0, expired: 0, expiringSoon: 0 };
 
   const now = new Date();
-  const thirtyDaysFromNow = new Date(
-    now.getTime() + 30 * 24 * 60 * 60 * 1000,
-  );
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   // Find agents whose last approved KYC session is older than 12 months
   const twelveMonthsAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);

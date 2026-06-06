@@ -23,7 +23,8 @@ function getEncryptionKey(): Buffer {
   const keyHex = process.env.PII_ENCRYPTION_KEY;
   if (!keyHex || keyHex.length < 64) {
     // Fallback: derive from JWT_SECRET for dev environments
-    const secret = process.env.JWT_SECRET ?? "54link-dev-key-not-for-production";
+    const secret =
+      process.env.JWT_SECRET ?? "54link-dev-key-not-for-production";
     return crypto.scryptSync(secret, "54link-pii-salt", 32);
   }
   return Buffer.from(keyHex, "hex");

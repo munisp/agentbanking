@@ -21,16 +21,17 @@ import sys
 import atexit
 import logging
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 
 def _init_persistence():
     """Initialize SQLite persistence for kyc-service."""
     import os
     db_path = os.environ.get("KYC_SERVICE_DB_PATH", "/tmp/kyc-service.db")
     try:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/kyc_service'))
+        
+        
         return conn
     except Exception as e:
         import logging

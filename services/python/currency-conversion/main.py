@@ -42,6 +42,74 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Currency Conversion", version="2.0.0")
+
+import psycopg2
+import psycopg2.extras
+import os
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/currency_conversion")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    for stmt in """CREATE TABLE IF NOT EXISTS conversions (
+            id SERIAL PRIMARY KEY,
+            from_currency TEXT, to_currency TEXT, amount REAL,
+            rate REAL, converted REAL, created_at TEXT
+        )""".split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            conn.execute(stmt)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+CBN_OFFICIAL_RATES = {
+    "NGN_USD": 1550.0, "NGN_GBP": 1950.0, "NGN_EUR": 1680.0,
+    "NGN_GHS": 120.0, "NGN_KES": 11.5, "NGN_ZAR": 83.0,
+    "NGN_XOF": 2.5, "NGN_EGP": 32.0,
+}
+
+@app.post("/api/v1/convert")
+async def convert_currency(request: Request):
+    body = await request.json()
+    from_currency = body.get("from", "NGN").upper()
+    to_currency = body.get("to", "USD").upper()
+    amount = float(body.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    pair = f"{from_currency}_{to_currency}"
+    reverse_pair = f"{to_currency}_{from_currency}"
+    if pair in CBN_OFFICIAL_RATES:
+        rate = CBN_OFFICIAL_RATES[pair]
+        converted = amount / rate
+    elif reverse_pair in CBN_OFFICIAL_RATES:
+        rate = 1 / CBN_OFFICIAL_RATES[reverse_pair]
+        converted = amount / rate
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported currency pair: {pair}")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO conversions (from_currency, to_currency, amount, rate, converted, created_at)
+                      VALUES (?, ?, ?, ?, ?, NOW())""",
+                   (from_currency, to_currency, amount, rate, round(converted, 4)))
+    conn.commit()
+    conn.close()
+    return {"from": from_currency, "to": to_currency, "amount": amount,
+            "rate": rate, "converted": round(converted, 4), "source": "CBN"}
+
+@app.get("/api/v1/rates")
+async def get_rates():
+    return {"rates": CBN_OFFICIAL_RATES, "source": "CBN", "updated": "2026-06-01T00:00:00Z"}
+
+@app.get("/api/v1/corridors")
+async def get_corridors():
+    return {"corridors": [{"pair": k, "rate": v} for k, v in CBN_OFFICIAL_RATES.items()]}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 class ConversionResult(BaseModel):

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq"
 	"context"
 	"crypto/rand"
 	"encoding/base32"
@@ -72,7 +74,7 @@ func (m *MFAService) SetupMFA(w http.ResponseWriter, r *http.Request) {
 	secretBase32 := base32.StdEncoding.EncodeToString(secret)
 
 	// Generate QR code URL
-	key, err := otp.NewKeyFromURL(fmt.Sprintf("otpauth://totp/AgentBanking:%s?secret=%s&issuer=AgentBanking", req.Username, secretBase32))
+	key, err := otp.NewKeyFromURL(fmt.Sprintf("otpauth://totp/AgentBanking:%s$1secret=%s&issuer=AgentBanking", req.Username, secretBase32))
 	if err != nil {
 		http.Error(w, "Failed to generate key", http.StatusInternalServerError)
 		return
@@ -197,6 +199,8 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	initDB()
+
 	mfaService := NewMFAService()
 
 	r := mux.NewRouter()
@@ -234,4 +238,50 @@ func main() {
 	defer cancel()
 	srv.Shutdown(ctx)
 	log.Println("[mfa-service] Shutdown complete")
+}
+
+// --- SQLite persistence ---
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/mfa_service?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Printf("DB init warning: %v", err)
+		return
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS audit_log (
+		id SERIAL PRIMARY KEY,
+		action TEXT, entity_id TEXT, data TEXT,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS state_store (
+		key TEXT PRIMARY KEY, value TEXT,
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func logAudit(action, entityID, data string) {
+	if db != nil {
+		db.Exec("INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)", action, entityID, data)
+	}
+}
+
+func setState(key, value string) {
+	if db != nil {
+		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+	}
+}
+
+func getState(key string) string {
+	if db == nil { return "" }
+	var val string
+	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
+	return val
 }

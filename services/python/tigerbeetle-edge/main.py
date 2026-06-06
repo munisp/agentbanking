@@ -25,6 +25,41 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8143"))
 
 app = FastAPI(title="TigerBeetle Edge Service", version="1.0.0")
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/tigerbeetle_edge")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 db_pool = None
@@ -51,7 +86,7 @@ async def init_database():
                     transaction_type VARCHAR(50) NOT NULL,
                     edge_location VARCHAR(100) NOT NULL,
                     status VARCHAR(20) DEFAULT 'PENDING',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
                     INDEX idx_transaction_id (transaction_id),
                     INDEX idx_account_id (account_id)
                 )
@@ -99,8 +134,7 @@ async def process_edge_transaction(transaction: EdgeTransaction):
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO edge_transactions (transaction_id, account_id, amount, transaction_type, edge_location)
-                VALUES ($1, $2, $3, $4, $5)
-            """, transaction.transaction_id, transaction.account_id, transaction.amount, 
+                VALUES ($1, $2, $3, $4, $5) RETURNING id""", transaction.transaction_id, transaction.account_id, transaction.amount, 
             transaction.transaction_type, transaction.edge_location)
         
         # Cache for quick access

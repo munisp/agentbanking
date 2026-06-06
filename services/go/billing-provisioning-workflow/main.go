@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq"
 	"syscall"
 	"os/signal"
 	"context"
@@ -280,6 +282,8 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	initDB()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8087"
@@ -355,4 +359,50 @@ func setupGracefulShutdown(srv *http.Server) {
 		}
 		log.Println("[shutdown] Server exited")
 	}()
+}
+
+// --- SQLite persistence ---
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/billing_provisioning_workflow?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Printf("DB init warning: %v", err)
+		return
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS audit_log (
+		id SERIAL PRIMARY KEY,
+		action TEXT, entity_id TEXT, data TEXT,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS state_store (
+		key TEXT PRIMARY KEY, value TEXT,
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func logAudit(action, entityID, data string) {
+	if db != nil {
+		db.Exec("INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)", action, entityID, data)
+	}
+}
+
+func setState(key, value string) {
+	if db != nil {
+		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+	}
+}
+
+func getState(key string) string {
+	if db == nil { return "" }
+	var val string
+	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
+	return val
 }

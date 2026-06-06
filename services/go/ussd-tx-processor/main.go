@@ -14,7 +14,7 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 	"syscall"
 	"os/signal"
 	"os"
@@ -110,7 +110,7 @@ var (
 	completedTx  int
 	failedTx     int
 	totalDuration float64
-	phoneRegex   = regexp.MustCompile(`^(\+?[0-9]{10,15})$`)
+	phoneRegex   = regexp.MustCompile(`^(\+$1[0-9]{10,15})$`)
 )
 
 const sessionTTL = 5 * time.Minute
@@ -564,7 +564,7 @@ func main() {
 	if dbPath == "" {
 		dbPath = "/tmp/ussd-tx-processor.db"
 	}
-	db, dbErr := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
 		log.Printf("[ussd-tx-processor] SQLite unavailable (%v) — running in-memory only", dbErr)
 	} else {

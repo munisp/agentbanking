@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 	"syscall"
 	"os/signal"
 	"context"
@@ -162,7 +162,7 @@ func main() {
 	if dbPath == "" {
 		dbPath = "/tmp/offline-sync-orchestrator.db"
 	}
-	db, dbErr := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
 		log.Printf("[offline-sync-orchestrator] SQLite unavailable (%v) — running in-memory only", dbErr)
 	} else {

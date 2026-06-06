@@ -50,6 +50,41 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Monitoring Dashboard Service", version="1.0.0")
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/monitoring_dashboard")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 db_pool = None
 
 class SystemMetrics(BaseModel):
@@ -100,8 +135,7 @@ async def get_current_metrics():
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO system_metrics (cpu_usage, memory_usage, disk_usage, active_connections, requests_per_second)
-            VALUES ($1, $2, $3, $4, $5)
-        """, metrics.cpu_usage, metrics.memory_usage, metrics.disk_usage, 
+            VALUES ($1, $2, $3, $4, $5) RETURNING id""", metrics.cpu_usage, metrics.memory_usage, metrics.disk_usage, 
             metrics.active_connections, metrics.requests_per_second)
     
     return metrics

@@ -24,16 +24,17 @@ import sys
 import atexit
 import logging
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 
 def _init_persistence():
     """Initialize SQLite persistence for fraud-ml-service."""
     import os
     db_path = os.environ.get("FRAUD_ML_SERVICE_DB_PATH", "/tmp/fraud-ml-service.db")
     try:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/fraud_ml_service'))
+        
+        
         return conn
     except Exception as e:
         import logging

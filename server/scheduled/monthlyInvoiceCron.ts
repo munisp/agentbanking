@@ -295,7 +295,10 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
     return res.status(500).json({
       error: err.message,
       stack: err.stack?.slice(0, 500),
-      context: { url: req.url, taskUid: req.headers["x-platform-cron-task-uid"] },
+      context: {
+        url: req.url,
+        taskUid: req.headers["x-platform-cron-task-uid"],
+      },
       timestamp: new Date().toISOString(),
     });
   }

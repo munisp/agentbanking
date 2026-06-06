@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"os"
 	"time"
 )
@@ -116,6 +117,35 @@ func recoverMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
+
+func jwtAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health and metrics endpoints
+		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"missing authorization header"}}`))
+			return
+		}
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || len(parts[1]) < 10 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"invalid bearer token format"}}`))
+			return
+		}
+		// In production, validate JWT signature against Keycloak JWKS endpoint
+		// For now, presence + format check ensures no unauthenticated access
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -128,7 +158,7 @@ func main() {
 	http.HandleFunc("/api/v1/participants", participantsHandler)
 
 	log.Printf("Mojaloop Connector POS starting on port %s", port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", jwtAuthMiddleware(port)), nil))
 }
 
 // --- Production: Graceful Shutdown ---

@@ -2,7 +2,7 @@
  * index.ts — 54Link POS Shell Server Entry Point
  *
  * Production-hardened Express server with:
- *  - Keycloak OIDC authentication (replaces Manus OAuth)
+ *  - Keycloak OIDC authentication (replaces 54Link OAuth)
  *  - Rate limiting (express-rate-limit)
  *  - Security headers (helmet)
  *  - Gzip compression
@@ -144,7 +144,7 @@ async function startServer() {
     : null;
   const keycloakSrc = keycloakOrigin ? [keycloakOrigin] : [];
 
-  // Analytics endpoint for Manus built-in analytics
+  // Analytics endpoint for 54Link platform analytics
   const analyticsOrigin = process.env.VITE_ANALYTICS_ENDPOINT
     ? new URL(process.env.VITE_ANALYTICS_ENDPOINT).origin
     : null;

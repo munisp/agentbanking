@@ -308,12 +308,12 @@ export function startAutoSync(intervalMs: number = 30000) {
 
   // Sync immediately on coming online
   window.addEventListener("online", () => {
-    console.log("[Offline] Network restored — triggering sync");
+    // Network restored — sync triggered
     syncPendingTransactions();
   });
 
   window.addEventListener("offline", () => {
-    console.log("[Offline] Network lost — queuing transactions locally");
+    // Network lost — transactions queued locally
   });
 
   // Periodic sync attempt

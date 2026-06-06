@@ -49,7 +49,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── Guard: agent-only procedure ──────────────────────────────────────────────
-// Agents authenticate via PIN cookie (agentAuth middleware), not Manus OAuth.
+// Agents authenticate via PIN cookie (agentAuth middleware), not 54Link OAuth.
 // We use protectedProcedure here and validate the agent session from the cookie.
 const agentProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   // The agentAuth middleware sets ctx.agent when the agent PIN cookie is valid.

@@ -44,21 +44,23 @@ export default function AgentGamification() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats &&
-          Object.entries(stats as Record<string, unknown>).map(([key, value]) => (
-            <div
-              key={key}
-              className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4"
-            >
-              <p className="text-xs text-zinc-400 uppercase tracking-wider">
-                {key.replace(/([A-Z])/g, " $1").trim()}
-              </p>
-              <p className="text-xl font-bold text-white mt-1">
-                {typeof value === "number"
-                  ? value.toLocaleString()
-                  : String(value)}
-              </p>
-            </div>
-          ))}
+          Object.entries(stats as Record<string, unknown>).map(
+            ([key, value]) => (
+              <div
+                key={key}
+                className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4"
+              >
+                <p className="text-xs text-zinc-400 uppercase tracking-wider">
+                  {key.replace(/([A-Z])/g, " $1").trim()}
+                </p>
+                <p className="text-xl font-bold text-white mt-1">
+                  {typeof value === "number"
+                    ? value.toLocaleString()
+                    : String(value)}
+                </p>
+              </div>
+            )
+          )}
       </div>
 
       {/* Main Content Area */}

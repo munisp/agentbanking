@@ -181,6 +181,7 @@ import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
 import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -796,6 +797,7 @@ export const appRouter = router({
   customerLoyaltyProgram: customerLoyaltyProgramRouter,
   fraudCaseManagement: fraudCaseManagementRouter,
   posTerminalFleet: posTerminalFleetRouter,
+  posBatchSettlement: posBatchSettlementRouter,
   financialReconciliationDash: financialReconciliationDashRouter,
   apiAnalyticsDash: apiAnalyticsDashRouter,
   agentCommunicationHub: agentCommunicationHubRouter,

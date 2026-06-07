@@ -192,9 +192,7 @@ export const posBatchSettlementRouter = router({
       const offset = (input.page - 1) * input.limit;
       const conditions = [];
       if (input.terminalId)
-        conditions.push(
-          eq(posSettlementBatches.terminalId, input.terminalId)
-        );
+        conditions.push(eq(posSettlementBatches.terminalId, input.terminalId));
       if (input.agentId)
         conditions.push(eq(posSettlementBatches.agentId, input.agentId));
       if (input.status)
@@ -210,10 +208,7 @@ export const posBatchSettlementRouter = router({
           .orderBy(desc(posSettlementBatches.createdAt))
           .limit(input.limit)
           .offset(offset),
-        db
-          .select({ total: count() })
-          .from(posSettlementBatches)
-          .where(where),
+        db.select({ total: count() }).from(posSettlementBatches).where(where),
       ]);
 
       return { items, total, page: input.page, limit: input.limit };
@@ -263,8 +258,7 @@ export const posBatchSettlementRouter = router({
           });
 
         const settleRef =
-          input.settlementRef ??
-          `SETTLE-${batch.batchRef}-${Date.now()}`;
+          input.settlementRef ?? `SETTLE-${batch.batchRef}-${Date.now()}`;
 
         const [updated] = await db
           .update(posSettlementBatches)
@@ -355,7 +349,11 @@ export const posBatchSettlementRouter = router({
           metadata: { reason: input.reason },
         });
 
-        return { success: true, message: "Batch marked as failed", batch: updated };
+        return {
+          success: true,
+          message: "Batch marked as failed",
+          batch: updated,
+        };
       });
     }),
 
@@ -436,7 +434,10 @@ export const posBatchSettlementRouter = router({
       totalFees: Number(totals?.totalFees ?? 0),
       totalNet: Number(totals?.totalNet ?? 0),
       byStatus: Object.fromEntries(
-        byStatus.map((r: { status: string; cnt: number }) => [r.status, Number(r.cnt)])
+        byStatus.map((r: { status: string; cnt: number }) => [
+          r.status,
+          Number(r.cnt),
+        ])
       ),
       batchesToday: Number(todayBatches[0]?.cnt ?? 0),
     };

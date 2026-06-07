@@ -1140,7 +1140,9 @@ export const terminalLeases = pgTable(
     agentId: integer("agentId")
       .references(() => agents.id)
       .notNull(),
-    leaseType: varchar("leaseType", { length: 32 }).notNull().default("standard"),
+    leaseType: varchar("leaseType", { length: 32 })
+      .notNull()
+      .default("standard"),
     monthlyRate: integer("monthlyRate").notNull(),
     depositAmount: integer("depositAmount").default(0).notNull(),
     insuranceRate: integer("insuranceRate").default(0).notNull(),

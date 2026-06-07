@@ -8,11 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import {
-  terminalLeases,
-  posTerminals,
-  agents,
-} from "../../drizzle/schema";
+import { terminalLeases, posTerminals, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -467,7 +463,10 @@ export const terminalLeasingRouter = router({
       totalLeases: Number(totals?.total ?? 0),
       totalRevenue: Number(totals?.totalRevenue ?? 0),
       byStatus: Object.fromEntries(
-        byStatus.map((r: { status: string; cnt: number }) => [r.status, Number(r.cnt)])
+        byStatus.map((r: { status: string; cnt: number }) => [
+          r.status,
+          Number(r.cnt),
+        ])
       ),
       overdueCount: Number(overdue[0]?.cnt ?? 0),
     };

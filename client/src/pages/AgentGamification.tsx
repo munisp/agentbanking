@@ -5,7 +5,7 @@ import { Trophy } from "lucide-react";
 
 export default function AgentGamification() {
   const [search, setSearch] = useState("");
-  const statsQuery = trpc.agentGamification.getStats.useQuery();
+  const statsQuery = trpc.agentGamification.availableAchievements.useQuery();
   const stats = statsQuery.data;
 
   return (
@@ -44,7 +44,7 @@ export default function AgentGamification() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats &&
-          Object.entries(stats).map(([key, value]) => (
+          Object.entries(stats as Record<string, unknown>).map(([key, value]) => (
             <div
               key={key}
               className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4"

@@ -90,42 +90,30 @@ OPENAPPSEC_URL = os.getenv("OPENAPPSEC_URL", "http://localhost:8085")
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
-app = FastAPI(
-
-import psycopg2
-import psycopg2.extras
+import asyncpg
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/iot_smart_pos")
 
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
-    return conn
+_db_pool = None
 
-def init_db():
-    conn = get_db()
-    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-        id SERIAL PRIMARY KEY,
-        action TEXT, entity_id TEXT, data TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
-        key TEXT PRIMARY KEY, value TEXT,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.commit()
-    conn.close()
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
 
-init_db()
-
-def log_audit(action: str, entity_id: str, data: str = ""):
+async def log_audit(action: str, entity_id: str, data: str = ""):
     try:
-        conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
-        conn.commit()
-        conn.close()
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)",
+                action, entity_id, data,
+            )
     except Exception:
         pass
+
+app = FastAPI(
     title="IoT Smart POS Analytics Engine",
     description="Predictive maintenance ML, failure prediction, fleet optimization",
     version="1.0.0",

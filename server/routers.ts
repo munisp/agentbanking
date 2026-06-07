@@ -467,6 +467,7 @@ import { splitPaymentsRouter } from "./routers/splitPayments";
 import { recurringPaymentsRouter } from "./routers/recurringPayments";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
+import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
 import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
@@ -1085,6 +1086,7 @@ export const appRouter = router({
   recurringPayments: recurringPaymentsRouter,
   terminalLeasing: terminalLeasingRouter,
   posDispute: posDisputeRouter,
+  posBatchSettlement: posBatchSettlementRouter,
   crossBorderRemittance: crossBorderRemittanceRouter,
   agentTrainingGamification: agentTrainingGamificationRouter,
   // Sprint 97: Frontend-Backend Gap Closure

@@ -1129,6 +1129,79 @@ export const softwareUpdates = pgTable(
 
 export type SoftwareUpdate = typeof softwareUpdates.$inferSelect;
 
+// ─── Terminal Leases ───────────────────────────────────────────────────────────
+export const terminalLeases = pgTable(
+  "terminal_leases",
+  {
+    id: serial("id").primaryKey(),
+    terminalId: integer("terminalId")
+      .references(() => posTerminals.id)
+      .notNull(),
+    agentId: integer("agentId")
+      .references(() => agents.id)
+      .notNull(),
+    leaseType: varchar("leaseType", { length: 32 }).notNull().default("standard"),
+    monthlyRate: integer("monthlyRate").notNull(),
+    depositAmount: integer("depositAmount").default(0).notNull(),
+    insuranceRate: integer("insuranceRate").default(0).notNull(),
+    startDate: timestamp("startDate").notNull(),
+    endDate: timestamp("endDate").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    paymentDay: integer("paymentDay").default(1).notNull(),
+    totalPaid: integer("totalPaid").default(0).notNull(),
+    missedPayments: integer("missedPayments").default(0).notNull(),
+    lastPaymentAt: timestamp("lastPaymentAt"),
+    nextPaymentDue: timestamp("nextPaymentDue"),
+    returnCondition: varchar("returnCondition", { length: 32 }),
+    returnedAt: timestamp("returnedAt"),
+    notes: text("notes"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tl_terminalId_idx: index("tl_terminalId_idx").on(t.terminalId),
+    tl_agentId_idx: index("tl_agentId_idx").on(t.agentId),
+    tl_status_idx: index("tl_status_idx").on(t.status),
+    tl_nextPayment_idx: index("tl_nextPayment_idx").on(t.nextPaymentDue),
+  })
+);
+
+export type TerminalLease = typeof terminalLeases.$inferSelect;
+
+// ─── POS Settlement Batches ────────────────────────────────────────────────────
+export const posSettlementBatches = pgTable(
+  "pos_settlement_batches",
+  {
+    id: serial("id").primaryKey(),
+    batchRef: varchar("batchRef", { length: 64 }).notNull().unique(),
+    terminalId: integer("terminalId").references(() => posTerminals.id),
+    agentId: integer("agentId").references(() => agents.id),
+    transactionCount: integer("transactionCount").notNull().default(0),
+    totalAmount: integer("totalAmount").notNull().default(0),
+    totalFees: integer("totalFees").notNull().default(0),
+    netAmount: integer("netAmount").notNull().default(0),
+    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    settledAt: timestamp("settledAt"),
+    settlementRef: varchar("settlementRef", { length: 128 }),
+    periodStart: timestamp("periodStart").notNull(),
+    periodEnd: timestamp("periodEnd").notNull(),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    psb_batchRef_idx: uniqueIndex("psb_batchRef_idx").on(t.batchRef),
+    psb_terminalId_idx: index("psb_terminalId_idx").on(t.terminalId),
+    psb_agentId_idx: index("psb_agentId_idx").on(t.agentId),
+    psb_status_idx: index("psb_status_idx").on(t.status),
+    psb_period_idx: index("psb_period_idx").on(t.periodStart, t.periodEnd),
+  })
+);
+
+export type PosSettlementBatch = typeof posSettlementBatches.$inferSelect;
+
 // ─── Commission Rules ─────────────────────────────────────────────────────────
 export const commissionRules = pgTable(
   "commission_rules",

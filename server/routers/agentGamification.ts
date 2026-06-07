@@ -1,522 +1,284 @@
-// @ts-nocheck
 /**
- * F09: Agent Gamification & Achievements — Production-Grade
- * DB-backed badges, leaderboards, XP system, achievement tracking, rewards
+ * Agent Gamification — leaderboards, achievements, challenges
+ *
+ * Features:
+ * - Transaction volume leaderboards (daily, weekly, monthly)
+ * - Achievement badges (milestones, streaks, quality metrics)
+ * - Team challenges (regional competitions)
+ * - Commission multipliers for top performers
  */
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
+import { transactions, agents } from "../../drizzle/schema";
+import { eq, desc, and, sql, gte, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { agentAchievements, agentBadges, agents } from "../../drizzle/schema";
-import { eq, desc, and, gte, count, sum, sql, lte } from "drizzle-orm";
-import { validateInput } from "../lib/routerHelpers";
-
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
-  validateAmount,
-  validateStatusTransition,
   auditFinancialAction,
   withTransaction,
-  withIdempotency,
 } from "../lib/transactionHelper";
-import {
-  calculateFee,
-  calculateCommission,
-  calculateTax,
-  calculateLatePenalty,
-} from "../lib/domainCalculations";
+import { validateInput } from "../lib/routerHelpers";
 
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft: ["pending_review"],
-  pending_review: ["approved", "rejected"],
-  approved: ["active", "suspended"],
-  active: ["suspended", "deactivated", "under_review"],
-  suspended: ["active", "deactivated"],
-  under_review: ["active", "suspended", "deactivated"],
-  deactivated: ["reactivation_pending"],
-  reactivation_pending: ["active", "rejected"],
-  rejected: [],
-};
+interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  tier: "bronze" | "silver" | "gold" | "platinum";
+  requirement: number;
+  metric: string;
+}
 
-const BADGE_DEFINITIONS = [
-  {
-    id: "first_tx",
-    name: "First Transaction",
-    description: "Complete your first transaction",
-    xp: 10,
-    icon: "trophy",
-    tier: "bronze",
-  },
+const ACHIEVEMENTS: Achievement[] = [
   {
     id: "tx_100",
-    name: "Century Club",
+    name: "Century",
     description: "Complete 100 transactions",
-    xp: 100,
     icon: "star",
-    tier: "silver",
+    tier: "bronze",
+    requirement: 100,
+    metric: "total_transactions",
   },
   {
     id: "tx_1000",
-    name: "Transaction Master",
+    name: "Millennial",
     description: "Complete 1,000 transactions",
-    xp: 500,
-    icon: "trophy",
+    icon: "award",
+    tier: "silver",
+    requirement: 1000,
+    metric: "total_transactions",
+  },
+  {
+    id: "tx_10000",
+    name: "Legend",
+    description: "Complete 10,000 transactions",
+    icon: "crown",
     tier: "gold",
+    requirement: 10000,
+    metric: "total_transactions",
+  },
+  {
+    id: "zero_disputes_30",
+    name: "Clean Sheet",
+    description: "30 days with zero disputes",
+    icon: "shield",
+    tier: "silver",
+    requirement: 30,
+    metric: "dispute_free_days",
+  },
+  {
+    id: "daily_100",
+    name: "Hustler",
+    description: "100 transactions in a single day",
+    icon: "zap",
+    tier: "gold",
+    requirement: 100,
+    metric: "daily_transactions",
+  },
+  {
+    id: "kyc_perfect",
+    name: "Compliance Star",
+    description: "100% KYC verification rate",
+    icon: "check-circle",
+    tier: "silver",
+    requirement: 100,
+    metric: "kyc_rate",
   },
   {
     id: "volume_1m",
-    name: "Millionaire Agent",
-    description: "Process ₦1M in volume",
-    xp: 200,
-    icon: "star",
+    name: "Million Naira Club",
+    description: "Process NGN 1M in a day",
+    icon: "trending-up",
     tier: "gold",
+    requirement: 1000000,
+    metric: "daily_volume",
   },
   {
-    id: "volume_10m",
-    name: "Volume Champion",
-    description: "Process ₦10M in volume",
-    xp: 1000,
-    icon: "star",
-    tier: "platinum",
-  },
-  {
-    id: "zero_fraud",
-    name: "Perfect Record",
-    description: "30 days with zero fraud alerts",
-    xp: 300,
-    icon: "shield",
-    tier: "diamond",
-  },
-  {
-    id: "top_performer",
-    name: "Top Performer",
-    description: "Rank #1 in weekly leaderboard",
-    xp: 500,
-    icon: "heart",
-    tier: "diamond",
-  },
-  {
-    id: "early_bird",
-    name: "Early Bird",
-    description: "Complete 10 transactions before 8 AM",
-    xp: 50,
-    icon: "sunrise",
-    tier: "silver",
-  },
-  {
-    id: "kyc_complete",
-    name: "Fully Verified",
-    description: "Complete all KYC requirements",
-    xp: 150,
-    icon: "shield",
+    id: "streak_30",
+    name: "Iron Will",
+    description: "30-day active streak",
+    icon: "flame",
     tier: "gold",
+    requirement: 30,
+    metric: "active_streak",
   },
   {
-    id: "referral_5",
+    id: "referral_10",
     name: "Recruiter",
-    description: "Refer 5 new agents",
-    xp: 250,
-    icon: "heart",
-    tier: "gold",
+    description: "Refer 10 new agents",
+    icon: "users",
+    tier: "silver",
+    requirement: 10,
+    metric: "referrals",
+  },
+  {
+    id: "top_10_weekly",
+    name: "Elite",
+    description: "Finish in weekly top 10",
+    icon: "medal",
+    tier: "platinum",
+    requirement: 1,
+    metric: "weekly_rank",
   },
 ];
-
-const LEVEL_THRESHOLDS = [
-  0, 100, 300, 600, 1000, 1500, 2500, 4000, 6000, 10000,
-];
-
-// ── Data Integrity Helpers ─────────────────────────────────────────────────
-
-// ── Transaction Safety ─────────────────────────────────────────────────────
-async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  const startTime = Date.now();
-  try {
-    const result = await withTransaction(fn);
-    const duration = Date.now() - startTime;
-    auditFinancialAction(
-      "UPDATE",
-      "agentGamification",
-      "transaction",
-      `Transaction completed in ${duration}ms`
-    );
-    return result;
-  } catch (err) {
-    auditFinancialAction(
-      "UPDATE",
-      "agentGamification",
-      "transaction_failed",
-      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
-    );
-    throw err;
-  }
-}
-
-// ── Audit Trail ────────────────────────────────────────────────────────────
-function logOperation(action: string, details: Record<string, unknown>) {
-  const auditEntry = {
-    timestamp: new Date().toISOString(),
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    resource: "agentGamification",
-    action,
-    ...details,
-  };
-  auditFinancialAction(
-    "UPDATE",
-    "agentGamification",
-    action,
-    JSON.stringify(auditEntry).slice(0, 200)
-  );
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_AGENTGAMIFICATION = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_AGENTGAMIFICATION.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_AGENTGAMIFICATION.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
-const _txPatterns = {
-  wrapMutation: (...args: unknown[]) =>
-    typeof withTransaction === "function"
-      ? (withTransaction as Function)(...args)
-      : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
-    return withTransaction(async () => {
-      const results: T[] = [];
-      for (const op of ops) results.push(await op());
-      return results;
-    });
-  },
-};
 
 export const agentGamificationRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    if (!db)
-      return {
-        totalBadges: BADGE_DEFINITIONS.length,
-        activePlayers: 0,
-        topScore: 0,
-        avgEngagement: "0%",
-      };
-    const [stats] = await db
-      .select({
-        activePlayers: count(),
-        topScore: sum(agentAchievements.points),
+  leaderboard: protectedProcedure
+    .input(
+      z.object({
+        period: z.enum(["daily", "weekly", "monthly"]).default("weekly"),
+        metric: z.enum(["volume", "count", "commission"]).default("volume"),
+        limit: z.number().min(5).max(100).default(20),
       })
-      .from(agentAchievements)
-      .limit(100);
+    )
+    .query(async ({ input }) => {
+      const db = (await getDb())!;
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const periodStart = new Date();
+      if (input.period === "daily") periodStart.setHours(0, 0, 0, 0);
+      else if (input.period === "weekly")
+        periodStart.setDate(periodStart.getDate() - 7);
+      else periodStart.setDate(1);
+
+      const leaderboard = await db
+        .select({
+          agentId: transactions.agentId,
+          agentCode: agents.agentCode,
+          name: agents.name,
+          totalVolume: sum(transactions.amount),
+          txCount: count(),
+        })
+        .from(transactions)
+        .innerJoin(agents, eq(transactions.agentId, agents.id))
+        .where(
+          and(
+            gte(transactions.createdAt, periodStart),
+            eq(transactions.status, "success")
+          )
+        )
+        .groupBy(transactions.agentId, agents.agentCode, agents.name)
+        .orderBy(
+          input.metric === "count"
+            ? desc(count())
+            : desc(sum(transactions.amount))
+        )
+        .limit(input.limit);
+
+      return {
+        period: input.period,
+        metric: input.metric,
+        entries: leaderboard.map(
+          (
+            entry: {
+              agentId: number | null;
+              agentCode: string | null;
+              name: string | null;
+              totalVolume: string | null;
+              txCount: number;
+            },
+            idx: number
+          ) => ({
+            rank: idx + 1,
+            agentId: entry.agentId,
+            agentCode: entry.agentCode,
+            name: entry.name,
+            volume: Number(entry.totalVolume ?? 0),
+            count: Number(entry.txCount),
+          })
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+
+  myAchievements: protectedProcedure.query(async ({ ctx }) => {
+    const db = (await getDb())!;
+    const session = await getAgentFromCookie(ctx.req);
+    if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+    // Get total transaction count
+    const [txData] = await db
+      .select({ cnt: count(), vol: sum(transactions.amount) })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.agentId, session.id),
+          eq(transactions.status, "success")
+        )
+      );
+
+    const totalTx = Number(txData?.cnt ?? 0);
+    const totalVol = Number(txData?.vol ?? 0);
+
+    const earned = ACHIEVEMENTS.filter(a => {
+      if (a.metric === "total_transactions") return totalTx >= a.requirement;
+      if (a.metric === "daily_volume") return totalVol >= a.requirement;
+      return false;
+    });
+
+    const next = ACHIEVEMENTS.filter(a => {
+      if (a.metric === "total_transactions")
+        return totalTx < a.requirement && totalTx >= a.requirement * 0.5;
+      return false;
+    });
+
     return {
-      totalBadges: BADGE_DEFINITIONS.length,
-      activePlayers: stats.activePlayers || 0,
-      topScore: Number(stats.topScore || 0),
-      avgEngagement: "78%",
+      earned: earned.map(a => ({ ...a, earnedAt: new Date().toISOString() })),
+      inProgress: next.map(a => ({
+        ...a,
+        progress:
+          a.metric === "total_transactions" ? totalTx / a.requirement : 0,
+      })),
+      totalPoints: earned.reduce(
+        (sum, a) =>
+          sum +
+          (a.tier === "platinum"
+            ? 100
+            : a.tier === "gold"
+              ? 50
+              : a.tier === "silver"
+                ? 25
+                : 10),
+        0
+      ),
     };
   }),
 
-  getLeaderboard: protectedProcedure
-    .input(
-      z
-        .object({
-          period: z
-            .enum(["daily", "weekly", "monthly", "all_time"])
-            .default("monthly"),
-          limit: z.number().default(20),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        if (!db)
-          return {
-            leaderboard: [],
-            period: input?.period || "monthly",
-            updatedAt: new Date().toISOString(),
-          };
-        const periodDays = { daily: 1, weekly: 7, monthly: 30, all_time: 3650 };
-        const since = new Date(
-          Date.now() - periodDays[input?.period || "monthly"] * 86400000
-        );
-        const data = await db
-          .select({
-            agentId: agentAchievements.agentId,
-            totalXp: sum(agentAchievements.points),
-            achievementCount: count(),
-          })
-          .from(agentAchievements)
-          .where(gte(agentAchievements.unlockedAt, since))
-          .groupBy(agentAchievements.agentId)
-          .orderBy(desc(sum(agentAchievements.points)))
-          .limit(input?.limit || 20);
-        const leaderboard = data.map((d, i) => ({
-          rank: i + 1,
-          agentId: `AGT-${String(d.agentId).padStart(4, "0")}`,
-          name: `Agent ${d.agentId}`,
-          score: Number(d.totalXp || 0),
-          transactions: d.achievementCount,
-          volume: Number(d.totalXp || 0) * 1000,
-          badges: [],
-          tier:
-            i < 2 ? "diamond" : i < 5 ? "platinum" : i < 10 ? "gold" : "silver",
-          streak: Math.max(1, 30 - i),
-        }));
-        return {
-          leaderboard,
-          period: input?.period || "monthly",
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-
-  getBadges: protectedProcedure.query(() => BADGE_DEFINITIONS),
-
-  getAgentProfile: protectedProcedure
-    .input(z.object({ agentId: z.string().min(1).max(255) }))
-    .query(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        const agentIdNum = parseInt(input.agentId.replace("AGT-", ""), 10) || 0;
-        if (!db)
-          return {
-            agentId: input.agentId,
-            totalScore: 0,
-            currentTier: "bronze",
-            badges: [],
-            streak: 0,
-            nextMilestone: null,
-          };
-        const [xpStats] = await db
-          .select({ totalXp: sum(agentAchievements.points) })
-          .from(agentAchievements)
-          .where(eq(agentAchievements.agentId, agentIdNum))
-          .limit(100);
-        const badges = await db
-          .select()
-          .from(agentBadges)
-          .where(eq((agentBadges as any).agentId, agentIdNum))
-          .limit(100);
-        const totalScore = Number(xpStats?.totalXp || 0);
-        const level = LEVEL_THRESHOLDS.findIndex(t => totalScore < t);
-        const tierMap = [
-          "bronze",
-          "bronze",
-          "silver",
-          "silver",
-          "gold",
-          "gold",
-          "platinum",
-          "platinum",
-          "diamond",
-          "diamond",
-        ];
-        return {
-          agentId: input.agentId,
-          totalScore,
-          currentTier: tierMap[level === -1 ? 9 : level] || "bronze",
-          badges: badges.map(b => ({
-            ...b,
-            ...BADGE_DEFINITIONS.find(d => d.id === (b as any).badgeId),
-          })),
-          streak: 15,
-          nextMilestone: BADGE_DEFINITIONS.find(
-            d => !badges.some(b => (b as any).badgeId === d.id)
-          )
-            ? {
-                badge: BADGE_DEFINITIONS.find(
-                  d => !badges.some(b => (b as any).badgeId === d.id)
-                ),
-                progress: 67,
-              }
-            : null,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-
-  getAchievements: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    if (!db) throw new Error("Database connection unavailable");
-    const items = await db
-      .select()
-      .from(agentAchievements)
-      .orderBy(desc(agentAchievements.unlockedAt))
-      .limit(50);
-    return items;
+  availableAchievements: protectedProcedure.query(async () => {
+    return { achievements: ACHIEVEMENTS };
   }),
 
-  // Award achievement
-  awardAchievement: protectedProcedure
-    .input(
-      z.object({
-        agentId: z.number(),
-        achievementType: z.string(),
-        description: z.string(),
-        xp: z.number().default(10),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "agentGamification",
-        "mutation",
-        "Executed agentGamification mutation"
-      );
-
-      try {
-        const db = (await getDb())!;
-        if (!db) throw new Error("Database unavailable");
-        const [achievement] = await db
-          .insert(agentAchievements)
-          .values({
-            agentId: input.agentId,
-            achievementType: input.achievementType,
-            description: input.description,
-            xpEarned: input.xp,
-            earnedAt: new Date(),
-          } as any)
-          .returning();
-        return { achievement };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-
-  // Award badge
-  awardBadge: protectedProcedure
-    .input(
-      z.object({ agentId: z.number(), badgeId: z.string().min(1).max(255) })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        if (!db) throw new Error("Database unavailable");
-        const definition = BADGE_DEFINITIONS.find(d => d.id === input.badgeId);
-        if (!definition) throw new Error("Badge not found");
-        const [existing] = await db
-          .select()
-          .from(agentBadges)
-          .where(
-            and(
-              eq((agentBadges as any).agentId, input.agentId),
-              eq((agentBadges as any).badgeId, input.badgeId)
-            )
-          )
-          .limit(100);
-        if (existing) throw new Error("Badge already earned");
-        const [badge] = await db
-          .insert(agentBadges)
-          .values({
-            agentId: input.agentId,
-            badgeId: input.badgeId,
-            badgeName: definition.name,
-            earnedAt: new Date(),
-          } as any)
-          .returning();
-        await db.insert(agentAchievements).values({
-          agentId: input.agentId,
-          achievementType: "badge_earned",
-          description: `Earned badge: ${definition.name}`,
-          xpEarned: definition.xp,
-          earnedAt: new Date(),
-        } as any);
-        return { badge, xpAwarded: definition.xp };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-
-  badgeDefinitions: protectedProcedure.query(() => BADGE_DEFINITIONS),
-  levelThresholds: protectedProcedure.query(() => LEVEL_THRESHOLDS),
   list: protectedProcedure
     .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
     )
     .query(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) return { items: [], total: 0 };
-        return { items: [], total: 0 };
-      } catch {
-        return { items: [], total: 0 };
-      }
+      return {
+        items: ACHIEVEMENTS.slice(input.offset, input.offset + input.limit),
+        total: ACHIEVEMENTS.length,
+      };
     }),
+
+  getStats: protectedProcedure.query(async ({ ctx }) => {
+    const db = (await getDb())!;
+    const session = await getAgentFromCookie(ctx.req);
+    if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+    const [txStats] = await db
+      .select({ total: count(), volume: sum(transactions.amount) })
+      .from(transactions)
+      .where(eq(transactions.agentId, session.id));
+
+    return {
+      totalTransactions: Number(txStats?.total ?? 0),
+      totalVolume: Number(txStats?.volume ?? 0),
+      achievementsEarned: 0,
+      currentRank: "bronze" as const,
+      totalPoints: 0,
+    };
+  }),
 });

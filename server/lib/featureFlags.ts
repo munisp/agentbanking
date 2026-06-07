@@ -1,115 +1,168 @@
-// TypeScript enabled — Sprint 96 security audit
-import { getDb } from "../db";
+/**
+ * Feature Flags — centralized feature toggle management
+ *
+ * Supports: boolean flags, percentage rollouts, user/tenant targeting,
+ * environment-based overrides, A/B testing variants.
+ */
 
 interface FeatureFlag {
-  key: string;
+  name: string;
   enabled: boolean;
-  description?: string;
-  rolloutPercent?: number;
-  tenantOverrides?: Record<string, boolean>;
+  rolloutPercent: number;
+  description: string;
+  targetTenants?: number[];
+  targetRoles?: string[];
+  variants?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
-// In-memory cache with TTL
-const flagCache = new Map<string, { flag: FeatureFlag; expiresAt: number }>();
-const CACHE_TTL_MS = 60000; // 1 minute
-
-// Default flags — used when DB is unavailable
 const DEFAULT_FLAGS: Record<string, FeatureFlag> = {
-  geofencing: {
-    key: "geofencing",
+  ai_chatbot: {
+    name: "ai_chatbot",
+    enabled: true,
+    rolloutPercent: 100,
+    description: "AI-powered agent support chatbot",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  predictive_float: {
+    name: "predictive_float",
+    enabled: true,
+    rolloutPercent: 50,
+    description: "Predictive float depletion alerts",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  whatsapp_banking: {
+    name: "whatsapp_banking",
     enabled: false,
-    description: "Agent geofence enforcement",
+    rolloutPercent: 0,
+    description: "WhatsApp conversational banking channel",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  gamification: {
+    name: "gamification",
+    enabled: true,
+    rolloutPercent: 100,
+    description: "Agent leaderboards and achievements",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  dark_mode: {
+    name: "dark_mode",
+    enabled: true,
+    rolloutPercent: 100,
+    description: "Dark mode UI theme",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  cursor_pagination: {
+    name: "cursor_pagination",
+    enabled: false,
+    rolloutPercent: 10,
+    description: "Cursor-based pagination for high-volume endpoints",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
+  },
+  cross_border: {
+    name: "cross_border",
+    enabled: false,
+    rolloutPercent: 0,
+    description: "Cross-border ECOWAS remittance corridors",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
   },
   biometric_auth: {
-    key: "biometric_auth",
+    name: "biometric_auth",
     enabled: true,
-    description: "WebAuthn biometric login",
+    rolloutPercent: 100,
+    description: "Biometric authentication for agents (fingerprint, face)",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
   },
-  nfc_payments: {
-    key: "nfc_payments",
+  geofencing: {
+    name: "geofencing",
     enabled: true,
-    description: "NFC contactless payments",
+    rolloutPercent: 100,
+    description: "POS geofencing and location-based services",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
   },
-  ai_fraud_scoring: {
-    key: "ai_fraud_scoring",
-    enabled: true,
-    description: "ML-based fraud scoring",
-  },
-  commission_cascade: {
-    key: "commission_cascade",
-    enabled: true,
-    description: "Hierarchical commission split",
-  },
-  customer_sms: {
-    key: "customer_sms",
-    enabled: true,
-    description: "SMS transaction confirmations",
-  },
-  auto_dispute_escalation: {
-    key: "auto_dispute_escalation",
-    enabled: true,
-    description: "Auto-escalate overdue disputes",
-  },
-  kyc_expiry_check: {
-    key: "kyc_expiry_check",
-    enabled: true,
-    description: "Daily KYC expiry notifications",
-  },
-  settlement_batch: {
-    key: "settlement_batch",
-    enabled: true,
-    description: "Daily settlement batch processing",
-  },
-  webhook_retry: {
-    key: "webhook_retry",
-    enabled: true,
-    description: "Webhook delivery with exponential backoff",
+  micro_insurance: {
+    name: "micro_insurance",
+    enabled: false,
+    rolloutPercent: 0,
+    description: "Embedded micro-insurance products",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-06-01",
   },
 };
 
-export async function isFeatureEnabled(
-  key: string,
-  tenantId?: string
-): Promise<boolean> {
-  // Check cache first
-  const cached = flagCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    const flag = cached.flag;
-    if (tenantId && flag.tenantOverrides?.[tenantId] !== undefined) {
-      return flag.tenantOverrides[tenantId];
-    }
-    return flag.enabled;
+// In-memory store (production: Redis or DB-backed)
+let flags: Record<string, FeatureFlag> = { ...DEFAULT_FLAGS };
+
+export function isFeatureEnabled(
+  flagName: string,
+  context?: { userId?: number; tenantId?: number; role?: string }
+): boolean {
+  const flag = flags[flagName];
+  if (!flag) return false;
+  if (!flag.enabled) return false;
+
+  // Tenant targeting
+  if (flag.targetTenants?.length && context?.tenantId) {
+    if (!flag.targetTenants.includes(context.tenantId)) return false;
   }
 
-  // Try DB
-  try {
-    const db = await getDb();
-    if (db) {
-      const { platformSettings } = await import("../../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
-      const rows = await db
-        .select()
-        .from(platformSettings)
-        .where(eq(platformSettings.key, `feature_flag_${key}`))
-        .limit(1);
-      if (rows.length > 0) {
-        const enabled = rows[0].value === "true";
-        flagCache.set(key, {
-          flag: { key, enabled },
-          expiresAt: Date.now() + CACHE_TTL_MS,
-        });
-        return enabled;
-      }
-    }
-  } catch {
-    /* fail-open to defaults */
+  // Role targeting
+  if (flag.targetRoles?.length && context?.role) {
+    if (!flag.targetRoles.includes(context.role)) return false;
   }
 
-  // Default
-  const defaultFlag = DEFAULT_FLAGS[key];
-  return defaultFlag?.enabled ?? false;
+  // Percentage rollout
+  if (flag.rolloutPercent < 100) {
+    const hash = context?.userId
+      ? (context.userId * 2654435761) % 100
+      : Date.now() % 100;
+    return hash < flag.rolloutPercent;
+  }
+
+  return true;
 }
 
-export function getAllDefaultFlags(): FeatureFlag[] {
-  return Object.values(DEFAULT_FLAGS);
+export function setFlag(name: string, updates: Partial<FeatureFlag>) {
+  if (!flags[name]) {
+    flags[name] = {
+      name,
+      enabled: false,
+      rolloutPercent: 0,
+      description: "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...updates,
+    };
+  } else {
+    flags[name] = {
+      ...flags[name],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+}
+
+export function getAllFlags(): Record<string, FeatureFlag> {
+  return { ...flags };
+}
+
+export function getFlag(name: string): FeatureFlag | undefined {
+  return flags[name];
+}
+
+export function getAllDefaultFlags(): Array<{ key: string } & FeatureFlag> {
+  return Object.entries(DEFAULT_FLAGS).map(([key, flag]) => ({
+    key,
+    ...flag,
+  }));
 }

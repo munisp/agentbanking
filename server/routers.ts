@@ -201,6 +201,7 @@ import { advancedLoadingStatesRouter } from "./routers/advancedLoadingStates";
 import { financialNlEngineRouter } from "./routers/financialNlEngine";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { agentGamificationRouter } from "./routers/agentGamification";
+import { microInsuranceRouter } from "./routers/microInsurance";
 import { bulkTransactionProcessingRouter } from "./routers/bulkTransactionProcessing";
 import { customer360ViewRouter } from "./routers/customer360View";
 import { platformFeatureFlagsRouter } from "./routers/platformFeatureFlags";
@@ -517,6 +518,8 @@ import { pensionMicroRouter } from "./routers/pensionMicro";
 import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
 import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
 import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
+import { aiAgentSupportRouter } from "./routers/aiAgentSupport";
+import { predictiveFloatRouter } from "./routers/predictiveFloat";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -840,6 +843,7 @@ export const appRouter = router({
   financialNlEngine: financialNlEngineRouter,
   partnerRevenueSharing: partnerRevenueSharingRouter,
   agentGamification: agentGamificationRouter,
+  microInsurance: microInsuranceRouter,
   bulkTransactionProcessing: bulkTransactionProcessingRouter,
   customer360View: customer360ViewRouter,
   platformFeatureFlags: platformFeatureFlagsRouter,
@@ -1139,6 +1143,8 @@ export const appRouter = router({
   carbonCreditMarketplace: carbonCreditMarketplaceRouter,
   tokenizedAssets: tokenizedAssetsRouter,
   coalitionLoyalty: coalitionLoyaltyRouter,
+  aiAgentSupport: aiAgentSupportRouter,
+  predictiveFloat: predictiveFloatRouter,
 });
 
 export type AppRouter = typeof appRouter;

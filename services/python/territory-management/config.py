@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./territory_management.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/territory_management"
     
     # Logging settings
     LOG_LEVEL: str = "INFO"
@@ -35,10 +35,8 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 # Create the SQLAlchemy engine
-# For SQLite, connect_args are needed for concurrent access in a multi-threaded environment
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

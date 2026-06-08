@@ -431,7 +431,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

@@ -71,7 +71,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── Conditional imports ──────────────────────────────────────────────────────
 
 try:
@@ -125,7 +124,6 @@ class VerificationResult(str, Enum):
     NO_MATCH = "no_match"
     ERROR = "error"
 
-
 class EmotionLabel(str, Enum):
     ANGRY = "angry"
     DISGUST = "disgust"
@@ -134,7 +132,6 @@ class EmotionLabel(str, Enum):
     SAD = "sad"
     SURPRISE = "surprise"
     NEUTRAL = "neutral"
-
 
 # ── Request / Response Models ────────────────────────────────────────────────
 
@@ -148,7 +145,6 @@ class VerifyRequest(BaseModel):
     align: bool = Field(default=True, description="Align faces before comparison")
     anti_spoofing: bool = Field(default=False, description="Run anti-spoofing check")
 
-
 class EnsembleVerifyRequest(BaseModel):
     image1_base64: str = Field(..., min_length=100)
     image2_base64: str = Field(..., min_length=100)
@@ -159,7 +155,6 @@ class EnsembleVerifyRequest(BaseModel):
     detector_backend: str = Field(default=DEFAULT_DETECTOR)
     threshold: float = Field(default=0.6, ge=0.0, le=1.0, description="Consensus threshold (fraction of models that must agree)")
     anti_spoofing: bool = Field(default=False)
-
 
 class AnalyzeRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
@@ -172,14 +167,12 @@ class AnalyzeRequest(BaseModel):
     align: bool = Field(default=True)
     anti_spoofing: bool = Field(default=False)
 
-
 class DetectRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
     detector_backend: str = Field(default=DEFAULT_DETECTOR)
     enforce_detection: bool = Field(default=True)
     align: bool = Field(default=True)
     anti_spoofing: bool = Field(default=False)
-
 
 class EmbeddingRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
@@ -188,14 +181,12 @@ class EmbeddingRequest(BaseModel):
     enforce_detection: bool = Field(default=True)
     align: bool = Field(default=True)
 
-
 class EnrollRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
     identity: str = Field(..., min_length=1, description="Unique identity label (e.g. user ID)")
     model_name: str = Field(default=DEFAULT_MODEL)
     detector_backend: str = Field(default=DEFAULT_DETECTOR)
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Extra metadata to store")
-
 
 class SearchRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
@@ -205,11 +196,9 @@ class SearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=50)
     threshold: Optional[float] = Field(default=None, description="Max distance threshold")
 
-
 class AntiSpoofRequest(BaseModel):
     image_base64: str = Field(..., min_length=100)
     detector_backend: str = Field(default=DEFAULT_DETECTOR)
-
 
 class CompareMultipleRequest(BaseModel):
     reference_base64: str = Field(..., min_length=100, description="Reference face image")
@@ -217,7 +206,6 @@ class CompareMultipleRequest(BaseModel):
     model_name: str = Field(default=DEFAULT_MODEL)
     detector_backend: str = Field(default=DEFAULT_DETECTOR)
     distance_metric: str = Field(default=DEFAULT_DISTANCE_METRIC)
-
 
 # ── Middleware Clients ───────────────────────────────────────────────────────
 
@@ -293,7 +281,6 @@ class RedisClient:
         except Exception:
             return False
 
-
 class KafkaClient:
     """Kafka producer for verification event streaming."""
 
@@ -324,7 +311,6 @@ class KafkaClient:
             self.producer.flush(timeout=5)
         except Exception as e:
             logger.warning(f"Kafka publish failed: {e}")
-
 
 # ── DeepFace Engine ──────────────────────────────────────────────────────────
 
@@ -967,18 +953,15 @@ class DeepFaceEngine:
             except OSError:
                 pass
 
-
 # ── App Lifecycle ────────────────────────────────────────────────────────────
 
 engine = DeepFaceEngine()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("DeepFace service starting up...")
     yield
     logger.info("DeepFace service shutting down...")
-
 
 app = FastAPI(
 
@@ -1028,7 +1011,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -1042,7 +1024,6 @@ async def root():
         "default_model": DEFAULT_MODEL,
         "default_detector": DEFAULT_DETECTOR,
     }
-
 
 @app.get("/health")
 async def health():
@@ -1064,7 +1045,6 @@ async def health():
             "compare_multiple": True,
         },
     }
-
 
 @app.post("/verify")
 async def verify_faces(req: VerifyRequest):
@@ -1093,7 +1073,6 @@ async def verify_faces(req: VerifyRequest):
         logger.error(f"Verification failed: {e}")
         raise HTTPException(500, f"Verification failed: {str(e)}")
 
-
 @app.post("/verify/ensemble")
 async def ensemble_verify_faces(req: EnsembleVerifyRequest):
     """Multi-model ensemble verification for higher confidence."""
@@ -1115,7 +1094,6 @@ async def ensemble_verify_faces(req: EnsembleVerifyRequest):
         engine.stats["errors"] += 1
         logger.error(f"Ensemble verification failed: {e}")
         raise HTTPException(500, f"Ensemble verification failed: {str(e)}")
-
 
 @app.post("/analyze")
 async def analyze_face(req: AnalyzeRequest):
@@ -1144,7 +1122,6 @@ async def analyze_face(req: AnalyzeRequest):
         logger.error(f"Analysis failed: {e}")
         raise HTTPException(500, f"Analysis failed: {str(e)}")
 
-
 @app.post("/detect")
 async def detect_faces(req: DetectRequest):
     """Detect faces in an image with bounding boxes and confidence scores."""
@@ -1165,7 +1142,6 @@ async def detect_faces(req: DetectRequest):
         engine.stats["errors"] += 1
         logger.error(f"Detection failed: {e}")
         raise HTTPException(500, f"Detection failed: {str(e)}")
-
 
 @app.post("/represent")
 async def extract_embedding(req: EmbeddingRequest):
@@ -1191,7 +1167,6 @@ async def extract_embedding(req: EmbeddingRequest):
         logger.error(f"Embedding extraction failed: {e}")
         raise HTTPException(500, f"Embedding extraction failed: {str(e)}")
 
-
 @app.post("/gallery/enroll")
 async def enroll_face(req: EnrollRequest):
     """Enroll a face into the gallery for 1:N recognition."""
@@ -1212,7 +1187,6 @@ async def enroll_face(req: EnrollRequest):
         engine.stats["errors"] += 1
         logger.error(f"Enrollment failed: {e}")
         raise HTTPException(500, f"Enrollment failed: {str(e)}")
-
 
 @app.post("/gallery/search")
 async def search_gallery(req: SearchRequest):
@@ -1236,7 +1210,6 @@ async def search_gallery(req: SearchRequest):
         logger.error(f"Gallery search failed: {e}")
         raise HTTPException(500, f"Gallery search failed: {str(e)}")
 
-
 @app.delete("/gallery/{identity}")
 async def delete_from_gallery(identity: str, model_name: str = DEFAULT_MODEL):
     """Remove an identity from the gallery."""
@@ -1248,7 +1221,6 @@ async def delete_from_gallery(identity: str, model_name: str = DEFAULT_MODEL):
         shutil.rmtree(identity_dir, ignore_errors=True)
 
     return {"deleted": deleted or os.path.exists(identity_dir) is False, "identity": identity}
-
 
 @app.post("/anti-spoof")
 async def anti_spoof(req: AntiSpoofRequest):
@@ -1267,7 +1239,6 @@ async def anti_spoof(req: AntiSpoofRequest):
         engine.stats["errors"] += 1
         logger.error(f"Anti-spoof check failed: {e}")
         raise HTTPException(500, f"Anti-spoof check failed: {str(e)}")
-
 
 @app.post("/compare-multiple")
 async def compare_multiple(req: CompareMultipleRequest):
@@ -1293,7 +1264,6 @@ async def compare_multiple(req: CompareMultipleRequest):
         logger.error(f"Multi-compare failed: {e}")
         raise HTTPException(500, f"Multi-compare failed: {str(e)}")
 
-
 @app.get("/models")
 async def list_models():
     """List all supported recognition models and detectors."""
@@ -1306,7 +1276,6 @@ async def list_models():
         "default_distance_metric": DEFAULT_DISTANCE_METRIC,
     }
 
-
 @app.get("/stats")
 async def get_stats():
     """Get service usage statistics."""
@@ -1316,7 +1285,6 @@ async def get_stats():
         "redis_connected": engine.redis.client is not None,
         "kafka_connected": engine.kafka.producer is not None,
     }
-
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 

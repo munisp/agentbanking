@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -94,7 +93,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "reporting-service", "error": str(e)}
 
-
 class ReportRequest(BaseModel):
     report_type: str
     title: str
@@ -135,7 +133,6 @@ async def get_report(report_id: str, token: str = Depends(verify_token)):
         if not row:
             raise HTTPException(status_code=404, detail="Report not found")
         return dict(row)
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

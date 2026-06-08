@@ -33,9 +33,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for mojaloop-connector."""
+    """Initialize PostgreSQL persistence for mojaloop-connector."""
     import os
-    db_path = os.environ.get("MOJALOOP_CONNECTOR_DB_PATH", "/tmp/mojaloop-connector.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/mojaloop_connector'))
         
@@ -43,11 +42,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -69,11 +67,9 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 SERVICE_NAME = "mojaloop-connector"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = int(os.getenv("MOJALOOP_CONNECTOR_PORT", "9119"))
-
 
 class TransferState(Enum):
     RECEIVED = "RECEIVED"
@@ -81,7 +77,6 @@ class TransferState(Enum):
     COMMITTED = "COMMITTED"
     ABORTED = "ABORTED"
     EXPIRED = "EXPIRED"
-
 
 class PartyIdType(Enum):
     MSISDN = "MSISDN"
@@ -92,7 +87,6 @@ class PartyIdType(Enum):
     DEVICE = "DEVICE"
     IBAN = "IBAN"
 
-
 @dataclass
 class Party:
     party_id_type: str
@@ -101,7 +95,6 @@ class Party:
     name: str = ""
     currency: str = "NGN"
     account_type: str = "SAVINGS"
-
 
 @dataclass
 class Quote:
@@ -119,7 +112,6 @@ class Quote:
     ilp_packet: str = ""
     condition: str = ""
     state: str = "RECEIVED"
-
 
 @dataclass
 class Transfer:
@@ -139,7 +131,6 @@ class Transfer:
     error_code: str = ""
     error_description: str = ""
 
-
 @dataclass
 class SettlementWindow:
     window_id: str
@@ -149,7 +140,6 @@ class SettlementWindow:
     total_amount: float = 0.0
     transfer_count: int = 0
     participants: List[str] = field(default_factory=list)
-
 
 class MojaloopConnector:
     """Mojaloop FSPIOP-compliant connector for POS platform."""
@@ -378,11 +368,9 @@ class MojaloopConnector:
             "pending_transfers": sum(1 for t in self.transfers.values() if t.state == TransferState.RESERVED),
         }
 
-
 # ─── HTTP Server ─────────────────────────────────────────────────────────────
 
 connector = MojaloopConnector()
-
 
 class MojaloopHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -462,14 +450,12 @@ class MojaloopHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 def main():
     server = HTTPServer(("0.0.0.0", DEFAULT_PORT), MojaloopHandler)
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} starting on port {DEFAULT_PORT}")
     print(f"[{SERVICE_NAME}] Registered DFSPs: {list(connector.dfsps.keys())}")
     print(f"[{SERVICE_NAME}] FX rates: {connector.fx_rates}")
     server.serve_forever()
-
 
 if __name__ == "__main__":
     main()

@@ -39,7 +39,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 
 _db_pool = None
@@ -88,7 +87,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "push-notification-service", "error": str(e)}
 
-
 class ItemCreate(BaseModel):
     user_id: str
     device_token: str
@@ -102,7 +100,6 @@ class ItemUpdate(BaseModel):
     platform: Optional[str] = None
     is_active: Optional[bool] = None
     last_used_at: Optional[str] = None
-
 
 @app.post("/api/v1/push-notification-service")
 async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
@@ -121,7 +118,6 @@ async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
         row = await conn.fetchrow(query, *vals)
         return dict(row)
 
-
 @app.get("/api/v1/push-notification-service")
 async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -133,7 +129,6 @@ async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify
         total = await conn.fetchval("SELECT COUNT(*) FROM push_tokens")
         return {"total": total, "items": [dict(r) for r in rows], "skip": skip, "limit": limit}
 
-
 @app.get("/api/v1/push-notification-service/{item_id}")
 async def get_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -142,7 +137,6 @@ async def get_item(item_id: str, token: str = Depends(verify_token)):
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
         return dict(row)
-
 
 @app.put("/api/v1/push-notification-service/{item_id}")
 async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verify_token)):
@@ -165,7 +159,6 @@ async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verif
         row = await conn.fetchrow(query, *params)
         return dict(row)
 
-
 @app.delete("/api/v1/push-notification-service/{item_id}")
 async def delete_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -175,7 +168,6 @@ async def delete_item(item_id: str, token: str = Depends(verify_token)):
             raise HTTPException(status_code=404, detail="Item not found")
         return {"deleted": True}
 
-
 @app.get("/api/v1/push-notification-service/stats")
 async def get_stats(token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -183,7 +175,6 @@ async def get_stats(token: str = Depends(verify_token)):
         total = await conn.fetchval("SELECT COUNT(*) FROM push_tokens")
         today = await conn.fetchval("SELECT COUNT(*) FROM push_tokens WHERE created_at >= CURRENT_DATE")
         return {"total": total, "today": today, "service": "push-notification-service"}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8127)

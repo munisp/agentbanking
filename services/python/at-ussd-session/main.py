@@ -58,7 +58,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("at-ussd-session")
 
@@ -472,7 +471,6 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=port, debug=False)
     else:
         logger.error("Flask not installed.")
-
 
 import psycopg2
 import psycopg2.extras

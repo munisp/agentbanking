@@ -4,11 +4,11 @@ from sqlalchemy.orm import sessionmaker
 from typing import Generator
 
 # Database configuration
-SQLALCHEMY_DATABASE_URL = "sqlite:///./payout_service.db"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/payout_service"
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL
 )
 
 # Create a configured "Session" class

@@ -23,9 +23,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for core-banking."""
+    """Initialize PostgreSQL persistence for core-banking."""
     import os
-    db_path = os.environ.get("CORE_BANKING_DB_PATH", "/tmp/core-banking.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/core_banking'))
         
@@ -33,11 +32,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -58,7 +56,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 # --- Configuration and Setup ---
 logging.basicConfig(level=logging.INFO)

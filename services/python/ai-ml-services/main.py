@@ -101,8 +101,6 @@ def storage_keys(pattern: str = "*"):
         print(f"Storage keys error: {e}")
         return []
 
-
-
 app = FastAPI(
 
 import psycopg2
@@ -203,7 +201,6 @@ class RedisStorage:
     def next_id(self) -> str:
         count = self._increment_count()
         return f"item_{count}"
-
 
 # Initialize Redis-backed storage
 storage = RedisStorage()

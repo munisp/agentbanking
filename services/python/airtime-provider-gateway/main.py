@@ -37,7 +37,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -66,7 +65,6 @@ DATA_BUNDLES = {
         {"id": "9MOBILE-1.5GB-30D", "size": "1.5GB", "validity": "30 days", "price": 1000},
     ],
 }
-
 
 class AirtimeHandler(BaseHTTPRequestHandler):
     def _send_json(self, data, status=200):
@@ -160,13 +158,11 @@ class AirtimeHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8145"))
     server = HTTPServer(("0.0.0.0", port), AirtimeHandler)
     logger.info("Airtime Provider Gateway starting on port %d", port)
     server.serve_forever()
-
 
 import psycopg2
 import psycopg2.extras

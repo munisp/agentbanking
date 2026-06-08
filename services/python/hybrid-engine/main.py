@@ -101,8 +101,6 @@ def storage_keys(pattern: str = "*"):
         print(f"Storage keys error: {e}")
         return []
 
-
-
 app = FastAPI(
 
 import psycopg2

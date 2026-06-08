@@ -44,7 +44,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -61,14 +60,6 @@ if "postgresql" in settings.DATABASE_URL.lower():
         echo=settings.DB_ECHO
     )
     logger.info(f"PostgreSQL engine created with pool_size={settings.DB_POOL_SIZE}, max_overflow={settings.DB_MAX_OVERFLOW}")
-elif "sqlite" in settings.DATABASE_URL.lower():
-    # SQLite (development only)
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        echo=settings.DB_ECHO
-    )
-    logger.warning("SQLite engine created - NOT RECOMMENDED FOR PRODUCTION")
 else:
     # Other databases
     engine = create_engine(

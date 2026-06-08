@@ -4,7 +4,6 @@ Knowledge base and FAQ service
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-
 @router.get("/health")
 async def health_check():
     return {"status": "ok", "service": "knowledge-base", "timestamp": datetime.utcnow().isoformat()}
@@ -39,7 +38,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 router = APIRouter(prefix="/knowledgebase", tags=["knowledge-base"])
 
@@ -94,7 +92,6 @@ async def delete(id: int):
     """Delete knowledge-base record."""
     # Implementation here
     return None
-
 
 import psycopg2
 import psycopg2.extras

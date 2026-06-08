@@ -33,7 +33,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,7 +70,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     from fastapi import HTTPException
     raise HTTPException(status_code=401, detail="Authentication required")
 
-
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting up Hierarchy Service...")
@@ -83,11 +81,9 @@ async def startup_event():
 async def shutdown_event():
     logger.info("Shutting down Hierarchy Service...")
 
-
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     return {"status": "healthy", "service": "hierarchy-service", "version": app.version}
-
 
 # --- Hierarchy Node Endpoints ---
 
@@ -199,7 +195,6 @@ async def remove_parent(node_id: int, current_user: dict = Depends(get_current_u
     db.refresh(node)
     return node
 
-
 # Error handling example (can be expanded)
 from starlette.responses import JSONResponse
 
@@ -220,5 +215,4 @@ async def sqlalchemy_exception_handler(request, exc: SQLAlchemyError):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"message": "An internal database error occurred."},
     )
-
 

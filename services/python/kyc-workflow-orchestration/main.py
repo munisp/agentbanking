@@ -59,7 +59,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("kyc-workflow-orchestration")
 
@@ -90,7 +89,6 @@ SLA_HOURS = {
 # Domain Models
 # ══════════════════════════════════════════════════════════════════════════════
 
-
 class WorkflowStage(str, Enum):
     CREATED = "created"
     SANCTIONS_CHECK = "sanctions_check"
@@ -104,7 +102,6 @@ class WorkflowStage(str, Enum):
     REJECTED = "rejected"
     MANUAL_REVIEW = "manual_review"
 
-
 class WorkflowStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -112,7 +109,6 @@ class WorkflowStatus(str, Enum):
     FAILED = "failed"
     REJECTED = "rejected"
     MANUAL_REVIEW = "manual_review"
-
 
 @dataclass
 class StageResult:
@@ -123,7 +119,6 @@ class StageResult:
     started_at: str = ""
     completed_at: str = ""
     duration_ms: int = 0
-
 
 @dataclass
 class KYCWorkflow:
@@ -146,7 +141,6 @@ class KYCWorkflow:
     triggered_by: str = ""
     customer_data: dict = field(default_factory=dict)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # State Store
 # ══════════════════════════════════════════════════════════════════════════════
@@ -156,7 +150,6 @@ workflows: dict[str, KYCWorkflow] = {}
 # ══════════════════════════════════════════════════════════════════════════════
 # Middleware Integration Functions
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 async def publish_kafka(topic: str, event: dict):
     """Publish event to Kafka via Dapr sidecar."""
@@ -169,7 +162,6 @@ async def publish_kafka(topic: str, event: dict):
     except Exception as e:
         logger.warning(f"Kafka publish failed for {topic}: {e}")
 
-
 async def stream_to_fluvio(data: dict):
     """Stream event to Fluvio lakehouse."""
     try:
@@ -178,7 +170,6 @@ async def stream_to_fluvio(data: dict):
             await client.post(url, json=data, timeout=5.0)
     except Exception:
         pass
-
 
 async def start_temporal_sla(workflow_id: str, deadline: datetime, tier: str):
     """Register SLA monitoring workflow with Temporal."""
@@ -197,11 +188,9 @@ async def start_temporal_sla(workflow_id: str, deadline: datetime, tier: str):
     except Exception as e:
         logger.warning(f"Temporal SLA registration failed: {e}")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipeline Stage Implementations
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 async def execute_sanctions_check(wf: KYCWorkflow) -> StageResult:
     """Stage 1: Screen customer against OFAC/UN/EU/UK/CBN sanctions lists."""
@@ -249,7 +238,6 @@ async def execute_sanctions_check(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_liveness_check(wf: KYCWorkflow) -> StageResult:
     """Stage 2: Verify customer is a live person (not spoofed)."""
@@ -305,7 +293,6 @@ async def execute_liveness_check(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_document_verify(wf: KYCWorkflow) -> StageResult:
     """Stage 3: Verify submitted documents (ID, utility bill, etc.)."""
@@ -380,7 +367,6 @@ async def execute_document_verify(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_auto_decision(wf: KYCWorkflow) -> StageResult:
     """Stage 4: Apply automatic decision rules based on previous stages."""
     start = time.time()
@@ -445,7 +431,6 @@ async def execute_auto_decision(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_verification_score(wf: KYCWorkflow) -> StageResult:
     """Stage 5: Compute composite verification score across all checks."""
     start = time.time()
@@ -478,7 +463,6 @@ async def execute_verification_score(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_risk_assessment(wf: KYCWorkflow) -> StageResult:
     """Stage 6: PEP + sanctions + adverse media + country risk scoring."""
@@ -552,7 +536,6 @@ async def execute_risk_assessment(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_sla_check(wf: KYCWorkflow) -> StageResult:
     """Stage 7: Verify KYC completed within SLA window."""
     start = time.time()
@@ -577,11 +560,9 @@ async def execute_sla_check(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipeline Executor
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 PIPELINE_STAGES = [
     ("sanctions_check", execute_sanctions_check),
@@ -592,7 +573,6 @@ PIPELINE_STAGES = [
     ("risk_assessment", execute_risk_assessment),
     ("sla_check", execute_sla_check),
 ]
-
 
 async def run_pipeline(workflow_id: str):
     """Execute the full KYC pipeline stages sequentially."""
@@ -680,7 +660,6 @@ async def run_pipeline(workflow_id: str):
     await stream_to_fluvio(asdict(wf))
     logger.info(f"KYC workflow {workflow_id} completed: decision={wf.decision}, score={wf.overall_score:.1f}")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # FastAPI Application
 # ══════════════════════════════════════════════════════════════════════════════
@@ -726,7 +705,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     version="1.0.0",
 )
 
-
 class StartWorkflowRequest(BaseModel):
     customer_id: str
     kyc_level: str = "standard"  # basic, standard, enhanced, full_edd
@@ -734,12 +712,10 @@ class StartWorkflowRequest(BaseModel):
     triggered_by: str = "system"
     customer_data: dict = {}
 
-
 class ManualDecisionRequest(BaseModel):
     decision: str  # approved, rejected
     reviewer: str
     reason: str = ""
-
 
 @app.post("/api/v1/workflow/start")
 async def start_workflow(req: StartWorkflowRequest, background_tasks: BackgroundTasks):
@@ -778,7 +754,6 @@ async def start_workflow(req: StartWorkflowRequest, background_tasks: Background
         "stages": [s[0] for s in PIPELINE_STAGES],
     }
 
-
 @app.get("/api/v1/workflow/{workflow_id}")
 async def get_workflow(workflow_id: str):
     """Get workflow status and results."""
@@ -786,7 +761,6 @@ async def get_workflow(workflow_id: str):
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return asdict(wf)
-
 
 @app.get("/api/v1/workflow/{workflow_id}/stages")
 async def get_workflow_stages(workflow_id: str):
@@ -800,7 +774,6 @@ async def get_workflow_stages(workflow_id: str):
         "stages_completed": wf.stages_completed,
         "stage_results": wf.stage_results,
     }
-
 
 @app.post("/api/v1/workflow/{workflow_id}/manual-decision")
 async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
@@ -826,7 +799,6 @@ async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
 
     return {"workflow_id": workflow_id, "decision": req.decision, "reviewer": req.reviewer}
 
-
 @app.get("/api/v1/workflows")
 async def list_workflows(status: Optional[str] = None, customer_id: Optional[str] = None):
     """List all workflows with optional filters."""
@@ -847,7 +819,6 @@ async def list_workflows(status: Optional[str] = None, customer_id: Optional[str
         })
     return {"workflows": results, "total": len(results)}
 
-
 @app.get("/health")
 async def health():
     return {
@@ -867,7 +838,6 @@ async def health():
             "temporal": TEMPORAL_URL,
         },
     }
-
 
 if __name__ == "__main__":
     import uvicorn

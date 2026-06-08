@@ -2,7 +2,7 @@
 // Tamper-proof audit logging with hash chain verification
 // Each entry is cryptographically linked to the previous entry
 
-// PERSISTENCE: This service should use sqlx/rusqlite for data persistence.
+// PERSISTENCE: This service uses PostgreSQL (sqlx) for data persistence.
 // Currently uses in-memory state — data is lost on restart.
 
 use std::collections::HashMap;

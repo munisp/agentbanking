@@ -1,0 +1,51 @@
+# Canary Deployment Configuration
+# Progressive traffic shifting with automatic rollback
+
+apiVersion: v1
+kind: canary
+metadata:
+  name: 54link-canary
+  namespace: production
+
+spec:
+  # Traffic splitting stages
+  stages:
+    - weight: 1
+      duration: 5m
+      metrics:
+        - name: error_rate
+          threshold: 1.0    # Rollback if >1% error rate
+        - name: p99_latency_ms
+          threshold: 2000   # Rollback if p99 >2s
+
+    - weight: 5
+      duration: 10m
+      metrics:
+        - name: error_rate
+          threshold: 0.5
+        - name: p99_latency_ms
+          threshold: 1500
+
+    - weight: 25
+      duration: 15m
+      metrics:
+        - name: error_rate
+          threshold: 0.5
+
+    - weight: 50
+      duration: 20m
+      metrics:
+        - name: error_rate
+          threshold: 0.3
+
+    - weight: 100
+      duration: 0
+      # Full rollout
+
+  rollback:
+    automatic: true
+    cooldown: 30m
+
+  notifications:
+    slack: "#deployments"
+    email: "ops@54link.com"

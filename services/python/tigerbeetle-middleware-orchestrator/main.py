@@ -36,7 +36,6 @@ logger = logging.getLogger("tb-orchestrator")
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-
 @dataclass
 class Config:
     port: int = int(os.getenv("TB_ORCHESTRATOR_PORT", "9500"))
@@ -55,9 +54,7 @@ class Config:
     tb_hub_url: str = os.getenv("TB_HUB_URL", "http://localhost:9300")
     tb_bridge_url: str = os.getenv("TB_BRIDGE_URL", "http://localhost:9400")
 
-
 # ── Data Structures ──────────────────────────────────────────────────────────
-
 
 @dataclass
 class TransferEvent:
@@ -74,7 +71,6 @@ class TransferEvent:
     timestamp: str = ""
     metadata: dict = field(default_factory=dict)
 
-
 @dataclass
 class ReconciliationResult:
     transfer_id: str
@@ -83,7 +79,6 @@ class ReconciliationResult:
     discrepancy: int
     status: str  # "matched", "discrepancy", "missing_tb", "missing_pg"
     checked_at: str = ""
-
 
 @dataclass
 class OrchestratorMetrics:
@@ -101,9 +96,7 @@ class OrchestratorMetrics:
     errors_total: int = 0
     uptime_seconds: int = 0
 
-
 # ── Orchestrator Service ─────────────────────────────────────────────────────
-
 
 class TigerBeetleOrchestrator:
     def __init__(self, config: Config):
@@ -463,11 +456,9 @@ class TigerBeetleOrchestrator:
             uptime_seconds=int(time.time() - self.start_time),
         )
 
-
 # ── HTTP Handlers ────────────────────────────────────────────────────────────
 
 orchestrator: Optional[TigerBeetleOrchestrator] = None
-
 
 async def handle_health(request: web.Request) -> web.Response:
     metrics = orchestrator.get_metrics()
@@ -479,11 +470,9 @@ async def handle_health(request: web.Request) -> web.Response:
         "transfers_orchestrated": metrics.transfers_orchestrated,
     })
 
-
 async def handle_metrics(request: web.Request) -> web.Response:
     metrics = orchestrator.get_metrics()
     return web.json_response(asdict(metrics))
-
 
 async def handle_submit_transfer(request: web.Request) -> web.Response:
     try:
@@ -521,7 +510,6 @@ async def handle_submit_transfer(request: web.Request) -> web.Response:
     except asyncio.QueueFull:
         return web.json_response({"error": "event pipeline full"}, status=503)
 
-
 async def handle_search(request: web.Request) -> web.Response:
     try:
         body = await request.json()
@@ -538,14 +526,12 @@ async def handle_search(request: web.Request) -> web.Response:
     })
     return web.json_response(results)
 
-
 async def handle_reconcile(request: web.Request) -> web.Response:
     await orchestrator._run_reconciliation()
     return web.json_response({
         "status": "reconciliation_triggered",
         "total_runs": orchestrator._reconciliations,
     })
-
 
 async def handle_middleware_status(request: web.Request) -> web.Response:
     services = {
@@ -575,18 +561,15 @@ async def handle_middleware_status(request: web.Request) -> web.Response:
 
     return web.json_response(statuses)
 
-
 async def on_startup(app: web.Application):
     global orchestrator
     config = Config()
     orchestrator = TigerBeetleOrchestrator(config)
     await orchestrator.start()
 
-
 async def on_cleanup(app: web.Application):
     if orchestrator:
         await orchestrator.stop()
-
 
 def create_app() -> web.Application:
     app = web.Application()
@@ -602,12 +585,10 @@ def create_app() -> web.Application:
 
     return app
 
-
 if __name__ == "__main__":
     port = int(os.getenv("TB_ORCHESTRATOR_PORT", "9500"))
     logger.info(f"TigerBeetle Middleware Orchestrator (Python) listening on :{port}")
     web.run_app(create_app(), host="0.0.0.0", port=port)
-
 
 import psycopg2
 import psycopg2.extras

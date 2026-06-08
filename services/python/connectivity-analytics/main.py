@@ -53,7 +53,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── Telemetry Data ────────────────────────────────────────────────────────────
 
 @dataclass
@@ -293,11 +292,9 @@ class ConnectivityAnalytics:
         loss_score = max(0, 100 - avg_loss * 10)
         return round(lat_score * 0.4 + bw_score * 0.4 + loss_score * 0.2, 1)
 
-
 # ── HTTP Server ───────────────────────────────────────────────────────────────
 
 analytics = ConnectivityAnalytics()
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -380,13 +377,11 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Not found"}, 404)
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8082"))
     server = HTTPServer(("0.0.0.0", port), Handler)
     print(f"[connectivity-analytics] Starting on :{port}")
     server.serve_forever()
-
 
 # Connectivity trend analysis
 # Tracks network quality history and computes trend direction
@@ -401,7 +396,6 @@ def compute_trend(history: list) -> dict:
     elif recent > older * 1.1:
         return {'trend': 'degrading', 'direction': -1}
     return {'trend': 'stable', 'direction': 0}
-
 
 import psycopg2
 import psycopg2.extras

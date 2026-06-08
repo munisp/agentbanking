@@ -40,13 +40,11 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global service instance
 pos_shell_service: POSShellConfigService = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,7 +74,6 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     if kafka_producer:
         await kafka_producer.stop()
-
 
 app = FastAPI(
 
@@ -130,11 +127,9 @@ app.add_middleware(
 
 app.include_router(router)
 
-
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "pos-shell-config"}
-
 
 if __name__ == "__main__":
     import uvicorn

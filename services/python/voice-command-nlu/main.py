@@ -36,7 +36,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,6 @@ INTENT_PATTERNS = {
 
 SUPPORTED_LANGUAGES = ["en", "yo", "ha", "ig", "pcm"]
 
-
 def detect_intent(text):
     lower = text.lower()
     scores = {}
@@ -67,7 +65,6 @@ def detect_intent(text):
     confidence = min(scores[best] / 3.0, 1.0)
     return best, round(confidence, 2)
 
-
 def extract_amount(text):
     patterns = [
         r"(\d[\d,]*(?:\.\d{1,2})?)\s*(?:naira|ngn|#)",
@@ -79,11 +76,9 @@ def extract_amount(text):
             return float(match.group(1).replace(",", ""))
     return None
 
-
 def extract_phone(text):
     match = re.search(r"(0[789]\d{9})", text)
     return match.group(1) if match else None
-
 
 class NLUHandler(BaseHTTPRequestHandler):
     def _send_json(self, data, status=200):
@@ -140,13 +135,11 @@ class NLUHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8146"))
     server = HTTPServer(("0.0.0.0", port), NLUHandler)
     logger.info("Voice Command NLU Service starting on port %d", port)
     server.serve_forever()
-
 
 import psycopg2
 import psycopg2.extras

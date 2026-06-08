@@ -44,7 +44,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -108,7 +107,6 @@ stats = {
     "start_time": datetime.now()
 }
 
-
 class BusinessType(str, Enum):
     CORPORATION = "corporation"
     LLC = "llc"
@@ -118,14 +116,12 @@ class BusinessType(str, Enum):
     TRUST = "trust"
     OTHER = "other"
 
-
 class VerificationPath(str, Enum):
     STANDARD = "standard"
     ALTERNATIVE_DOCS = "alternative_docs"
     BANK_STATEMENT_ONLY = "bank_statement_only"
     DIRECTOR_VERIFICATION = "director_verification"
     BUSINESS_ACTIVITY = "business_activity"
-
 
 class BeneficialOwnerRequest(BaseModel):
     first_name: str
@@ -136,7 +132,6 @@ class BeneficialOwnerRequest(BaseModel):
     position: Optional[str] = None
     bvn: Optional[str] = None
     nin: Optional[str] = None
-
 
 class KYBVerificationRequest(BaseModel):
     business_name: str
@@ -152,7 +147,6 @@ class KYBVerificationRequest(BaseModel):
     beneficial_owners: Optional[List[BeneficialOwnerRequest]] = None
     verification_path: VerificationPath = VerificationPath.STANDARD
 
-
 class BankStatementRequest(BaseModel):
     verification_id: str
     transactions: List[Dict[str, Any]]
@@ -161,18 +155,15 @@ class BankStatementRequest(BaseModel):
     period_start: str
     period_end: str
 
-
 class EvidenceSubmitRequest(BaseModel):
     verification_id: str
     document_type: str
     document_data: Dict[str, Any]
     document_date: str
 
-
 KYB_SERVICE_URL = os.getenv("KYB_SERVICE_URL", "http://localhost:8015")
 DEEP_KYB_SERVICE_URL = os.getenv("DEEP_KYB_SERVICE_URL", "http://localhost:8016")
 KYC_KYB_SERVICE_URL = os.getenv("KYC_KYB_SERVICE_URL", "http://localhost:8017")
-
 
 async def _forward_request(url: str, method: str = "POST", json_data: dict = None, timeout: float = 30.0):
     try:
@@ -189,7 +180,6 @@ async def _forward_request(url: str, method: str = "POST", json_data: dict = Non
         logger.warning(f"Upstream {url} unreachable: {e}")
         return None
 
-
 @app.get("/")
 async def root():
     return {
@@ -200,7 +190,6 @@ async def root():
         "status": "operational"
     }
 
-
 @app.get("/health")
 async def health_check():
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
@@ -210,7 +199,6 @@ async def health_check():
         "total_requests": stats["total_requests"],
         "total_verifications": stats["total_verifications"]
     }
-
 
 @app.post("/kyb/verify")
 async def start_kyb_verification(request: KYBVerificationRequest, background_tasks: BackgroundTasks):
@@ -273,7 +261,6 @@ async def start_kyb_verification(request: KYBVerificationRequest, background_tas
         "created_at": datetime.utcnow().isoformat()
     }
 
-
 @app.get("/kyb/status/{verification_id}")
 async def get_verification_status(verification_id: str):
     stats["total_requests"] += 1
@@ -284,7 +271,6 @@ async def get_verification_status(verification_id: str):
             return result
 
     raise HTTPException(status_code=404, detail=f"Verification {verification_id} not found")
-
 
 @app.post("/kyb/bank-statement")
 async def submit_bank_statement(request: BankStatementRequest):
@@ -299,7 +285,6 @@ async def submit_bank_statement(request: BankStatementRequest):
 
     raise HTTPException(status_code=502, detail="Deep KYB service unavailable for bank statement analysis")
 
-
 @app.post("/kyb/evidence")
 async def submit_evidence(request: EvidenceSubmitRequest):
     stats["total_requests"] += 1
@@ -312,7 +297,6 @@ async def submit_evidence(request: EvidenceSubmitRequest):
         return result
 
     raise HTTPException(status_code=502, detail="Deep KYB service unavailable for evidence submission")
-
 
 @app.post("/kyb/verify-owners/{verification_id}")
 async def verify_beneficial_owners(verification_id: str):
@@ -327,7 +311,6 @@ async def verify_beneficial_owners(verification_id: str):
 
     raise HTTPException(status_code=502, detail="Deep KYB service unavailable for UBO verification")
 
-
 @app.post("/kyb/approve/{business_id}")
 async def approve_verification(business_id: str, approved_by: str = "system"):
     stats["total_requests"] += 1
@@ -340,7 +323,6 @@ async def approve_verification(business_id: str, approved_by: str = "system"):
         return result
 
     raise HTTPException(status_code=502, detail="KYB service unavailable for approval")
-
 
 @app.post("/kyb/reject/{business_id}")
 async def reject_verification(business_id: str, rejected_by: str = "system", reason: str = ""):
@@ -355,7 +337,6 @@ async def reject_verification(business_id: str, rejected_by: str = "system", rea
 
     raise HTTPException(status_code=502, detail="KYB service unavailable for rejection")
 
-
 @app.get("/kyb/screening/{business_id}")
 async def get_screening_results(business_id: str):
     stats["total_requests"] += 1
@@ -365,7 +346,6 @@ async def get_screening_results(business_id: str):
         return result
 
     raise HTTPException(status_code=502, detail="KYB service unavailable for screening results")
-
 
 @app.get("/stats")
 async def get_statistics():
@@ -378,7 +358,6 @@ async def get_statistics():
         "port": 8121,
         "status": "operational"
     }
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8121)

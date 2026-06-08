@@ -59,7 +59,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 AT_API_KEY = os.getenv("AT_API_KEY", "")
@@ -453,7 +452,6 @@ def delivery_status_callback(phone, status):
     """Handle Africa's Talking delivery status callback reports."""
     logger.info(f"Delivery callback: {phone} -> {status}")
     return {"received": True, "status": status, "callback": "processed"}
-
 
 import psycopg2
 import psycopg2.extras

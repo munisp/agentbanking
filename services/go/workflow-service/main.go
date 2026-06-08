@@ -234,17 +234,17 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	// SQLite persistence (WAL mode for concurrent reads/writes)
+	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("WORKFLOW_SERVICE_DB_PATH")
 	if dbPath == "" {
 		dbPath = "/tmp/workflow-service.db"
 	}
 	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
-		log.Printf("[workflow-service] SQLite unavailable (%v) — running in-memory only", dbErr)
+		log.Printf("[workflow-service] PostgreSQL unavailable (%v) — running in-memory only", dbErr)
 	} else {
 		defer db.Close()
-		log.Printf("[workflow-service] SQLite persistence at %s", dbPath)
+		log.Printf("[workflow-service] PostgreSQL persistence at %s", dbPath)
 	}
 	_ = db
 

@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/customers")
 
 logging.basicConfig(level=logging.INFO)
@@ -92,20 +91,17 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class KYCLevel(str, Enum):
     NONE = "none"
     BASIC = "basic"
     ENHANCED = "enhanced"
     FULL = "full"
 
-
 class CustomerStatus(str, Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     CLOSED = "closed"
     PENDING_VERIFICATION = "pending_verification"
-
 
 class CreateCustomerRequest(BaseModel):
     email: str
@@ -114,7 +110,6 @@ class CreateCustomerRequest(BaseModel):
     last_name: str
     country_code: str = Field(default="NG", min_length=2, max_length=2)
     preferred_currency: str = Field(default="NGN", min_length=3, max_length=3)
-
 
 class UpdateCustomerRequest(BaseModel):
     first_name: Optional[str] = None
@@ -126,7 +121,6 @@ class UpdateCustomerRequest(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     postal_code: Optional[str] = None
-
 
 class CustomerResponse(BaseModel):
     id: str
@@ -141,7 +135,6 @@ class CustomerResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
@@ -149,7 +142,6 @@ async def verify_bearer_token(authorization: str = Header(...)):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     return token
-
 
 @app.on_event("startup")
 async def startup():
@@ -183,12 +175,10 @@ async def startup():
         """)
     logger.info("Customer Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 @app.post("/api/v1/customers", response_model=CustomerResponse, status_code=201)
 async def create_customer(req: CreateCustomerRequest, token: str = Depends(verify_bearer_token)):
@@ -205,7 +195,6 @@ async def create_customer(req: CreateCustomerRequest, token: str = Depends(verif
     logger.info(f"Customer created: {row['id']}")
     return _row_to_response(row)
 
-
 @app.get("/api/v1/customers/{customer_id}", response_model=CustomerResponse)
 async def get_customer(customer_id: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -213,7 +202,6 @@ async def get_customer(customer_id: str, token: str = Depends(verify_bearer_toke
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
     return _row_to_response(row)
-
 
 @app.get("/api/v1/customers", response_model=List[CustomerResponse])
 async def list_customers(
@@ -240,7 +228,6 @@ async def list_customers(
         rows = await conn.fetch(query, *params)
     return [_row_to_response(r) for r in rows]
 
-
 @app.put("/api/v1/customers/{customer_id}", response_model=CustomerResponse)
 async def update_customer(customer_id: str, req: UpdateCustomerRequest, token: str = Depends(verify_bearer_token)):
     updates = {k: v for k, v in req.dict().items() if v is not None}
@@ -262,7 +249,6 @@ async def update_customer(customer_id: str, req: UpdateCustomerRequest, token: s
         raise HTTPException(status_code=404, detail="Customer not found")
     return _row_to_response(row)
 
-
 @app.patch("/api/v1/customers/{customer_id}/kyc-level")
 async def update_kyc_level(customer_id: str, kyc_level: KYCLevel, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -273,7 +259,6 @@ async def update_kyc_level(customer_id: str, kyc_level: KYCLevel, token: str = D
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
     return {"id": str(row["id"]), "kyc_level": row["kyc_level"], "status": row["status"]}
-
 
 @app.patch("/api/v1/customers/{customer_id}/suspend")
 async def suspend_customer(customer_id: str, token: str = Depends(verify_bearer_token)):
@@ -287,7 +272,6 @@ async def suspend_customer(customer_id: str, token: str = Depends(verify_bearer_
     logger.info(f"Customer {customer_id} suspended")
     return {"id": str(row["id"]), "status": row["status"]}
 
-
 @app.get("/api/v1/customers/search")
 async def search_customers(q: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -299,7 +283,6 @@ async def search_customers(q: str, token: str = Depends(verify_bearer_token)):
             f"%{q}%",
         )
     return [_row_to_response(r) for r in rows]
-
 
 def _row_to_response(row) -> CustomerResponse:
     return CustomerResponse(
@@ -316,7 +299,6 @@ def _row_to_response(row) -> CustomerResponse:
         updated_at=row["updated_at"],
     )
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -328,7 +310,6 @@ async def health_check():
         except Exception:
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "customer-service", "database": db_ok}
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

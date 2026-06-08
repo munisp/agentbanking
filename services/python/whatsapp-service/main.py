@@ -162,7 +162,6 @@ def _incr_counter(name: str) -> int:
         return r.incr(f"wa:counter:{name}")
     return 0
 
-
 class Message(BaseModel):
     recipient: str
     content: str
@@ -175,7 +174,6 @@ class OrderMessage(BaseModel):
     phone: str
     items: List[Dict[str, Any]]
     total: float
-
 
 async def _send_via_meta_api(recipient: str, content: str, msg_type: str = "text") -> dict:
     if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_ID:
@@ -212,7 +210,6 @@ async def _send_via_meta_api(recipient: str, content: str, msg_type: str = "text
         else:
             logger.error(f"Meta API error {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=502, detail=f"WhatsApp API error: {resp.status_code}")
-
 
 @app.get("/")
 async def root():

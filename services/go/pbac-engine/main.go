@@ -878,7 +878,7 @@ func main() {
 	srv.Shutdown(ctx)
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

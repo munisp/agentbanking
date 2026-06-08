@@ -165,7 +165,7 @@ func main() {
 	log.Println("[shared] Stopped")
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

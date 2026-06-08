@@ -26,7 +26,6 @@ app = FastAPI(title="54Link AI Support Chatbot", version="1.0.0")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/agentbanking")
 pool: Optional[asyncpg.Pool] = None
 
-
 # Knowledge Base — curated troubleshooting content
 KNOWLEDGE_BASE = {
     "pos not working": {
@@ -121,12 +120,10 @@ KNOWLEDGE_BASE = {
     },
 }
 
-
 class ChatRequest(BaseModel):
     message: str
     agent_id: Optional[int] = None
     conversation_id: Optional[str] = None
-
 
 class ChatResponse(BaseModel):
     response: str
@@ -135,7 +132,6 @@ class ChatResponse(BaseModel):
     conversation_id: str
     suggestions: list[str]
     escalated: bool
-
 
 class ConversationManager:
     def __init__(self):
@@ -160,9 +156,7 @@ class ConversationManager:
     def should_escalate(self, conv_id: str) -> bool:
         return self.failed_attempts.get(conv_id, 0) >= 3
 
-
 conv_mgr = ConversationManager()
-
 
 def find_answer(message: str) -> Optional[dict]:
     message_lower = message.lower()
@@ -180,7 +174,6 @@ def find_answer(message: str) -> Optional[dict]:
 
     return best_match
 
-
 @app.on_event("startup")
 async def startup():
     global pool
@@ -190,17 +183,14 @@ async def startup():
     except Exception as e:
         logger.warning(f"DB connection skipped: {e}")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if pool:
         await pool.close()
 
-
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "ai-chatbot-rag", "kb_size": len(KNOWLEDGE_BASE)}
-
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
@@ -251,7 +241,6 @@ async def chat(req: ChatRequest):
         escalated=False,
     )
 
-
 def get_suggestions(category: str) -> list[str]:
     suggestions_map = {
         "pos_troubleshooting": ["POS error codes", "Replace POS terminal", "POS firmware update"],
@@ -264,7 +253,6 @@ def get_suggestions(category: str) -> list[str]:
     }
     return suggestions_map.get(category, ["Help", "Contact support"])
 
-
 @app.get("/api/v1/stats")
 async def stats():
     return {
@@ -273,7 +261,6 @@ async def stats():
         "total_messages": sum(len(v) for v in conv_mgr.conversations.values()),
         "escalations": sum(1 for v in conv_mgr.failed_attempts.values() if v >= 3),
     }
-
 
 if __name__ == "__main__":
     import uvicorn

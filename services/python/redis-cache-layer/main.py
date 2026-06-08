@@ -49,11 +49,9 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 SERVICE_NAME = "redis-cache-layer"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = int(os.getenv("REDIS_CACHE_PORT", "9118"))
-
 
 class CacheStrategy(Enum):
     WRITE_THROUGH = "write_through"
@@ -61,13 +59,11 @@ class CacheStrategy(Enum):
     CACHE_ASIDE = "cache_aside"
     READ_THROUGH = "read_through"
 
-
 class EvictionPolicy(Enum):
     LRU = "lru"
     LFU = "lfu"
     TTL = "ttl"
     RANDOM = "random"
-
 
 @dataclass
 class CacheEntry:
@@ -85,7 +81,6 @@ class CacheEntry:
         if self.ttl_seconds <= 0:
             return False
         return time.time() - self.created_at > self.ttl_seconds
-
 
 @dataclass
 class CacheMetrics:
@@ -105,7 +100,6 @@ class CacheMetrics:
     def hit_ratio(self) -> float:
         total = self.hits + self.misses
         return self.hits / total if total > 0 else 0.0
-
 
 class LRUCache:
     """L1: In-memory LRU cache with O(1) operations."""
@@ -177,7 +171,6 @@ class LRUCache:
     @property
     def size(self) -> int:
         return len(self.cache)
-
 
 class RedisCacheLayer:
     """Multi-tier cache with Redis L2 and pub/sub invalidation."""
@@ -341,11 +334,9 @@ class RedisCacheLayer:
             },
         }
 
-
 # ─── HTTP Server ─────────────────────────────────────────────────────────────
 
 cache = RedisCacheLayer()
-
 
 class CacheHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -403,7 +394,6 @@ class CacheHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 def main():
     server = HTTPServer(("0.0.0.0", DEFAULT_PORT), CacheHandler)
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} starting on port {DEFAULT_PORT}")
@@ -411,10 +401,8 @@ def main():
     print(f"[{SERVICE_NAME}] TTL config: {cache.ttl_config}")
     server.serve_forever()
 
-
 if __name__ == "__main__":
     main()
-
 
 import psycopg2
 import psycopg2.extras

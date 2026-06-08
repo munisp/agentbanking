@@ -33,7 +33,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 SERVICE_NAME = "security-scanner"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = 9108
@@ -135,7 +134,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", DEFAULT_PORT))
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} listening on :{port}")
     HTTPServer(("", port), Handler).serve_forever()
-
 
 import psycopg2
 import psycopg2.extras

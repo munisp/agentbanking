@@ -419,7 +419,7 @@ func main() {
 	log.Println("[rbac-service] Shutdown complete")
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

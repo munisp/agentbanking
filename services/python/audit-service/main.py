@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -94,7 +93,6 @@ async def health_check():
         return {"status": "healthy", "service": "audit-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "audit-service", "error": str(e)}
-
 
 class AuditLogCreate(BaseModel):
     action: str
@@ -176,7 +174,6 @@ async def get_audit_stats(token: str = Depends(verify_token)):
         today = await conn.fetchval("SELECT COUNT(*) FROM audit_logs WHERE created_at >= CURRENT_DATE")
         by_action = await conn.fetch("SELECT action, COUNT(*) as cnt FROM audit_logs GROUP BY action ORDER BY cnt DESC LIMIT 10")
         return {"total_logs": total, "today": today, "by_action": [dict(r) for r in by_action]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8112)

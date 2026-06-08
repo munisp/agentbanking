@@ -13,7 +13,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import JSON
 from sqlalchemy.orm import relationship
 
 from config import Base
@@ -50,7 +50,6 @@ class PayoutBatch(Base):
     def __repr__(self):
         return f"<PayoutBatch(id='{self.id}', status='{self.status}', count={self.payout_count})>"
 
-
 class Payout(Base):
     """SQLAlchemy model for an individual payout transaction."""
     __tablename__ = "payouts"
@@ -83,7 +82,6 @@ class Payout(Base):
     def __repr__(self):
         return f"<Payout(id='{self.id}', recipient='{self.recipient_id}', status='{self.status}')>"
 
-
 class PayoutApproval(Base):
     """SQLAlchemy model for the approval record of a payout batch."""
     __tablename__ = "payout_approvals"
@@ -106,7 +104,6 @@ class PayoutApproval(Base):
     def __repr__(self):
         return f"<PayoutApproval(batch_id='{self.batch_id}', status='{self.status}')>"
 
-
 class ReconciliationRecord(Base):
     """SQLAlchemy model for the reconciliation record of a payout batch."""
     __tablename__ = "reconciliation_records"
@@ -127,7 +124,6 @@ class ReconciliationRecord(Base):
 
     def __repr__(self):
         return f"<ReconciliationRecord(batch_id='{self.batch_id}', status='{self.status}')>"
-
 
 # --- Pydantic Schemas ---
 
@@ -153,7 +149,6 @@ class ReconciliationRecordBase(BaseModel):
     """Base Pydantic schema for ReconciliationRecord."""
     details: Optional[dict] = Field(None, description="Details of the reconciliation process.")
 
-
 # Create Schemas
 class PayoutCreate(PayoutBase):
     """Pydantic schema for creating a single Payout."""
@@ -167,7 +162,6 @@ class PayoutApprovalCreate(PayoutApprovalBase):
     """Pydantic schema for approving a PayoutBatch."""
     status: str = Field("APPROVED", description="The approval status (APPROVED or REJECTED).")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection, if applicable.")
-
 
 # Read Schemas
 class PayoutRead(PayoutBase):

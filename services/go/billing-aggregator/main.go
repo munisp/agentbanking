@@ -787,7 +787,7 @@ func floatVal(f *big.Float) float64 {
 	return v
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

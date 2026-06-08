@@ -55,7 +55,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── Network Probe Data ────────────────────────────────────────────────────────
 
 @dataclass
@@ -414,7 +413,6 @@ class NetworkPredictor:
                 ) if self.probes else 0,
             }
 
-
 # ── African Region Seed Data ─────────────────────────────────────────────────
 
 AFRICAN_REGIONS = {
@@ -430,11 +428,9 @@ AFRICAN_REGIONS = {
     "rural_tz": {"country": "Tanzania", "city": "Rural", "typical_tier": "2g_gprs", "carriers": ["Vodacom"]},
 }
 
-
 # ── HTTP Server ───────────────────────────────────────────────────────────────
 
 predictor = NetworkPredictor()
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -533,7 +529,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Not found"}, 404)
 
-
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -556,7 +551,6 @@ def predict_by_time_of_day(time_of_day: int, region: str = "default") -> dict:
         return {"tier": "3g", "confidence": 0.7, "features": features}
     else:
         return {"tier": "4g_lte", "confidence": 0.6, "features": features}
-
 
 import psycopg2
 import psycopg2.extras

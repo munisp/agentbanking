@@ -74,7 +74,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ── Status Transitions ──────────────────────────────────────────────────────
 
 VALID_STATUSES = [
@@ -92,7 +91,6 @@ STATUS_TRANSITIONS = {
     "lost": ["decommissioned"],
     "stolen": ["decommissioned"],
 }
-
 
 # ── DB Schema Init ───────────────────────────────────────────────────────────
 
@@ -179,7 +177,6 @@ async def startup():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_tal_terminal ON terminal_audit_log(terminal_id)")
     logger.info("[startup] Terminal ownership tables initialized")
 
-
 async def audit_log(conn, terminal_id, action, actor=None, old_status=None, new_status=None, details=None):
     await conn.execute(
         """INSERT INTO terminal_audit_log (terminal_id, action, actor, old_status, new_status, details)
@@ -187,7 +184,6 @@ async def audit_log(conn, terminal_id, action, actor=None, old_status=None, new_
         terminal_id, action, actor, old_status, new_status,
         json.dumps(details or {}),
     )
-
 
 # ── Pydantic Models ─────────────────────────────────────────────────────────
 
@@ -232,7 +228,6 @@ class InsuranceUpdate(BaseModel):
     policy_id: str = Field(..., min_length=1, max_length=64)
     expires_at: str
 
-
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -250,7 +245,6 @@ async def health_check():
         }
     except Exception as e:
         return {"status": "degraded", "service": "terminal-ownership", "error": str(e)}
-
 
 @app.post("/api/v1/terminals/provision")
 async def provision_terminal(body: TerminalProvision):
@@ -288,7 +282,6 @@ async def provision_terminal(body: TerminalProvision):
         logger.info(f"[provision] Terminal {body.serial_number} provisioned")
         return dict(row)
 
-
 @app.get("/api/v1/terminals/{terminal_id}")
 async def get_terminal(terminal_id: str):
     pool = await get_db_pool()
@@ -315,7 +308,6 @@ async def get_terminal(terminal_id: str):
             "warranty_active": row["warranty_expires_at"] and row["warranty_expires_at"] > datetime.utcnow(),
             "insurance_active": row["insurance_expires_at"] and row["insurance_expires_at"] > datetime.utcnow(),
         }
-
 
 @app.get("/api/v1/terminals")
 async def list_terminals(
@@ -359,7 +351,6 @@ async def list_terminals(
             "limit": limit,
             "offset": offset,
         }
-
 
 @app.post("/api/v1/terminals/{terminal_id}/transfer")
 async def transfer_terminal(terminal_id: str, body: TransferRequest):
@@ -416,7 +407,6 @@ async def transfer_terminal(terminal_id: str, body: TransferRequest):
         logger.info(f"[transfer] Terminal {terminal_id} transferred to {body.to_agent_id}")
         return dict(transfer)
 
-
 @app.get("/api/v1/terminals/{terminal_id}/transfers")
 async def get_transfer_history(terminal_id: str, limit: int = 50, offset: int = 0):
     pool = await get_db_pool()
@@ -431,7 +421,6 @@ async def get_transfer_history(terminal_id: str, limit: int = 50, offset: int = 
             uuid.UUID(terminal_id), limit, offset,
         )
         return {"transfers": [dict(r) for r in rows], "total": total}
-
 
 @app.put("/api/v1/terminals/{terminal_id}/status")
 async def update_status(terminal_id: str, body: StatusUpdate):
@@ -466,7 +455,6 @@ async def update_status(terminal_id: str, body: StatusUpdate):
         )
         return {"terminal_id": terminal_id, "old_status": current, "new_status": body.status}
 
-
 @app.post("/api/v1/terminals/{terminal_id}/decommission")
 async def decommission_terminal(terminal_id: str, reason: str):
     valid_reasons = ["end_of_life", "damaged", "lost", "stolen", "recalled", "replaced"]
@@ -499,7 +487,6 @@ async def decommission_terminal(terminal_id: str, reason: str):
             "reason": reason,
             "decommissioned_at": datetime.utcnow().isoformat(),
         }
-
 
 @app.post("/api/v1/terminals/{terminal_id}/maintenance")
 async def create_maintenance(terminal_id: str, body: MaintenanceCreate):
@@ -536,7 +523,6 @@ async def create_maintenance(terminal_id: str, body: MaintenanceCreate):
             details={"issue_type": body.issue_type},
         )
         return dict(record)
-
 
 @app.put("/api/v1/terminals/{terminal_id}/maintenance/{record_id}/complete")
 async def complete_maintenance(terminal_id: str, record_id: str, body: MaintenanceComplete):
@@ -575,7 +561,6 @@ async def complete_maintenance(terminal_id: str, record_id: str, body: Maintenan
         )
         return {"completed": True, "next_maintenance_at": next_maint.isoformat()}
 
-
 @app.get("/api/v1/terminals/{terminal_id}/maintenance")
 async def get_maintenance_history(terminal_id: str, limit: int = 50, offset: int = 0):
     pool = await get_db_pool()
@@ -590,7 +575,6 @@ async def get_maintenance_history(terminal_id: str, limit: int = 50, offset: int
             uuid.UUID(terminal_id), limit, offset,
         )
         return {"records": [dict(r) for r in rows], "total": total}
-
 
 @app.put("/api/v1/terminals/{terminal_id}/insurance")
 async def update_insurance(terminal_id: str, body: InsuranceUpdate):
@@ -616,7 +600,6 @@ async def update_insurance(terminal_id: str, body: InsuranceUpdate):
         )
         return {"updated": True, "policy_id": body.policy_id, "expires_at": body.expires_at}
 
-
 @app.get("/api/v1/terminals/{terminal_id}/audit")
 async def get_audit_log(terminal_id: str, limit: int = 100, offset: int = 0):
     pool = await get_db_pool()
@@ -631,7 +614,6 @@ async def get_audit_log(terminal_id: str, limit: int = 100, offset: int = 0):
             uuid.UUID(terminal_id), limit, offset,
         )
         return {"audit_log": [dict(r) for r in rows], "total": total}
-
 
 @app.get("/api/v1/stats")
 async def fleet_stats():
@@ -661,7 +643,6 @@ async def fleet_stats():
             "insurance_expiring_30d": insurance_expiring,
             "transfers_today": transfers_today,
         }
-
 
 if __name__ == "__main__":
     import uvicorn

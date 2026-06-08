@@ -33,12 +33,10 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "54link_verify")
 pool: Optional[asyncpg.Pool] = None
 
-
 class WhatsAppMessage(BaseModel):
     from_number: str
     body: str
     timestamp: int
-
 
 class ConversationState:
     def __init__(self):
@@ -61,9 +59,7 @@ class ConversationState:
         for k in expired:
             del self.sessions[k]
 
-
 conv_state = ConversationState()
-
 
 @app.on_event("startup")
 async def startup():
@@ -79,12 +75,10 @@ async def startup():
     except Exception as e:
         logger.warning(f"DB connection failed (non-fatal): {e}")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if pool:
         await pool.close()
-
 
 @app.get("/health")
 async def health():
@@ -98,13 +92,11 @@ async def health():
             pass
     return {"status": "healthy", "service": "whatsapp-banking", "db": db_ok}
 
-
 @app.get("/webhook")
 async def verify_webhook(hub_mode: str = "", hub_verify_token: str = "", hub_challenge: str = ""):
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         return int(hub_challenge)
     raise HTTPException(status_code=403, detail="Verification failed")
-
 
 @app.post("/webhook")
 async def receive_message(request: Request):
@@ -121,7 +113,6 @@ async def receive_message(request: Request):
                     response = await process_command(phone, text)
                     logger.info(f"[{phone}] '{text}' → '{response[:100]}...'")
     return {"status": "ok"}
-
 
 async def process_command(phone: str, text: str) -> str:
     session = conv_state.get_session(phone)
@@ -166,7 +157,6 @@ async def process_command(phone: str, text: str) -> str:
     else:
         return f"Unknown command: {command}\n\nType HELP for available commands."
 
-
 async def lookup_agent_by_phone(phone: str) -> Optional[dict]:
     if not pool:
         return None
@@ -181,7 +171,6 @@ async def lookup_agent_by_phone(phone: str) -> Optional[dict]:
     except Exception as e:
         logger.error(f"Agent lookup failed: {e}")
     return None
-
 
 async def handle_balance(session: dict) -> str:
     if not pool:
@@ -202,7 +191,6 @@ async def handle_balance(session: dict) -> str:
     except Exception as e:
         logger.error(f"Balance check failed: {e}")
     return "Unable to fetch balance. Try again."
-
 
 async def handle_statement(session: dict) -> str:
     if not pool:
@@ -230,7 +218,6 @@ async def handle_statement(session: dict) -> str:
         logger.error(f"Statement failed: {e}")
     return "Unable to fetch statement. Try again."
 
-
 async def handle_transfer(session: dict, amount: float, recipient: str) -> str:
     if amount <= 0:
         return "Invalid amount. Use: SEND <amount> <phone>"
@@ -243,7 +230,6 @@ async def handle_transfer(session: dict, amount: float, recipient: str) -> str:
         f"Status: Processing\n"
         f"Ref: TRF-{int(time.time())}"
     )
-
 
 async def handle_bill_payment(session: dict, bill_type: str, account: str, amount: float) -> str:
     valid_types = {"DSTV", "GOTV", "ELECTRIC", "WATER", "INTERNET"}
@@ -260,7 +246,6 @@ async def handle_bill_payment(session: dict, bill_type: str, account: str, amoun
         f"Ref: BIL-{int(time.time())}"
     )
 
-
 async def handle_airtime(session: dict, phone_num: str, amount: float) -> str:
     if amount < 50 or amount > 50000:
         return "Airtime amount: NGN 50 - NGN 50,000"
@@ -272,13 +257,11 @@ async def handle_airtime(session: dict, phone_num: str, amount: float) -> str:
         f"Ref: AIR-{int(time.time())}"
     )
 
-
 def parse_amount(s: str) -> float:
     try:
         return float(s.replace(",", "").replace("NGN", "").strip())
     except ValueError:
         return 0
-
 
 HELP_TEXT = """🏦 *54Link WhatsApp Banking*
 
@@ -296,7 +279,6 @@ Examples:
 • SEND 5000 08012345678
 • BILL DSTV 1234567890 7500
 • AIR 08098765432 1000"""
-
 
 if __name__ == "__main__":
     import uvicorn

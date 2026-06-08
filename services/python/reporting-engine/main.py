@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -101,7 +100,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "reporting-engine", "error": str(e)}
 
-
 class TemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -153,7 +151,6 @@ async def list_executions(template_id: Optional[str] = None, skip: int = 0, limi
         else:
             rows = await conn.fetch("SELECT * FROM report_executions ORDER BY created_at DESC LIMIT $1 OFFSET $2", limit, skip)
         return {"executions": [dict(r) for r in rows]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8130)

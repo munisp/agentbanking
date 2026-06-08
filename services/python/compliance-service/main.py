@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -102,7 +101,6 @@ async def health_check():
         return {"status": "healthy", "service": "compliance-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "compliance-service", "error": str(e)}
-
 
 class ComplianceCheckCreate(BaseModel):
     user_id: str
@@ -195,7 +193,6 @@ async def screen_transaction(data: Dict[str, Any], token: str = Depends(verify_t
                     flags.append({"rule": rule["rule_name"], "action": rule["action"], "field": field, "value": val, "threshold": threshold})
         status = "blocked" if any(f["action"] == "block" for f in flags) else "flagged" if flags else "approved"
         return {"status": status, "flags": flags, "checked_rules": len(rules)}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8116)

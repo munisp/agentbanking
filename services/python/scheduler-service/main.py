@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -106,7 +105,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "scheduler-service", "error": str(e)}
 
-
 class JobCreate(BaseModel):
     job_name: str
     job_type: str
@@ -169,7 +167,6 @@ async def job_history(job_id: str, limit: int = 20, token: str = Depends(verify_
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM job_executions WHERE job_id=$1 ORDER BY started_at DESC LIMIT $2", uuid.UUID(job_id), limit)
         return {"executions": [dict(r) for r in rows]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8131)

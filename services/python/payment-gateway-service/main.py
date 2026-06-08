@@ -28,9 +28,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for payment-gateway-service."""
+    """Initialize PostgreSQL persistence for payment-gateway-service."""
     import os
-    db_path = os.environ.get("PAYMENT_GATEWAY_SERVICE_DB_PATH", "/tmp/payment-gateway-service.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/payment_gateway_service'))
         
@@ -38,11 +37,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -64,14 +62,12 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> None:
@@ -81,7 +77,6 @@ async def lifespan(app: FastAPI) -> None:
     yield
     logger.info("Payment Gateway Service shutting down...")
     # Production: Cleanup gateway connections
-
 
 # Create FastAPI application
 app = FastAPI(
@@ -132,7 +127,6 @@ app.add_middleware(
 # GZip compression middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-
 # Request timing middleware
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next) -> None:
@@ -143,7 +137,6 @@ async def add_process_time_header(request: Request, call_next) -> None:
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next) -> None:
@@ -152,7 +145,6 @@ async def log_requests(request: Request, call_next) -> None:
     response = await call_next(request)
     logger.info(f"Response: {response.status_code}")
     return response
-
 
 # Exception handlers
 @app.exception_handler(PaymentGatewayError)
@@ -168,7 +160,6 @@ async def payment_gateway_error_handler(request: Request, exc: PaymentGatewayErr
         }
     )
 
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> None:
     """Handle request validation errors."""
@@ -181,7 +172,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "details": exc.errors()
         }
     )
-
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception) -> None:
@@ -196,11 +186,9 @@ async def general_exception_handler(request: Request, exc: Exception) -> None:
         }
     )
 
-
 # Include routers
 app.include_router(payment_router.router)
 app.include_router(webhook_router.router)
-
 
 # Health check endpoint
 @app.get("/health", tags=["health"])
@@ -217,7 +205,6 @@ async def health_check() -> Dict[str, Any]:
         "timestamp": time.time()
     }
 
-
 # Root endpoint
 @app.get("/", tags=["root"])
 async def root() -> Dict[str, str]:
@@ -232,7 +219,6 @@ async def root() -> Dict[str, str]:
         "docs": "/docs",
         "health": "/health"
     }
-
 
 if __name__ == "__main__":
     import uvicorn

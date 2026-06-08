@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     
     # Database Settings
     DATABASE_URL: str = Field(
-        default="sqlite:///./fps_integration.db",
-        description="Database connection URL (e.g., sqlite:///./test.db or postgresql://user:pass@host:port/db)"
+        default="postgresql://postgres:postgres@localhost:5432/fps_integration",
+        description="Database connection URL (e.g., postgresql://user:pass@host:port/db or postgresql://user:pass@host:port/db)"
     )
     
     # Security Settings

@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./payment.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/payment"
     ECHO_SQL: bool = False
 
     # Application Settings

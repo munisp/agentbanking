@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./sms_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/sms_service"
     
     # Service settings
     SERVICE_NAME: str = "sms-service"
@@ -23,8 +23,7 @@ settings = Settings()
 
 # SQLAlchemy setup
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} # Only needed for SQLite
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

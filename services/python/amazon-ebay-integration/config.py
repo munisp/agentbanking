@@ -10,9 +10,7 @@ class Settings:
     Application settings loaded from environment variables.
     """
     # Database settings
-    # Use a simple SQLite database for demonstration. In a production environment,
-    # this would be a PostgreSQL or MySQL connection string.
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./amazon_ebay_integration.db")
+            DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/amazon_ebay_integration")
     
     # Other application settings can be added here
     SERVICE_NAME: str = "amazon-ebay-integration"
@@ -23,9 +21,8 @@ settings = Settings()
 # --- Database Setup ---
 
 # The engine is the starting point for SQLAlchemy. It's a factory for connections.
-# 'check_same_thread=False' is needed for SQLite to allow multiple threads to access the same connection.
 engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+    settings.DATABASE_URL
 )
 
 # SessionLocal is a factory for Session objects.
@@ -48,7 +45,6 @@ def get_db() -> Generator:
     finally:
         db.close()
 
-# Ensure the database file exists and tables are created (for SQLite)
 def init_db():
     """Initializes the database and creates all tables."""
     # Import all models here to ensure they are registered with Base.metadata
@@ -58,8 +54,3 @@ def init_db():
     # Since we don't have models.py yet, we'll rely on the main app to call Base.metadata.create_all(bind=engine)
     pass
 
-if settings.DATABASE_URL.startswith("sqlite"):
-    # Create the database file if it doesn't exist
-    if not os.path.exists(settings.DATABASE_URL.replace("sqlite:///./", "")):
-        # Table creation happens when models are imported.
-        pass

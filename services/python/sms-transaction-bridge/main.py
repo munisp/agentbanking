@@ -60,7 +60,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── SMS Command Parser ────────────────────────────────────────────────────────
 
 COMMANDS = {
@@ -211,7 +210,6 @@ def parse_sms(text: str, sender: str = "") -> ParsedSMS:
         valid=True, error=None
     )
 
-
 def normalize_phone(phone: str) -> Optional[str]:
     """Normalize phone number to E.164-like format."""
     phone = re.sub(r'[^\d+]', '', phone)
@@ -222,7 +220,6 @@ def normalize_phone(phone: str) -> Optional[str]:
     if len(phone) < 10 or len(phone) > 15:
         return None
     return phone
-
 
 # ── Response Templates ────────────────────────────────────────────────────────
 
@@ -238,7 +235,6 @@ TEMPLATES = {
     "pin_required": "54Link: PIN required. Format: {command} ... PIN",
     "daily_report": "54Link Daily Report:\nTransactions: {count}\nCash-in: {cash_in}\nCash-out: {cash_out}\nCommission: {commission}\nBalance: {balance}",
 }
-
 
 # ── SMS Processing Engine ────────────────────────────────────────────────────
 
@@ -357,11 +353,9 @@ class SMSEngine:
         self.outbox.append(sms)
         self.stats["total_outbound"] += 1
 
-
 # ── HTTP Server ───────────────────────────────────────────────────────────────
 
 engine = SMSEngine()
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -435,7 +429,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Not found"}, 404)
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8081"))
     server = HTTPServer(("0.0.0.0", port), Handler)
@@ -456,7 +449,6 @@ def format_sms_response(message: str) -> str:
         return message[:157] + "..."
     return message
 
-
 # PIN validation and SMS format constraints
 # SMS responses must be within 160 characters to fit a single SMS segment
 MAX_SMS_LENGTH = 160
@@ -470,7 +462,6 @@ def format_sms_response(message: str) -> str:
     if len(message) > 160:
         return message[:157] + "..."
     return message
-
 
 import psycopg2
 import psycopg2.extras

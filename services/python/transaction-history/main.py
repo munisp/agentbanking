@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -101,7 +100,6 @@ async def health_check():
         return {"status": "healthy", "service": "transaction-history", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "transaction-history", "error": str(e)}
-
 
 class TransactionRecord(BaseModel):
     user_id: str
@@ -198,7 +196,6 @@ async def export_transactions(user_id: Optional[str] = None, format: str = "json
                 lines.append(",".join(str(row.get(h, "")) for h in headers))
             return {"csv": "\n".join(lines), "count": len(data)}
         return {"transactions": data, "count": len(data)}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8136)

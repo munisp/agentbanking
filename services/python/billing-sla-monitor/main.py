@@ -39,7 +39,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
 logger = logging.getLogger("billing-sla-monitor")
 
@@ -182,7 +181,6 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     logger.info(f"[BillingSLAMonitor] Starting on :{PORT}")
     HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
-
 
 import psycopg2
 import psycopg2.extras

@@ -37,7 +37,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 LOGGING_CONFIG = {
     "version": 1,
@@ -282,5 +281,4 @@ def read_alert(
         logger.warning(f"Alert {alert_id} not found.")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
     return alert
-
 

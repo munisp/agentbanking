@@ -39,7 +39,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/platform")
@@ -138,7 +137,6 @@ async def get_settings(
         logger.error(f"Failed to fetch settings: {e}")
         return _default_settings()
 
-
 @router.put("/")
 async def update_settings(
     data: SettingsUpdate,
@@ -177,7 +175,6 @@ async def update_settings(
         logger.error(f"Failed to update settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/api-keys")
 async def list_api_keys(db=Depends(get_db)):
     """List all API keys (masked)"""
@@ -192,7 +189,6 @@ async def list_api_keys(db=Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to list API keys: {e}")
         return []
-
 
 @router.post("/api-keys")
 async def create_api_key(data: APIKeyCreate, db=Depends(get_db)):
@@ -226,7 +222,6 @@ async def create_api_key(data: APIKeyCreate, db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.delete("/api-keys/{key_id}")
 async def revoke_api_key(key_id: str, db=Depends(get_db)):
     """Revoke an API key"""
@@ -239,7 +234,6 @@ async def revoke_api_key(key_id: str, db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/webhooks")
 async def list_webhooks(db=Depends(get_db)):
     """List all webhooks"""
@@ -250,7 +244,6 @@ async def list_webhooks(db=Depends(get_db)):
         return [dict(r) for r in rows]
     except Exception as e:
         return []
-
 
 @router.post("/webhooks")
 async def create_webhook(data: WebhookCreate, db=Depends(get_db)):
@@ -272,7 +265,6 @@ async def create_webhook(data: WebhookCreate, db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.put("/webhooks/{webhook_id}")
 async def update_webhook(webhook_id: str, data: WebhookCreate, db=Depends(get_db)):
     """Update a webhook"""
@@ -285,7 +277,6 @@ async def update_webhook(webhook_id: str, data: WebhookCreate, db=Depends(get_db
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.delete("/webhooks/{webhook_id}")
 async def delete_webhook(webhook_id: str, db=Depends(get_db)):
     """Delete a webhook"""
@@ -294,7 +285,6 @@ async def delete_webhook(webhook_id: str, db=Depends(get_db)):
         return {"success": True, "message": "Webhook deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/audit-log")
 async def get_audit_log(
@@ -319,7 +309,6 @@ async def get_audit_log(
     except Exception as e:
         return {"items": [], "total": 0, "page": page, "limit": limit}
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _default_settings() -> Dict[str, Any]:
@@ -342,7 +331,6 @@ def _default_settings() -> Dict[str, Any]:
         "maintenance_mode": False,
         "debug_mode": os.getenv("ENVIRONMENT", "production") != "production",
     }
-
 
 app.include_router(router)
 

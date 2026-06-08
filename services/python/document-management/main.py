@@ -45,7 +45,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
@@ -59,8 +58,6 @@ origins = [
     "http://localhost:8080",
     "http://localhost:3000",
 ]
-
-
 
 # --- Logging Setup --- #
 logging.basicConfig(level=logging.INFO)
@@ -138,8 +135,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-
-
 
 # --- API Endpoints --- #
 
@@ -362,5 +357,4 @@ async def revoke_permission(
     db.commit()
     logger.info(f"Permission {permission_id} revoked by {current_user.username}")
     return
-
 

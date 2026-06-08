@@ -38,7 +38,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # --- Configuration and Initialization ---
 settings = config.settings
 
@@ -313,7 +312,6 @@ def health_check(db: Session = Depends(get_db), current_user: UserInDB = Depends
         logger.error(f"S3 health check failed: {e}")
 
     return {"status": "ok", "database_connection": db_status, "redis_connection": redis_status, "s3_connection": s3_status}
-
 
 # Root endpoint
 @app.get("/", tags=["Root"])

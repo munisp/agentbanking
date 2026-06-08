@@ -45,7 +45,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = Flask(__name__)
 
 # ── Model State ───────────────────────────────────────────────────────────────
@@ -118,7 +117,6 @@ def predict_carrier_score(carrier, hour, day_of_week, lat, lng, prev_latency, pr
 
     return max(0, min(100, score))
 
-
 def approximate_region(lat, lng):
     """Approximate region from lat/lng for African cities"""
     regions = {
@@ -141,7 +139,6 @@ def approximate_region(lat, lng):
             min_dist = dist
             closest = name
     return closest if min_dist < 2.0 else "unknown"
-
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -184,7 +181,6 @@ def predict():
         "region": approximate_region(lat, lng),
         "conditions": {"hour": hour, "dayOfWeek": day_of_week},
     })
-
 
 @app.route("/train", methods=["POST"])
 def train():
@@ -231,11 +227,9 @@ def train():
         "accuracy": model_state["accuracy"],
     })
 
-
 @app.route("/model/status", methods=["GET"])
 def model_status():
     return jsonify(model_state)
-
 
 @app.route("/batch-predict", methods=["POST"])
 def batch_predict():
@@ -270,7 +264,6 @@ def batch_predict():
 
     return jsonify({"predictions": results, "count": len(results)})
 
-
 @app.route("/feature-importance", methods=["GET"])
 def feature_importance():
     return jsonify({
@@ -285,7 +278,6 @@ def feature_importance():
             {"name": "latitude", "importance": 0.01, "description": "Latitude coordinate"},
         ]
     })
-
 
 @app.route("/carriers/stats", methods=["GET"])
 def carrier_stats():
@@ -303,7 +295,6 @@ def carrier_stats():
     stats.sort(key=lambda x: x["baseScore"], reverse=True)
     return jsonify(stats)
 
-
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
@@ -315,13 +306,11 @@ def health():
         "carriers": len(carrier_profiles),
     })
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8114))
     print(f"[carrier-recommendation] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
 
 import psycopg2
 import psycopg2.extras

@@ -1,5 +1,5 @@
 """
-Shared idempotency utilities with Redis primary store and SQLite DB fallback.
+Shared idempotency utilities with Redis primary store and PostgreSQL DB fallback.
 Includes background eviction job for expired records.
 """
 
@@ -8,11 +8,13 @@ import hashlib
 import json
 import logging
 import os
-import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
+
+import psycopg2
+import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
@@ -22,29 +24,29 @@ EVICTION_INTERVAL = 3600
 _db_lock = threading.Lock()
 
 
-def _get_db_path(service_name: str) -> str:
-    db_dir = os.getenv("IDEMPOTENCY_DB_DIR", "/tmp")
-    return os.path.join(db_dir, f"idempotency_{service_name}.db")
+def _get_db_url() -> str:
+    return os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/idempotency")
 
 
-def _init_db(service_name: str) -> sqlite3.Connection:
-    db_path = _get_db_path(service_name)
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS idempotency_records (
-            idempotency_key TEXT PRIMARY KEY,
-            request_hash TEXT NOT NULL,
-            response_data TEXT,
-            status TEXT NOT NULL DEFAULT 'processing',
-            created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_idem_expires
-        ON idempotency_records(expires_at)
-    """)
+def _init_db() -> psycopg2.extensions.connection:
+    db_url = _get_db_url()
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS idempotency_records (
+                idempotency_key TEXT PRIMARY KEY,
+                request_hash TEXT NOT NULL,
+                response_data TEXT,
+                status TEXT NOT NULL DEFAULT 'processing',
+                created_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_idem_expires
+            ON idempotency_records(expires_at)
+        """)
     conn.commit()
     return conn
 
@@ -59,13 +61,13 @@ class IdempotencyStore:
         self.service_name = service_name
         self.redis = redis_client
         self.key_prefix = key_prefix
-        self._db: Optional[sqlite3.Connection] = None
+        self._db: Optional[psycopg2.extensions.connection] = None
         self._eviction_started = False
 
     @property
-    def db(self) -> sqlite3.Connection:
-        if self._db is None:
-            self._db = _init_db(self.service_name)
+    def db(self) -> psycopg2.extensions.connection:
+        if self._db is None or self._db.closed:
+            self._db = _init_db()
         return self._db
 
     def _redis_key(self, idempotency_key: str) -> str:
@@ -82,19 +84,25 @@ class IdempotencyStore:
 
         with _db_lock:
             try:
-                row = self.db.execute(
-                    "SELECT idempotency_key, request_hash, response_data, status FROM idempotency_records "
-                    "WHERE idempotency_key = ? AND expires_at > ?",
-                    (idempotency_key, datetime.utcnow().isoformat()),
-                ).fetchone()
-                if row:
-                    return {
-                        "request_hash": row[1],
-                        "response": row[2] or "",
-                        "status": row[3],
-                    }
+                with self.db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(
+                        "SELECT idempotency_key, request_hash, response_data, status FROM idempotency_records "
+                        "WHERE idempotency_key = %s AND expires_at > %s",
+                        (idempotency_key, datetime.utcnow()),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        return {
+                            "request_hash": row["request_hash"],
+                            "response": row["response_data"] or "",
+                            "status": row["status"],
+                        }
             except Exception as exc:
                 logger.warning(f"DB idempotency check failed: {exc}")
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
 
         return None
 
@@ -119,20 +127,26 @@ class IdempotencyStore:
             with _db_lock:
                 try:
                     now = datetime.utcnow()
-                    self.db.execute(
-                        "INSERT OR IGNORE INTO idempotency_records "
-                        "(idempotency_key, request_hash, status, created_at, expires_at) "
-                        "VALUES (?, ?, 'processing', ?, ?)",
-                        (
-                            idempotency_key,
-                            req_hash,
-                            now.isoformat(),
-                            (now + timedelta(seconds=IDEMPOTENCY_TTL)).isoformat(),
-                        ),
-                    )
+                    with self.db.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO idempotency_records "
+                            "(idempotency_key, request_hash, status, created_at, expires_at) "
+                            "VALUES (%s, %s, 'processing', %s, %s) "
+                            "ON CONFLICT (idempotency_key) DO NOTHING",
+                            (
+                                idempotency_key,
+                                req_hash,
+                                now,
+                                now + timedelta(seconds=IDEMPOTENCY_TTL),
+                            ),
+                        )
                     self.db.commit()
                 except Exception as exc:
                     logger.warning(f"DB acquire failed: {exc}")
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
 
         return acquired
 
@@ -141,64 +155,57 @@ class IdempotencyStore:
             try:
                 self.redis.hset(
                     self._redis_key(idempotency_key),
-                    mapping={
-                        "status": "completed",
-                        "request_hash": req_hash,
-                        "response": response_data,
-                    },
+                    mapping={"response": response_data, "status": "completed"},
                 )
-                self.redis.expire(self._redis_key(idempotency_key), IDEMPOTENCY_TTL)
             except Exception as exc:
                 logger.warning(f"Redis complete failed: {exc}")
 
         with _db_lock:
             try:
-                now = datetime.utcnow()
-                self.db.execute(
-                    "INSERT OR REPLACE INTO idempotency_records "
-                    "(idempotency_key, request_hash, response_data, status, created_at, expires_at) "
-                    "VALUES (?, ?, ?, 'completed', ?, ?)",
-                    (
-                        idempotency_key,
-                        req_hash,
-                        response_data,
-                        now.isoformat(),
-                        (now + timedelta(seconds=IDEMPOTENCY_TTL)).isoformat(),
-                    ),
-                )
+                with self.db.cursor() as cur:
+                    cur.execute(
+                        "UPDATE idempotency_records SET response_data = %s, status = 'completed' "
+                        "WHERE idempotency_key = %s",
+                        (response_data, idempotency_key),
+                    )
                 self.db.commit()
             except Exception as exc:
                 logger.warning(f"DB complete failed: {exc}")
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
 
-    def evict_expired(self) -> int:
-        count = 0
+    def _evict_expired(self) -> int:
         with _db_lock:
             try:
-                cursor = self.db.execute(
-                    "DELETE FROM idempotency_records WHERE expires_at < ?",
-                    (datetime.utcnow().isoformat(),),
-                )
-                count = cursor.rowcount
+                with self.db.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM idempotency_records WHERE expires_at <= %s",
+                        (datetime.utcnow(),),
+                    )
+                    count = cur.rowcount
                 self.db.commit()
-                if count > 0:
-                    logger.info(f"Evicted {count} expired idempotency records for {self.service_name}")
+                return count
             except Exception as exc:
-                logger.warning(f"DB eviction failed: {exc}")
-        return count
+                logger.warning(f"Eviction failed: {exc}")
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+                return 0
 
-    def start_eviction_job(self) -> None:
+    def start_eviction_loop(self) -> None:
         if self._eviction_started:
             return
         self._eviction_started = True
 
-        def _run():
+        def _loop():
             while True:
                 time.sleep(EVICTION_INTERVAL)
-                try:
-                    self.evict_expired()
-                except Exception as exc:
-                    logger.warning(f"Eviction job error: {exc}")
+                evicted = self._evict_expired()
+                if evicted:
+                    logger.info(f"Evicted {evicted} expired idempotency records")
 
-        t = threading.Thread(target=_run, daemon=True, name=f"idem-evict-{self.service_name}")
+        t = threading.Thread(target=_loop, daemon=True)
         t.start()
-        logger.info(f"Started idempotency eviction job for {self.service_name} (every {EVICTION_INTERVAL}s)")

@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -103,7 +102,6 @@ async def health_check():
         return {"status": "healthy", "service": "float-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "float-service", "error": str(e)}
-
 
 class FloatTopupRequest(BaseModel):
     account_id: str
@@ -199,7 +197,6 @@ async def float_summary(token: str = Depends(verify_token)):
         accounts = await conn.fetch("SELECT * FROM float_accounts WHERE status='active'")
         total_balance = sum(float(a["balance"]) for a in accounts)
         return {"total_accounts": len(accounts), "total_balance": total_balance, "accounts": [dict(a) for a in accounts]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8010)

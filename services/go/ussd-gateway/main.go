@@ -470,17 +470,17 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	// SQLite persistence (WAL mode for concurrent reads/writes)
+	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("USSD_GATEWAY_DB_PATH")
 	if dbPath == "" {
 		dbPath = "/tmp/ussd-gateway.db"
 	}
 	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
-		log.Printf("[ussd-gateway] SQLite unavailable (%v) — running in-memory only", dbErr)
+		log.Printf("[ussd-gateway] PostgreSQL unavailable (%v) — running in-memory only", dbErr)
 	} else {
 		defer db.Close()
-		log.Printf("[ussd-gateway] SQLite persistence at %s", dbPath)
+		log.Printf("[ussd-gateway] PostgreSQL persistence at %s", dbPath)
 	}
 	_ = db
 

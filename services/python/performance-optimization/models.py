@@ -57,5 +57,5 @@ class OptimizationTask(Base):
     
     __table_args__ = (
         # Index on status and priority for efficient querying of pending/high-priority tasks
-        {"sqlite_autoincrement": True}
+        {}
     )

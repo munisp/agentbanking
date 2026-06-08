@@ -44,7 +44,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Real Fluvio Python client
 try:
     from fluvio import Fluvio, Offset
@@ -74,7 +73,6 @@ class BankingEvent:
     correlation_id: Optional[str] = None
     tenant_id: Optional[str] = None
 
-
 class ProduceRequest(BaseModel):
     """Request model for producing events"""
     event_type: str = Field(..., description="Type of event")
@@ -85,7 +83,6 @@ class ProduceRequest(BaseModel):
     source_service: str = Field(..., description="Source service")
     correlation_id: Optional[str] = Field(None, description="Correlation ID")
     tenant_id: Optional[str] = Field(None, description="Tenant ID")
-
 
 # ============================================================================
 # Fluvio Streaming Service
@@ -282,14 +279,12 @@ class FluvioStreamingService:
         except Exception as e:
             logger.error(f"❌ Error closing service: {str(e)}")
 
-
 # ============================================================================
 # FastAPI Application
 # ============================================================================
 
 # Global service instance
 streaming_service: Optional[FluvioStreamingService] = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -313,7 +308,6 @@ async def lifespan(app: FastAPI):
     logger.info("⏹️ Shutting down Fluvio streaming service...")
     if streaming_service:
         await streaming_service.close()
-
 
 app = FastAPI(
 
@@ -357,7 +351,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     lifespan=lifespan
 )
 
-
 # ============================================================================
 # API Endpoints
 # ============================================================================
@@ -372,7 +365,6 @@ async def root():
         "fluvio_available": FLUVIO_AVAILABLE
     }
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -383,7 +375,6 @@ async def health_check():
         "connected": streaming_service.client is not None if streaming_service else False
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Get streaming metrics"""
@@ -391,7 +382,6 @@ async def get_metrics():
         raise HTTPException(status_code=503, detail="Service not initialized")
     
     return await streaming_service.get_metrics()
-
 
 @app.get("/topics")
 async def list_topics():
@@ -403,7 +393,6 @@ async def list_topics():
         "topics": streaming_service.topics,
         "count": len(streaming_service.topics)
     }
-
 
 @app.post("/produce/{topic}")
 async def produce_event(topic: str, request: ProduceRequest):
@@ -440,7 +429,6 @@ async def produce_event(topic: str, request: ProduceRequest):
         "topic": topic
     }
 
-
 @app.post("/consume/{topic}/{partition}")
 async def start_consumer(
     topic: str,
@@ -474,7 +462,6 @@ async def start_consumer(
         "partition": partition,
         "offset": offset
     }
-
 
 # ============================================================================
 # Main

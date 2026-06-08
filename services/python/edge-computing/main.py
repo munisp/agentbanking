@@ -42,7 +42,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/edge")
 SYNC_SERVICE_URL = os.getenv("SYNC_SERVICE_URL", "http://localhost:8040")
 
@@ -95,14 +94,12 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class SyncStatus(str, Enum):
     PENDING = "pending"
     SYNCING = "syncing"
     SYNCED = "synced"
     FAILED = "failed"
     CONFLICT = "conflict"
-
 
 class QueuedTransaction(BaseModel):
     sender_id: str
@@ -113,12 +110,10 @@ class QueuedTransaction(BaseModel):
     device_id: str
     offline: bool = True
 
-
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     return authorization[7:]
-
 
 @app.on_event("startup")
 async def startup():
@@ -152,12 +147,10 @@ async def startup():
         """)
     logger.info("Edge Computing Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 @app.post("/api/v1/edge/transactions/queue")
 async def queue_transaction(txn: QueuedTransaction, token: str = Depends(verify_bearer_token)):
@@ -180,7 +173,6 @@ async def queue_transaction(txn: QueuedTransaction, token: str = Depends(verify_
     logger.info(f"Transaction queued from device {txn.device_id}")
     return {"queued_id": txn_id, "status": "pending", "device_id": txn.device_id}
 
-
 @app.get("/api/v1/edge/sync/pending/{device_id}")
 async def get_pending_sync(device_id: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -196,7 +188,6 @@ async def get_pending_sync(device_id: str, token: str = Depends(verify_bearer_to
             for r in rows
         ],
     }
-
 
 @app.post("/api/v1/edge/sync/{device_id}")
 async def trigger_sync(device_id: str, token: str = Depends(verify_bearer_token)):
@@ -242,7 +233,6 @@ async def trigger_sync(device_id: str, token: str = Depends(verify_bearer_token)
 
     return {"device_id": device_id, "synced": synced, "failed": failed, "remaining": len(rows) - synced - failed}
 
-
 @app.post("/api/v1/edge/devices/register")
 async def register_device(device_id: str, user_id: str, app_version: str = "1.0.0", os_type: str = "android", token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -253,7 +243,6 @@ async def register_device(device_id: str, user_id: str, app_version: str = "1.0.
             device_id, user_id, app_version, os_type,
         )
     return {"device_id": device_id, "registered": True}
-
 
 @app.post("/api/v1/edge/devices/{device_id}/heartbeat")
 async def device_heartbeat(device_id: str, token: str = Depends(verify_bearer_token)):
@@ -268,7 +257,6 @@ async def device_heartbeat(device_id: str, token: str = Depends(verify_bearer_to
         )
     return {"device_id": device_id, "pending_sync": pending, "server_time": datetime.utcnow().isoformat()}
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -281,9 +269,7 @@ async def health_check():
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "edge-computing", "database": db_ok}
 
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8050)
-
 

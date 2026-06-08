@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./auth_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/authentication_service"
     
     # Security settings
     SECRET_KEY: str = "super-secret-key-for-development-only"
@@ -36,8 +36,7 @@ settings = get_settings()
 # The engine is the starting point for SQLAlchemy. It's responsible for managing
 # connections to the database.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # SessionLocal is a factory for new Session objects.

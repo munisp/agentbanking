@@ -282,7 +282,7 @@ func gracefulShutdown(serviceName string, srv *http.Server, cleanup func(context
 }
 
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

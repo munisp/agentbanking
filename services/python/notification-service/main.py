@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -105,7 +104,6 @@ async def health_check():
         return {"status": "healthy", "service": "notification-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "notification-service", "error": str(e)}
-
 
 class NotificationCreate(BaseModel):
     user_id: str
@@ -207,7 +205,6 @@ async def update_preferences(prefs: NotificationPrefsUpdate, token: str = Depend
             token[:36], prefs.push_enabled, prefs.email_enabled, prefs.sms_enabled
         )
         return {"updated": True}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8123)

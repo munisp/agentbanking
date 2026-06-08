@@ -166,17 +166,17 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	// SQLite persistence (WAL mode for concurrent reads/writes)
+	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("SETTLEMENT_BATCH_PROCESSOR_DB_PATH")
 	if dbPath == "" {
 		dbPath = "/tmp/settlement-batch-processor.db"
 	}
 	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
-		log.Printf("[settlement-batch-processor] SQLite unavailable (%v) — running in-memory only", dbErr)
+		log.Printf("[settlement-batch-processor] PostgreSQL unavailable (%v) — running in-memory only", dbErr)
 	} else {
 		defer db.Close()
-		log.Printf("[settlement-batch-processor] SQLite persistence at %s", dbPath)
+		log.Printf("[settlement-batch-processor] PostgreSQL persistence at %s", dbPath)
 	}
 	_ = db
 

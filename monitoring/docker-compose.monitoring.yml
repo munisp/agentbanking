@@ -32,6 +32,7 @@ volumes:
   grafana_data:
   alertmanager_data:
   oncall_data:
+  oncall_pg_data:
 
 services:
 
@@ -114,7 +115,12 @@ services:
       - SECRET_KEY=oncall-secret-key-change-in-production-min-50-chars-long
       - MIRAGE_SECRET_KEY=oncall-mirage-key-change-in-production-min-50-chars
       - MIRAGE_CIPHER_IV=oncall-iv-16chars
-      - DATABASE_TYPE=sqlite3
+      - DATABASE_TYPE=postgresql
+      - DATABASE_HOST=oncall-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=oncall
+      - DATABASE_USER=oncall
+      - DATABASE_PASSWORD=oncall
       - BROKER_TYPE=redis
       - BASE_URL=http://oncall:8080
       - REDIS_URI=redis://redis:6379/0
@@ -130,6 +136,7 @@ services:
     depends_on:
       - redis
       - grafana
+      - oncall-postgres
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health/"]
       interval: 30s
@@ -150,7 +157,12 @@ services:
       - SECRET_KEY=oncall-secret-key-change-in-production-min-50-chars-long
       - MIRAGE_SECRET_KEY=oncall-mirage-key-change-in-production-min-50-chars
       - MIRAGE_CIPHER_IV=oncall-iv-16chars
-      - DATABASE_TYPE=sqlite3
+      - DATABASE_TYPE=postgresql
+      - DATABASE_HOST=oncall-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=oncall
+      - DATABASE_USER=oncall
+      - DATABASE_PASSWORD=oncall
       - BROKER_TYPE=redis
       - BASE_URL=http://oncall:8080
       - REDIS_URI=redis://redis:6379/0
@@ -161,6 +173,25 @@ services:
     depends_on:
       - redis
       - oncall
+
+  # ── OnCall PostgreSQL ────────────────────────────────────────────────────────
+  oncall-postgres:
+    image: postgres:16-alpine
+    container_name: pos_oncall_postgres
+    restart: unless-stopped
+    networks:
+      - monitoring
+    environment:
+      - POSTGRES_DB=oncall
+      - POSTGRES_USER=oncall
+      - POSTGRES_PASSWORD=oncall
+    volumes:
+      - oncall_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oncall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Redis (OnCall message broker) ────────────────────────────────────────────
   redis:

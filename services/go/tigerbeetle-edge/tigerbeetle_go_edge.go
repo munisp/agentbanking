@@ -112,10 +112,10 @@ type TigerBeetleGoEdge struct {
 
 // NewTigerBeetleGoEdge creates a new edge service instance
 func NewTigerBeetleGoEdge(dbPath, redisURL, zigPrimaryURL, edgeID string) (*TigerBeetleGoEdge, error) {
-	// Initialize SQLite database
+	// Initialize PostgreSQL database
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to SQLite: %v", err)
+		return nil, fmt.Errorf("failed to connect to PostgreSQL: %v", err)
 	}
 
 	// Auto-migrate tables

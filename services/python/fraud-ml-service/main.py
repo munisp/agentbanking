@@ -28,9 +28,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for fraud-ml-service."""
+    """Initialize PostgreSQL persistence for fraud-ml-service."""
     import os
-    db_path = os.environ.get("FRAUD_ML_SERVICE_DB_PATH", "/tmp/fraud-ml-service.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/fraud_ml_service'))
         
@@ -38,11 +37,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -63,7 +61,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 # ── Logging ───────────────────────────────────────────────────────────
 
@@ -228,7 +225,6 @@ class IsolationForestLite:
         anomaly_score = 2.0 ** (-avg_path / c) if c > 0 else 0.5
         return float(anomaly_score)
 
-
 # Global model instance
 isolation_forest = IsolationForestLite(n_trees=50, sample_size=128)
 
@@ -260,7 +256,6 @@ def compute_amount_score(amount: float, currency: str, user_id: str) -> float:
     # Sigmoid mapping: z_score -> risk
     score = 1.0 / (1.0 + math.exp(-0.5 * (z_score - 3.0)))
     return min(score, 1.0)
-
 
 def compute_velocity_score(user_id: str, amount: float, tx_type: str) -> tuple[float, list[str]]:
     """Score based on transaction velocity (frequency and volume)"""
@@ -309,7 +304,6 @@ def compute_velocity_score(user_id: str, amount: float, tx_type: str) -> tuple[f
 
     return score, limits_exceeded
 
-
 def compute_channel_score(channel: str, user_id: str, amount: float) -> float:
     """Score based on channel risk and user's typical channels"""
     channel_risk = {
@@ -330,7 +324,6 @@ def compute_channel_score(channel: str, user_id: str, amount: float) -> float:
 
     return min(base_risk, 1.0)
 
-
 def compute_geo_score(country: str, city: str, lat: float, lon: float, user_id: str) -> float:
     """Score based on geographic anomaly"""
     sanctioned = {"KP", "IR", "SY", "CU", "SD", "VE", "MM"}
@@ -347,7 +340,6 @@ def compute_geo_score(country: str, city: str, lat: float, lon: float, user_id: 
             return 0.6  # Different country than usual
 
     return 0.1
-
 
 def compute_device_score(device_id: str, ip: str, user_agent: str, user_id: str) -> float:
     """Score based on device fingerprint anomaly"""
@@ -382,7 +374,6 @@ def compute_device_score(device_id: str, ip: str, user_agent: str, user_id: str)
 
     return min(score, 1.0)
 
-
 def compute_temporal_score(timestamp: int, user_id: str) -> float:
     """Score based on time-of-day anomaly"""
     if not timestamp:
@@ -405,7 +396,6 @@ def compute_temporal_score(timestamp: int, user_id: str) -> float:
 
     return 0.1
 
-
 def compute_recipient_score(receiver: str, user_id: str, is_new: bool) -> float:
     """Score based on recipient risk"""
     if not receiver:
@@ -421,7 +411,6 @@ def compute_recipient_score(receiver: str, user_id: str, is_new: bool) -> float:
             return 0.5  # Too many unique recipients
 
     return 0.1
-
 
 def compute_ml_anomaly_score(features: TransactionFeatures) -> float:
     """Use Isolation Forest to detect anomalies in feature space"""
@@ -439,7 +428,6 @@ def compute_ml_anomaly_score(features: TransactionFeatures) -> float:
 
     return isolation_forest.score(feature_vector)
 
-
 # ── FastAPI App ───────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -447,7 +435,6 @@ app = FastAPI(
     version="1.0.0",
     description="ML-powered fraud detection for agency banking transactions",
 )
-
 
 @app.get("/health")
 async def health():
@@ -459,7 +446,6 @@ async def health():
         "profiles_loaded": len(user_profiles),
         "timestamp": datetime.utcnow().isoformat(),
     }
-
 
 @app.post("/score", response_model=FraudScore)
 async def score_transaction(features: TransactionFeatures):
@@ -590,7 +576,6 @@ async def score_transaction(features: TransactionFeatures):
         eval_time_ms=round(eval_time, 2),
     )
 
-
 @app.post("/velocity", response_model=VelocityResult)
 async def check_velocity(req: VelocityCheck):
     """Check transaction velocity for a user"""
@@ -617,7 +602,6 @@ async def check_velocity(req: VelocityCheck):
         },
         limits_exceeded=limits,
     )
-
 
 @app.get("/profile/{user_id}", response_model=BehaviorProfile)
 async def get_behavior_profile(user_id: str):
@@ -661,7 +645,6 @@ async def get_behavior_profile(user_id: str):
         last_updated=profile.get("last_updated", datetime.utcnow().isoformat()),
     )
 
-
 @app.post("/anomaly", response_model=AnomalyDetectionResult)
 async def detect_anomaly(req: AnomalyDetectionRequest):
     """Run anomaly detection on a feature vector"""
@@ -682,7 +665,6 @@ async def detect_anomaly(req: AnomalyDetectionRequest):
         details=f"Isolation Forest score: {score:.4f} ({'anomaly' if score > 0.6 else 'normal'})",
     )
 
-
 @app.post("/profile/{user_id}/update")
 async def update_profile(user_id: str, profile_data: dict):
     """Update behavioral profile for a user"""
@@ -692,7 +674,6 @@ async def update_profile(user_id: str, profile_data: dict):
         "last_updated": datetime.utcnow().isoformat(),
     }
     return {"updated": True, "user_id": user_id}
-
 
 @app.get("/stats")
 async def get_stats():
@@ -706,8 +687,6 @@ async def get_stats():
         "model_version": "1.0.0-isolation-forest",
         "model_trained": isolation_forest.trained,
     }
-
-
 
 @app.post("/train")
 async def train_model(training_data: dict = None):

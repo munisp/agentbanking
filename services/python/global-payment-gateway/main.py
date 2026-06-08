@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -107,7 +106,6 @@ async def _start_eviction():
 def _idem_key_hash(request_data: Dict[str, Any]) -> str:
     payload = json.dumps(request_data, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
-
 
 class PaymentRequest(BaseModel):
     amount: float = Field(..., gt=0)

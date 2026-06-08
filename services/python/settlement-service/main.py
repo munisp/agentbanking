@@ -49,9 +49,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for settlement-service."""
+    """Initialize PostgreSQL persistence for settlement-service."""
     import os
-    db_path = os.environ.get("SETTLEMENT_SERVICE_DB_PATH", "/tmp/settlement-service.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/settlement_service'))
         
@@ -59,11 +58,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 app = FastAPI(
     title="Settlement Service",

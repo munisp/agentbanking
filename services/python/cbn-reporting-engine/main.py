@@ -39,12 +39,10 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 
 # Ensure all tables exist at startup
 Base.metadata.create_all(bind=engine)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,7 +54,6 @@ async def lifespan(app: FastAPI):
     logger.info("[CBN] Shutting down CBN Reporting Engine...")
     cbn_scheduler.stop()
     logger.info("[CBN] APScheduler stopped.")
-
 
 app = FastAPI(
 
@@ -139,7 +136,6 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
 
 @app.get("/health")
 def health_check():

@@ -63,7 +63,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("kyc-event-consumer")
 
@@ -144,7 +143,6 @@ SUBSCRIBED_TOPICS = [
     "account.upgrade.requested",
 ]
 
-
 def _loan_kyc_level(event: dict) -> str:
     """Determine KYC level for loan based on type and amount."""
     loan_type = event.get("loan_type", "personal")
@@ -155,25 +153,21 @@ def _loan_kyc_level(event: dict) -> str:
         return "enhanced"
     return "enhanced"  # Minimum for any loan
 
-
 def _level_to_tier(level: str) -> str:
     """Map KYC level to target tier."""
     mapping = {"basic": "tier_1", "standard": "tier_2", "enhanced": "tier_3", "full_edd": "tier_3"}
     return mapping.get(level, "tier_2")
-
 
 def _tier_to_level(tier: str) -> str:
     """Map tier to KYC level."""
     mapping = {"tier_1": "basic", "tier_2": "standard", "tier_3": "enhanced"}
     return mapping.get(tier, "standard")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Cooldown Tracking (Redis-backed in production)
 # ══════════════════════════════════════════════════════════════════════════════
 
 cooldown_store: dict[str, datetime] = {}
-
 
 def check_cooldown(customer_id: str, kyc_level: str, cooldown_hours: int) -> bool:
     """Check if this trigger is within cooldown period. Returns True if cooled down (OK to fire)."""
@@ -184,12 +178,10 @@ def check_cooldown(customer_id: str, kyc_level: str, cooldown_hours: int) -> boo
     elapsed = datetime.now(timezone.utc) - last_triggered
     return elapsed > timedelta(hours=cooldown_hours)
 
-
 def set_cooldown(customer_id: str, kyc_level: str):
     """Record that this trigger fired."""
     key = f"{customer_id}:{kyc_level}"
     cooldown_store[key] = datetime.now(timezone.utc)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Event Processing
@@ -205,9 +197,7 @@ class ProcessingStats:
     kyb_triggered: int = 0
     errors: int = 0
 
-
 stats = ProcessingStats()
-
 
 async def process_event(topic: str, event: dict):
     """Process a single Kafka event and trigger appropriate KYC workflow."""
@@ -264,7 +254,6 @@ async def process_event(topic: str, event: dict):
 
     logger.info(f"Triggered {kyc_level} KYC for {customer_id} (topic={topic}, tier={target_tier})")
 
-
 async def trigger_kyc_workflow(customer_id: str, kyc_level: str, target_tier: str, trigger_topic: str, event: dict):
     """Call KYC Workflow Orchestrator to start a verification pipeline."""
     try:
@@ -297,7 +286,6 @@ async def trigger_kyc_workflow(customer_id: str, kyc_level: str, target_tier: st
         logger.error(f"Failed to trigger KYC workflow: {e}")
         stats.errors += 1
 
-
 async def trigger_kyb(company_id: str, customer_id: str, event: dict):
     """Trigger KYB corporate verification."""
     try:
@@ -320,7 +308,6 @@ async def trigger_kyb(company_id: str, customer_id: str, event: dict):
         logger.error(f"Failed to trigger KYB: {e}")
         stats.errors += 1
 
-
 async def stream_trigger_event(topic: str, customer_id: str, kyc_level: str, target_tier: str):
     """Stream trigger event to Fluvio lakehouse."""
     try:
@@ -338,7 +325,6 @@ async def stream_trigger_event(topic: str, customer_id: str, kyc_level: str, tar
             )
     except Exception:
         pass
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Dapr Event Subscription Endpoint
@@ -385,7 +371,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     version="1.0.0",
 )
 
-
 class DaprEvent(BaseModel):
     """Dapr CloudEvent envelope."""
     topic: str = ""
@@ -395,13 +380,11 @@ class DaprEvent(BaseModel):
     specversion: str = "1.0"
     id: str = ""
 
-
 @app.post("/api/v1/events/process")
 async def receive_event(event: DaprEvent, background_tasks: BackgroundTasks):
     """Receive events from Dapr pub/sub (Kafka via sidecar)."""
     background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted"}
-
 
 @app.post("/api/v1/events/batch")
 async def receive_batch(events: list[DaprEvent], background_tasks: BackgroundTasks):
@@ -409,7 +392,6 @@ async def receive_batch(events: list[DaprEvent], background_tasks: BackgroundTas
     for event in events:
         background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted", "count": len(events)}
-
 
 # Dapr subscription declaration
 @app.get("/dapr/subscribe")
@@ -419,7 +401,6 @@ async def dapr_subscribe():
         {"pubsubname": "kafka-pubsub", "topic": topic, "route": "/api/v1/events/process"}
         for topic in SUBSCRIBED_TOPICS
     ]
-
 
 @app.get("/api/v1/rules")
 async def get_trigger_rules():
@@ -432,7 +413,6 @@ async def get_trigger_rules():
             "triggers_kyb": rule.get("trigger_kyb", False),
         }
     return {"rules": rules, "subscribed_topics": SUBSCRIBED_TOPICS}
-
 
 @app.get("/api/v1/stats")
 async def get_stats():
@@ -448,7 +428,6 @@ async def get_stats():
         "active_cooldowns": len(cooldown_store),
     }
 
-
 @app.delete("/api/v1/cooldowns/{customer_id}")
 async def clear_cooldown(customer_id: str):
     """Clear all cooldowns for a customer (admin use for re-verification)."""
@@ -458,7 +437,6 @@ async def clear_cooldown(customer_id: str):
         del cooldown_store[k]
         cleared += 1
     return {"customer_id": customer_id, "cooldowns_cleared": cleared}
-
 
 @app.get("/health")
 async def health():
@@ -483,7 +461,6 @@ async def health():
             "temporal": TEMPORAL_URL,
         },
     }
-
 
 if __name__ == "__main__":
     import uvicorn

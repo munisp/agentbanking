@@ -41,7 +41,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Initialize FastAPI app
 app = FastAPI(
     title="Email Service",
@@ -190,7 +189,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-
 class EmailSendRequest(BaseModel):
     recipient_email: EmailStr
     subject: str
@@ -231,7 +229,6 @@ async def list_emails(skip: int = 0, limit: int = 100, current_user: dict = Depe
         emails = db.query(EmailDB).offset(skip).limit(limit).all()
     return emails
 
-
 # Example of an admin-only endpoint
 @app.delete("/emails/{email_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"])
 async def delete_email(email_id: int, current_user: dict = Depends(get_current_admin_user), db: Session = Depends(get_db)):
@@ -241,5 +238,4 @@ async def delete_email(email_id: int, current_user: dict = Depends(get_current_a
     db.delete(db_email)
     db.commit()
     return
-
 

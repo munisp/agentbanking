@@ -47,7 +47,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = FastAPI(title="54Link Data Archival Service", version="1.0.0")
 
 import psycopg2
@@ -85,12 +84,10 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
 
-
 class RetentionAction(str, Enum):
     ARCHIVE = "archive"
     DELETE = "delete"
     ANONYMIZE = "anonymize"
-
 
 class RetentionPolicy(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -107,7 +104,6 @@ class RetentionPolicy(BaseModel):
     records_archived: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-
 class ArchivalJob(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     policy_id: str
@@ -120,7 +116,6 @@ class ArchivalJob(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
-
 
 # In-memory stores (production: PostgreSQL)
 policies: dict[str, RetentionPolicy] = {}
@@ -146,30 +141,25 @@ DEFAULT_POLICIES = [
                     table_name="webhook_deliveries", retention_days=30, action=RetentionAction.DELETE),
 ]
 
-
 @app.on_event("startup")
 async def startup():
     for p in DEFAULT_POLICIES:
         policies[p.id] = p
-
 
 @app.post("/policies")
 async def create_policy(policy: RetentionPolicy):
     policies[policy.id] = policy
     return {"id": policy.id, "message": "policy created"}
 
-
 @app.get("/policies")
 async def list_policies():
     return {"policies": [p.model_dump() for p in policies.values()], "count": len(policies)}
-
 
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str):
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     return policies[policy_id].model_dump()
-
 
 @app.put("/policies/{policy_id}")
 async def update_policy(policy_id: str, body: dict):
@@ -181,14 +171,12 @@ async def update_policy(policy_id: str, body: dict):
             setattr(policy, k, v)
     return {"message": "policy updated", "policy": policy.model_dump()}
 
-
 @app.delete("/policies/{policy_id}")
 async def delete_policy(policy_id: str):
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     del policies[policy_id]
     return {"message": "policy deleted"}
-
 
 @app.post("/archive/run/{policy_id}")
 async def run_archival(policy_id: str):
@@ -219,7 +207,6 @@ async def run_archival(policy_id: str):
     jobs[job.id] = job
     return {"job": job.model_dump()}
 
-
 @app.post("/archive/run-all")
 async def run_all_archival():
     results = []
@@ -239,7 +226,6 @@ async def run_all_archival():
         results.append({"policy": policy.name, "job_id": job.id, "archived": job.records_archived})
     return {"ran": len(results), "results": results}
 
-
 @app.get("/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
     items = list(jobs.values())
@@ -248,13 +234,11 @@ async def list_jobs(status: Optional[str] = None, limit: int = 50):
     items.sort(key=lambda j: j.started_at or "", reverse=True)
     return {"jobs": [j.model_dump() for j in items[:limit]], "total": len(items)}
 
-
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: str):
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     return jobs[job_id].model_dump()
-
 
 @app.post("/restore/{job_id}")
 async def restore_from_archive(job_id: str):
@@ -267,7 +251,6 @@ async def restore_from_archive(job_id: str):
         "records_to_restore": job.records_archived,
         "status": "restoring",
     }
-
 
 @app.post("/gdpr/delete")
 async def gdpr_delete(body: dict):
@@ -284,7 +267,6 @@ async def gdpr_delete(body: dict):
         "audit_id": str(uuid.uuid4()),
     }
 
-
 @app.get("/stats")
 async def stats():
     total_archived = sum(p.records_archived for p in policies.values())
@@ -298,7 +280,6 @@ async def stats():
             for p in policies.values()
         },
     }
-
 
 @app.get("/health")
 async def health():

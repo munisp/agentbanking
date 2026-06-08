@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -101,7 +100,6 @@ async def health_check():
         return {"status": "healthy", "service": "payout-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "payout-service", "error": str(e)}
-
 
 class PayoutCreate(BaseModel):
     beneficiary_id: Optional[str] = None
@@ -167,7 +165,6 @@ async def update_payout_status(payout_id: str, status: str, provider_reference: 
         if not row:
             raise HTTPException(status_code=404, detail="Payout not found")
         return dict(row)
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8125)

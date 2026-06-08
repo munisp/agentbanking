@@ -43,7 +43,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = Flask(__name__)
 
 # ── Menu Tree Definition ─────────────────────────────────────────────────────
@@ -148,7 +147,6 @@ def find_node(tree, node_id):
             return result
     return None
 
-
 def navigate_path(tree, path_parts):
     """Navigate the menu tree by a list of selection indices"""
     current = tree
@@ -163,7 +161,6 @@ def navigate_path(tree, path_parts):
         except (ValueError, IndexError):
             return None
     return current
-
 
 def render_menu_screen(node):
     """Render a USSD text screen for a menu node"""
@@ -208,7 +205,6 @@ def render_menu_screen(node):
 
     return {"text": f"END {node['title']}", "continue": False, "nodeId": node["id"]}
 
-
 def get_all_shortcuts(tree, prefix=""):
     """Recursively collect all shortcut codes"""
     shortcuts = []
@@ -223,13 +219,11 @@ def get_all_shortcuts(tree, prefix=""):
         shortcuts.extend(get_all_shortcuts(child, prefix))
     return shortcuts
 
-
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/menu", methods=["GET"])
 def get_menu():
     return jsonify(MENU_TREE)
-
 
 @app.route("/menu/navigate", methods=["POST"])
 def navigate_menu():
@@ -253,7 +247,6 @@ def navigate_menu():
 
     screen = render_menu_screen(node)
     return jsonify({**screen, "node": node})
-
 
 @app.route("/menu/render", methods=["POST"])
 def render_menu():
@@ -280,12 +273,10 @@ def render_menu():
 
     return jsonify(screen)
 
-
 @app.route("/menu/shortcuts", methods=["GET"])
 def get_shortcuts():
     shortcuts = get_all_shortcuts(MENU_TREE)
     return jsonify(shortcuts)
-
 
 @app.route("/menu/template", methods=["POST"])
 def create_template():
@@ -301,11 +292,9 @@ def create_template():
     custom_templates.append(template)
     return jsonify(template), 201
 
-
 @app.route("/menu/templates", methods=["GET"])
 def list_templates():
     return jsonify(custom_templates)
-
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -317,20 +306,17 @@ def health():
         "customTemplates": len(custom_templates),
     })
 
-
 def count_nodes(tree):
     count = 1
     for child in tree.get("children", []):
         count += count_nodes(child)
     return count
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8112))
     print(f"[ussd-menu-builder] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
 
 import psycopg2
 import psycopg2.extras

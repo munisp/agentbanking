@@ -53,7 +53,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
@@ -116,7 +115,6 @@ app.add_middleware(
 
 db_pool = None
 
-
 class BillerCategory(str, Enum):
     ELECTRICITY_PREPAID = "electricity_prepaid"
     ELECTRICITY_POSTPAID = "electricity_postpaid"
@@ -125,13 +123,11 @@ class BillerCategory(str, Enum):
     INTERNET = "internet"
     GOVERNMENT = "government"
 
-
 class PaymentStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     SUCCESSFUL = "successful"
     FAILED = "failed"
-
 
 BILLER_SERVICE_MAP = {
     "ikeja-electric-prepaid": {"baxi": "ikeja_electric_prepaid", "vtpass": "ikeja-electric"},
@@ -164,7 +160,6 @@ COMMISSION_RATES = {
     BillerCategory.GOVERNMENT: Decimal("0.01"),
 }
 
-
 class BillerPayment(BaseModel):
     customer_id: str = Field(..., min_length=1, description="Meter/smartcard/account number")
     biller_code: str = Field(..., min_length=1, description="Biller service code")
@@ -175,7 +170,6 @@ class BillerPayment(BaseModel):
     agent_id: Optional[str] = None
     variation_code: Optional[str] = None
     request_id: Optional[str] = None
-
 
 class PaymentResponse(BaseModel):
     transaction_id: str
@@ -191,19 +185,16 @@ class PaymentResponse(BaseModel):
     customer_name: Optional[str] = None
     created_at: datetime
 
-
 class BillerInfo(BaseModel):
     code: str
     name: str
     category: str
-
 
 class VariationOption(BaseModel):
     code: str
     name: str
     amount: Decimal
     fixed_price: bool
-
 
 @app.on_event("startup")
 async def startup():
@@ -242,12 +233,10 @@ async def startup():
         """)
     logger.info("Biller Integration Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 async def _call_baxi_api(endpoint: str, payload: dict, max_retries: int = 3) -> dict:
     headers = {"x-api-key": BAXI_API_KEY, "Content-Type": "application/json"}
@@ -282,7 +271,6 @@ async def _call_baxi_api(endpoint: str, payload: dict, max_retries: int = 3) -> 
                 continue
             raise
     raise HTTPException(status_code=502, detail="Baxi API unavailable after retries")
-
 
 async def _call_vtpass_api(endpoint: str, payload: dict, max_retries: int = 3) -> dict:
     headers = {
@@ -321,7 +309,6 @@ async def _call_vtpass_api(endpoint: str, payload: dict, max_retries: int = 3) -
             raise
     raise HTTPException(status_code=502, detail="VTpass API unavailable after retries")
 
-
 async def _verify_via_baxi(customer_id: str, biller_code: str) -> Dict[str, Any]:
     service_type = BILLER_SERVICE_MAP.get(biller_code, {}).get("baxi", biller_code)
     result = await _call_baxi_api("superagent/transaction/verify", {
@@ -336,7 +323,6 @@ async def _verify_via_baxi(customer_id: str, biller_code: str) -> Dict[str, Any]
             "raw": result.get("data", {}),
         }
     return {}
-
 
 async def _verify_via_vtpass(customer_id: str, biller_code: str) -> Dict[str, Any]:
     service_id = BILLER_SERVICE_MAP.get(biller_code, {}).get("vtpass", biller_code)
@@ -353,7 +339,6 @@ async def _verify_via_vtpass(customer_id: str, biller_code: str) -> Dict[str, An
             "raw": content,
         }
     return {}
-
 
 async def _pay_via_baxi(payment: BillerPayment, transaction_ref: str) -> Dict[str, Any]:
     service_type = BILLER_SERVICE_MAP.get(payment.biller_code, {}).get("baxi", payment.biller_code)
@@ -379,7 +364,6 @@ async def _pay_via_baxi(payment: BillerPayment, transaction_ref: str) -> Dict[st
         "status": "failed",
         "error": result.get("message", "Payment failed via Baxi"),
     }
-
 
 async def _pay_via_vtpass(payment: BillerPayment, transaction_ref: str) -> Dict[str, Any]:
     service_id = BILLER_SERVICE_MAP.get(payment.biller_code, {}).get("vtpass", payment.biller_code)
@@ -409,7 +393,6 @@ async def _pay_via_vtpass(payment: BillerPayment, transaction_ref: str) -> Dict[
         "error": result.get("response_description", "Payment failed via VTpass"),
     }
 
-
 @app.post("/verify")
 async def verify_customer_endpoint(customer_id: str, biller_code: str):
     if BAXI_API_KEY:
@@ -429,7 +412,6 @@ async def verify_customer_endpoint(customer_id: str, biller_code: str):
             logger.warning(f"VTpass verification also failed: {e}")
 
     raise HTTPException(status_code=400, detail="Customer verification failed with all providers")
-
 
 @app.post("/payments", response_model=PaymentResponse)
 async def create_payment(payment: BillerPayment):
@@ -554,7 +536,6 @@ async def create_payment(payment: BillerPayment):
             created_at=row["created_at"],
         )
 
-
 @app.get("/payments/{transaction_ref}")
 async def get_payment(transaction_ref: str):
     async with db_pool.acquire() as conn:
@@ -578,7 +559,6 @@ async def get_payment(transaction_ref: str):
             customer_name=row["customer_name"],
             created_at=row["created_at"],
         )
-
 
 @app.get("/billers", response_model=List[BillerInfo])
 async def list_billers(category: Optional[BillerCategory] = None):
@@ -610,7 +590,6 @@ async def list_billers(category: Optional[BillerCategory] = None):
         billers.append(BillerInfo(code=code, name=name, category=cat.value))
     return billers
 
-
 @app.get("/billers/{biller_code}/variations", response_model=List[VariationOption])
 async def get_biller_variations(biller_code: str):
     service_id = BILLER_SERVICE_MAP.get(biller_code, {}).get("vtpass", biller_code)
@@ -630,7 +609,6 @@ async def get_biller_variations(biller_code: str):
         except Exception as e:
             logger.error(f"Failed to fetch variations: {e}")
     raise HTTPException(status_code=502, detail="Failed to fetch biller variations")
-
 
 @app.get("/transactions")
 async def list_transactions(
@@ -676,7 +654,6 @@ async def list_transactions(
             for r in rows
         ]
 
-
 @app.get("/health")
 async def health_check():
     healthy = True
@@ -692,7 +669,6 @@ async def health_check():
     details["vtpass"] = "configured" if VTPASS_API_KEY else "not_configured"
     details["status"] = "healthy" if healthy else "degraded"
     return details
-
 
 if __name__ == "__main__":
     import uvicorn

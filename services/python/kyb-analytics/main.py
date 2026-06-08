@@ -46,7 +46,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -119,13 +118,11 @@ app.add_middleware(
 
 # ── Domain Models ───────────────────────────────────────────────────────────────
 
-
 class RiskLevel(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
 
 class FraudIndicator(BaseModel):
     indicator: str
@@ -133,7 +130,6 @@ class FraudIndicator(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     description: str
     fatf_reference: Optional[str] = None
-
 
 class FraudDetectionRequest(BaseModel):
     verification_id: str
@@ -149,7 +145,6 @@ class FraudDetectionRequest(BaseModel):
     document_count: Optional[int] = None
     transaction_history: Optional[List[Dict[str, Any]]] = None
 
-
 class FraudDetectionResult(BaseModel):
     id: str
     verification_id: str
@@ -162,13 +157,11 @@ class FraudDetectionResult(BaseModel):
     recommendations: List[str]
     analyzed_at: datetime
 
-
 class ComplianceReportRequest(BaseModel):
     report_type: str = "monthly"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     include_details: bool = True
-
 
 class ComplianceReport(BaseModel):
     id: str
@@ -192,12 +185,10 @@ class ComplianceReport(BaseModel):
     regulatory_notes: List[str]
     generated_at: datetime
 
-
 class LakehouseETLRequest(BaseModel):
     data_type: str = "kyb_verifications"
     batch_size: int = 100
     include_pii: bool = False
-
 
 class LakehouseETLResult(BaseModel):
     id: str
@@ -213,11 +204,9 @@ class LakehouseETLResult(BaseModel):
     started_at: datetime
     completed_at: datetime
 
-
 class AnomalyDetectionRequest(BaseModel):
     verification_id: str
     features: Dict[str, float]
-
 
 class AnomalyResult(BaseModel):
     verification_id: str
@@ -227,7 +216,6 @@ class AnomalyResult(BaseModel):
     z_scores: Dict[str, float]
     anomalous_features: List[str]
     analyzed_at: datetime
-
 
 # ── In-memory analytics store ──────────────────────────────────────────────────
 
@@ -246,7 +234,6 @@ analytics_store: Dict[str, Any] = {
 }
 
 # ── ML Feature Engineering ──────────────────────────────────────────────────────
-
 
 def extract_features(req: FraudDetectionRequest) -> Dict[str, float]:
     """Extract ML features from a KYB verification request."""
@@ -350,7 +337,6 @@ def extract_features(req: FraudDetectionRequest) -> Dict[str, float]:
 
     return features
 
-
 def ml_fraud_score(features: Dict[str, float]) -> float:
     """Weighted ensemble fraud scoring (simulated gradient boosting)."""
     weights = {
@@ -375,7 +361,6 @@ def ml_fraud_score(features: Dict[str, float]) -> float:
     # Sigmoid normalization to 0-100
     score = 100.0 / (1.0 + math.exp(-10 * (raw - 0.5)))
     return round(score, 2)
-
 
 def detect_anomalies(features: Dict[str, float]) -> Dict[str, Any]:
     """Isolation Forest-inspired anomaly detection."""
@@ -405,9 +390,7 @@ def detect_anomalies(features: Dict[str, float]) -> Dict[str, Any]:
         "anomalous": anomalous,
     }
 
-
 # ── Middleware Integration Helpers ──────────────────────────────────────────────
-
 
 async def publish_to_fluvio(topic: str, data: dict):
     """Publish analytics event to Fluvio streaming."""
@@ -421,7 +404,6 @@ async def publish_to_fluvio(topic: str, data: dict):
     except Exception as e:
         logger.warning(f"[Fluvio] publish to {topic} failed: {e}")
 
-
 async def index_to_opensearch(index: str, doc_id: str, data: dict):
     """Index analytics data in OpenSearch."""
     try:
@@ -433,7 +415,6 @@ async def index_to_opensearch(index: str, doc_id: str, data: dict):
             logger.info(f"[OpenSearch] indexed {doc_id} in {index} (status {resp.status_code})")
     except Exception as e:
         logger.warning(f"[OpenSearch] index failed: {e}")
-
 
 async def write_to_lakehouse(table: str, records: List[dict]):
     """Write analytics records to Lakehouse (Delta Lake / Iceberg)."""
@@ -456,7 +437,6 @@ async def write_to_lakehouse(table: str, records: List[dict]):
         logger.warning(f"[Lakehouse] write to {table} failed: {e}")
         return None
 
-
 async def publish_to_kafka_via_dapr(topic: str, data: dict):
     """Publish event to Kafka via Dapr sidecar."""
     dapr_port = os.getenv("DAPR_HTTP_PORT", "3500")
@@ -470,9 +450,7 @@ async def publish_to_kafka_via_dapr(topic: str, data: dict):
     except Exception as e:
         logger.warning(f"[Kafka/Dapr] publish to {topic} failed: {e}")
 
-
 # ── HTTP Endpoints ──────────────────────────────────────────────────────────────
-
 
 @app.get("/")
 async def root():
@@ -484,7 +462,6 @@ async def root():
         "port": 8132,
         "status": "operational",
     }
-
 
 @app.get("/health")
 async def health():
@@ -509,7 +486,6 @@ async def health():
             "redis", "kafka", "postgresql",
         ],
     }
-
 
 @app.post("/fraud/detect")
 async def detect_fraud(
@@ -648,7 +624,6 @@ async def detect_fraud(
 
     return result
 
-
 @app.post("/fraud/anomaly")
 async def detect_anomaly(req: AnomalyDetectionRequest):
     """Isolation Forest anomaly detection on KYB features."""
@@ -669,7 +644,6 @@ async def detect_anomaly(req: AnomalyDetectionRequest):
         analytics_store["stats"]["total_anomalies_detected"] += 1
 
     return result
-
 
 @app.post("/compliance/report")
 async def generate_compliance_report(
@@ -759,7 +733,6 @@ async def generate_compliance_report(
 
     return report
 
-
 @app.post("/etl/lakehouse")
 async def run_lakehouse_etl(
     req: LakehouseETLRequest, background_tasks: BackgroundTasks
@@ -828,7 +801,6 @@ async def run_lakehouse_etl(
 
     return result
 
-
 @app.get("/analytics/dashboard")
 async def get_analytics_dashboard():
     """Get KYB analytics dashboard data for frontend."""
@@ -869,7 +841,6 @@ async def get_analytics_dashboard():
         "last_updated": datetime.utcnow().isoformat(),
     }
 
-
 @app.get("/analytics/opensearch/query")
 async def query_opensearch(index: str = "kyb-fraud-analytics", q: str = "*", size: int = 10):
     """Proxy OpenSearch queries for KYB analytics."""
@@ -890,11 +861,9 @@ async def query_opensearch(index: str = "kyb-fraud-analytics", q: str = "*", siz
     except Exception as e:
         return {"error": str(e), "fallback": "opensearch_unavailable"}
 
-
 @app.get("/stats")
 async def get_stats():
     return analytics_store["stats"]
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8132)

@@ -5,17 +5,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 
-
 # --- Configuration Settings ---
 class Settings:
     """
     Application settings loaded from environment variables.
     """
     # Database configuration
-    # Use a default SQLite database for local development/testing if not set
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "sqlite:///./neural_network_service.db"
-    )
+        DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neural_network_service")
     # Set to False for production to prevent accidental table recreation
     ECHO_SQL: bool = os.getenv("ECHO_SQL", "False").lower() in ("true", "1", "t")
 
@@ -23,17 +19,12 @@ class Settings:
     SERVICE_NAME: str = "neural-network-service"
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
-
 settings = Settings()
 
 # --- Database Setup ---
 
-# For SQLite, check_same_thread is needed for FastAPI/SQLAlchemy interaction
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
-
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args=connect_args,
     echo=settings.ECHO_SQL,
 )
 
@@ -42,7 +33,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for SQLAlchemy models (imported in models.py)
 Base = declarative_base()
-
 
 def get_db() -> Generator[Session, None, None]:
     """

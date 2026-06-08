@@ -32,5 +32,5 @@ members = [
 ]
 resolver = "2"
 
-# offline-queue has a separate workspace (uses rusqlite which conflicts with sqlx-sqlite)
+# offline-queue has a separate workspace (uses sqlx which conflicts with sqlx-sqlite)
 # Build it independently: cd services/rust/offline-queue && cargo build

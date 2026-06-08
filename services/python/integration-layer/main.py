@@ -39,7 +39,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from shared.idempotency import IdempotencyStore
 

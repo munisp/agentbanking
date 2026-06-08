@@ -31,7 +31,6 @@ BLOCK_THRESHOLD = int(os.getenv("FRAUD_BLOCK_THRESHOLD", "85"))
 REVIEW_THRESHOLD = int(os.getenv("FRAUD_REVIEW_THRESHOLD", "60"))
 pool: Optional[asyncpg.Pool] = None
 
-
 class TransactionInput(BaseModel):
     agent_id: int
     amount: float
@@ -42,7 +41,6 @@ class TransactionInput(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-
 class FraudScore(BaseModel):
     score: int  # 0-100
     risk_level: str  # low, medium, high, critical
@@ -50,7 +48,6 @@ class FraudScore(BaseModel):
     factors: list[dict]
     latency_ms: float
     timestamp: str
-
 
 class VelocityTracker:
     def __init__(self):
@@ -79,9 +76,7 @@ class VelocityTracker:
             "max_amount": max(amounts) if amounts else 0,
         }
 
-
 velocity_tracker = VelocityTracker()
-
 
 @app.on_event("startup")
 async def startup():
@@ -92,17 +87,14 @@ async def startup():
     except Exception as e:
         logger.warning(f"DB connection failed: {e}")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if pool:
         await pool.close()
 
-
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "fraud-ml-scoring", "threshold": BLOCK_THRESHOLD}
-
 
 @app.post("/api/v1/score", response_model=FraudScore)
 async def score_transaction(tx: TransactionInput):
@@ -180,7 +172,6 @@ async def score_transaction(tx: TransactionInput):
         timestamp=datetime.now().isoformat(),
     )
 
-
 @app.get("/api/v1/stats")
 async def stats():
     total_agents = len(velocity_tracker.tx_counts)
@@ -191,7 +182,6 @@ async def stats():
         "block_threshold": BLOCK_THRESHOLD,
         "review_threshold": REVIEW_THRESHOLD,
     }
-
 
 if __name__ == "__main__":
     import uvicorn

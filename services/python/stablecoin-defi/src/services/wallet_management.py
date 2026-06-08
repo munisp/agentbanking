@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import os
 import json
 import logging
-import sqlite3
 from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 from web3 import Web3
 from cryptography.fernet import Fernet
@@ -36,7 +35,7 @@ class WalletStorage:
         """Manages the persistent storage of wallet information in a local database."""
 
         def __init__(self, db_path) -> None:
-            self.conn = sqlite3.connect(db_path, check_same_thread=False)
+            self.conn = psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/stablecoin_defi"))
             self._create_table()
 
         def _create_table(self) -> None:
@@ -59,7 +58,7 @@ class WalletStorage:
                 self.conn.commit()
                 logging.info(f"Saved wallet for user: {user_id}")
                 return True
-            except sqlite3.IntegrityError:
+            except psycopg2.IntegrityError:
                 logging.error(f"Wallet for user {user_id} already exists.")
                 return False
 
@@ -70,7 +69,6 @@ class WalletStorage:
 
 class WalletManager:
         """A comprehensive Hierarchical Deterministic (HD) wallet management service."""
-
 
         def __init__(self, storage: WalletStorage, kms: KeyManagementService) -> None:
             self.storage = storage

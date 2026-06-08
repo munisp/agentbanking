@@ -240,7 +240,7 @@ func main() {
 	log.Println("[mfa-service] Shutdown complete")
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

@@ -6,14 +6,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Determine the base directory for the application
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables or .env file.
     """
     # Database Settings
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR}/hierarchy.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/hierarchy_service")
     ECHO_SQL: bool = False  # Set to True to see all SQL queries
 
     # Service Metadata
@@ -30,12 +29,10 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # SQLAlchemy Engine
-# The connect_args are necessary for SQLite to allow multiple threads to access the database
 # which is common in FastAPI/Uvicorn environments.
 engine = create_engine(
     settings.DATABASE_URL, 
-    echo=settings.ECHO_SQL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    echo=settings.ECHO_SQL
 )
 
 # SessionLocal class for creating database sessions

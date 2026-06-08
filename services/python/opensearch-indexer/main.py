@@ -48,7 +48,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("opensearch-indexer")
 
@@ -103,7 +102,6 @@ metrics = {
     "started_at": datetime.now(timezone.utc).isoformat(),
 }
 
-
 # ── Models ───────────────────────────────────────────────────────────────────
 
 class IndexRequest(BaseModel):
@@ -111,19 +109,16 @@ class IndexRequest(BaseModel):
     documents: list[dict[str, Any]]
     batch_size: int | None = None
 
-
 class SearchRequest(BaseModel):
     index: str = "transactions"
     query: dict[str, Any]
     size: int = 20
     from_: int = 0
 
-
 class CreateIndexRequest(BaseModel):
     index: str
     mappings: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
-
 
 # ── OpenSearch Client ────────────────────────────────────────────────────────
 
@@ -149,7 +144,6 @@ async def os_request(method: str, path: str, body: dict | None = None) -> dict:
     except Exception as e:
         logger.error(f"OpenSearch request failed: {e}")
         raise HTTPException(status_code=502, detail=f"OpenSearch unavailable: {str(e)}")
-
 
 async def bulk_index(index: str, documents: list[dict]) -> dict:
     """Bulk index documents using OpenSearch _bulk API."""
@@ -177,7 +171,6 @@ async def bulk_index(index: str, documents: list[dict]) -> dict:
     except Exception as e:
         logger.error(f"Bulk index failed: {e}")
         raise HTTPException(status_code=502, detail=f"Bulk index failed: {str(e)}")
-
 
 # ── Transaction Index Mapping ────────────────────────────────────────────────
 
@@ -209,7 +202,6 @@ TRANSACTION_MAPPING = {
         "refresh_interval": "5s",
     },
 }
-
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
@@ -254,7 +246,6 @@ async def index_documents(req: IndexRequest):
         logger.error(f"Index batch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/search")
 async def search_documents(req: SearchRequest):
     """Proxy search request to OpenSearch."""
@@ -266,7 +257,6 @@ async def search_documents(req: SearchRequest):
     result = await os_request("POST", f"{req.index}/_search", body)
     return result
 
-
 @app.post("/create-index")
 async def create_index(req: CreateIndexRequest):
     """Create an OpenSearch index with optional mappings."""
@@ -277,7 +267,6 @@ async def create_index(req: CreateIndexRequest):
     result = await os_request("PUT", req.index, body)
     logger.info(f"Created index '{req.index}': {result}")
     return result
-
 
 @app.get("/health")
 async def health():
@@ -302,7 +291,6 @@ async def health():
         "opensearch_url": OPENSEARCH_URL,
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Indexing metrics."""
@@ -312,7 +300,6 @@ async def get_metrics():
             (datetime.now(timezone.utc) - datetime.fromisoformat(metrics["started_at"])).total_seconds()
         ),
     }
-
 
 if __name__ == "__main__":
     import uvicorn

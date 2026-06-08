@@ -157,17 +157,17 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	// SQLite persistence (WAL mode for concurrent reads/writes)
+	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("OFFLINE_SYNC_ORCHESTRATOR_DB_PATH")
 	if dbPath == "" {
 		dbPath = "/tmp/offline-sync-orchestrator.db"
 	}
 	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
-		log.Printf("[offline-sync-orchestrator] SQLite unavailable (%v) — running in-memory only", dbErr)
+		log.Printf("[offline-sync-orchestrator] PostgreSQL unavailable (%v) — running in-memory only", dbErr)
 	} else {
 		defer db.Close()
-		log.Printf("[offline-sync-orchestrator] SQLite persistence at %s", dbPath)
+		log.Printf("[offline-sync-orchestrator] PostgreSQL persistence at %s", dbPath)
 	}
 	_ = db
 

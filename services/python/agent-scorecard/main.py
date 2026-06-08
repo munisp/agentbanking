@@ -37,10 +37,8 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,7 +47,6 @@ async def lifespan(app: FastAPI):
     logger.info("Database tables ready.")
     yield
     logger.info("Agent Scorecard Service shutting down.")
-
 
 app = FastAPI(
 
@@ -111,7 +108,6 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
 
 # --- Domain Helpers ---
 

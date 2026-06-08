@@ -44,7 +44,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s')
 
@@ -341,7 +340,6 @@ async def get_dashboard_stats(
         logger.error(f"Dashboard stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/dashboard/transactions/recent", tags=["Dashboard"])
 async def get_recent_transactions(
     limit: int = Query(10, ge=1, le=50),
@@ -361,7 +359,6 @@ async def get_recent_transactions(
     except Exception as e:
         logger.error(f"Recent transactions error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/dashboard/agents/top", tags=["Dashboard"])
 async def get_top_agents(
@@ -389,7 +386,6 @@ async def get_top_agents(
     except Exception as e:
         logger.error(f"Top agents error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/dashboard/activity", tags=["Dashboard"])
 async def get_recent_activity(
@@ -423,7 +419,6 @@ async def get_recent_activity(
         logger.error(f"Activity error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/dashboard/system/health", tags=["Dashboard"])
 async def get_system_health(db=Depends(get_db)):
     try:
@@ -439,7 +434,6 @@ async def get_system_health(db=Depends(get_db)):
         return {"overall": overall, "services": services, "checked_at": datetime.utcnow().isoformat()}
     except Exception as e:
         return {"overall": "unknown", "services": [], "error": str(e)}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AGENT MANAGEMENT ENDPOINTS
@@ -498,14 +492,12 @@ async def list_agents(
         logger.error(f"List agents error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def get_agent(agent_id: str, db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM agents WHERE id = $1", agent_id)
     if not row:
         raise HTTPException(status_code=404, detail="Agent not found")
     return row_to_dict(row)
-
 
 @app.post("/api/v1/agents", status_code=201, tags=["Agents"])
 async def create_agent(data: AgentCreate, db=Depends(get_db)):
@@ -526,7 +518,6 @@ async def create_agent(data: AgentCreate, db=Depends(get_db)):
     except Exception as e:
         logger.error(f"Create agent error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.put("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def update_agent(agent_id: str, data: AgentUpdate, db=Depends(get_db)):
@@ -549,14 +540,12 @@ async def update_agent(agent_id: str, data: AgentUpdate, db=Depends(get_db)):
         logger.error(f"Update agent error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def delete_agent(agent_id: str, db=Depends(get_db)):
     result = await db.execute("UPDATE agents SET status = 'deactivated', updated_at = NOW() WHERE id = $1", agent_id)
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"message": "Agent deactivated", "agent_id": agent_id}
-
 
 @app.get("/api/v1/agents/{agent_id}/hierarchy", tags=["Agents"])
 async def get_agent_hierarchy(agent_id: str, db=Depends(get_db)):
@@ -572,7 +561,6 @@ async def get_agent_hierarchy(agent_id: str, db=Depends(get_db)):
         SELECT * FROM hierarchy ORDER BY depth
     """, agent_id)
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TRANSACTION ENDPOINTS
@@ -638,7 +626,6 @@ async def list_transactions(
         logger.error(f"List transactions error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/transactions/stats", tags=["Transactions"])
 async def get_transaction_stats(db=Depends(get_db)):
     try:
@@ -658,7 +645,6 @@ async def get_transaction_stats(db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/transactions/{transaction_id}", tags=["Transactions"])
 async def get_transaction(transaction_id: str, db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -670,7 +656,6 @@ async def get_transaction(transaction_id: str, db=Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return row_to_dict(row)
-
 
 @app.post("/api/v1/transactions/{transaction_id}/reverse", tags=["Transactions"])
 async def reverse_transaction(transaction_id: str, data: TransactionReversal, db=Depends(get_db)):
@@ -700,7 +685,6 @@ async def reverse_transaction(transaction_id: str, data: TransactionReversal, db
     except Exception as e:
         logger.error(f"Reversal error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KYC ENDPOINTS
@@ -740,14 +724,12 @@ async def list_kyc_applications(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/kyc/applications/{application_id}", tags=["KYC"])
 async def get_kyc_application(application_id: str, db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM kyc_applications WHERE id = $1", application_id)
     if not row:
         raise HTTPException(status_code=404, detail="KYC application not found")
     return row_to_dict(row)
-
 
 @app.post("/api/v1/kyc/applications/{application_id}/review", tags=["KYC"])
 async def review_kyc_application(application_id: str, data: KYCReviewRequest, db=Depends(get_db)):
@@ -764,7 +746,6 @@ async def review_kyc_application(application_id: str, data: KYCReviewRequest, db
         raise HTTPException(status_code=404, detail="KYC application not found")
     return row_to_dict(row)
 
-
 @app.get("/api/v1/kyc/stats", tags=["KYC"])
 async def get_kyc_stats(db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -779,7 +760,6 @@ async def get_kyc_stats(db=Depends(get_db)):
     """)
     return row_to_dict(row)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # COMMISSION ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -788,7 +768,6 @@ async def get_kyc_stats(db=Depends(get_db)):
 async def list_commission_rules(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM commission_rules WHERE active = true ORDER BY tier, transaction_type")
     return rows_to_list(rows)
-
 
 @app.post("/api/v1/commissions/rules", status_code=201, tags=["Commissions"])
 async def create_commission_rule(data: CommissionRuleCreate, db=Depends(get_db)):
@@ -800,7 +779,6 @@ async def create_commission_rule(data: CommissionRuleCreate, db=Depends(get_db))
     """, str(uuid.uuid4()), data.name, data.transaction_type, data.tier,
         data.rate, data.min_amount, data.max_amount, data.fixed_fee)
     return row_to_dict(row)
-
 
 @app.put("/api/v1/commissions/rules/{rule_id}", tags=["Commissions"])
 async def update_commission_rule(rule_id: str, data: CommissionRuleCreate, db=Depends(get_db)):
@@ -814,14 +792,12 @@ async def update_commission_rule(rule_id: str, data: CommissionRuleCreate, db=De
         raise HTTPException(status_code=404, detail="Commission rule not found")
     return row_to_dict(row)
 
-
 @app.delete("/api/v1/commissions/rules/{rule_id}", tags=["Commissions"])
 async def delete_commission_rule(rule_id: str, db=Depends(get_db)):
     result = await db.execute("UPDATE commission_rules SET active = false WHERE id = $1", rule_id)
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Commission rule not found")
     return {"message": "Commission rule deactivated"}
-
 
 @app.get("/api/v1/commissions/settlements", tags=["Commissions"])
 async def list_commission_settlements(
@@ -845,7 +821,6 @@ async def list_commission_settlements(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.get("/api/v1/commissions/stats", tags=["Commissions"])
 async def get_commission_stats(db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -858,7 +833,6 @@ async def get_commission_stats(db=Depends(get_db)):
         WHERE created_at >= NOW() - '30 days'::interval
     """)
     return row_to_dict(row)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # POS TERMINAL ENDPOINTS
@@ -892,7 +866,6 @@ async def list_pos_terminals(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/pos/terminals", status_code=201, tags=["POS"])
 async def create_pos_terminal(data: POSTerminalCreate, db=Depends(get_db)):
     import uuid
@@ -903,14 +876,12 @@ async def create_pos_terminal(data: POSTerminalCreate, db=Depends(get_db)):
     """, str(uuid.uuid4()), data.terminal_id, data.agent_id, data.model, data.serial_number, data.location)
     return row_to_dict(row)
 
-
 @app.get("/api/v1/pos/terminals/{terminal_id}", tags=["POS"])
 async def get_pos_terminal(terminal_id: str, db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM pos_terminals WHERE id = $1 OR terminal_id = $1", terminal_id)
     if not row:
         raise HTTPException(status_code=404, detail="Terminal not found")
     return row_to_dict(row)
-
 
 @app.put("/api/v1/pos/terminals/{terminal_id}", tags=["POS"])
 async def update_pos_terminal(terminal_id: str, data: dict = Body(...), db=Depends(get_db)):
@@ -927,7 +898,6 @@ async def update_pos_terminal(terminal_id: str, data: dict = Body(...), db=Depen
         raise HTTPException(status_code=404, detail="Terminal not found")
     return row_to_dict(row)
 
-
 @app.get("/api/v1/pos/status", tags=["POS"])
 async def get_pos_status(db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -940,7 +910,6 @@ async def get_pos_status(db=Depends(get_db)):
         FROM pos_terminals
     """)
     return row_to_dict(row)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # QR CODE ENDPOINTS
@@ -972,7 +941,6 @@ async def list_qr_codes(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/qr-codes/generate", status_code=201, tags=["QR Codes"])
 async def generate_qr_code(data: QRGenerateRequest, db=Depends(get_db)):
     import uuid, hashlib
@@ -986,7 +954,6 @@ async def generate_qr_code(data: QRGenerateRequest, db=Depends(get_db)):
         RETURNING *
     """, qr_id, data.agent_id, qr_data, qr_hash, data.transaction_type, data.amount, expires_at)
     return row_to_dict(row)
-
 
 @app.post("/api/v1/qr-codes/validate", tags=["QR Codes"])
 async def validate_qr_code(data: dict = Body(...), db=Depends(get_db)):
@@ -1005,7 +972,6 @@ async def validate_qr_code(data: dict = Body(...), db=Depends(get_db)):
         return {"valid": False, "reason": "QR code expired"}
     return {"valid": True, "qr_code": r}
 
-
 @app.get("/api/v1/qr-codes/stats", tags=["QR Codes"])
 async def get_qr_stats(db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -1017,7 +983,6 @@ async def get_qr_stats(db=Depends(get_db)):
         FROM qr_codes
     """)
     return row_to_dict(row)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANALYTICS ENDPOINTS
@@ -1080,7 +1045,6 @@ async def get_analytics_overview(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/analytics/transactions", tags=["Analytics"])
 async def get_transaction_analytics(
     period: str = Query("month"),
@@ -1100,7 +1064,6 @@ async def get_transaction_analytics(
     """, interval)
     return rows_to_list(rows)
 
-
 @app.get("/api/v1/analytics/agents", tags=["Analytics"])
 async def get_agent_analytics(period: str = Query("month"), db=Depends(get_db)):
     period_map = {"today": "1 day", "week": "7 days", "month": "30 days", "year": "365 days"}
@@ -1116,7 +1079,6 @@ async def get_agent_analytics(period: str = Query("month"), db=Depends(get_db)):
         GROUP BY a.tier ORDER BY total_volume DESC
     """, interval)
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # INVENTORY ENDPOINTS
@@ -1147,7 +1109,6 @@ async def list_inventory(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/inventory", status_code=201, tags=["Inventory"])
 async def create_inventory_item(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -1159,7 +1120,6 @@ async def create_inventory_item(data: dict = Body(...), db=Depends(get_db)):
     """, item_id, data.get("name"), data.get("sku"), data.get("category"),
         data.get("quantity", 0), data.get("unit_price", 0), data.get("reorder_level", 10))
     return row_to_dict(row)
-
 
 @app.put("/api/v1/inventory/{item_id}", tags=["Inventory"])
 async def update_inventory_item(item_id: str, data: dict = Body(...), db=Depends(get_db)):
@@ -1176,14 +1136,12 @@ async def update_inventory_item(item_id: str, data: dict = Body(...), db=Depends
         raise HTTPException(status_code=404, detail="Item not found")
     return row_to_dict(row)
 
-
 @app.delete("/api/v1/inventory/{item_id}", tags=["Inventory"])
 async def delete_inventory_item(item_id: str, db=Depends(get_db)):
     result = await db.execute("DELETE FROM inventory_items WHERE id = $1", item_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Item not found")
     return {"message": "Item deleted"}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SETTINGS ENDPOINTS
@@ -1197,7 +1155,6 @@ async def get_settings(category: Optional[str] = Query(None), db=Depends(get_db)
         rows = await db.fetch("SELECT * FROM platform_settings ORDER BY category, key")
     return rows_to_list(rows)
 
-
 @app.put("/api/v1/settings", tags=["Settings"])
 async def update_settings(data: SettingsUpdate, db=Depends(get_db)):
     import json
@@ -1210,14 +1167,12 @@ async def update_settings(data: SettingsUpdate, db=Depends(get_db)):
     """, data.key, value_str, data.category)
     return row_to_dict(row)
 
-
 @app.get("/api/v1/settings/{key}", tags=["Settings"])
 async def get_setting(key: str, db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM platform_settings WHERE key = $1", key)
     if not row:
         raise HTTPException(status_code=404, detail="Setting not found")
     return row_to_dict(row)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CBN COMPLIANCE ENDPOINTS
@@ -1249,7 +1204,6 @@ async def list_cbn_reports(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/cbn-compliance/reports", status_code=201, tags=["CBN Compliance"])
 async def create_cbn_report(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -1261,12 +1215,10 @@ async def create_cbn_report(data: dict = Body(...), db=Depends(get_db)):
         data.get("period_end"), str(data.get("data", {})))
     return row_to_dict(row)
 
-
 @app.get("/api/v1/cbn-compliance/thresholds", tags=["CBN Compliance"])
 async def get_cbn_thresholds(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM cbn_thresholds ORDER BY transaction_type")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/cbn-compliance/violations", tags=["CBN Compliance"])
 async def get_cbn_violations(
@@ -1281,7 +1233,6 @@ async def get_cbn_violations(
         page_size, offset
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # VAT MANAGEMENT ENDPOINTS
@@ -1298,7 +1249,6 @@ async def list_vat_returns(
     rows = await db.fetch("SELECT * FROM vat_returns ORDER BY period_end DESC LIMIT $1 OFFSET $2", page_size, offset)
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/vat/returns", status_code=201, tags=["VAT Management"])
 async def create_vat_return(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -1310,12 +1260,10 @@ async def create_vat_return(data: dict = Body(...), db=Depends(get_db)):
         data.get("taxable_amount", 0), data.get("vat_amount", 0))
     return row_to_dict(row)
 
-
 @app.get("/api/v1/vat/rates", tags=["VAT Management"])
 async def get_vat_rates(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM vat_rates WHERE active = true ORDER BY effective_date DESC")
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GEOFENCING ENDPOINTS
@@ -1343,7 +1291,6 @@ async def list_geofence_zones(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/geofencing/zones", status_code=201, tags=["Geofencing"])
 async def create_geofence_zone(data: GeofenceCreate, db=Depends(get_db)):
     import uuid
@@ -1354,7 +1301,6 @@ async def create_geofence_zone(data: GeofenceCreate, db=Depends(get_db)):
     """, str(uuid.uuid4()), data.name, data.agent_id, data.latitude,
         data.longitude, data.radius_meters, data.active)
     return row_to_dict(row)
-
 
 @app.put("/api/v1/geofencing/zones/{zone_id}", tags=["Geofencing"])
 async def update_geofence_zone(zone_id: str, data: dict = Body(...), db=Depends(get_db)):
@@ -1371,14 +1317,12 @@ async def update_geofence_zone(zone_id: str, data: dict = Body(...), db=Depends(
         raise HTTPException(status_code=404, detail="Zone not found")
     return row_to_dict(row)
 
-
 @app.delete("/api/v1/geofencing/zones/{zone_id}", tags=["Geofencing"])
 async def delete_geofence_zone(zone_id: str, db=Depends(get_db)):
     result = await db.execute("DELETE FROM geofence_zones WHERE id = $1", zone_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Zone not found")
     return {"message": "Zone deleted"}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STOREFRONT ADS ENDPOINTS
@@ -1410,7 +1354,6 @@ async def list_storefront_ads(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/storefront-ads", status_code=201, tags=["Storefront Ads"])
 async def create_storefront_ad(data: StorefrontAdCreate, db=Depends(get_db)):
     import uuid
@@ -1422,7 +1365,6 @@ async def create_storefront_ad(data: StorefrontAdCreate, db=Depends(get_db)):
     """, str(uuid.uuid4()), data.title, data.description, data.agent_id, data.image_url,
         data.target_radius_km, data.budget, data.start_date, data.end_date)
     return row_to_dict(row)
-
 
 @app.put("/api/v1/storefront-ads/{ad_id}", tags=["Storefront Ads"])
 async def update_storefront_ad(ad_id: str, data: dict = Body(...), db=Depends(get_db)):
@@ -1439,14 +1381,12 @@ async def update_storefront_ad(ad_id: str, data: dict = Body(...), db=Depends(ge
         raise HTTPException(status_code=404, detail="Ad not found")
     return row_to_dict(row)
 
-
 @app.delete("/api/v1/storefront-ads/{ad_id}", tags=["Storefront Ads"])
 async def delete_storefront_ad(ad_id: str, db=Depends(get_db)):
     result = await db.execute("DELETE FROM storefront_ads WHERE id = $1", ad_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Ad not found")
     return {"message": "Ad deleted"}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SHAREABLE LINKS ENDPOINTS
@@ -1474,7 +1414,6 @@ async def list_shareable_links(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/shareable-links", status_code=201, tags=["Shareable Links"])
 async def create_shareable_link(data: dict = Body(...), db=Depends(get_db)):
     import uuid, secrets
@@ -1489,14 +1428,12 @@ async def create_shareable_link(data: dict = Body(...), db=Depends(get_db)):
         short_code, data.get("link_type", "payment"), data.get("target_url", ""))
     return row_to_dict(row)
 
-
 @app.delete("/api/v1/shareable-links/{link_id}", tags=["Shareable Links"])
 async def delete_shareable_link(link_id: str, db=Depends(get_db)):
     result = await db.execute("UPDATE shareable_links SET active = false WHERE id = $1", link_id)
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Link not found")
     return {"message": "Link deactivated"}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STORE MAP ENDPOINTS
@@ -1530,7 +1467,6 @@ async def list_store_locations(
         )
     return rows_to_list(rows)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ERP ACCOUNTING ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1539,7 +1475,6 @@ async def list_store_locations(
 async def list_erp_accounts(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM erp_accounts ORDER BY account_code")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/erp/journal-entries", tags=["ERP Accounting"])
 async def list_journal_entries(
@@ -1567,7 +1502,6 @@ async def list_journal_entries(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.get("/api/v1/erp/balance-sheet", tags=["ERP Accounting"])
 async def get_balance_sheet(as_of: Optional[str] = Query(None), db=Depends(get_db)):
     date_filter = f"AND entry_date <= '{as_of}'" if as_of else ""
@@ -1580,7 +1514,6 @@ async def get_balance_sheet(as_of: Optional[str] = Query(None), db=Depends(get_d
         ORDER BY a.account_code
     """)
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMMUNICATION HUB ENDPOINTS
@@ -1612,7 +1545,6 @@ async def list_messages(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/communication/messages", status_code=201, tags=["Communication"])
 async def send_message(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -1624,12 +1556,10 @@ async def send_message(data: dict = Body(...), db=Depends(get_db)):
         data.get("channel", "sms"), data.get("subject"), data.get("body"))
     return row_to_dict(row)
 
-
 @app.get("/api/v1/communication/templates", tags=["Communication"])
 async def list_templates(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM communication_templates WHERE active = true ORDER BY name")
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SYSTEM HEALTH ENDPOINTS
@@ -1677,12 +1607,10 @@ async def get_health_status(db=Depends(get_db)):
         "version": "14.0.0",
     }
 
-
 @app.get("/api/v1/health/services", tags=["System Health"])
 async def get_service_health(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM service_health ORDER BY name")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/health/metrics", tags=["System Health"])
 async def get_system_metrics(db=Depends(get_db)):
@@ -1694,7 +1622,6 @@ async def get_system_metrics(db=Depends(get_db)):
     """)
     return rows_to_list(rows)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # TIGERBEETLE ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1703,7 +1630,6 @@ async def get_system_metrics(db=Depends(get_db)):
 async def get_tigerbeetle_status(db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM service_health WHERE name = 'tigerbeetle' LIMIT 1")
     return row_to_dict(row) if row else {"status": "unknown", "name": "tigerbeetle"}
-
 
 @app.get("/api/v1/tigerbeetle/accounts", tags=["TigerBeetle"])
 async def list_tigerbeetle_accounts(
@@ -1719,7 +1645,6 @@ async def list_tigerbeetle_accounts(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.get("/api/v1/tigerbeetle/transfers", tags=["TigerBeetle"])
 async def list_tigerbeetle_transfers(
     page: int = Query(1, ge=1),
@@ -1734,7 +1659,6 @@ async def list_tigerbeetle_transfers(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/tigerbeetle/sync/trigger", tags=["TigerBeetle"])
 async def trigger_tigerbeetle_sync(db=Depends(get_db)):
     import uuid
@@ -1745,7 +1669,6 @@ async def trigger_tigerbeetle_sync(db=Depends(get_db)):
     """, sync_id)
     return {"sync_id": sync_id, "status": "triggered", "message": "TigerBeetle sync initiated"}
 
-
 @app.get("/api/v1/tigerbeetle/sync/status", tags=["TigerBeetle"])
 async def get_tigerbeetle_sync_status(db=Depends(get_db)):
     row = await db.fetchrow("""
@@ -1753,7 +1676,6 @@ async def get_tigerbeetle_sync_status(db=Depends(get_db)):
         ORDER BY started_at DESC LIMIT 1
     """)
     return row_to_dict(row) if row else {"status": "never_run"}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FLUVIO STREAMING ENDPOINTS
@@ -1764,18 +1686,15 @@ async def get_fluvio_status(db=Depends(get_db)):
     row = await db.fetchrow("SELECT * FROM service_health WHERE name = 'fluvio' LIMIT 1")
     return row_to_dict(row) if row else {"status": "unknown", "name": "fluvio"}
 
-
 @app.get("/api/v1/fluvio/topics", tags=["Fluvio"])
 async def list_fluvio_topics(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM fluvio_topics ORDER BY name")
     return rows_to_list(rows)
 
-
 @app.get("/api/v1/fluvio/consumers", tags=["Fluvio"])
 async def list_fluvio_consumers(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM fluvio_consumers ORDER BY name")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/fluvio/metrics", tags=["Fluvio"])
 async def get_fluvio_metrics(db=Depends(get_db)):
@@ -1786,7 +1705,6 @@ async def get_fluvio_metrics(db=Depends(get_db)):
         ORDER BY recorded_at DESC
     """)
     return rows_to_list(rows)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AGENT SCORECARD ENDPOINTS
@@ -1848,7 +1766,6 @@ async def get_agent_scorecard(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # WALLET TRANSPARENCY ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1859,7 +1776,6 @@ async def get_agent_wallet(agent_id: str, db=Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Wallet not found")
     return row_to_dict(row)
-
 
 @app.get("/api/v1/agents/{agent_id}/wallet/transactions", tags=["Wallet Transparency"])
 async def get_wallet_transactions(
@@ -1876,7 +1792,6 @@ async def get_wallet_transactions(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # MULTI-SIM FAILOVER ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1885,7 +1800,6 @@ async def get_wallet_transactions(
 async def get_multi_sim_status(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM sim_cards ORDER BY priority")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/multi-sim/failover-log", tags=["Multi-SIM"])
 async def get_failover_log(
@@ -1900,7 +1814,6 @@ async def get_failover_log(
         page_size, offset
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # INSTANT REVERSAL ENDPOINTS
@@ -1928,7 +1841,6 @@ async def list_reversals(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # NFC/QR MANAGEMENT ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1955,7 +1867,6 @@ async def list_nfc_tags(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/nfc/tags", status_code=201, tags=["NFC/QR"])
 async def register_nfc_tag(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -1966,7 +1877,6 @@ async def register_nfc_tag(data: dict = Body(...), db=Depends(get_db)):
     """, str(uuid.uuid4()), data.get("agent_id"), data.get("tag_uid"), data.get("tag_type", "ntag213"))
     return row_to_dict(row)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # EMBEDDED FINANCE ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1975,7 +1885,6 @@ async def register_nfc_tag(data: dict = Body(...), db=Depends(get_db)):
 async def list_finance_products(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM finance_products WHERE active = true ORDER BY name")
     return rows_to_list(rows)
-
 
 @app.get("/api/v1/finance/loans", tags=["Embedded Finance"])
 async def list_loans(
@@ -2003,7 +1912,6 @@ async def list_loans(
     )
     return {"items": rows_to_list(rows), "total": total, "page": page, "page_size": page_size}
 
-
 @app.post("/api/v1/finance/loans/apply", status_code=201, tags=["Embedded Finance"])
 async def apply_for_loan(data: dict = Body(...), db=Depends(get_db)):
     import uuid
@@ -2013,7 +1921,6 @@ async def apply_for_loan(data: dict = Body(...), db=Depends(get_db)):
         RETURNING *
     """, str(uuid.uuid4()), data.get("agent_id"), data.get("amount"), data.get("purpose"))
     return row_to_dict(row)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ROOT & HEALTH
@@ -2030,7 +1937,6 @@ async def root():
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-
 @app.get("/health", tags=["Health"])
 async def health_check():
     db_ok = _db_pool is not None
@@ -2042,7 +1948,6 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
@@ -2052,7 +1957,6 @@ if __name__ == "__main__":
         workers=int(os.getenv("WORKERS", 4)),
         log_level="info",
     )
-
 
 # ============================================================================
 # EXTENDED POS ENDPOINTS — Production-grade terminal management

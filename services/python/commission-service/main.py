@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -102,7 +101,6 @@ async def health_check():
         return {"status": "healthy", "service": "commission-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "commission-service", "error": str(e)}
-
 
 class CommissionRuleCreate(BaseModel):
     corridor: str
@@ -180,7 +178,6 @@ async def commission_stats(token: str = Depends(verify_token)):
                GROUP BY r.corridor ORDER BY total_fees DESC"""
         )
         return {"total_fees_collected": float(total), "total_transactions": count, "by_corridor": [dict(r) for r in by_corridor]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8114)

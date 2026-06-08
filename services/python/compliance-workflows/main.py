@@ -40,7 +40,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -96,7 +95,6 @@ async def health_check():
         return {"status": "healthy", "service": "compliance-workflows", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "compliance-workflows", "error": str(e)}
-
 
 class WorkflowCreate(BaseModel):
     workflow_type: str
@@ -162,7 +160,6 @@ async def get_workflow(wf_id: str, token: str = Depends(verify_token)):
         if not row:
             raise HTTPException(status_code=404, detail="Workflow not found")
         return dict(row)
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8117)

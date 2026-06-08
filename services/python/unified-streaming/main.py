@@ -45,7 +45,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Fluvio client
 try:
     from fluvio import Fluvio, Offset
@@ -76,7 +75,6 @@ class StreamingPlatform(str, Enum):
     KAFKA = "kafka"
     BOTH = "both"
 
-
 class RoutingStrategy(str, Enum):
     """Event routing strategies"""
     FLUVIO_ONLY = "fluvio_only"
@@ -85,7 +83,6 @@ class RoutingStrategy(str, Enum):
     KAFKA_PRIMARY = "kafka_primary"  # Kafka primary, Fluvio backup
     DUAL_WRITE = "dual_write"  # Write to both
     SMART_ROUTE = "smart_route"  # Route based on event type
-
 
 @dataclass
 class BankingEvent:
@@ -102,7 +99,6 @@ class BankingEvent:
     tenant_id: Optional[str] = None
     platform: Optional[str] = None  # Which platform produced this
 
-
 class ProduceRequest(BaseModel):
     """Request model for producing events"""
     topic: str = Field(..., description="Topic name")
@@ -115,7 +111,6 @@ class ProduceRequest(BaseModel):
     platform: Optional[StreamingPlatform] = Field(None, description="Target platform")
     correlation_id: Optional[str] = Field(None, description="Correlation ID")
     tenant_id: Optional[str] = Field(None, description="Tenant ID")
-
 
 # ============================================================================
 # Topic Configuration
@@ -148,7 +143,6 @@ TOPIC_CONFIG = {
     "banking.customers.activity": {"platform": "smart", "priority": "normal"},
     "banking.notifications": {"platform": "smart", "priority": "normal"},
 }
-
 
 # ============================================================================
 # Unified Streaming Platform
@@ -418,13 +412,11 @@ class UnifiedStreamingPlatform:
         
         logger.info("✅ Unified streaming platform closed")
 
-
 # ============================================================================
 # FastAPI Application
 # ============================================================================
 
 streaming_platform: Optional[UnifiedStreamingPlatform] = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -444,7 +436,6 @@ async def lifespan(app: FastAPI):
     logger.info("⏹️ Shutting down unified streaming platform...")
     if streaming_platform:
         await streaming_platform.close()
-
 
 app = FastAPI(
 
@@ -488,7 +479,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     lifespan=lifespan
 )
 
-
 # ============================================================================
 # API Endpoints
 # ============================================================================
@@ -504,7 +494,6 @@ async def root():
             "kafka": KAFKA_AVAILABLE
         }
     }
-
 
 @app.get("/health")
 async def health_check():
@@ -524,7 +513,6 @@ async def health_check():
         }
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Get metrics"""
@@ -533,7 +521,6 @@ async def get_metrics():
     
     return await streaming_platform.get_metrics()
 
-
 @app.get("/topics")
 async def list_topics():
     """List topics and their routing"""
@@ -541,7 +528,6 @@ async def list_topics():
         "topics": TOPIC_CONFIG,
         "count": len(TOPIC_CONFIG)
     }
-
 
 @app.post("/produce")
 async def produce_event(request: ProduceRequest):
@@ -579,7 +565,6 @@ async def produce_event(request: ProduceRequest):
         "topic": request.topic,
         "platforms": results
     }
-
 
 # ============================================================================
 # Main

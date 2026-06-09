@@ -284,11 +284,7 @@ export const billPaymentsRouter = router({
           description: `billPayments transaction`,
           debitAccountId: 2001,
           creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
+          amount: Math.round(input.amount * 100),
           currency: "NGN",
           referenceType: "transaction",
           referenceId: ref ?? String(Date.now()),

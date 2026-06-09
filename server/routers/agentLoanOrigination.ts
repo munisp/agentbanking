@@ -325,52 +325,55 @@ export const agentLoanOriginationRouter = router({
           const netDisbursement = amount - fee.fee;
           const ref = `LD-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
-          // Credit agent float with loan amount (minus processing fee)
-          await db
-            .update(agents)
-            .set({
-              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netDisbursement)}`,
-            })
-            .where(eq(agents.id, loan.agentId));
+          // Wrap disbursement DB writes in a transaction for ACID guarantees
+          await withTransaction(async (tx: typeof db) => {
+            // Credit agent float with loan amount (minus processing fee)
+            await tx
+              .update(agents)
+              .set({
+                floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netDisbursement)}`,
+              })
+              .where(eq(agents.id, loan.agentId));
 
-          // Update loan status
-          await db
-            .update(agentLoans)
-            .set({
-              status: "disbursed",
-              disbursedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(agentLoans.id, input.loanId));
+            // Update loan status
+            await tx
+              .update(agentLoans)
+              .set({
+                status: "disbursed",
+                disbursedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(agentLoans.id, input.loanId));
 
-          // Record as transaction
-          await db.insert(transactions).values({
-            ref,
-            idempotencyKey: input.idempotencyKey,
-            agentId: loan.agentId,
-            type: "Transfer",
-            amount: String(amount),
-            fee: String(fee.fee),
-            commission: "0",
-            currency: "NGN",
-            status: "success",
-            channel: "System",
-            metadata: { loanId: input.loanId, type: "loan_disbursement" },
-          });
+            // Record as transaction
+            await tx.insert(transactions).values({
+              ref,
+              idempotencyKey: input.idempotencyKey,
+              agentId: loan.agentId,
+              type: "Transfer",
+              amount: String(amount),
+              fee: String(fee.fee),
+              commission: "0",
+              currency: "NGN",
+              status: "success",
+              channel: "System",
+              metadata: { loanId: input.loanId, type: "loan_disbursement" },
+            });
 
-          // Double-entry: Debit Loan Receivable, Credit Agent Float
-          await db.insert(gl_journal_entries).values({
-            entryNumber: `JE-${ref}`,
-            description: `Loan disbursement #${input.loanId}`,
-            debitAccountId: 1200, // Loans Receivable (asset)
-            creditAccountId: 2001, // Agent Float (liability)
-            amount: Math.round(netDisbursement * 100),
-            currency: "NGN",
-            referenceType: "loan",
-            referenceId: String(input.loanId),
-            postedBy: session.agentCode,
-            status: "posted",
-          });
+            // Double-entry: Debit Loan Receivable, Credit Agent Float
+            await tx.insert(gl_journal_entries).values({
+              entryNumber: `JE-${ref}`,
+              description: `Loan disbursement #${input.loanId}`,
+              debitAccountId: 1200, // Loans Receivable (asset)
+              creditAccountId: 2001, // Agent Float (liability)
+              amount: Math.round(netDisbursement * 100),
+              currency: "NGN",
+              referenceType: "loan",
+              referenceId: String(input.loanId),
+              postedBy: session.agentCode,
+              status: "posted",
+            });
+          }, "loanDisbursement");
 
           await writeAuditLog({
             agentId: session.id,

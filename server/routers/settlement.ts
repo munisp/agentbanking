@@ -133,7 +133,11 @@ async function recordLedgerTransfer(
   amount: number
 ) {
   try {
-    await tbCreateTransfer({ debitId, creditId, amount } as any);
+    await tbCreateTransfer({
+      debitAccountId: debitId,
+      creditAccountId: creditId,
+      amount,
+    });
   } catch {
     // Log but don't block
   }

@@ -82,7 +82,13 @@ export async function recordBillingAudit(params: {
     try {
       // In production, use kafkajs producer
       // Kafka publish: billing.audit event
-      void { auditId: entry.id, tenantId: ctx.tenantId, action, resourceType, resourceId };
+      void {
+        auditId: entry.id,
+        tenantId: ctx.tenantId,
+        action,
+        resourceType,
+        resourceId,
+      };
     } catch (e) {
       console.warn(
         "[BillingAudit] Kafka publish failed:",

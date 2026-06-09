@@ -1,11 +1,13 @@
 package com.pos54link.app.offline
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.room.*
 import androidx.work.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.Calendar
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
@@ -22,7 +24,10 @@ data class OfflineTransactionEntity(
     val status: String,
     val data: String,
     val createdAt: Long,
-    val syncedAt: Long? = null
+    val syncedAt: Long? = null,
+    val idempotencyKey: String? = null,
+    val fee: Double = 0.0,
+    val commission: Double = 0.0
 )
 
 /**
@@ -63,6 +68,12 @@ interface OfflineTransactionDao {
     
     @Query("SELECT COUNT(*) FROM offline_transactions WHERE status = 'pending_sync'")
     fun getPendingTransactionCount(): Flow<Int>
+
+    @Query("SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) FROM offline_transactions WHERE createdAt >= :dayStartMs")
+    suspend fun getDailyTotal(dayStartMs: Long): Double
+
+    @Query("SELECT COUNT(*) FROM offline_transactions WHERE createdAt >= :sessionStartMs AND status = 'pending_sync'")
+    suspend fun getSessionPendingCount(sessionStartMs: Long): Int
 }
 
 /**
@@ -142,19 +153,52 @@ class OfflineManager(
     private val context: Context,
     private val database: OfflineDatabase
 ) {
-    
+
+    companion object {
+        // CBN daily transaction limits (Naira)
+        private const val CBN_DAILY_LIMIT_BASE = 500_000.0
+        // Tier multipliers (matches backend offlinePosMode.ts)
+        private val TIER_MULTIPLIERS = mapOf(
+            "bronze" to 1.0,
+            "silver" to 1.5,
+            "gold" to 2.0,
+            "platinum" to 3.0
+        )
+        // Max offline queue size
+        private const val MAX_QUEUE_SIZE_BASE = 50
+        // Max single transaction amount offline
+        private const val MAX_SINGLE_TXN_BASE = 100_000.0
+        // Max session duration (minutes)
+        private const val MAX_SESSION_DURATION_MIN = 480L
+        // Offline risk multiplier for fee calculation
+        private const val OFFLINE_RISK_MULTIPLIER = 1.5
+    }
+
     private val transactionDao = database.transactionDao()
     private val beneficiaryDao = database.beneficiaryDao()
-    
+    private val prefs: SharedPreferences = context.getSharedPreferences("offline_session", Context.MODE_PRIVATE)
+
     private val _isOnline = MutableStateFlow(true)
     val isOnline: StateFlow<Boolean> = _isOnline
-    
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing
-    
+
     val pendingTransactionCount: Flow<Int> = transactionDao.getPendingTransactionCount()
     val pendingBeneficiaryCount: Flow<Int> = beneficiaryDao.getPendingBeneficiaryCount()
-    
+
+    private var sessionStartMs: Long
+        get() = prefs.getLong("session_start_ms", 0L)
+        set(value) = prefs.edit().putLong("session_start_ms", value).apply()
+
+    private var floatSnapshot: Double
+        get() = prefs.getFloat("float_snapshot", 0f).toDouble()
+        set(value) = prefs.edit().putFloat("float_snapshot", value.toFloat()).apply()
+
+    private var agentTier: String
+        get() = prefs.getString("agent_tier", "bronze") ?: "bronze"
+        set(value) = prefs.edit().putString("agent_tier", value).apply()
+
     init {
         setupNetworkMonitoring()
         setupPeriodicSync()
@@ -191,9 +235,105 @@ class OfflineManager(
     }
     
     /**
-     * Queue transaction for offline processing
+     * Start an offline session — records agent's float balance and tier at session start.
+     * Matches backend offlinePosMode.startSession behavior.
      */
-    suspend fun queueTransaction(transaction: Transaction) {
+    fun startOfflineSession(currentFloat: Double, tier: String) {
+        sessionStartMs = System.currentTimeMillis()
+        floatSnapshot = currentFloat
+        agentTier = tier
+    }
+
+    /**
+     * End offline session — requires sync if there are pending transactions.
+     */
+    fun endOfflineSession() {
+        prefs.edit().remove("session_start_ms").apply()
+    }
+
+    val isSessionActive: Boolean
+        get() = sessionStartMs > 0L
+
+    /**
+     * Validate an offline transaction against CBN daily limits, tier-based caps,
+     * and queue size limits. Matches backend offlinePosMode.validateOfflineTransaction.
+     *
+     * @return null if valid, or a String describing the validation failure.
+     */
+    suspend fun validateOfflineTransaction(amount: Double): String? {
+        val tierMultiplier = TIER_MULTIPLIERS[agentTier] ?: 1.0
+        val maxDailyLimit = CBN_DAILY_LIMIT_BASE * tierMultiplier
+        val maxSingleTxn = MAX_SINGLE_TXN_BASE * tierMultiplier
+        val maxQueueSize = (MAX_QUEUE_SIZE_BASE * tierMultiplier).toInt()
+
+        // 1. Single transaction amount cap
+        if (amount > maxSingleTxn) {
+            return "Amount exceeds offline single-transaction limit of ₦${String.format("%,.0f", maxSingleTxn)}"
+        }
+
+        // 2. CBN daily limit check
+        val dayStartMs = getDayStartMs()
+        val dailyTotal = transactionDao.getDailyTotal(dayStartMs)
+        if (dailyTotal + amount > maxDailyLimit) {
+            val remaining = maxDailyLimit - dailyTotal
+            return "Would exceed CBN daily offline limit of ₦${String.format("%,.0f", maxDailyLimit)}. Remaining: ₦${String.format("%,.0f", remaining.coerceAtLeast(0.0))}"
+        }
+
+        // 3. Queue size limit
+        if (sessionStartMs > 0L) {
+            val queueCount = transactionDao.getSessionPendingCount(sessionStartMs)
+            if (queueCount >= maxQueueSize) {
+                return "Offline queue full ($queueCount/$maxQueueSize transactions). Sync pending transactions first."
+            }
+        }
+
+        // 4. Session duration check
+        if (sessionStartMs > 0L) {
+            val elapsedMin = (System.currentTimeMillis() - sessionStartMs) / 60_000
+            if (elapsedMin > MAX_SESSION_DURATION_MIN) {
+                return "Offline session expired (${elapsedMin}min > ${MAX_SESSION_DURATION_MIN}min max). Please go online to sync."
+            }
+        }
+
+        // 5. Float balance check
+        if (floatSnapshot > 0 && amount > floatSnapshot) {
+            return "Amount exceeds agent float snapshot of ₦${String.format("%,.0f", floatSnapshot)}"
+        }
+
+        return null // Valid
+    }
+
+    /**
+     * Calculate offline fee with risk multiplier.
+     */
+    fun calculateOfflineFee(amount: Double): Double {
+        val baseFeeRate = 0.005 // 0.5% base fee
+        return amount * baseFeeRate * OFFLINE_RISK_MULTIPLIER
+    }
+
+    private fun getDayStartMs(): Long {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    /**
+     * Queue transaction for offline processing.
+     * Validates against CBN limits before queuing.
+     *
+     * @throws IllegalStateException if CBN/tier validation fails
+     */
+    suspend fun queueTransaction(transaction: Transaction, idempotencyKey: String? = null) {
+        // Validate before queuing
+        val validationError = validateOfflineTransaction(transaction.amount)
+        if (validationError != null) {
+            throw IllegalStateException(validationError)
+        }
+
+        val fee = calculateOfflineFee(transaction.amount)
         val entity = OfflineTransactionEntity(
             id = transaction.id,
             type = transaction.type,
@@ -202,9 +342,16 @@ class OfflineManager(
             recipientId = transaction.recipientId,
             status = "pending_sync",
             data = transaction.toJson(),
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            idempotencyKey = idempotencyKey,
+            fee = fee
         )
-        
+
+        // Deduct from float snapshot
+        if (floatSnapshot > 0) {
+            floatSnapshot -= (transaction.amount + fee)
+        }
+
         transactionDao.insertTransaction(entity)
     }
     

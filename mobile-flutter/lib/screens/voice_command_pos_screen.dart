@@ -8,122 +8,234 @@ class VoiceCommandPosScreen extends StatefulWidget {
 }
 
 class _VoiceCommandPosScreenState extends State<VoiceCommandPosScreen> {
-  Map<String, dynamic> _data = {};
-  List<dynamic> _items = [];
-  bool _loading = true;
-  String _error = '';
-  String _search = '';
+  bool _isListening = false;
+  String _commandText = '';
+  String _selectedLanguage = 'english';
+  Map<String, dynamic>? _parsedIntent;
+  bool _confirmationPending = false;
+  String _resultMessage = '';
+  bool _processing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  final _languages = {
+    'english': 'English',
+    'yoruba': 'Yoruba',
+    'hausa': 'Hausa',
+    'igbo': 'Igbo',
+    'pidgin': 'Nigerian Pidgin',
+  };
 
-  Future<void> _load() async {
+  Future<void> _processCommand() async {
+    if (_commandText.isEmpty) return;
+    setState(() => _processing = true);
     try {
-      final result = await ApiService.instance.get('/pos/list', queryParams: {'page': '1', 'limit': '50'});
-      setState(() {
-        _data = result ?? {};
-        _items = result['items'] ?? result['data'] ?? [];
-        _loading = false;
-      });
+      final result = await ApiService.instance.post(
+        '/api/trpc/voiceCommandPos.processCommand',
+        body: {
+          'json': {
+            'rawText': _commandText,
+            'language': _selectedLanguage,
+            'idempotencyKey': 'IDK-${DateTime.now().millisecondsSinceEpoch}',
+          }
+        },
+      );
+      final data = result?['result']?['data']?['json'];
+      if (data != null) {
+        setState(() {
+          _parsedIntent = data;
+          _confirmationPending = true;
+          _processing = false;
+        });
+      }
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _resultMessage = 'Error: $e';
+        _processing = false;
+      });
     }
   }
 
-  List<dynamic> get _filtered => _items.where((item) {
-    if (_search.isEmpty) return true;
-    final q = _search.toLowerCase();
-    return (item['name'] ?? item['title'] ?? item['id'] ?? '').toString().toLowerCase().contains(q);
-  }).toList();
+  Future<void> _confirmAndExecute() async {
+    if (_parsedIntent == null) return;
+    setState(() => _processing = true);
+    try {
+      final result = await ApiService.instance.post(
+        '/api/trpc/voiceCommandPos.confirmAndExecute',
+        body: {
+          'json': {
+            'intent': _parsedIntent!['intent'],
+            'amount': _parsedIntent!['amount'],
+            'phone': _parsedIntent!['phone'],
+            'idempotencyKey': 'IDK-${DateTime.now().millisecondsSinceEpoch}',
+          }
+        },
+      );
+      setState(() {
+        _resultMessage = 'Transaction completed: ${result?['result']?['data']?['json']?['reference'] ?? 'Success'}';
+        _confirmationPending = false;
+        _parsedIntent = null;
+        _processing = false;
+      });
+    } catch (e) {
+      setState(() {
+        _resultMessage = 'Error: $e';
+        _processing = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Voice Command Pos'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _load(); }),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error.isNotEmpty
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
-                  Text(_error, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _load(); }, child: const Text('Retry')),
-                ]))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: Column(children: [
-                    // Search bar
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                        ),
-                        onChanged: (v) => setState(() => _search = v),
-                      ),
-                    ),
-                    // Summary cards
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        _summaryCard('Total', _items.length.toString(), Colors.blue),
-                        const SizedBox(width: 8),
-                        _summaryCard('Filtered', _filtered.length.toString(), Colors.green),
-                      ]),
-                    ),
-                    const SizedBox(height: 8),
-                    // List
-                    Expanded(
-                      child: _filtered.isEmpty
-                          ? const Center(child: Text('No items found'))
-                          : ListView.builder(
-                              itemCount: _filtered.length,
-                              itemBuilder: (ctx, i) {
-                                final item = _filtered[i];
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  child: ListTile(
-                                    leading: CircleAvatar(child: Text('${i + 1}')),
-                                    title: Text(item['name'] ?? item['title'] ?? item['id']?.toString() ?? 'Item ${i + 1}'),
-                                    subtitle: Text(item['status'] ?? item['type'] ?? ''),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Selected: ${item['name'] ?? item['id']}')),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ]),
-                ),
-    );
-  }
+      appBar: AppBar(title: const Text('Voice Command POS')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Language selector
+            const Text('Language', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: _languages.entries.map((e) {
+                return ChoiceChip(
+                  label: Text(e.value),
+                  selected: _selectedLanguage == e.key,
+                  onSelected: (_) => setState(() => _selectedLanguage = e.key),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
 
-  Widget _summaryCard(String label, String value, Color color) {
-    return Expanded(
-      child: Card(
-        color: color.withOpacity(0.1),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: TextStyle(color: color.withOpacity(0.8))),
-          ]),
+            // Voice input area
+            Card(
+              color: _isListening ? Colors.green[50] : null,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      size: 48,
+                      color: _isListening ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _isListening ? 'Listening...' : 'Tap to speak',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      '"Send five thousand naira to 08012345678"',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Listen button
+            ElevatedButton.icon(
+              onPressed: () => setState(() => _isListening = !_isListening),
+              icon: Icon(_isListening ? Icons.mic_off : Icons.mic),
+              label: Text(_isListening ? 'Stop Listening' : 'Start Voice Command'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isListening ? Colors.red : Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Manual text input
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Or type command',
+                hintText: 'e.g., send 5000 to 08012345678',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: (v) => setState(() => _commandText = v),
+            ),
+            const SizedBox(height: 8),
+
+            if (_commandText.isNotEmpty)
+              ElevatedButton(
+                onPressed: _processing ? null : _processCommand,
+                child: _processing
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Process Command'),
+              ),
+
+            // Two-step confirmation
+            if (_confirmationPending && _parsedIntent != null) ...[
+              const SizedBox(height: 16),
+              Card(
+                color: Colors.amber[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Confirm Transaction',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      Text('Type: ${_parsedIntent!['intent'] ?? 'unknown'}'),
+                      Text('Amount: ₦${_parsedIntent!['amount'] ?? 0}'),
+                      if (_parsedIntent!['phone'] != null)
+                        Text('Phone: ${_parsedIntent!['phone']}'),
+                      Text('Confidence: ${((_parsedIntent!['confidence'] ?? 0) * 100).toInt()}%'),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _processing ? null : _confirmAndExecute,
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                              child: const Text('Confirm & Execute',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => setState(() {
+                                _confirmationPending = false;
+                                _parsedIntent = null;
+                              }),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            // Result
+            if (_resultMessage.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                color: _resultMessage.startsWith('Error') ? Colors.red[50] : Colors.green[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _resultMessage.startsWith('Error')
+                            ? Icons.error_outline
+                            : Icons.check_circle,
+                        color: _resultMessage.startsWith('Error') ? Colors.red : Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_resultMessage)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

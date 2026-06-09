@@ -27,6 +27,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   active: ["suspended", "terminated", "completed"],
@@ -82,9 +83,11 @@ export const terminalLeasingRouter = router({
         depositAmount: z.number().min(0).default(0),
         includeInsurance: z.boolean().default(false),
         paymentDay: z.number().int().min(1).max(28).default(1),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
       return executeInTransaction(async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -201,6 +204,7 @@ export const terminalLeasingRouter = router({
             insuranceRate * input.durationMonths +
             input.depositAmount,
         };
+      });
       });
     }),
 

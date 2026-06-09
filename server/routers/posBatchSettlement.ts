@@ -12,6 +12,7 @@ import {
   posSettlementBatches,
   posTerminals,
   transactions,
+  gl_journal_entries,
   agents,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count, sum } from "drizzle-orm";
@@ -30,6 +31,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { validateInput } from "../lib/routerHelpers";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -81,9 +83,11 @@ export const posBatchSettlementRouter = router({
         periodStart: z.string().min(1).max(255),
         periodEnd: z.string().min(1).max(255),
         currency: z.string().length(3).default("NGN"),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
       return executeInTransaction(async () => {
         const db = (await getDb())!;
         const session = await getAgentFromCookie(ctx.req);
@@ -149,6 +153,21 @@ export const posBatchSettlementRouter = router({
           })
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `posBatchSettlement transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         logOperation("batch_created", {
           batchRef,
           terminalId: input.terminalId,
@@ -172,6 +191,7 @@ export const posBatchSettlementRouter = router({
           message: `Settlement batch created with ${txCount} transactions`,
           batch,
         };
+      });
       });
     }),
 
@@ -234,9 +254,11 @@ export const posBatchSettlementRouter = router({
       z.object({
         batchId: z.number().min(1),
         settlementRef: z.string().min(1).max(128).optional(),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
       return executeInTransaction(async () => {
         const db = (await getDb())!;
         const session = await getAgentFromCookie(ctx.req);
@@ -271,11 +293,36 @@ export const posBatchSettlementRouter = router({
           .where(eq(posSettlementBatches.id, input.batchId))
           .returning();
 
+        // Credit agent's float balance with net settlement amount
+        if (batch.agentId && batch.netAmount > 0) {
+          await db
+            .update(agents)
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(batch.netAmount)}`,
+            })
+            .where(eq(agents.id, batch.agentId));
+        }
+
+        // Double-entry GL: debit settlement clearing, credit agent float
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-SETTLE-${Date.now()}`,
+          description: `POS batch settlement payout to agent ${batch.agentId}`,
+          debitAccountId: 3001,
+          creditAccountId: 1001,
+          amount: Math.round(batch.netAmount * 100),
+          currency: batch.currency ?? "NGN",
+          referenceType: "pos_settlement",
+          referenceId: settleRef,
+          postedBy: session.agentCode,
+          status: "posted",
+        });
+
         logOperation("batch_settled", {
           batchId: input.batchId,
           batchRef: batch.batchRef,
           netAmount: batch.netAmount,
           settlementRef: settleRef,
+          agentCredited: batch.agentId,
         });
 
         await writeAuditLog({
@@ -297,6 +344,7 @@ export const posBatchSettlementRouter = router({
           message: "Batch settled successfully",
           batch: updated,
         };
+      });
       });
     }),
 

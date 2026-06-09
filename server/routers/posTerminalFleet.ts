@@ -13,6 +13,7 @@ import {
   terminalGroups,
   serviceRecords,
   agents,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -30,6 +31,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -68,10 +70,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -198,24 +196,32 @@ export const posTerminalFleetRouter = router({
         groupId: z.number().optional(),
         imei: z.string().max(20).optional(),
         simIccid: z.string().max(22).optional(),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      return withIdempotency(input.idempotencyKey, async () => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as any).status as string;
+        const currentStatus =
+          ((input as any).currentStatus as string) || "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "posTerminalFleet",
-        "mutation",
-        "Executed posTerminalFleet mutation"
-      );
-
+          ? Number((input as any).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "posTransaction");
+      const commission = calculateCommission(fees.fee, "posTransaction");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -247,6 +253,21 @@ export const posTerminalFleetRouter = router({
           })
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `posTerminalFleet transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         await writeAuditLog({
           agentId: session.id,
           agentCode: session.agentCode,
@@ -266,6 +287,7 @@ export const posTerminalFleetRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
+      });
     }),
 
   assign: protectedProcedure

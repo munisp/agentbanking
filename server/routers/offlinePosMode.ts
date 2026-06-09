@@ -26,6 +26,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -94,117 +95,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_OFFLINEPOSMODE = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_OFFLINEPOSMODE.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_OFFLINEPOSMODE.validateRange(data.amount, 0, 100_000_000)
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _offlinePosMode_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -291,21 +181,27 @@ export const offlinePosModeRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as any).status as string;
+        const currentStatus =
+          ((input as any).currentStatus as string) || "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "offlinePosMode",
-        "mutation",
-        "Executed offlinePosMode mutation"
-      );
-
+          ? Number((input as any).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "posTransaction");
+      const commission = calculateCommission(fees.fee, "posTransaction");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -452,6 +348,101 @@ export const offlinePosModeRouter = router({
         });
 
         return { success: true, tier, config: configValues };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  validateOfflineTransaction: protectedProcedure
+    .input(
+      z.object({
+        amount: z.number().positive(),
+        type: z.enum(["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"]),
+        customerPhone: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+
+        const db = (await getDb())!;
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // Get agent tier for CBN limit check
+        const agentRows = await db
+          .select({ tier: agents.tier, floatBalance: agents.floatBalance })
+          .from(agents)
+          .where(eq(agents.id, session.id))
+          .limit(1);
+
+        const tier = agentRows[0]?.tier ?? "Bronze";
+
+        // Check CBN daily limit for the agent
+        const limitCheck = await checkDailyLimit(db, session.id, tier, input.amount);
+        if (!limitCheck.allowed) {
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "OFFLINE_TX_CBN_LIMIT_EXCEEDED",
+            resource: "offline_transaction",
+            status: "failure",
+            metadata: {
+              amount: input.amount,
+              type: input.type,
+              todayTotal: limitCheck.todayTotal,
+              dailyLimit: limitCheck.dailyLimit,
+              tier,
+            },
+          });
+
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `CBN daily limit exceeded. Used: \u20A6${limitCheck.todayTotal.toLocaleString()}, Limit: \u20A6${limitCheck.dailyLimit.toLocaleString()} (${tier} tier)`,
+          });
+        }
+        const tierMultipliers: Record<string, number> = {
+          Bronze: 1, Silver: 1.5, Gold: 2, Platinum: 3,
+        };
+        const multiplier = tierMultipliers[tier] ?? 1;
+        const maxOfflineAmount = OFFLINE_DEFAULTS.maxOfflineAmount * multiplier;
+
+        if (input.amount > maxOfflineAmount) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Amount \u20A6${input.amount.toLocaleString()} exceeds offline limit \u20A6${maxOfflineAmount.toLocaleString()} for ${tier} tier`,
+          });
+        }
+
+        // Float balance check for debit operations
+        const floatBalance = Number(agentRows[0]?.floatBalance ?? 0);
+        if (["Cash Out", "Transfer", "Airtime", "Bill Payment"].includes(input.type)) {
+          if (floatBalance < input.amount) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Insufficient float. Balance: \u20A6${floatBalance.toLocaleString()}, Required: \u20A6${input.amount.toLocaleString()}`,
+            });
+          }
+        }
+
+        return {
+          valid: true,
+          amount: input.amount,
+          type: input.type,
+          tier,
+          cbnLimitRemaining: limitCheck.remaining,
+          offlineLimitRemaining: maxOfflineAmount - input.amount,
+          floatAfter:
+            ["Cash Out", "Transfer", "Airtime", "Bill Payment"].includes(input.type)
+              ? floatBalance - input.amount
+              : floatBalance + input.amount,
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -5276,3 +5276,37 @@ export const idempotencyKeys = pgTable(
     expiryIdx: index("idem_expiry_idx").on(t.expiresAt),
   })
 );
+
+// ─── Insurance Policies Table ──────────────────────────────────────────────
+export const insurance_policies = pgTable("insurance_policies", {
+  id: serial("id").primaryKey(),
+  policyNumber: varchar("policy_number", { length: 64 }).notNull().unique(),
+  agentId: integer("agent_id").notNull(),
+  productId: varchar("product_id", { length: 64 }).notNull(),
+  productName: varchar("product_name", { length: 128 }).notNull(),
+  category: varchar("category", { length: 64 }).notNull(),
+  monthlyPremium: integer("monthly_premium").notNull(),
+  coverageAmount: integer("coverage_amount").notNull(),
+  status: varchar("status", { length: 32 }).default("active").notNull(),
+  beneficiaryName: varchar("beneficiary_name", { length: 128 }).notNull(),
+  beneficiaryPhone: varchar("beneficiary_phone", { length: 20 }).notNull(),
+  startDate: varchar("start_date", { length: 16 }).notNull(),
+  waitingPeriodEnds: varchar("waiting_period_ends", { length: 16 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Insurance Claims Table ────────────────────────────────────────────────
+export const insurance_claims = pgTable("insurance_claims", {
+  id: serial("id").primaryKey(),
+  claimNumber: varchar("claim_number", { length: 64 }).notNull().unique(),
+  policyNumber: varchar("policy_number", { length: 64 }).notNull(),
+  agentId: integer("agent_id").notNull(),
+  claimType: varchar("claim_type", { length: 128 }).notNull(),
+  description: text("description").notNull(),
+  amount: integer("amount").notNull(),
+  status: varchar("status", { length: 32 }).default("submitted").notNull(),
+  evidenceUrls: json("evidence_urls").default([]),
+  adjudicationNotes: text("adjudication_notes"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

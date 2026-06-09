@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -17,6 +18,7 @@ import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -189,6 +191,23 @@ export const microInsuranceRouter = router({
 
       const policyRef = `INS-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
+      // Calculate risk-adjusted premium based on product category
+      const basePremium = product.monthlyPremium;
+      const riskMultiplier = product.category === "health" ? 1.15 : 1.0;
+      const adjustedPremium = Math.round(basePremium * riskMultiplier);
+      const startDate =
+        input.startDate || new Date().toISOString().split("T")[0];
+      const waitingEnds = new Date(
+        Date.now() + product.waitingPeriodDays * 86_400_000
+      )
+        .toISOString()
+        .split("T")[0];
+
+      // Persist policy enrollment to DB
+      await db.execute(
+        sql`INSERT INTO "insurance_policies" (policy_number, agent_id, product_id, product_name, category, monthly_premium, coverage_amount, status, beneficiary_name, beneficiary_phone, start_date, waiting_period_ends, created_at) VALUES (${policyRef}, ${session.id}, ${input.productId}, ${product.name}, ${product.category}, ${adjustedPremium}, ${product.coverageAmount}, 'active', ${input.beneficiaryName}, ${input.beneficiaryPhone}, ${startDate}, ${waitingEnds}, NOW())`
+      );
+
       await writeAuditLog({
         agentId: session.id,
         agentCode: session.agentCode,
@@ -198,7 +217,7 @@ export const microInsuranceRouter = router({
         status: "success",
         metadata: {
           productId: input.productId,
-          monthlyPremium: product.monthlyPremium,
+          monthlyPremium: adjustedPremium,
           coverageAmount: product.coverageAmount,
           beneficiary: input.beneficiaryName,
         },
@@ -209,14 +228,10 @@ export const microInsuranceRouter = router({
         productId: input.productId,
         productName: product.name,
         status: "active",
-        monthlyPremium: product.monthlyPremium,
+        monthlyPremium: adjustedPremium,
         coverageAmount: product.coverageAmount,
-        startDate: input.startDate || new Date().toISOString().split("T")[0],
-        waitingPeriodEnds: new Date(
-          Date.now() + product.waitingPeriodDays * 86_400_000
-        )
-          .toISOString()
-          .split("T")[0],
+        startDate,
+        waitingPeriodEnds: waitingEnds,
         beneficiaryName: input.beneficiaryName,
         beneficiaryPhone: input.beneficiaryPhone,
         createdAt: new Date().toISOString(),
@@ -239,6 +254,38 @@ export const microInsuranceRouter = router({
       if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
       const claimRef = `CLM-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+
+      // Validate policy exists and is claimable
+      const policyResult = await db.execute(
+        sql`SELECT coverage_amount, status, waiting_period_ends FROM "insurance_policies" WHERE policy_number = ${input.policyNumber} AND agent_id = ${session.id}`
+      );
+      const policyRow = (policyResult as any).rows?.[0];
+      if (!policyRow || policyRow.status !== "active") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Policy not found or not active",
+        });
+      }
+      if (
+        policyRow.waiting_period_ends &&
+        new Date(policyRow.waiting_period_ends) > new Date()
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Policy is still in waiting period",
+        });
+      }
+      if (input.amount > (policyRow.coverage_amount ?? 0)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Claim amount exceeds coverage limit",
+        });
+      }
+
+      // Persist claim to DB
+      await db.execute(
+        sql`INSERT INTO "insurance_claims" (claim_number, policy_number, agent_id, claim_type, description, amount, status, evidence_urls, created_at) VALUES (${claimRef}, ${input.policyNumber}, ${session.id}, ${input.claimType}, ${input.description}, ${input.amount}, 'submitted', ${JSON.stringify(input.evidenceUrls || [])}, NOW())`
+      );
 
       await writeAuditLog({
         agentId: session.id,

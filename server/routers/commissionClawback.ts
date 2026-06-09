@@ -226,20 +226,20 @@ export const commissionClawbackRouter = router({
         } as any)
         .returning();
 
-        // Double-entry GL journal entry
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-${Date.now()}`,
-          description: `commissionClawback transaction`,
-          debitAccountId: 2001,
-          creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100,
-          ),
-          currency: "NGN",
-          status: "posted",
-        });
+      // Double-entry GL journal entry
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${Date.now()}`,
+        description: `commissionClawback transaction`,
+        debitAccountId: 2001,
+        creditAccountId: 1001,
+        amount: Math.round(
+          (typeof input === "object" && "amount" in input
+            ? Number((input as any).amount)
+            : 0) * 100
+        ),
+        currency: "NGN",
+        status: "posted",
+      });
       await db.insert(commissionAuditTrail).values({
         action: "clawback_initiated",
         entityType: "clawback",

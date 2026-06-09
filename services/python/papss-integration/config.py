@@ -13,8 +13,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., description="Secret key for security purposes.")
     
     # Database Settings
-    # Using SQLite for simplicity in this example, but structured for production
-    # e.g., "postgresql://user:password@host:port/dbname"
+        # e.g., "postgresql://user:password@host:port/dbname"
     DATABASE_URL: str = Field(..., description="The database connection URL.")
     
     # Logging Settings
@@ -29,5 +28,5 @@ class Settings(BaseSettings):
 settings = Settings(_env_file=".env")
 
 # Example .env content for local development (not written to file, just for context)
-# DATABASE_URL="sqlite:///./papss_integration.db"
+# DATABASE_URL="postgresql://postgres:postgres@localhost:5432/papss_integration"
 # SECRET_KEY="a_very_secret_key_that_should_be_changed_in_production"

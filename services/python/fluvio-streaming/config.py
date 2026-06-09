@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database configuration
-    DATABASE_URL: str = "sqlite:///./fluvio_streaming.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/fluvio_streaming"
     
     # Service configuration
     SERVICE_NAME: str = "fluvio-streaming"
@@ -26,12 +26,10 @@ settings = Settings()
 
 # --- Database Configuration ---
 
-# Use check_same_thread=False for SQLite in FastAPI to allow multiple threads 
 # to interact with the database, which is necessary for FastAPI's default 
 # dependency injection and thread pool.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -52,8 +50,8 @@ def get_db() -> Generator:
         db.close()
 
 # Ensure the database directory exists if using a file-based path
-if settings.DATABASE_URL.startswith("sqlite:///"):
-    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+if settings.DATABASE_URL.startswith("postgresql://postgres:postgres@localhost:5432/fluvio_streaming"):
+    db_path = settings.DATABASE_URL.replace("postgresql://postgres:postgres@localhost:5432/fluvio_streaming", "")
     db_dir = os.path.dirname(db_path)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir)

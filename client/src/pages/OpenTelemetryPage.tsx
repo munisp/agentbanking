@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 
 export default function OpenTelemetryPage() {
   const { data, isLoading } = trpc.openTelemetry.dashboard.useQuery() as any;
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data: health } = trpc.openTelemetry.serviceHealth.useQuery() as any;
 
   if (isLoading)

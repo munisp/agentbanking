@@ -20,7 +20,36 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("opensearch-indexer")
@@ -31,6 +60,42 @@ OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS", "admin")
 PORT = int(os.getenv("PORT", "8092"))
 
 app = FastAPI(title="54Link OpenSearch Indexer", version="1.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/opensearch_indexer")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 # Metrics
 metrics = {
@@ -41,7 +106,6 @@ metrics = {
     "started_at": datetime.now(timezone.utc).isoformat(),
 }
 
-
 # ── Models ───────────────────────────────────────────────────────────────────
 
 class IndexRequest(BaseModel):
@@ -49,19 +113,16 @@ class IndexRequest(BaseModel):
     documents: list[dict[str, Any]]
     batch_size: int | None = None
 
-
 class SearchRequest(BaseModel):
     index: str = "transactions"
     query: dict[str, Any]
     size: int = 20
     from_: int = 0
 
-
 class CreateIndexRequest(BaseModel):
     index: str
     mappings: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
-
 
 # ── OpenSearch Client ────────────────────────────────────────────────────────
 
@@ -87,7 +148,6 @@ async def os_request(method: str, path: str, body: dict | None = None) -> dict:
     except Exception as e:
         logger.error(f"OpenSearch request failed: {e}")
         raise HTTPException(status_code=502, detail=f"OpenSearch unavailable: {str(e)}")
-
 
 async def bulk_index(index: str, documents: list[dict]) -> dict:
     """Bulk index documents using OpenSearch _bulk API."""
@@ -115,7 +175,6 @@ async def bulk_index(index: str, documents: list[dict]) -> dict:
     except Exception as e:
         logger.error(f"Bulk index failed: {e}")
         raise HTTPException(status_code=502, detail=f"Bulk index failed: {str(e)}")
-
 
 # ── Transaction Index Mapping ────────────────────────────────────────────────
 
@@ -147,7 +206,6 @@ TRANSACTION_MAPPING = {
         "refresh_interval": "5s",
     },
 }
-
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
@@ -192,7 +250,6 @@ async def index_documents(req: IndexRequest):
         logger.error(f"Index batch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/search")
 async def search_documents(req: SearchRequest):
     """Proxy search request to OpenSearch."""
@@ -204,7 +261,6 @@ async def search_documents(req: SearchRequest):
     result = await os_request("POST", f"{req.index}/_search", body)
     return result
 
-
 @app.post("/create-index")
 async def create_index(req: CreateIndexRequest):
     """Create an OpenSearch index with optional mappings."""
@@ -215,7 +271,6 @@ async def create_index(req: CreateIndexRequest):
     result = await os_request("PUT", req.index, body)
     logger.info(f"Created index '{req.index}': {result}")
     return result
-
 
 @app.get("/health")
 async def health():
@@ -240,7 +295,6 @@ async def health():
         "opensearch_url": OPENSEARCH_URL,
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Indexing metrics."""
@@ -250,7 +304,6 @@ async def get_metrics():
             (datetime.now(timezone.utc) - datetime.fromisoformat(metrics["started_at"])).total_seconds()
         ),
     }
-
 
 if __name__ == "__main__":
     import uvicorn

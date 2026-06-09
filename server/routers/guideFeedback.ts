@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { eq, count, avg, desc, sql, and, gte, lte } from "drizzle-orm";
-import { guideFeedback } from "../../drizzle/schema";
+import { guideFeedback, gl_journal_entries } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -11,6 +11,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -18,6 +19,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],

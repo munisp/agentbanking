@@ -13,8 +13,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     """Application settings loaded from environment variables."""
-    # Use a simple SQLite database for this example. In a real app, this would be a full URL.
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./document_management.db")
+        DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/document_management")
     SERVICE_NAME: str = "document-management"
     
     # Pagination settings
@@ -27,8 +26,6 @@ settings = Settings()
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
     pool_pre_ping=True
 )
 

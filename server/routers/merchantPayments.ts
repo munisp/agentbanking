@@ -8,7 +8,12 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, merchants } from "../../drizzle/schema";
+import {
+  transactions,
+  gl_journal_entries,
+  agents,
+  merchants,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -184,6 +189,21 @@ export const merchantPaymentsRouter = router({
             },
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `merchantPayments transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
 
         // Credit merchant wallet
         await db

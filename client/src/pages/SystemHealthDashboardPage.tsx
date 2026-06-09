@@ -128,7 +128,7 @@ export default function SystemHealthDashboardPage() {
             {Array.from({ length: 30 }, (_, i) => (
               <div
                 key={i}
-                className={`flex-1 h-8 rounded ${Math.random() > 0.1 ? "bg-green-400" : "bg-red-400"}`}
+                className={`flex-1 h-8 rounded ${crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 > 0.1 ? "bg-green-400" : "bg-red-400"}`}
                 title={`Day ${i + 1}`}
               />
             ))}

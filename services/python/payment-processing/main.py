@@ -4,6 +4,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +15,32 @@ from config import settings
 from database import engine, Base
 from router import router
 from service import ServiceException
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # --- Setup Logging ---
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -40,6 +69,12 @@ async def lifespan(app: FastAPI) -> None:
 # --- FastAPI Application Initialization ---
 
 app = FastAPI(
+
+@app.get("/health")
+apply_middleware(app, enable_auth=True)
+async def health():
+    return {"status": "ok", "service": "payment-processing"}
+
     title=f"{settings.SERVICE_NAME.title()} API",
     description="A production-ready FastAPI service for payment processing, handling transactions, refunds, merchants, and payment methods.",
     version="1.0.0",

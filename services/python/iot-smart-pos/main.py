@@ -35,6 +35,9 @@ from functools import lru_cache
 from decimal import Decimal
 
 from fastapi import FastAPI, HTTPException, Query as QueryParam, Path as PathParam
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -64,7 +67,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 # ── Configuration ───────────────────────────────────────────────────────────────
 
@@ -118,6 +120,7 @@ app = FastAPI(
     description="Predictive maintenance ML, failure prediction, fleet optimization",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,7 +131,6 @@ app.add_middleware(
 )
 
 # ── Middleware Clients ──────────────────────────────────────────────────────────
-
 
 class DaprClient:
     def __init__(self, http_port: int):
@@ -160,7 +162,6 @@ class DaprClient:
         except Exception as e:
             logger.warning(f"[Dapr] Save state failed: {e}")
 
-
 class RedisCache:
     def __init__(self):
         self._cache: Dict[str, Any] = {}
@@ -171,7 +172,6 @@ class RedisCache:
 
     def get(self, key: str) -> Optional[Any]:
         return self._cache.get(key)
-
 
 class FluvioProducer:
     def __init__(self, endpoint: str):
@@ -185,7 +185,6 @@ class FluvioProducer:
             logger.info(f"[Fluvio] Produced to {topic}")
         except Exception as e:
             logger.warning(f"[Fluvio] Produce to {topic} failed: {e}")
-
 
 class TemporalClient:
     def __init__(self, host: str):
@@ -203,7 +202,6 @@ class TemporalClient:
             logger.info(f"[Temporal] Started workflow {workflow_id}")
         except Exception as e:
             logger.warning(f"[Temporal] Failed to start workflow: {e}")
-
 
 class OpenSearchClient:
     def __init__(self, url: str):
@@ -231,7 +229,6 @@ class OpenSearchClient:
         except Exception:
             return []
 
-
 class LakehouseClient:
     def __init__(self, url: str):
         self.url = url
@@ -253,7 +250,6 @@ class LakehouseClient:
         except Exception:
             return []
 
-
 class MojaloopClient:
     def __init__(self, url: str):
         self.url = url
@@ -265,8 +261,6 @@ class MojaloopClient:
             return resp.json()
         except Exception:
             return []
-
-
 
 class PostgresClient:
     """Async PostgreSQL client with connection pooling and retry logic."""
@@ -434,7 +428,6 @@ class PostgresClient:
             await self._pool.close()
             logger.info("[Postgres] Connection pool closed")
 
-
 # Initialize clients
 dapr = DaprClient(DAPR_HTTP_PORT)
 cache = RedisCache()
@@ -443,8 +436,6 @@ temporal = TemporalClient(TEMPORAL_HOST)
 opensearch = OpenSearchClient(OPENSEARCH_URL)
 lakehouse = LakehouseClient(LAKEHOUSE_URL)
 mojaloop = MojaloopClient(MOJALOOP_URL)
-
-
 
 class KeycloakClient:
     """Keycloak JWT verification and user management."""
@@ -474,7 +465,6 @@ class KeycloakClient:
         except Exception as e:
             logger.warning(f"[Keycloak] Get user failed: {e}")
         return None
-
 
 class PermifyClient:
     """Permify authorization check and relationship management."""
@@ -513,7 +503,6 @@ class PermifyClient:
         except Exception as e:
             logger.warning(f"[Permify] Write relationship failed: {e}")
         return False
-
 
 class TigerBeetleClient:
     """TigerBeetle sidecar HTTP client for double-entry ledger operations."""
@@ -554,7 +543,6 @@ class TigerBeetleClient:
         except Exception:
             return False
 
-
 class APISIXClient:
     """APISIX API Gateway admin client for dynamic route management."""
 
@@ -589,7 +577,6 @@ class APISIXClient:
             pass
         return []
 
-
 class OpenAppSecClient:
     """OpenAppSec WAF health check and dynamic policy management."""
 
@@ -613,7 +600,6 @@ class OpenAppSecClient:
             pass
         return None
 
-
 pg_client = PostgresClient(DATABASE_URL, "iot_analytics")
 
 keycloak_client = KeycloakClient(KEYCLOAK_URL)
@@ -629,28 +615,23 @@ analytics_cache: Dict[str, Any] = {}
 
 # ── Pydantic Models ─────────────────────────────────────────────────────────────
 
-
 class AnalyticsRequest(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     group_by: Optional[str] = None
     metric: Optional[str] = None
 
-
 class ForecastRequest(BaseModel):
     periods: int = Field(default=12, ge=1, le=60)
     metric: str = "revenue"
     confidence: float = Field(default=0.95, ge=0.5, le=0.99)
-
 
 class AnalyticsResponse(BaseModel):
     data: List[dict]
     summary: dict
     generated_at: str
 
-
 # ── Analytics Engine ────────────────────────────────────────────────────────────
-
 
 def compute_moving_average(values: List[float], window: int = 7) -> List[float]:
     if len(values) < window:
@@ -662,7 +643,6 @@ def compute_moving_average(values: List[float], window: int = 7) -> List[float]:
         result.append(sum(window_vals) / len(window_vals))
     return result
 
-
 def compute_trend(values: List[float]) -> dict:
     if len(values) < 2:
         return {"direction": "stable", "change_pct": 0.0}
@@ -671,7 +651,6 @@ def compute_trend(values: List[float]) -> dict:
     change = ((recent - previous) / abs(previous)) * 100
     direction = "up" if change > 1 else "down" if change < -1 else "stable"
     return {"direction": direction, "change_pct": round(change, 2)}
-
 
 def compute_forecast(values: List[float], periods: int) -> List[dict]:
     if not values:
@@ -692,7 +671,6 @@ def compute_forecast(values: List[float], periods: int) -> List[dict]:
         })
     return forecasts
 
-
 def compute_segmentation(records: List[dict], field: str) -> dict:
     segments: Dict[str, int] = defaultdict(int)
     for r in records:
@@ -700,7 +678,6 @@ def compute_segmentation(records: List[dict], field: str) -> dict:
         segments[key] += 1
     total = sum(segments.values()) or 1
     return {k: {"count": v, "percentage": round(v / total * 100, 1)} for k, v in segments.items()}
-
 
 def compute_anomaly_detection(values: List[float], threshold: float = 2.0) -> List[dict]:
     if len(values) < 3:
@@ -714,9 +691,7 @@ def compute_anomaly_detection(values: List[float], threshold: float = 2.0) -> Li
             anomalies.append({"index": i, "value": v, "z_score": round(z_score, 2)})
     return anomalies
 
-
 # ── API Endpoints ───────────────────────────────────────────────────────────────
-
 
 @app.get("/health")
 async def health_check():
@@ -735,7 +710,6 @@ async def health_check():
             "mojaloop": True,
         },
     }
-
 
 @app.get("/api/v1/analytics/summary")
 async def analytics_summary():
@@ -762,7 +736,6 @@ async def analytics_summary():
 
     return summary
 
-
 @app.post("/api/v1/analytics/forecast")
 async def forecast(request: ForecastRequest):
     values = [float(r.get("amount", 0)) for r in records_store if r.get("amount")]
@@ -779,7 +752,6 @@ async def forecast(request: ForecastRequest):
 
     await dapr.publish("iot-smart-pos.forecast.generated", result)
     return result
-
 
 @app.get("/api/v1/analytics/trends")
 async def trends(
@@ -818,7 +790,6 @@ async def trends(
         "anomalies": compute_anomaly_detection(values),
     }
 
-
 @app.get("/api/v1/analytics/segmentation")
 async def segmentation(field: str = QueryParam(default="status")):
     segments = compute_segmentation(records_store, field)
@@ -828,7 +799,6 @@ async def segmentation(field: str = QueryParam(default="status")):
         "total_records": len(records_store),
         "generated_at": datetime.utcnow().isoformat(),
     }
-
 
 @app.get("/api/v1/analytics/performance")
 async def performance_metrics():
@@ -846,7 +816,6 @@ async def performance_metrics():
         "generated_at": datetime.utcnow().isoformat(),
     }
 
-
 @app.post("/api/v1/analytics/anomalies")
 async def detect_anomalies(threshold: float = QueryParam(default=2.0)):
     values = [float(r.get("amount", 0)) for r in records_store if r.get("amount")]
@@ -858,7 +827,6 @@ async def detect_anomalies(threshold: float = QueryParam(default=2.0)):
         "anomaly_count": len(anomalies),
     }
 
-
 @app.get("/api/v1/analytics/search")
 async def search_analytics(q: str = QueryParam(..., min_length=1)):
     # Try OpenSearch first
@@ -868,7 +836,6 @@ async def search_analytics(q: str = QueryParam(..., min_length=1)):
     # Fallback to in-memory
     filtered = [r for r in records_store if q.lower() in json.dumps(r).lower()]
     return {"items": filtered[:20], "total": len(filtered), "source": "memory"}
-
 
 # ── APISIX Registration ────────────────────────────────────────────────────────
 
@@ -891,7 +858,6 @@ async def register_apisix():
             logger.info(f"[APISIX] Registered iot-smart-pos-analytics")
     except Exception as e:
         logger.warning(f"[APISIX] Registration failed: {e}")
-
 
 # ── Main ────────────────────────────────────────────────────────────────────────
 

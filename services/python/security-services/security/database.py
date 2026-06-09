@@ -14,8 +14,7 @@ try:
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         pool_pre_ping=True,
-        # connect_args={"check_same_thread": False} # Only for SQLite
-    )
+            )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
     logger.info("Database engine and session factory initialized.")

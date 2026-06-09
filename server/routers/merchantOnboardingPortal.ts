@@ -2,7 +2,12 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
-import { merchants, merchantKycDocs, auditLog } from "../../drizzle/schema";
+import {
+  merchants,
+  merchantKycDocs,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -11,6 +16,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -18,6 +24,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "rejected", "suspended"],

@@ -13,12 +13,42 @@ from uuid import UUID, uuid4
 
 import boto3
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, DateTime, JSON, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from redis import Redis
 import httpx
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 
 # Docling imports
 try:
@@ -35,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 # FastAPI app
 app = FastAPI(title="Document Processing Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 # Database setup
 DATABASE_URL = "postgresql://user:password@localhost:5432/docprocessing"

@@ -1,7 +1,0 @@
-# OPENAPPSEC Configuration
-name: openappsec
-enabled: true
-version: "1.0.0"
-description: "openappsec security component"
-
-# TODO: Add specific configuration

@@ -72,7 +72,9 @@ export function generateIdempotencyKey(
   userId?: string
 ): string {
   const ts = Date.now();
-  const rand = Math.random().toString(36).slice(2, 10);
+  const rand = (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295)
+    .toString(36)
+    .slice(2, 10);
   return `${resource}:${action}:${userId || "system"}:${ts}:${rand}`;
 }
 

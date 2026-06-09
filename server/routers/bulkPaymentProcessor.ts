@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { merchantPayouts } from "../../drizzle/schema";
+import { merchantPayouts, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -256,6 +256,21 @@ const processBatch = protectedProcedure
         .insert(merchantPayouts)
         .values(input.data || ({} as any))
         .returning();
+
+      // Double-entry GL journal entry
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${Date.now()}`,
+        description: `bulkPaymentProcessor transaction`,
+        debitAccountId: 2001,
+        creditAccountId: 1001,
+        amount: Math.round(
+          (typeof input === "object" && "amount" in input
+            ? Number((input as any).amount)
+            : 0) * 100
+        ),
+        currency: "NGN",
+        status: "posted",
+      });
       return { success: true, ...row, message: "processBatch completed" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

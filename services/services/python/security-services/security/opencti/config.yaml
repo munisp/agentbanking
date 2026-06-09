@@ -1,7 +1,0 @@
-# OPENCTI Configuration
-name: opencti
-enabled: true
-version: "1.0.0"
-description: "opencti security component"
-
-# TODO: Add specific configuration

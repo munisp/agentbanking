@@ -1,7 +1,0 @@
-[package]
-name = "ransomware-guard"
-version = "1.0.0"
-edition = "2021"
-description = "File integrity monitoring, backup verification, ransomware detection"
-
-[dependencies]

@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = Field("sqlite:///./nibss_integration.db", env="DATABASE_URL", description="Database connection URL")
+    DATABASE_URL: str = Field("postgresql://postgres:postgres@localhost:5432/nibss_integration", env="DATABASE_URL", description="Database connection URL")
     
     # Application Settings
     PROJECT_NAME: str = "NIBSS Integration Service"

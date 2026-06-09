@@ -6,7 +6,12 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { agentLoans, agents, transactions } from "../../drizzle/schema";
+import {
+  agentLoans,
+  agents,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, avg, sql } from "drizzle-orm";
 import {
   validateAmount,
@@ -199,6 +204,21 @@ export const agentLoanFacilityRouter = router({
             dueDate: new Date(Date.now() + input.tenorDays * 86400000),
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `agentLoanFacility transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await writeAuditLog({
           agentId:
             typeof ctx === "object" && ctx !== null && "user" in ctx

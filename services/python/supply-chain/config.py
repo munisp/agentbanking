@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./supply_chain.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/supply_chain"
     
     # Service-specific settings
     SERVICE_NAME: str = "supply-chain"
@@ -23,9 +23,8 @@ settings = Settings()
 
 # --- Database Setup ---
 
-# Use check_same_thread=False for SQLite with FastAPI
 engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -20,10 +20,74 @@ from enum import Enum
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="54Link ML Model Registry", version="1.0.0")
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
 
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+app = FastAPI(title="54Link ML Model Registry", version="1.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ml_model_registry")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 class ModelStatus(str, Enum):
     STAGING = "staging"
@@ -31,7 +95,6 @@ class ModelStatus(str, Enum):
     CANARY = "canary"
     ARCHIVED = "archived"
     ROLLING_BACK = "rolling_back"
-
 
 class ModelVersion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -48,7 +111,6 @@ class ModelVersion(BaseModel):
     deployed_at: Optional[str] = None
     description: str = ""
 
-
 class DriftReport(BaseModel):
     model_name: str
     version: str
@@ -58,7 +120,6 @@ class DriftReport(BaseModel):
     alert_level: str  # "none", "warning", "critical"
     recommendation: str
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
 
 class ABTest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -70,7 +131,6 @@ class ABTest(BaseModel):
     metrics: dict = Field(default_factory=dict)
     started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     ended_at: Optional[str] = None
-
 
 # In-memory stores (production: PostgreSQL + S3)
 models: dict[str, ModelVersion] = {}
@@ -100,7 +160,6 @@ PLATFORM_MODELS = [
      "description": "Deepfake detection binary classifier"},
 ]
 
-
 @app.on_event("startup")
 async def startup():
     for m in PLATFORM_MODELS:
@@ -115,7 +174,6 @@ async def startup():
         )
         models[f"{m['model_name']}:{m['version']}"] = mv
 
-
 @app.post("/models/register")
 async def register_model(model: ModelVersion):
     key = f"{model.model_name}:{model.version}"
@@ -123,7 +181,6 @@ async def register_model(model: ModelVersion):
         raise HTTPException(409, f"Model {key} already registered")
     models[key] = model
     return {"id": model.id, "key": key, "message": "model registered"}
-
 
 @app.get("/models")
 async def list_models(model_name: Optional[str] = None, status: Optional[str] = None):
@@ -134,14 +191,12 @@ async def list_models(model_name: Optional[str] = None, status: Optional[str] = 
         items = [m for m in items if m.status.value == status]
     return {"models": [m.model_dump() for m in items], "count": len(items)}
 
-
 @app.get("/models/{model_name}/{version}")
 async def get_model(model_name: str, version: str):
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
     return models[key].model_dump()
-
 
 @app.post("/models/{model_name}/{version}/promote")
 async def promote_model(model_name: str, version: str):
@@ -157,7 +212,6 @@ async def promote_model(model_name: str, version: str):
     models[key].status = ModelStatus.PRODUCTION
     models[key].deployed_at = datetime.now(timezone.utc).isoformat()
     return {"message": f"Model {key} promoted to production", "model": models[key].model_dump()}
-
 
 @app.post("/models/{model_name}/{version}/rollback")
 async def rollback_model(model_name: str, version: str):
@@ -181,7 +235,6 @@ async def rollback_model(model_name: str, version: str):
 
     models[key].status = ModelStatus.PRODUCTION
     return {"message": "No previous version to rollback to", "kept_current": True}
-
 
 @app.post("/drift/check")
 async def check_drift(body: dict):
@@ -221,7 +274,6 @@ async def check_drift(body: dict):
     drift_reports.append(report)
     return report.model_dump()
 
-
 @app.post("/ab-tests/create")
 async def create_ab_test(test: ABTest):
     control_key = f"{test.model_name}:{test.control_version}"
@@ -231,11 +283,9 @@ async def create_ab_test(test: ABTest):
     ab_tests[test.id] = test
     return {"id": test.id, "message": "A/B test created"}
 
-
 @app.get("/ab-tests")
 async def list_ab_tests():
     return {"tests": [t.model_dump() for t in ab_tests.values()], "count": len(ab_tests)}
-
 
 @app.post("/ab-tests/{test_id}/conclude")
 async def conclude_ab_test(test_id: str, body: dict):
@@ -258,7 +308,6 @@ async def conclude_ab_test(test_id: str, body: dict):
 
     return {"message": f"Test concluded — winner: {winner}", "test": test.model_dump()}
 
-
 @app.post("/performance/log")
 async def log_performance(body: dict):
     body["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -267,12 +316,10 @@ async def log_performance(body: dict):
         performance_logs.pop(0)
     return {"logged": True}
 
-
 @app.get("/performance/{model_name}")
 async def get_performance(model_name: str, limit: int = 100):
     logs = [p for p in performance_logs if p.get("model_name") == model_name]
     return {"logs": logs[-limit:], "total": len(logs)}
-
 
 @app.get("/drift/reports")
 async def list_drift_reports(model_name: Optional[str] = None, limit: int = 50):
@@ -280,7 +327,6 @@ async def list_drift_reports(model_name: Optional[str] = None, limit: int = 50):
     if model_name:
         items = [r for r in items if r.model_name == model_name]
     return {"reports": [r.model_dump() for r in items[-limit:]], "total": len(items)}
-
 
 @app.get("/health")
 async def health():

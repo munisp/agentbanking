@@ -5,6 +5,9 @@ Allows businesses to embed remittance services in their applications
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
@@ -18,6 +21,26 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/src")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title="White-Label Remittance API",
     description="B2B API for embedding remittance services",
@@ -25,6 +48,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+apply_middleware(app, enable_auth=True)
 
 # CORS middleware
 app.add_middleware(
@@ -560,6 +584,15 @@ async def send_webhook(url: str, secret: Optional[str], event: str, data: Dict):
 # ============================================================================
 # Run Server
 # ============================================================================
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

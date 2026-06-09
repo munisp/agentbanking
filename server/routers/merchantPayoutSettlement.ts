@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { merchantPayouts } from "../../drizzle/schema";
+import { merchantPayouts, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
 import {
   validateAmount,
@@ -199,6 +199,21 @@ export const merchantPayoutSettlementRouter = router({
             initiatedBy: ctx.user?.id,
           } as any)
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `merchantPayoutSettlement transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await writeAuditLog({
           agentId:
             typeof ctx === "object" && ctx !== null && "user" in ctx

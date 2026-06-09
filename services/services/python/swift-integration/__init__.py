@@ -1,1 +1,0 @@
-"""SWIFT payment integration"""\n

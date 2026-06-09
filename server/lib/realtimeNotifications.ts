@@ -329,7 +329,7 @@ export async function notifyUser(
 ): Promise<void> {
   await publishNotification({
     ...notification,
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `notif_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     timestamp: new Date().toISOString(),
     userId,
   });
@@ -343,7 +343,7 @@ export async function broadcastNotification(
 ): Promise<void> {
   await publishNotification({
     ...notification,
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `notif_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     timestamp: new Date().toISOString(),
   });
 }

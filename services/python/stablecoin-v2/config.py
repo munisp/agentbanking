@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./stablecoin_v2.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/stablecoin_v2"
 
     # Security settings
     SECRET_KEY: str = "super-secret-key-for-development-do-not-use-in-production"

@@ -17,6 +17,32 @@ from flask import Flask, jsonify, request
 import time
 import uuid
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 app = Flask(__name__)
 
 # ── Menu Tree Definition ─────────────────────────────────────────────────────
@@ -121,7 +147,6 @@ def find_node(tree, node_id):
             return result
     return None
 
-
 def navigate_path(tree, path_parts):
     """Navigate the menu tree by a list of selection indices"""
     current = tree
@@ -136,7 +161,6 @@ def navigate_path(tree, path_parts):
         except (ValueError, IndexError):
             return None
     return current
-
 
 def render_menu_screen(node):
     """Render a USSD text screen for a menu node"""
@@ -181,7 +205,6 @@ def render_menu_screen(node):
 
     return {"text": f"END {node['title']}", "continue": False, "nodeId": node["id"]}
 
-
 def get_all_shortcuts(tree, prefix=""):
     """Recursively collect all shortcut codes"""
     shortcuts = []
@@ -196,13 +219,11 @@ def get_all_shortcuts(tree, prefix=""):
         shortcuts.extend(get_all_shortcuts(child, prefix))
     return shortcuts
 
-
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/menu", methods=["GET"])
 def get_menu():
     return jsonify(MENU_TREE)
-
 
 @app.route("/menu/navigate", methods=["POST"])
 def navigate_menu():
@@ -226,7 +247,6 @@ def navigate_menu():
 
     screen = render_menu_screen(node)
     return jsonify({**screen, "node": node})
-
 
 @app.route("/menu/render", methods=["POST"])
 def render_menu():
@@ -253,12 +273,10 @@ def render_menu():
 
     return jsonify(screen)
 
-
 @app.route("/menu/shortcuts", methods=["GET"])
 def get_shortcuts():
     shortcuts = get_all_shortcuts(MENU_TREE)
     return jsonify(shortcuts)
-
 
 @app.route("/menu/template", methods=["POST"])
 def create_template():
@@ -274,11 +292,9 @@ def create_template():
     custom_templates.append(template)
     return jsonify(template), 201
 
-
 @app.route("/menu/templates", methods=["GET"])
 def list_templates():
     return jsonify(custom_templates)
-
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -290,16 +306,49 @@ def health():
         "customTemplates": len(custom_templates),
     })
 
-
 def count_nodes(tree):
     count = 1
     for child in tree.get("children", []):
         count += count_nodes(child)
     return count
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8112))
     print(f"[ussd-menu-builder] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ussd_menu_builder")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

@@ -34,8 +34,7 @@ settings = get_settings()
 engine = create_engine(
     settings.DATABASE_URL, 
     pool_pre_ping=True,
-    # The following line is for SQLite only, remove for production PostgreSQL
-    # connect_args={"check_same_thread": False} 
+        # 
 )
 
 # Configure a SessionLocal class

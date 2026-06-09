@@ -15,9 +15,8 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "audit-service"
     
     # Database Settings
-    # Use an environment variable for the database URL, default to an in-memory SQLite for simplicity
-    # In a production environment, this would be a PostgreSQL or similar connection string.
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./audit.db")
+        # In a production environment, this would be a PostgreSQL or similar connection string.
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/audit_service")
     
     # Export Settings
     EXPORT_STORAGE_PATH: str = os.getenv("EXPORT_STORAGE_PATH", "/tmp/audit_exports")
@@ -32,11 +31,9 @@ settings = Settings()
 # --- Database Setup ---
 
 # Create the SQLAlchemy engine
-# The 'check_same_thread=False' is needed for SQLite when using FastAPI/async
 # For production databases like PostgreSQL, this is not required.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

@@ -202,7 +202,7 @@ export const usePosStore = create<PosState>()(
             ...s.offlineQueue,
             {
               ...tx,
-              id: `OFL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              id: `OFL-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 6)}`,
               createdAt: Date.now(),
               retries: 0,
             },

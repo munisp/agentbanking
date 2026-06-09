@@ -14,8 +14,7 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 # Create the SQLAlchemy engine
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {},
-    echo=settings.DEBUG
+        echo=settings.DEBUG
 )
 
 # Create a configured "Session" class

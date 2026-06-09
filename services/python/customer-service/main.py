@@ -4,6 +4,9 @@ Database-backed CRUD, KYC status tracking, preferences, and risk profiling
 """
 
 from fastapi import FastAPI, HTTPException, Header, Depends
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -14,12 +17,74 @@ import uuid
 import os
 import logging
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/customers")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Customer Service", version="2.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/customer_service")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -30,20 +95,17 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class KYCLevel(str, Enum):
     NONE = "none"
     BASIC = "basic"
     ENHANCED = "enhanced"
     FULL = "full"
 
-
 class CustomerStatus(str, Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     CLOSED = "closed"
     PENDING_VERIFICATION = "pending_verification"
-
 
 class CreateCustomerRequest(BaseModel):
     email: str
@@ -52,7 +114,6 @@ class CreateCustomerRequest(BaseModel):
     last_name: str
     country_code: str = Field(default="NG", min_length=2, max_length=2)
     preferred_currency: str = Field(default="NGN", min_length=3, max_length=3)
-
 
 class UpdateCustomerRequest(BaseModel):
     first_name: Optional[str] = None
@@ -64,7 +125,6 @@ class UpdateCustomerRequest(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     postal_code: Optional[str] = None
-
 
 class CustomerResponse(BaseModel):
     id: str
@@ -79,7 +139,6 @@ class CustomerResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
@@ -87,7 +146,6 @@ async def verify_bearer_token(authorization: str = Header(...)):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     return token
-
 
 @app.on_event("startup")
 async def startup():
@@ -121,12 +179,10 @@ async def startup():
         """)
     logger.info("Customer Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 @app.post("/api/v1/customers", response_model=CustomerResponse, status_code=201)
 async def create_customer(req: CreateCustomerRequest, token: str = Depends(verify_bearer_token)):
@@ -143,7 +199,6 @@ async def create_customer(req: CreateCustomerRequest, token: str = Depends(verif
     logger.info(f"Customer created: {row['id']}")
     return _row_to_response(row)
 
-
 @app.get("/api/v1/customers/{customer_id}", response_model=CustomerResponse)
 async def get_customer(customer_id: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -151,7 +206,6 @@ async def get_customer(customer_id: str, token: str = Depends(verify_bearer_toke
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
     return _row_to_response(row)
-
 
 @app.get("/api/v1/customers", response_model=List[CustomerResponse])
 async def list_customers(
@@ -178,7 +232,6 @@ async def list_customers(
         rows = await conn.fetch(query, *params)
     return [_row_to_response(r) for r in rows]
 
-
 @app.put("/api/v1/customers/{customer_id}", response_model=CustomerResponse)
 async def update_customer(customer_id: str, req: UpdateCustomerRequest, token: str = Depends(verify_bearer_token)):
     updates = {k: v for k, v in req.dict().items() if v is not None}
@@ -200,7 +253,6 @@ async def update_customer(customer_id: str, req: UpdateCustomerRequest, token: s
         raise HTTPException(status_code=404, detail="Customer not found")
     return _row_to_response(row)
 
-
 @app.patch("/api/v1/customers/{customer_id}/kyc-level")
 async def update_kyc_level(customer_id: str, kyc_level: KYCLevel, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -211,7 +263,6 @@ async def update_kyc_level(customer_id: str, kyc_level: KYCLevel, token: str = D
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
     return {"id": str(row["id"]), "kyc_level": row["kyc_level"], "status": row["status"]}
-
 
 @app.patch("/api/v1/customers/{customer_id}/suspend")
 async def suspend_customer(customer_id: str, token: str = Depends(verify_bearer_token)):
@@ -225,7 +276,6 @@ async def suspend_customer(customer_id: str, token: str = Depends(verify_bearer_
     logger.info(f"Customer {customer_id} suspended")
     return {"id": str(row["id"]), "status": row["status"]}
 
-
 @app.get("/api/v1/customers/search")
 async def search_customers(q: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -237,7 +287,6 @@ async def search_customers(q: str, token: str = Depends(verify_bearer_token)):
             f"%{q}%",
         )
     return [_row_to_response(r) for r in rows]
-
 
 def _row_to_response(row) -> CustomerResponse:
     return CustomerResponse(
@@ -254,7 +303,6 @@ def _row_to_response(row) -> CustomerResponse:
         updated_at=row["updated_at"],
     )
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -266,7 +314,6 @@ async def health_check():
         except Exception:
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "customer-service", "database": db_ok}
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

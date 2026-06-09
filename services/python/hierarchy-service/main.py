@@ -1,11 +1,40 @@
 
 from fastapi import FastAPI, Depends, HTTPException, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordBearer
 from typing import List, Optional
 import logging
 
 from .config import settings
 from .models import Base, engine, SessionLocal, HierarchyNode, HierarchyNodeCreate, HierarchyNodeUpdate
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +47,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+apply_middleware(app, enable_auth=True)
 
 # OAuth2PasswordBearer for token-based authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -44,7 +74,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     from fastapi import HTTPException
     raise HTTPException(status_code=401, detail="Authentication required")
 
-
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting up Hierarchy Service...")
@@ -56,11 +85,9 @@ async def startup_event():
 async def shutdown_event():
     logger.info("Shutting down Hierarchy Service...")
 
-
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     return {"status": "healthy", "service": "hierarchy-service", "version": app.version}
-
 
 # --- Hierarchy Node Endpoints ---
 
@@ -172,7 +199,6 @@ async def remove_parent(node_id: int, current_user: dict = Depends(get_current_u
     db.refresh(node)
     return node
 
-
 # Error handling example (can be expanded)
 from starlette.responses import JSONResponse
 
@@ -193,5 +219,4 @@ async def sqlalchemy_exception_handler(request, exc: SQLAlchemyError):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"message": "An internal database error occurred."},
     )
-
 

@@ -5,12 +5,41 @@ from typing import List, Optional
 
 import jwt
 from fastapi import FastAPI, Depends, HTTPException, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from . import models, config
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # --- Configuration and Initialization ---
 settings = config.settings
@@ -24,6 +53,7 @@ app = FastAPI(
     description="Data Warehouse Service for Remittance Platform",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 # Create database tables
 models.Base.metadata.create_all(bind=models.engine)
@@ -286,7 +316,6 @@ def health_check(db: Session = Depends(get_db), current_user: UserInDB = Depends
         logger.error(f"S3 health check failed: {e}")
 
     return {"status": "ok", "database_connection": db_status, "redis_connection": redis_status, "s3_connection": s3_status}
-
 
 # Root endpoint
 @app.get("/", tags=["Root"])

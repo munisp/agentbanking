@@ -106,6 +106,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "sprint52-features",
     "production-finalization",
     "final-production",
+    "future-features",
   ],
 
   // ── Super Admin: everything ──
@@ -133,6 +134,7 @@ const roleGroupAccess: Record<PBACRole, string[]> = {
     "sprint38",
     "sprint39",
     "enterprise-scaling",
+    "future-features",
   ],
 };
 

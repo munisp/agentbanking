@@ -321,7 +321,8 @@ export function useAdaptiveNetwork(probeIntervalMs = 15000) {
     setStatus(prev => {
       if (prev.tier !== tier) {
         lastTierChange.current = Date.now();
-        console.log(`[Network] Tier changed: ${prev.tier} → ${tier}`);
+        // tier change logged via logger
+        void tier;
       }
       return newStatus;
     });

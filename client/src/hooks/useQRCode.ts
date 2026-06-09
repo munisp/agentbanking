@@ -317,7 +317,7 @@ export function useOfflineQRGenerator(agentCode: string) {
     async (amount: number, label?: string): Promise<OfflineQRRecord> => {
       setLoading(true);
       try {
-        const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+        const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 5).toUpperCase()}`;
         const payload = build54LinkQRPayload(ref, amount, agentCode);
         const record: OfflineQRRecord = {
           id: ref,

@@ -1,1 +1,0 @@
-"""Multi-currency wallet service"""\n

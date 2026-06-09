@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./cips_integration.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/cips_integration"
     
     # Application Settings
     APP_NAME: str = "CIPS Integration Service"

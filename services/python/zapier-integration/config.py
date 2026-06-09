@@ -25,8 +25,7 @@ class Settings(BaseSettings):
     # Database settings
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "sqlite:///./zapier_integration.db"  # Default to SQLite for local development
-    )
+        "postgresql://postgres:postgres@localhost:5432/zapier_integration"      )
     ECHO_SQL: bool = os.getenv("ECHO_SQL", "False").lower() in ("true", "1", "t")
 
 @lru_cache()
@@ -43,8 +42,7 @@ settings = get_settings()
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    echo=settings.ECHO_SQL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    echo=settings.ECHO_SQL
 )
 
 # SessionLocal is a factory for new Session objects

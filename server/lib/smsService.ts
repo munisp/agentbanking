@@ -333,7 +333,7 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
       timestamp: new Date(),
     };
     logDelivery({
-      id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `sms_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
       to: normalizedTo,
       body: msg.body,
       provider: "console",
@@ -363,7 +363,7 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
       incrementPhoneRateLimit(normalizedTo);
 
       const logEntry: SmsDeliveryLog = {
-        id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `sms_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
         to: normalizedTo,
         body: msg.body,
         provider: provider.name,
@@ -393,7 +393,7 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
   }
 
   const failEntry: SmsDeliveryLog = {
-    id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `sms_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     to: normalizedTo,
     body: msg.body,
     provider: "console",

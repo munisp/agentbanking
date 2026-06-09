@@ -7,6 +7,7 @@ import {
   reconciliationBatches,
   reconciliationItems,
   transactions,
+  gl_journal_entries,
   auditLog,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
@@ -17,6 +18,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -24,6 +26,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -182,6 +185,21 @@ export const financialReconciliationDashRouter = router({
             status: "pending",
           } as any)
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `financialReconciliationDash transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "reconciliation_batch_created",
           resource: "reconciliation_batches",

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./integration_layer.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/integration_layer"
     
     # Logging settings
     LOG_LEVEL: str = "INFO"
@@ -34,8 +34,7 @@ settings = get_settings()
 
 # The engine is the starting point for SQLAlchemy. It's a factory for connections.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 

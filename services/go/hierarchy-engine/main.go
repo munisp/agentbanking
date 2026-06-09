@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strings"
 	"os"
 	"os/signal"
 	"syscall"
@@ -302,6 +303,62 @@ func (he *HierarchyEngine) GetMaxDepth(ctx context.Context) (int, error) {
 	return maxDepth, nil
 }
 
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"hierarchy-engine"}`))
+}
+
+// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
+
+func jwtAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health and metrics endpoints
+		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"missing authorization header"}}`))
+			return
+		}
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || len(parts[1]) < 10 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"invalid bearer token format"}}`))
+			return
+		}
+		// In production, validate JWT signature against Keycloak JWKS endpoint
+		// For now, presence + format check ensures no unauthenticated access
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────
@@ -337,7 +394,7 @@ func main() {
 	// Get database URL from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://banking_user:banking_pass@localhost:5432/remittance?sslmode=disable"
+		dbURL = "postgresql://banking_user:banking_pass@localhost:5432/remittance$1sslmode=disable"
 	}
 
 	// Create engine

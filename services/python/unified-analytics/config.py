@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """
     Application settings, loaded from environment variables or .env file.
     """
-    DATABASE_URL: str = "sqlite:///./unified_analytics.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/unified_analytics"
     
     class Config:
         env_file = ".env"
@@ -18,8 +18,7 @@ settings = Settings()
 # 2. Database Connection Setup
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "SessionLocal" class

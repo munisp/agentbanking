@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings class. Reads environment variables for configuration.
     """
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./ai_orchestration.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ai_orchestration")
     
     # Logging settings
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -36,8 +36,6 @@ def get_settings() -> Settings:
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    get_settings().DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in get_settings().DATABASE_URL else {},
     pool_pre_ping=True
 )
 

@@ -337,6 +337,21 @@ export const agentCommissionCalcRouter = router({
           .set({ status: "approved" } as any)
           .where(eq(commissionPayouts.id, payoutIdNum))
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `agentCommissionCalc transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         if (!updated)
           throw new TRPCError({
             code: "NOT_FOUND",

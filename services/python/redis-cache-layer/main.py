@@ -13,6 +13,16 @@ Features:
 - Metrics and hit/miss ratio tracking
 """
 import json
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import time
 import hashlib
 import os
@@ -23,10 +33,35 @@ from threading import Lock, Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from enum import Enum
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 SERVICE_NAME = "redis-cache-layer"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = int(os.getenv("REDIS_CACHE_PORT", "9118"))
-
 
 class CacheStrategy(Enum):
     WRITE_THROUGH = "write_through"
@@ -34,13 +69,11 @@ class CacheStrategy(Enum):
     CACHE_ASIDE = "cache_aside"
     READ_THROUGH = "read_through"
 
-
 class EvictionPolicy(Enum):
     LRU = "lru"
     LFU = "lfu"
     TTL = "ttl"
     RANDOM = "random"
-
 
 @dataclass
 class CacheEntry:
@@ -58,7 +91,6 @@ class CacheEntry:
         if self.ttl_seconds <= 0:
             return False
         return time.time() - self.created_at > self.ttl_seconds
-
 
 @dataclass
 class CacheMetrics:
@@ -78,7 +110,6 @@ class CacheMetrics:
     def hit_ratio(self) -> float:
         total = self.hits + self.misses
         return self.hits / total if total > 0 else 0.0
-
 
 class LRUCache:
     """L1: In-memory LRU cache with O(1) operations."""
@@ -150,7 +181,6 @@ class LRUCache:
     @property
     def size(self) -> int:
         return len(self.cache)
-
 
 class RedisCacheLayer:
     """Multi-tier cache with Redis L2 and pub/sub invalidation."""
@@ -314,14 +344,21 @@ class RedisCacheLayer:
             },
         }
 
-
 # ─── HTTP Server ─────────────────────────────────────────────────────────────
 
 cache = RedisCacheLayer()
 
-
 class CacheHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._json_response({"status": "healthy", "service": SERVICE_NAME, "version": SERVICE_VERSION})
         elif self.path == "/api/v1/metrics":
@@ -339,6 +376,13 @@ class CacheHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         if self.path == "/api/v1/cache":
             content_length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(content_length)) if content_length else {}
@@ -376,7 +420,6 @@ class CacheHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 def main():
     server = HTTPServer(("0.0.0.0", DEFAULT_PORT), CacheHandler)
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} starting on port {DEFAULT_PORT}")
@@ -384,6 +427,40 @@ def main():
     print(f"[{SERVICE_NAME}] TTL config: {cache.ttl_config}")
     server.serve_forever()
 
-
 if __name__ == "__main__":
     main()
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/redis_cache_layer")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

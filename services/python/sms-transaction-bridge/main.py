@@ -25,6 +25,16 @@ HTTP API (port 8081):
 """
 
 import json
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import re
 import time
 import uuid
@@ -33,6 +43,32 @@ from collections import deque
 from dataclasses import dataclass, field, asdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # ── SMS Command Parser ────────────────────────────────────────────────────────
 
@@ -184,7 +220,6 @@ def parse_sms(text: str, sender: str = "") -> ParsedSMS:
         valid=True, error=None
     )
 
-
 def normalize_phone(phone: str) -> Optional[str]:
     """Normalize phone number to E.164-like format."""
     phone = re.sub(r'[^\d+]', '', phone)
@@ -195,7 +230,6 @@ def normalize_phone(phone: str) -> Optional[str]:
     if len(phone) < 10 or len(phone) > 15:
         return None
     return phone
-
 
 # ── Response Templates ────────────────────────────────────────────────────────
 
@@ -211,7 +245,6 @@ TEMPLATES = {
     "pin_required": "54Link: PIN required. Format: {command} ... PIN",
     "daily_report": "54Link Daily Report:\nTransactions: {count}\nCash-in: {cash_in}\nCash-out: {cash_out}\nCommission: {commission}\nBalance: {balance}",
 }
-
 
 # ── SMS Processing Engine ────────────────────────────────────────────────────
 
@@ -330,11 +363,9 @@ class SMSEngine:
         self.outbox.append(sms)
         self.stats["total_outbound"] += 1
 
-
 # ── HTTP Server ───────────────────────────────────────────────────────────────
 
 engine = SMSEngine()
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -363,6 +394,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/api/health":
             self._send_json({"status": "healthy", "service": "sms-transaction-bridge", "version": "1.0.0"})
         elif self.path == "/api/stats":
@@ -376,6 +416,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         try:
             body = self._read_body()
         except Exception as e:
@@ -408,7 +455,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Not found"}, 404)
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8081"))
     server = HTTPServer(("0.0.0.0", port), Handler)
@@ -429,7 +475,6 @@ def format_sms_response(message: str) -> str:
         return message[:157] + "..."
     return message
 
-
 # PIN validation and SMS format constraints
 # SMS responses must be within 160 characters to fit a single SMS segment
 MAX_SMS_LENGTH = 160
@@ -443,3 +488,38 @@ def format_sms_response(message: str) -> str:
     if len(message) > 160:
         return message[:157] + "..."
     return message
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/sms_transaction_bridge")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

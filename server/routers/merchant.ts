@@ -16,6 +16,7 @@ import { getDb, writeAuditLog } from "../db";
 import {
   merchants,
   transactions,
+  gl_journal_entries,
   merchantSettlements,
   disputes,
 } from "../../drizzle/schema";
@@ -26,6 +27,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -33,6 +35,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "rejected", "suspended"],

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./global_payment_gateway.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/global_payment_gateway"
     
     # Service settings
     SERVICE_NAME: str = "global-payment-gateway"
@@ -38,8 +38,6 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
 )
 
 # Create a configured "SessionLocal" class

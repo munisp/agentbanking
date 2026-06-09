@@ -5,6 +5,9 @@ Database-backed with rate limiting and audit logging
 """
 
 from fastapi import FastAPI, HTTPException, Header, Depends
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -21,6 +24,32 @@ import time
 import base64
 import httpx
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mfa")
 SMS_GATEWAY_URL = os.getenv("SMS_GATEWAY_URL", "")
 SMS_API_KEY = os.getenv("SMS_API_KEY", "")
@@ -30,6 +59,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MFA Service", version="2.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/mfa")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -40,12 +105,10 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class MFAMethod(str, Enum):
     TOTP = "totp"
     SMS = "sms"
     EMAIL = "email"
-
 
 class EnrollRequest(BaseModel):
     user_id: str
@@ -53,12 +116,10 @@ class EnrollRequest(BaseModel):
     phone_number: Optional[str] = None
     email: Optional[str] = None
 
-
 class VerifyRequest(BaseModel):
     user_id: str
     code: str
     method: MFAMethod
-
 
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
@@ -68,10 +129,8 @@ async def verify_bearer_token(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Missing token")
     return token
 
-
 def _generate_totp_secret() -> str:
     return base64.b32encode(secrets.token_bytes(20)).decode("utf-8")
-
 
 def _compute_totp(secret_b32: str, time_step: int = 30) -> str:
     key = base64.b32decode(secret_b32.upper())
@@ -85,10 +144,8 @@ def _compute_totp(secret_b32: str, time_step: int = 30) -> str:
     code = struct.unpack(">I", h[offset:offset + 4])[0] & 0x7FFFFFFF
     return str(code % 1000000).zfill(6)
 
-
 def _generate_otp() -> str:
     return str(secrets.randbelow(900000) + 100000)
-
 
 @app.on_event("startup")
 async def startup():
@@ -132,12 +189,10 @@ async def startup():
         """)
     logger.info("MFA Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 @app.post("/api/v1/mfa/enroll")
 async def enroll_mfa(req: EnrollRequest, token: str = Depends(verify_bearer_token)):
@@ -164,7 +219,6 @@ async def enroll_mfa(req: EnrollRequest, token: str = Depends(verify_bearer_toke
         result["secret"] = secret
     logger.info(f"MFA enrolled: user={req.user_id} method={req.method.value}")
     return result
-
 
 @app.post("/api/v1/mfa/challenge")
 async def send_challenge(user_id: str, method: MFAMethod, token: str = Depends(verify_bearer_token)):
@@ -219,7 +273,6 @@ async def send_challenge(user_id: str, method: MFAMethod, token: str = Depends(v
 
     return {"user_id": user_id, "method": method.value, "message": "Verification code sent"}
 
-
 @app.post("/api/v1/mfa/verify")
 async def verify_mfa(req: VerifyRequest, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -271,7 +324,6 @@ async def verify_mfa(req: VerifyRequest, token: str = Depends(verify_bearer_toke
     logger.info(f"MFA verified: user={req.user_id} method={req.method.value}")
     return {"user_id": req.user_id, "verified": True, "method": req.method.value}
 
-
 @app.get("/api/v1/mfa/status/{user_id}")
 async def get_mfa_status(user_id: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -284,7 +336,6 @@ async def get_mfa_status(user_id: str, token: str = Depends(verify_bearer_token)
         for r in rows
     ]
     return {"user_id": user_id, "mfa_enabled": any(r["is_verified"] and r["is_active"] for r in rows), "methods": methods}
-
 
 @app.delete("/api/v1/mfa/unenroll")
 async def unenroll_mfa(user_id: str, method: MFAMethod, token: str = Depends(verify_bearer_token)):
@@ -299,7 +350,6 @@ async def unenroll_mfa(user_id: str, method: MFAMethod, token: str = Depends(ver
         )
     return {"user_id": user_id, "method": method.value, "unenrolled": True}
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -311,7 +361,6 @@ async def health_check():
         except Exception:
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "mfa-service", "database": db_ok}
-
 
 if __name__ == "__main__":
     import uvicorn

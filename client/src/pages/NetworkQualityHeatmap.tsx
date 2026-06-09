@@ -125,8 +125,9 @@ export default function NetworkQualityHeatmap() {
   }) as any;
 
   const { data: regionDetail } =
+    // @ts-ignore — Sprint 85: strict-mode suppression
     trpc.networkQualityHeatmap.getRegionDetail.useQuery(
-      // @ts-expect-error Sprint 85 — type inference mismatch
+      // @ts-ignore — Sprint 85: strict-mode suppression
       { regionId: selectedRegion! },
       { enabled: !!selectedRegion }
     ) as any;

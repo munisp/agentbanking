@@ -5,13 +5,11 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import settings
 
 # Create the SQLAlchemy engine
-# connect_args={"check_same_thread": False} is only needed for SQLite
 # For other databases like PostgreSQL, this argument should be omitted
 engine = create_engine(
     settings.DATABASE_URL, 
     echo=settings.ECHO_SQL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
-)
+    )
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -14,7 +14,12 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { floatReconciliations, agents, auditLog } from "../../drizzle/schema";
+import {
+  floatReconciliations,
+  agents,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -190,6 +195,21 @@ export const agentFloatInsuranceClaimsRouter = router({
             status: "pending",
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `agentFloatInsuranceClaims transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "float_claim_filed",
           resource: "float_claims",

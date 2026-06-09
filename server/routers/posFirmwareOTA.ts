@@ -8,7 +8,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { posTerminals, platformSettings } from "../../drizzle/schema";
+import {
+  posTerminals,
+  platformSettings,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -27,6 +31,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],

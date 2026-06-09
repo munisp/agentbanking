@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     Application settings for the tiktok-service.
     Uses Pydantic BaseSettings to load environment variables.
     """
-    DATABASE_URL: str = "sqlite:///./tiktok_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/tiktok_service"
     SERVICE_NAME: str = "tiktok-service"
     LOG_LEVEL: str = "INFO"
 
@@ -21,7 +21,7 @@ settings = Settings()
 # SQLAlchemy setup
 # The engine is the starting point for SQLAlchemy. It's a factory for connections.
 engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+    settings.DATABASE_URL
 )
 
 # SessionLocal is a factory for Session objects.

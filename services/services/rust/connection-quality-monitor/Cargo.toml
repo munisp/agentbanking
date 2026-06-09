@@ -1,7 +1,0 @@
-[package]
-name = "connection-quality-monitor"
-version = "1.0.0"
-edition = "2021"
-description = "Real-time RTT/jitter/loss tracking with adaptive protocol switching"
-
-[dependencies]

@@ -1,3 +1,4 @@
+import os
 """USSD Analytics Service — Sprint 76
 Completion rates, drop-off points, avg session duration, funnel analysis
 Connects to Kafka for session events, Redis for real-time counters
@@ -6,6 +7,32 @@ import json, time, os, math
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import defaultdict
 from threading import Lock
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 SERVICE_NAME = "ussd-analytics"
 SERVICE_VERSION = "1.0.0"
@@ -72,6 +99,15 @@ analytics = USSDAnalytics()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._json({"service": SERVICE_NAME, "version": SERVICE_VERSION, "status": "healthy", "sessions": len(analytics.sessions)})
         elif self.path.startswith("/api/ussd-analytics/summary"):
@@ -80,6 +116,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         if self.path == "/api/ussd-analytics/record":
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             analytics.record_session(body)
@@ -99,3 +142,38 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", DEFAULT_PORT))
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} listening on :{port}")
     HTTPServer(("", port), Handler).serve_forever()
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ussd_analytics")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

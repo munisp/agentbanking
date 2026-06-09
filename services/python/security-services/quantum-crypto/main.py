@@ -4,6 +4,9 @@ RESTful API for quantum-resistant cryptographic operations
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -12,14 +15,62 @@ import logging
 
 from pqc_service import PQCService
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/quantum_crypto")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
 
 app = FastAPI(
     title="Post-Quantum Cryptography Service",
     description="Quantum-resistant cryptographic operations using NIST-standardized algorithms",
     version="1.0.0"
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -188,6 +239,15 @@ async def verify_signature(
     except Exception as e:
         logger.error(f"Error verifying signature: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

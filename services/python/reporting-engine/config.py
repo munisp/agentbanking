@@ -13,13 +13,11 @@ DATABASE_URL = os.getenv(
 )
 
 # --- Database Engine and Session Setup ---
-# The `connect_args` is a common pattern for SQLite, but we'll keep it simple for PostgreSQL
 # and assume a proper setup. `pool_pre_ping=True` is good for production stability.
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 # SessionLocal is the factory for new Session objects
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 # --- Dependency Injection ---
 def get_db() -> Generator[Session, None, None]:

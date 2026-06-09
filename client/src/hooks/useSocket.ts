@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { usePosStore, FraudEvent, ChatMessage } from "../store/posStore";
 import { toast } from "sonner";
+import { logger } from "../lib/logger";
 
 const SOCKET_URL = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -72,10 +73,10 @@ export function useFraudSocket() {
     });
     socketRef.current = socket;
     socket.on("connect", () =>
-      console.log("[Fraud Socket] Connected:", socket.id)
+      logger.log("[Fraud Socket] Connected:", socket.id)
     );
     socket.on("fraud:event", handleFraudEvent);
-    socket.on("disconnect", () => console.log("[Fraud Socket] Disconnected"));
+    socket.on("disconnect", () => logger.log("[Fraud Socket] Disconnected"));
 
     // ── Channel 2: SSE (server-side fraud detection engine) ───────────────────
     const sse = new EventSource("/api/fraud/alerts/stream", {
@@ -313,7 +314,7 @@ export function useSettlementProgressSocket(
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("[Settlement Socket] Connected:", socket.id);
+      logger.log("[Settlement Socket] Connected:", socket.id);
     });
 
     // Listen for all batch progress events
@@ -327,7 +328,7 @@ export function useSettlementProgressSocket(
     });
 
     socket.on("disconnect", () => {
-      console.log("[Settlement Socket] Disconnected");
+      logger.log("[Settlement Socket] Disconnected");
     });
 
     return () => {

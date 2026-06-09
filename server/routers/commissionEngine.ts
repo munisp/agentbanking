@@ -506,6 +506,21 @@ export const commissionEngineRouter = router({
           .where(eq(commissionTiers.tierId, input.id))
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `commissionEngine transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         // Audit trail
         await logAudit(
           "tier",

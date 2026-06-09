@@ -21,6 +21,7 @@ import {
   getUptimePercentage,
 } from "./dbHealthCheck";
 import { getSecuritySummary } from "./securityHardening";
+import crypto from "crypto";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -172,7 +173,7 @@ function collectTransactionMetrics(
   let successCount = 0;
 
   for (const type of types) {
-    const count = 200 + Math.floor(Math.random() * 800);
+    const count = 200 + (crypto.getRandomValues(new Uint32Array(1))[0] % 800);
     const avgAmount =
       type === "cash_in"
         ? 25000
@@ -183,15 +184,27 @@ function collectTransactionMetrics(
             : type === "bill_pay"
               ? 8000
               : 2000;
-    const value = count * avgAmount * (0.8 + Math.random() * 0.4);
+    const value =
+      count *
+      avgAmount *
+      (0.8 +
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.4);
     byType[type] = { count, value: Math.round(value) };
     totalCount += count;
     totalValue += value;
-    successCount += Math.floor(count * (0.94 + Math.random() * 0.05));
+    successCount += Math.floor(
+      count *
+        (0.94 +
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.05)
+    );
   }
 
   const dailyCounts = days.map(() =>
-    Math.floor((totalCount / 7) * (0.7 + Math.random() * 0.6))
+    Math.floor(
+      (totalCount / 7) *
+        (0.7 +
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.6)
+    )
   );
   const peakIdx = dailyCounts.indexOf(Math.max(...dailyCounts));
 
@@ -207,22 +220,31 @@ function collectTransactionMetrics(
 }
 
 function collectUserActivityMetrics(): WeeklyReportMetrics["userActivity"] {
-  const totalActiveUsers = 150 + Math.floor(Math.random() * 200);
-  const newUsers = 10 + Math.floor(Math.random() * 40);
+  const totalActiveUsers =
+    150 + (crypto.getRandomValues(new Uint32Array(1))[0] % 200);
+  const newUsers = 10 + (crypto.getRandomValues(new Uint32Array(1))[0] % 40);
   return {
     totalActiveUsers,
     newUsers,
-    totalSessions: totalActiveUsers * (3 + Math.floor(Math.random() * 5)),
-    avgSessionDuration: `${12 + Math.floor(Math.random() * 18)}m ${Math.floor(Math.random() * 60)}s`,
-    peakHour: 10 + Math.floor(Math.random() * 4), // 10am-1pm
+    totalSessions:
+      totalActiveUsers *
+      (3 + (crypto.getRandomValues(new Uint32Array(1))[0] % 5)),
+    avgSessionDuration: `${12 + (crypto.getRandomValues(new Uint32Array(1))[0] % 18)}m ${crypto.getRandomValues(new Uint32Array(1))[0] % 60}s`,
+    peakHour: 10 + (crypto.getRandomValues(new Uint32Array(1))[0] % 4), // 10am-1pm
     peakHourUsers: Math.floor(totalActiveUsers * 0.4),
-    returningUserRate: 65 + Math.round(Math.random() * 25 * 100) / 100,
+    returningUserRate:
+      65 +
+      Math.round(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 25 * 100
+      ) /
+        100,
   };
 }
 
 function collectApiPerformanceMetrics(): WeeklyReportMetrics["apiPerformance"] {
-  const totalRequests = 50000 + Math.floor(Math.random() * 100000);
-  const avgLatency = 45 + Math.floor(Math.random() * 60);
+  const totalRequests =
+    50000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 100000);
+  const avgLatency = 45 + (crypto.getRandomValues(new Uint32Array(1))[0] % 60);
   return {
     totalRequests,
     avgLatencyMs: avgLatency,
@@ -232,23 +254,23 @@ function collectApiPerformanceMetrics(): WeeklyReportMetrics["apiPerformance"] {
     slowestEndpoints: [
       {
         endpoint: "/api/trpc/analytics.dashboard",
-        avgMs: 320 + Math.floor(Math.random() * 200),
+        avgMs: 320 + (crypto.getRandomValues(new Uint32Array(1))[0] % 200),
       },
       {
         endpoint: "/api/trpc/settlement.process",
-        avgMs: 250 + Math.floor(Math.random() * 150),
+        avgMs: 250 + (crypto.getRandomValues(new Uint32Array(1))[0] % 150),
       },
       {
         endpoint: "/api/trpc/kyc.verify",
-        avgMs: 200 + Math.floor(Math.random() * 100),
+        avgMs: 200 + (crypto.getRandomValues(new Uint32Array(1))[0] % 100),
       },
       {
         endpoint: "/api/trpc/fraud.check",
-        avgMs: 150 + Math.floor(Math.random() * 80),
+        avgMs: 150 + (crypto.getRandomValues(new Uint32Array(1))[0] % 80),
       },
       {
         endpoint: "/api/trpc/export.transactionsCsv",
-        avgMs: 120 + Math.floor(Math.random() * 60),
+        avgMs: 120 + (crypto.getRandomValues(new Uint32Array(1))[0] % 60),
       },
     ],
     requestsPerMinute: Math.round(totalRequests / (7 * 24 * 60)),
@@ -256,7 +278,7 @@ function collectApiPerformanceMetrics(): WeeklyReportMetrics["apiPerformance"] {
 }
 
 function collectErrorMetrics(): WeeklyReportMetrics["errors"] {
-  const totalErrors = 20 + Math.floor(Math.random() * 80);
+  const totalErrors = 20 + (crypto.getRandomValues(new Uint32Array(1))[0] % 80);
   const totalRequests = 80000;
   return {
     totalErrors,
@@ -286,14 +308,20 @@ function collectErrorMetrics(): WeeklyReportMetrics["errors"] {
 function collectSecurityMetrics(): WeeklyReportMetrics["security"] {
   const secSummary = getSecuritySummary();
   return {
-    blockedIPs: secSummary.blockedIps ?? 5 + Math.floor(Math.random() * 15),
+    blockedIPs:
+      secSummary.blockedIps ??
+      5 + (crypto.getRandomValues(new Uint32Array(1))[0] % 15),
     failedLogins:
-      secSummary.warningEvents ?? 30 + Math.floor(Math.random() * 50),
+      secSummary.warningEvents ??
+      30 + (crypto.getRandomValues(new Uint32Array(1))[0] % 50),
     rateLimitHits:
-      secSummary.criticalEvents ?? 100 + Math.floor(Math.random() * 200),
-    suspiciousActivities: 2 + Math.floor(Math.random() * 8),
+      secSummary.criticalEvents ??
+      100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 200),
+    suspiciousActivities:
+      2 + (crypto.getRandomValues(new Uint32Array(1))[0] % 8),
     accountLockouts:
-      secSummary.lockedAccounts ?? 1 + Math.floor(Math.random() * 5),
+      secSummary.lockedAccounts ??
+      1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 5),
     csrfBlocked: 0,
   };
 }
@@ -310,8 +338,16 @@ async function collectSystemMetrics(): Promise<WeeklyReportMetrics["system"]> {
         )
       : 0,
     memoryUsageMB: Math.round(mem.heapUsed / 1024 / 1024),
-    cpuUsagePercent: 15 + Math.round(Math.random() * 30),
-    diskUsagePercent: 25 + Math.round(Math.random() * 20),
+    cpuUsagePercent:
+      15 +
+      Math.round(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 30
+      ),
+    diskUsagePercent:
+      25 +
+      Math.round(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 20
+      ),
   };
 }
 

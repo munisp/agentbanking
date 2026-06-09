@@ -48,8 +48,8 @@ export default function MLScoringDashboard() {
   const handleBatchScore = () => {
     const txns = Array.from({ length: 50 }, (_, i) => ({
       transactionId: `BATCH-${Date.now()}-${i}`,
-      amount: Math.floor(Math.random() * 500000) + 1000,
-      agentId: `AGT-${String(Math.floor(Math.random() * 100) + 1).padStart(3, "0")}`,
+      amount: (crypto.getRandomValues(new Uint32Array(1))[0] % 500000) + 1000,
+      agentId: `AGT-${String((crypto.getRandomValues(new Uint32Array(1))[0] % 100) + 1).padStart(3, "0")}`,
     }));
     batchMut.mutate({ transactions: txns });
   };

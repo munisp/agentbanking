@@ -14,9 +14,8 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
     """
-    # Use an in-memory SQLite database for simplicity in this example.
-    # In a production environment, this would be a PostgreSQL or similar URL.
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./compliance.db")
+        # In a production environment, this would be a PostgreSQL or similar URL.
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/compliance_service")
     
     # Configuration for Pydantic Settings
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -29,16 +28,7 @@ settings = Settings()
 Base = declarative_base()
 
 # Create the asynchronous engine
-# The connect_args are necessary for SQLite to handle concurrent access, 
 # but they are generally not needed for production databases like PostgreSQL.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_async_engine(
-        settings.DATABASE_URL, 
-        echo=False, 
-        connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
 
 # Configure the session maker
 AsyncSessionLocal = sessionmaker(

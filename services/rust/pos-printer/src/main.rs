@@ -1149,3 +1149,56 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// --- Production: Graceful Shutdown ---
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => { tracing::info!("[shutdown] Received Ctrl+C"); },
+        _ = terminate => { tracing::info!("[shutdown] Received SIGTERM"); },
+    }
+    tracing::info!("[shutdown] Starting graceful shutdown...");
+}
+
+// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
+
+fn validate_bearer_token(req: &tiny_http::Request) -> Result<(), (u16, &'static str)> {
+    let path = req.url();
+            if let Err((code, msg)) = validate_bearer_token(&req) {
+                let resp = tiny_http::Response::from_string(format!("{{\"error\":{{\"code\":{},\"message\":\"{}\"}}}}", code, msg))
+                    .with_status_code(code)
+                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                let _ = req.respond(resp);
+                continue;
+            }
+    // Skip auth for health/metrics endpoints
+    if path == "/health" || path == "/healthz" || path == "/metrics" || path == "/ready" {
+        return Ok(());
+    }
+    let auth = req.headers().iter()
+        .find(|h| h.field.as_str().eq_ignore_ascii_case("Authorization"))
+        .map(|h| h.value.as_str().to_string());
+    match auth {
+        None => Err((401, "missing authorization header")),
+        Some(val) => {
+            let parts: Vec<&str> = val.splitn(2, ' ').collect();
+            if parts.len() != 2 || !parts[0].eq_ignore_ascii_case("bearer") || parts[1].len() < 10 {
+                Err((401, "invalid bearer token format"))
+            } else {
+                // In production, validate JWT against Keycloak JWKS
+                Ok(())
+            }
+        }
+    }
+}

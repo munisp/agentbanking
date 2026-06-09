@@ -1,7 +1,0 @@
-[package]
-name = "carrier-performance-reporter"
-version = "1.0.0"
-edition = "2021"
-description = "Weekly/monthly carrier performance reports per region"
-
-[dependencies]

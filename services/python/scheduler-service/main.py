@@ -3,6 +3,9 @@ Scheduler Service
 Port: 8131
 """
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -13,6 +16,32 @@ import os
 import json
 import asyncpg
 import uvicorn
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -34,6 +63,7 @@ async def verify_token(authorization: str = Header(...)):
     return token
 
 app = FastAPI(title="Scheduler Service", description="Scheduler Service for Remittance Platform", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -78,7 +108,6 @@ async def health_check():
         return {"status": "healthy", "service": "scheduler-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "scheduler-service", "error": str(e)}
-
 
 class JobCreate(BaseModel):
     job_name: str
@@ -142,7 +171,6 @@ async def job_history(job_id: str, limit: int = 20, token: str = Depends(verify_
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM job_executions WHERE job_id=$1 ORDER BY started_at DESC LIMIT $2", uuid.UUID(job_id), limit)
         return {"executions": [dict(r) for r in rows]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8131)

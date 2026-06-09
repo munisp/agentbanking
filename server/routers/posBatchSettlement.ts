@@ -12,6 +12,7 @@ import {
   posSettlementBatches,
   posTerminals,
   transactions,
+  gl_journal_entries,
   agents,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count, sum } from "drizzle-orm";
@@ -149,6 +150,21 @@ export const posBatchSettlementRouter = router({
             periodEnd,
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `posBatchSettlement transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
 
         logOperation("batch_created", {
           batchRef,

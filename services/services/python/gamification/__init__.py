@@ -1,1 +1,0 @@
-"""Gamification and rewards service"""

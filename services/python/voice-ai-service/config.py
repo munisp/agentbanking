@@ -8,18 +8,9 @@ from sqlalchemy.orm import sessionmaker, Session
 
 # --- Database Configuration ---
 
-# Determine the base directory for the database file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Use a relative path for the SQLite database file
-SQLITE_DATABASE_URL = f"sqlite:///{BASE_DIR}/voice_ai_service.db"
-
-# For production, you would typically use PostgreSQL or another robust database
-# POSTGRES_DATABASE_URL = "postgresql://user:password@host:port/dbname"
-
 # Create the SQLAlchemy engine
 engine = create_engine(
-    SQLITE_DATABASE_URL,
-    connect_args={"check_same_thread": False}  # Required for SQLite
+    "postgresql://postgres:postgres@localhost:5432/voice_ai_service"
 )
 
 # Create a configured "Session" class
@@ -40,7 +31,7 @@ class Settings(BaseSettings):
     DESCRIPTION: str = "API for managing voice AI processing jobs (e.g., transcription, synthesis)."
 
     # Database settings
-    DATABASE_URL: str = SQLITE_DATABASE_URL
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/voice_ai_service")
     
     # Logging settings
     LOG_LEVEL: str = "INFO"
@@ -48,7 +39,6 @@ class Settings(BaseSettings):
     # Voice AI specific settings
     MAX_JOB_DURATION_SECONDS: int = 3600 # 1 hour
     DEFAULT_MODEL: str = "whisper-large-v3"
-
 
 @lru_cache()
 def get_settings() -> Settings:

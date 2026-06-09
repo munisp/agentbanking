@@ -20,6 +20,9 @@ from typing import Any, Dict, List, Optional
 import asyncpg
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,6 +31,33 @@ from circuit_breaker import circuit_breaker_registry, ResilientHttpClient
 from inventory_reservation import InventoryReservationManager, InsufficientInventoryError
 from idempotency import IdempotencyService, IdempotencyConflictError, IdempotencyInProgressError
 from kafka_consumer import (
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
     InventoryEventConsumer, InventoryEventProducer,
     InventoryEventType, create_default_consumer
 )
@@ -55,7 +85,6 @@ event_consumer: InventoryEventConsumer = None
 event_producer: InventoryEventProducer = None
 batch_service: BatchInventoryService = None
 carrier_aggregator: CarrierAggregator = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -129,8 +158,43 @@ async def lifespan(app: FastAPI):
     
     logger.info("E-commerce service shutdown complete")
 
-
 app = FastAPI(
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ecommerce_service")
+apply_middleware(app, enable_auth=True)
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     title="E-commerce Service",
     description="Production-ready e-commerce and inventory management",
     version="2.0.0",
@@ -145,14 +209,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Pydantic Models
 class HealthResponse(BaseModel):
     status: str
     service: str
     timestamp: datetime
     components: Dict[str, str]
-
 
 class OrderItemRequest(BaseModel):
     product_id: str
@@ -161,7 +223,6 @@ class OrderItemRequest(BaseModel):
     quantity: int = Field(gt=0)
     unit_price: float = Field(gt=0)
     warehouse_id: str
-
 
 class CreateOrderRequest(BaseModel):
     customer_id: str
@@ -172,17 +233,14 @@ class CreateOrderRequest(BaseModel):
     total_amount: float = Field(gt=0)
     currency: str = "NGN"
 
-
 class ReservationRequest(BaseModel):
     order_id: str
     items: List[Dict[str, Any]]
     timeout_minutes: Optional[int] = None
 
-
 class BatchUpdateRequest(BaseModel):
     items: List[Dict[str, Any]]
     reason: str = "bulk_update"
-
 
 class BatchTransferRequest(BaseModel):
     source_warehouse_id: str
@@ -190,12 +248,10 @@ class BatchTransferRequest(BaseModel):
     items: List[Dict[str, Any]]
     reason: str = "warehouse_transfer"
 
-
 class ShippingRateRequest(BaseModel):
     origin: Dict[str, Any]
     destination: Dict[str, Any]
     packages: List[Dict[str, Any]]
-
 
 class CreateShipmentRequest(BaseModel):
     carrier: str
@@ -203,7 +259,6 @@ class CreateShipmentRequest(BaseModel):
     destination: Dict[str, Any]
     packages: List[Dict[str, Any]]
     service_type: str
-
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -235,7 +290,6 @@ async def health_check():
         components=components
     )
 
-
 @app.get("/")
 async def root():
     return {
@@ -252,12 +306,10 @@ async def root():
         ]
     }
 
-
 @app.get("/circuit-breakers")
 async def get_circuit_breaker_stats():
     """Get circuit breaker statistics"""
     return {"breakers": circuit_breaker_registry.get_all_stats()}
-
 
 @app.post("/orders")
 async def create_order(
@@ -313,7 +365,6 @@ async def create_order(
         await idempotency_service.fail(idempotency_key, str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str, reason: str = "customer_request"):
     """Cancel order with compensation workflow"""
@@ -324,7 +375,6 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
         raise HTTPException(status_code=404, detail="Order not found")
     
     return await temporal_service.cancel_order(order_id=order_id, payment_id=order["payment_id"], reason=reason)
-
 
 @app.post("/inventory/reserve")
 async def reserve_inventory(request: ReservationRequest):
@@ -342,25 +392,21 @@ async def reserve_inventory(request: ReservationRequest):
     except InsufficientInventoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/inventory/reserve/{order_id}/fulfill")
 async def fulfill_reservation(order_id: str):
     """Fulfill inventory reservation"""
     return {"fulfilled_count": await reservation_manager.fulfill(order_id)}
-
 
 @app.post("/inventory/reserve/{order_id}/release")
 async def release_reservation(order_id: str, reason: str = "cancelled"):
     """Release inventory reservation"""
     return {"released_count": await reservation_manager.release(order_id, reason)}
 
-
 @app.get("/inventory/reserve/{order_id}")
 async def get_reservations(order_id: str):
     """Get reservations for an order"""
     reservations = await reservation_manager.get_reservations(order_id)
     return {"reservations": [{"id": r.id, "product_id": r.product_id, "sku": r.sku, "quantity": r.quantity, "status": r.status.value, "expires_at": r.expires_at.isoformat()} for r in reservations]}
-
 
 @app.post("/inventory/batch/update")
 async def batch_update_stock(request: BatchUpdateRequest):
@@ -369,14 +415,12 @@ async def batch_update_stock(request: BatchUpdateRequest):
     result = await batch_service.bulk_update_stock(items, request.reason)
     return {"batch_id": result.batch_id, "total_items": result.total_items, "successful_items": result.successful_items, "failed_items": result.failed_items, "errors": result.errors, "duration_ms": result.duration_ms}
 
-
 @app.post("/inventory/batch/transfer")
 async def batch_warehouse_transfer(request: BatchTransferRequest):
     """Transfer inventory between warehouses"""
     items = [(item["product_id"], item.get("sku", ""), item["quantity"]) for item in request.items]
     result = await batch_service.warehouse_transfer(source_warehouse_id=request.source_warehouse_id, destination_warehouse_id=request.destination_warehouse_id, items=items, reason=request.reason)
     return {"batch_id": result.batch_id, "total_items": result.total_items, "successful_items": result.successful_items, "failed_items": result.failed_items, "errors": result.errors, "duration_ms": result.duration_ms}
-
 
 @app.post("/shipping/rates")
 async def get_shipping_rates(request: ShippingRateRequest):
@@ -386,7 +430,6 @@ async def get_shipping_rates(request: ShippingRateRequest):
     packages = [Package(weight=pkg.get("weight", 1.0), length=pkg.get("length", 10.0), width=pkg.get("width", 10.0), height=pkg.get("height", 10.0)) for pkg in request.packages]
     rates = await carrier_aggregator.get_all_rates(origin, destination, packages)
     return {"rates": [{"carrier": r.carrier, "service_type": r.service_type, "service_name": r.service_name, "rate": r.rate, "currency": r.currency, "estimated_days": r.estimated_days, "guaranteed": r.guaranteed} for r in rates]}
-
 
 @app.post("/shipping/shipments")
 async def create_shipment(request: CreateShipmentRequest):
@@ -400,7 +443,6 @@ async def create_shipment(request: CreateShipmentRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.get("/shipping/track/{carrier}/{tracking_number}")
 async def track_shipment(carrier: str, tracking_number: str):
     """Track shipment"""
@@ -410,13 +452,11 @@ async def track_shipment(carrier: str, tracking_number: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/events/inventory")
 async def publish_inventory_event(warehouse_id: str, product_id: str, sku: str, quantity_change: int, quantity_available: int, quantity_reserved: int = 0):
     """Manually publish inventory event"""
     await event_producer.publish_stock_update(warehouse_id=warehouse_id, product_id=product_id, sku=sku, quantity_change=quantity_change, quantity_available=quantity_available, quantity_reserved=quantity_reserved)
     return {"status": "published"}
-
 
 if __name__ == "__main__":
     import uvicorn

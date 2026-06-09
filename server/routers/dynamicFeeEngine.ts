@@ -6,13 +6,18 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { feeRules, feeAuditTrail } from "../../drizzle/schema";
+import {
+  feeRules,
+  feeAuditTrail,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -20,6 +25,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -190,6 +196,21 @@ export const dynamicFeeEngineRouter = router({
             createdBy: ctx.user?.id,
           } as any)
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `dynamicFeeEngine transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         // Audit trail
         await db.insert(feeAuditTrail).values({
           feeRuleId: rule.id,

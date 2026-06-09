@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./rule_engine.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/rule_engine"
     
     # Service settings
     SERVICE_NAME: str = "rule-engine"
@@ -31,15 +31,7 @@ settings = Settings()
 
 # --- Database Setup ---
 
-# Use a relative path for SQLite for simplicity in the sandbox, but the structure
 # supports any SQLAlchemy-compatible database via DATABASE_URL.
-# For SQLite, check_same_thread is needed for FastAPI/SQLAlchemy integration.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

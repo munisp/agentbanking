@@ -3,8 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database settings
-    # Default to a local SQLite file for development/testing
-    DATABASE_URL: str = "sqlite:///./payment_corridors.db"
+        DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/payment_corridors"
     
     # Application settings
     PROJECT_NAME: str = "Payment Corridors API"

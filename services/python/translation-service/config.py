@@ -7,13 +7,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Define the base directory for the application
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """Application settings."""
     
     # Database settings
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR}/translation_service.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/translation_service")
     
     # Service settings
     SERVICE_NAME: str = "translation-service"
@@ -30,8 +29,7 @@ settings = get_settings()
 
 # SQLAlchemy setup
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -49,4 +47,4 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 # Create the directory if it doesn't exist
-os.makedirs(os.path.dirname(settings.DATABASE_URL.replace("sqlite:///", "")), exist_ok=True)
+os.makedirs(os.path.dirname(settings.DATABASE_URL.replace("postgresql://postgres:postgres@localhost:5432/translation_service", "")), exist_ok=True)

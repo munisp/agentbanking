@@ -1,2 +1,0 @@
-# No external dependencies - uses stdlib only
-# Add openai-whisper when GPU is available for production ASR

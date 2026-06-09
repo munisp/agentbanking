@@ -14,6 +14,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -65,6 +68,7 @@ app = FastAPI(
     "territory mapping, proximity services, and boundary violation detection.",
     version="2.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,7 +77,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # ── DB Schema Init ───────────────────────────────────────────────────────────
 
@@ -139,7 +142,6 @@ async def startup():
         """)
     logger.info("[startup] Geofence tables initialized")
 
-
 # ── Haversine Distance ───────────────────────────────────────────────────────
 
 def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -149,7 +151,6 @@ def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     dlambda = math.radians(lng2 - lng1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
 
 # ── Pydantic Models ──────────────────────────────────────────────────────────
 
@@ -177,7 +178,6 @@ class GeofenceUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(active|inactive|archived)$")
     description: Optional[str] = None
 
-
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -196,7 +196,6 @@ async def health():
     except Exception as e:
         return {"status": "degraded", "service": "pos-geofencing", "error": str(e)}
 
-
 @app.post("/api/v1/geofence/create")
 async def create_geofence(body: GeofenceCreate):
     pool = await get_db_pool()
@@ -213,7 +212,6 @@ async def create_geofence(body: GeofenceCreate):
         )
         logger.info(f"[geofence] Created geofence {row['id']} '{body.name}'")
         return dict(row)
-
 
 @app.post("/api/v1/geofence/check")
 async def check_location(body: LocationCheck):
@@ -278,7 +276,6 @@ async def check_location(body: LocationCheck):
             "details": results,
         }
 
-
 @app.get("/api/v1/geofence/alerts")
 async def get_alerts(
     agent_id: Optional[str] = None,
@@ -320,7 +317,6 @@ async def get_alerts(
             "offset": offset,
         }
 
-
 @app.get("/api/v1/geofence/zones")
 async def list_zones(
     region: Optional[str] = None,
@@ -354,7 +350,6 @@ async def list_zones(
             "offset": offset,
         }
 
-
 @app.get("/api/v1/geofence/{geofence_id}")
 async def get_geofence(geofence_id: str):
     pool = await get_db_pool()
@@ -377,7 +372,6 @@ async def get_geofence(geofence_id: str):
             "event_count": event_count,
             "violation_count": violation_count,
         }
-
 
 @app.put("/api/v1/geofence/{geofence_id}")
 async def update_geofence(geofence_id: str, body: GeofenceUpdate):
@@ -406,7 +400,6 @@ async def update_geofence(geofence_id: str, body: GeofenceUpdate):
         row = await conn.fetchrow(query, *params)
         return dict(row)
 
-
 @app.delete("/api/v1/geofence/{geofence_id}")
 async def delete_geofence(geofence_id: str):
     pool = await get_db_pool()
@@ -418,7 +411,6 @@ async def delete_geofence(geofence_id: str):
         if result == "UPDATE 0":
             raise HTTPException(status_code=404, detail="Geofence not found")
         return {"archived": True, "geofence_id": geofence_id}
-
 
 @app.get("/api/v1/geofence/terminal/{terminal_id}/history")
 async def terminal_geofence_history(
@@ -447,7 +439,6 @@ async def terminal_geofence_history(
             "total": total,
         }
 
-
 @app.get("/api/v1/geofence/stats")
 async def geofence_stats():
     pool = await get_db_pool()
@@ -470,7 +461,6 @@ async def geofence_stats():
             "violations_today": violations_today,
             "tracked_terminals": unique_terminals,
         }
-
 
 @app.post("/api/v1/geofence/bulk-check")
 async def bulk_check_terminals():
@@ -503,7 +493,6 @@ async def bulk_check_terminals():
             "terminals_with_violations": sum(1 for r in results if r["violation_count"] > 0),
             "results": results,
         }
-
 
 if __name__ == "__main__":
     import uvicorn

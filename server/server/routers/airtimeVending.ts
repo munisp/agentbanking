@@ -8,7 +8,12 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, commissionRules, gl_journal_entries} from "../../drizzle/schema";
+import {
+  transactions,
+  agents,
+  commissionRules,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -16,7 +21,9 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
-  withTransaction, withIdempotency} from "../lib/transactionHelper";
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
 
 import {
   calculateFee,
@@ -281,20 +288,23 @@ export const airtimeVendingRouter = router({
           })
           .where(eq(agents.id, session.id));
 
-          // Double-entry journal entry
-          await db.insert(gl_journal_entries).values({
-            entryNumber: `JE-CI-${Date.now()}`,
-            description: `airtimeVending transaction`,
-            debitAccountId: 2001,
-            creditAccountId: 1001,
-            amount: Math.round((typeof input === "object" && "amount" in input ? Number((input as any).amount) : 0) * 100),
-            currency: "NGN",
-            referenceType: "transaction",
-            referenceId: ref ?? String(Date.now()),
-            postedBy: session?.agentCode ?? "system",
-            status: "posted",
-          });
-
+        // Double-entry journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-CI-${Date.now()}`,
+          description: `airtimeVending transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref ?? String(Date.now()),
+          postedBy: session?.agentCode ?? "system",
+          status: "posted",
+        });
 
         await writeAuditLog({
           agentId: session.id,

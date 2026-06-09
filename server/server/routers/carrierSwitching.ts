@@ -341,29 +341,39 @@ export const carrierSwitchingRouter = router({
   recordSwitch: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-await writeAuditLog({
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
 
-  agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
 
-  agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+        action: "MUTATION",
 
-  action: "MUTATION",
+        resource: "carrierSwitching",
 
-  resource: "carrierSwitching",
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
 
-  resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+        status: "success",
 
-  status: "success",
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
 
-  metadata: { input: typeof input === "object" ? input : {} },
-
-});
-
-return {
+      return {
         success: true,
         action: "recordSwitch",
         id: input?.id ?? null,

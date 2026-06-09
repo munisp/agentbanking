@@ -192,11 +192,14 @@ export const resilienceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const result = await safeFetch<{
           ussd_string: string;
           instructions: string;
@@ -235,21 +238,28 @@ try {
       `${OFFLINE_URL}/queue/count`
     );
     await writeAuditLog({
+      agentId:
+        typeof ctx === "object" && ctx !== null && "user" in ctx
+          ? ((ctx as any).user?.id ?? 0)
+          : 0,
 
-      agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-      agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+      agentCode:
+        typeof ctx === "object" && ctx !== null && "user" in ctx
+          ? ((ctx as any).user?.agentCode ?? "system")
+          : "system",
 
       action: "MUTATION",
 
       resource: "resilience",
 
-      resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+      resourceId:
+        typeof input === "object" && input !== null && "id" in input
+          ? String((input as any).id)
+          : "new",
 
       status: "success",
 
       metadata: { input: typeof input === "object" ? input : {} },
-
     });
 
     return { pending: result?.pending ?? 0 };

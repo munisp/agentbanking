@@ -142,11 +142,14 @@ export const customerRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-try {
+        const txAmount =
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0;
+        const fees = calculateFee(txAmount, "transfer");
+        const commission = calculateCommission(fees.fee, "transfer");
+        const tax = calculateTax(fees.fee, "vat");
+        try {
           const { db, customer } = await resolveCustomer(ctx.user.id);
           const [updated] = await db
             .update(customers)
@@ -694,20 +697,22 @@ try {
         })
       )
       .mutation(async ({ input, ctx }) => {
-        
-      // Enforce STATUS_TRANSITIONS state machine
-      if (typeof input === "object" && "status" in input) {
-        const currentStatus = "pending"; // Will be overridden by DB lookup
-        const newStatus = (input as any).status;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition`,
-          });
+        // Enforce STATUS_TRANSITIONS state machine
+        if (typeof input === "object" && "status" in input) {
+          const currentStatus = "pending"; // Will be overridden by DB lookup
+          const newStatus = (input as any).status;
+          const allowed =
+            STATUS_TRANSITIONS[
+              currentStatus as keyof typeof STATUS_TRANSITIONS
+            ];
+          if (allowed && !allowed.includes(newStatus)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid status transition`,
+            });
+          }
         }
-      }
-try {
+        try {
           if (ctx.user.role !== "admin")
             throw new TRPCError({ code: "FORBIDDEN" });
           const db = (await getDb())!;

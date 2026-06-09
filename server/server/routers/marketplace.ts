@@ -265,11 +265,14 @@ export const marketplaceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-return mktFetch("/api/v1/connections", "POST", input);
+      return mktFetch("/api/v1/connections", "POST", input);
     }),
 
   // ─── Product Sync ────────────────────────────────────────────────────────

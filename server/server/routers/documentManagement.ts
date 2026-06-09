@@ -266,12 +266,12 @@ export const documentManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "verified" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
         const newStatus = (input as any).verified;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -279,11 +279,14 @@ export const documentManagementRouter = router({
           });
         }
       }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const db = (await getDb())!;
         const [doc] = await db
           .insert(kycDocuments)

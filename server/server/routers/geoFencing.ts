@@ -213,11 +213,14 @@ export const geoFencingRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-const db = await getDb();
+      const db = await getDb();
       if (!db) return { id: "zone-1", name: input.name, created: true };
       const [zone] = await db
         .insert(geofenceZones)

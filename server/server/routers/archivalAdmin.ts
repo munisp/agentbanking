@@ -387,11 +387,14 @@ export const archivalAdminRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-const startTime = Date.now();
+      const startTime = Date.now();
       const job = { id: `archival_${Date.now()}` };
       try {
         const result = await runArchivalJob({
@@ -404,21 +407,28 @@ const startTime = Date.now();
           content: `Triggered by: ${input.triggeredBy}\nTotal archived: ${result.totalArchived} records\nDuration: ${duration}ms`,
         });
         await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
 
-          agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-          agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
 
           action: "MUTATION",
 
           resource: "archivalAdmin",
 
-          resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
 
           status: "success",
 
           metadata: { input: typeof input === "object" ? input : {} },
-
         });
 
         return {

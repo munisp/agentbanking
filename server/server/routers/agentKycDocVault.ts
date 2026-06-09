@@ -275,12 +275,12 @@ export const agentKycDocVaultRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "verified" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
         const newStatus = (input as any).verified;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -288,11 +288,14 @@ export const agentKycDocVaultRouter = router({
           });
         }
       }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         const [doc] = await db
@@ -313,21 +316,28 @@ try {
           metadata: { agentId: input.agentId, docType: input.docType },
         });
         await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
 
-          agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-          agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
 
           action: "MUTATION",
 
           resource: "agentKycDocVault",
 
-          resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
 
           status: "success",
 
           metadata: { input: typeof input === "object" ? input : {} },
-
         });
 
         return { success: true, document: doc };

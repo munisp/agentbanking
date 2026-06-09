@@ -134,12 +134,12 @@ export const agentStoreRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
         const newStatus = (input as any).status;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -147,11 +147,14 @@ export const agentStoreRouter = router({
           });
         }
       }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-const database = await getDb();
+      const database = await getDb();
       if (!database)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

@@ -1,7 +1,7 @@
 /**
  * CBN Agent Banking Transaction Limits
  * Per Central Bank of Nigeria Guidelines on Agent Banking (2013, revised 2021)
- * 
+ *
  * Tier 1 (Bronze): Max ₦50,000/transaction, ₦300,000/day
  * Tier 2 (Silver): Max ₦200,000/transaction, ₦1,000,000/day
  * Tier 3 (Gold/Platinum): Max ₦5,000,000/transaction, ₦10,000,000/day
@@ -35,7 +35,9 @@ export async function checkDailyLimit(
   tier: string,
   amount: number
 ): Promise<LimitCheckResult> {
-  const limits = KYC_TIER_LIMITS[tier as keyof typeof KYC_TIER_LIMITS] ?? KYC_TIER_LIMITS.Bronze;
+  const limits =
+    KYC_TIER_LIMITS[tier as keyof typeof KYC_TIER_LIMITS] ??
+    KYC_TIER_LIMITS.Bronze;
 
   // Check single transaction limit
   if (amount > limits.single) {

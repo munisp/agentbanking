@@ -108,11 +108,14 @@ const addAccount = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-try {
+    const txAmount =
+      typeof input === "object" && "amount" in input
+        ? Number((input as Record<string, unknown>).amount)
+        : 0;
+    const fees = calculateFee(txAmount, "transfer");
+    const commission = calculateCommission(fees.fee, "transfer");
+    const tax = calculateTax(fees.fee, "vat");
+    try {
       const db = (await getDb())!;
       if (!/^[0-9]{10}$/.test(input.accountNumber))
         throw new TRPCError({

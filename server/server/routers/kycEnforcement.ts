@@ -292,11 +292,14 @@ export const kycEnforcementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-return serviceCall(
+      return serviceCall(
         `${KYC_ENFORCEMENT_URL}/api/v1/enforce/account-opening`,
         "POST",
         {

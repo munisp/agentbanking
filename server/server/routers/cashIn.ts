@@ -22,7 +22,7 @@ import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
 
 /**
  * Cash In Router — Agent accepts physical cash from customer and credits their account.
- * 
+ *
  * Flow: Validate → Check limits → Calculate fees → Debit customer (conceptual) →
  *       Credit agent float → Record transaction → Double-entry journal → Audit → Receipt
  */
@@ -46,12 +46,21 @@ export const cashInRouter = router({
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
         // Validate amount
-        const amountCheck = validateAmount(input.amount, { min: 100, max: 10_000_000 });
+        const amountCheck = validateAmount(input.amount, {
+          min: 100,
+          max: 10_000_000,
+        });
         if (!amountCheck.valid)
-          throw new TRPCError({ code: "BAD_REQUEST", message: amountCheck.error! });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: amountCheck.error!,
+          });
 
         // Calculate fees
         const feeResult = calculateFee(input.amount, "cashIn");
@@ -61,11 +70,16 @@ export const cashInRouter = router({
         const netAmount = input.amount - feeResult.fee;
         const ref = `CI-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           const db = tx ?? (await getDb())!;
 
           // Check CBN daily cumulative limit
-          const limitCheck = await checkDailyLimit(db, session.id, session.tier, input.amount);
+          const limitCheck = await checkDailyLimit(
+            db,
+            session.id,
+            session.tier,
+            input.amount
+          );
           if (!limitCheck.allowed)
             throw new TRPCError({
               code: "BAD_REQUEST",
@@ -74,15 +88,25 @@ export const cashInRouter = router({
 
           // Check agent float limit (can't exceed max float)
           const [agent] = await db
-            .select({ floatBalance: agents.floatBalance, floatLimit: agents.floatLimit, floatLocked: agents.floatLocked })
+            .select({
+              floatBalance: agents.floatBalance,
+              floatLimit: agents.floatLimit,
+              floatLocked: agents.floatLocked,
+            })
             .from(agents)
             .where(eq(agents.id, session.id))
             .limit(1);
 
           if (!agent)
-            throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Agent not found",
+            });
           if (agent.floatLocked)
-            throw new TRPCError({ code: "FORBIDDEN", message: "Agent float is locked" });
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Agent float is locked",
+            });
 
           const newBalance = Number(agent.floatBalance) + netAmount;
           if (newBalance > Number(agent.floatLimit))
@@ -94,7 +118,9 @@ export const cashInRouter = router({
           // Credit agent float balance
           await db
             .update(agents)
-            .set({ floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netAmount)}` })
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netAmount)}`,
+            })
             .where(eq(agents.id, session.id));
 
           // Record transaction
@@ -114,7 +140,10 @@ export const cashInRouter = router({
               customerAccount: input.customerAccount ?? null,
               channel: "Cash",
               status: "success",
-              metadata: { narration: input.narration, feeBreakdown: feeResult.breakdown },
+              metadata: {
+                narration: input.narration,
+                feeBreakdown: feeResult.breakdown,
+              },
             })
             .returning();
 
@@ -135,7 +164,9 @@ export const cashInRouter = router({
           // Credit agent commission
           await db
             .update(agents)
-            .set({ commissionBalance: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commResult.agentShare)}` })
+            .set({
+              commissionBalance: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commResult.agentShare)}`,
+            })
             .where(eq(agents.id, session.id));
 
           // Audit trail
@@ -189,7 +220,10 @@ export const cashInRouter = router({
   todaySummary: protectedProcedure.query(async ({ ctx }) => {
     const session = await getAgentFromCookie(ctx.req);
     if (!session)
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Agent session required",
+      });
 
     const db = (await getDb())!;
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -213,7 +247,9 @@ export const cashInRouter = router({
         )
       );
 
-    const tierLimit = KYC_TIER_LIMITS[session.tier as keyof typeof KYC_TIER_LIMITS] ?? KYC_TIER_LIMITS.Bronze;
+    const tierLimit =
+      KYC_TIER_LIMITS[session.tier as keyof typeof KYC_TIER_LIMITS] ??
+      KYC_TIER_LIMITS.Bronze;
 
     return {
       depositsToday: stats?.count ?? 0,

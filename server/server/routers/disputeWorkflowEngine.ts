@@ -119,12 +119,12 @@ export const disputeWorkflowEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
         const newStatus = (input as any).status;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -132,11 +132,14 @@ export const disputeWorkflowEngineRouter = router({
           });
         }
       }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const db = (await getDb())!;
         const ref = `WF-${Date.now()}`;
         const [d] = await db
@@ -177,21 +180,28 @@ try {
           logger.warn("[DisputeWorkflow]", e);
         }
         await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
 
-          agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-          agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
 
           action: "MUTATION",
 
           resource: "disputeWorkflowEngine",
 
-          resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
 
           status: "success",
 
           metadata: { input: typeof input === "object" ? input : {} },
-
         });
 
         return {

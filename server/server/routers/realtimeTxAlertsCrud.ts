@@ -295,11 +295,14 @@ export const realtime_tx_alertsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const db = (await getDb())!;
         const triggers: string[] = [];
         const hour = new Date().getHours();
@@ -307,29 +310,36 @@ try {
         if (hour >= 23 || hour < 5) triggers.push("unusual_hours");
         if (triggers.length === 0)
           await writeAuditLog({
+            agentId:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.id ?? 0)
+                : 0,
 
-            agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-            agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+            agentCode:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.agentCode ?? "system")
+                : "system",
 
             action: "MUTATION",
 
             resource: "realtimeTxAlertsCrud",
 
-            resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+            resourceId:
+              typeof input === "object" && input !== null && "id" in input
+                ? String((input as any).id)
+                : "new",
 
             status: "success",
 
             metadata: { input: typeof input === "object" ? input : {} },
-
           });
 
-          return {
-            agentId: input.agentId,
-            riskLevel: "low",
-            triggers: [],
-            action: "allow",
-          };
+        return {
+          agentId: input.agentId,
+          riskLevel: "low",
+          triggers: [],
+          action: "allow",
+        };
         const severity = triggers.includes("large_amount")
           ? "critical"
           : "warning";

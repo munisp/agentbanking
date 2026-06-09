@@ -320,29 +320,39 @@ export const ussdGatewayRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-await writeAuditLog({
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
 
-  agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
 
-  agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+        action: "MUTATION",
 
-  action: "MUTATION",
+        resource: "ussdGateway",
 
-  resource: "ussdGateway",
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
 
-  resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+        status: "success",
 
-  status: "success",
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
 
-  metadata: { input: typeof input === "object" ? input : {} },
-
-});
-
-return {
+      return {
         text: "Welcome to AgentPOS\n1. Cash In\n2. Cash Out\n3. Balance",
         sessionId: input.sessionId || "USSD-" + Date.now(),
         agentCode: input.agentCode,

@@ -292,12 +292,12 @@ export const payrollDisbursementRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
         const newStatus = (input as any).status;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -305,11 +305,14 @@ export const payrollDisbursementRouter = router({
           });
         }
       }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-const db = (await getDb())!;
+      const db = (await getDb())!;
 
       if (
         !input.data.employerName ||
@@ -340,21 +343,28 @@ const db = (await getDb())!;
       );
       const id = (result as any).rows?.[0]?.id;
       await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
 
-        agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-        agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
 
         action: "MUTATION",
 
         resource: "payrollDisbursement",
 
-        resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
 
         status: "success",
 
         metadata: { input: typeof input === "object" ? input : {} },
-
       });
 
       return { id, status: "created" };

@@ -181,11 +181,14 @@ export const observabilityAlertsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const db = (await getDb())!;
         // Deduplication: check for same alert within window
         const [recent] = await db
@@ -202,28 +205,35 @@ try {
           .limit(100);
         if (recent)
           await writeAuditLog({
+            agentId:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.id ?? 0)
+                : 0,
 
-            agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-            agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+            agentCode:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.agentCode ?? "system")
+                : "system",
 
             action: "MUTATION",
 
             resource: "observabilityAlertsCrud",
 
-            resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+            resourceId:
+              typeof input === "object" && input !== null && "id" in input
+                ? String((input as any).id)
+                : "new",
 
             status: "success",
 
             metadata: { input: typeof input === "object" ? input : {} },
-
           });
 
-          return {
-            ...recent,
-            deduplicated: true,
-            message: "Alert deduplicated — existing alert still firing",
-          };
+        return {
+          ...recent,
+          deduplicated: true,
+          message: "Alert deduplicated — existing alert still firing",
+        };
         const [row] = await db
           .insert(observabilityAlerts)
           .values(input as any)

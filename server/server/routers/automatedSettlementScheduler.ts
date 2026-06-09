@@ -316,11 +316,14 @@ export const automatedSettlementSchedulerRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "settlement");
       const commission = calculateCommission(fees.fee, "settlement");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const ns = {
           id: `SCH-${Date.now()}`,
           ...input,
@@ -344,21 +347,28 @@ try {
           logger.warn("[SettlementScheduler] Middleware:", e);
         }
         await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
 
-          agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-          agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
 
           action: "MUTATION",
 
           resource: "automatedSettlementScheduler",
 
-          resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
 
           status: "success",
 
           metadata: { input: typeof input === "object" ? input : {} },
-
         });
 
         return { id: ns.id, ...input, status: "active", createdAt: Date.now() };

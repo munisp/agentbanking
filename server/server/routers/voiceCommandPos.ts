@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, gl_journal_entries} from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -360,14 +360,17 @@ export const voiceCommandPosRouter = router({
             description: `voiceCommandPos transaction`,
             debitAccountId: 2001,
             creditAccountId: 1001,
-            amount: Math.round((typeof input === "object" && "amount" in input ? Number((input as any).amount) : 0) * 100),
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
             currency: "NGN",
             referenceType: "transaction",
             referenceId: ref ?? String(Date.now()),
             postedBy: session?.agentCode ?? "system",
             status: "posted",
           });
-
         }
         if (intentInfo.type === "Cash In") {
           await db

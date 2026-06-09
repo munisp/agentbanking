@@ -3,7 +3,12 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agentLoans, agents, transactions, gl_journal_entries } from "../../drizzle/schema";
+import {
+  agentLoans,
+  agents,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, and, sql, desc, count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
@@ -51,9 +56,17 @@ export const agentLoanOriginationRouter = router({
     .input(
       z.object({
         amount: z.number().positive().min(5000).max(50_000_000),
-        purpose: z.enum(["working_capital", "inventory", "equipment", "expansion", "emergency"]),
+        purpose: z.enum([
+          "working_capital",
+          "inventory",
+          "equipment",
+          "expansion",
+          "emergency",
+        ]),
         tenorDays: z.number().int().min(7).max(365),
-        collateralType: z.enum(["none", "pos_terminal", "inventory", "property", "guarantor"]).optional(),
+        collateralType: z
+          .enum(["none", "pos_terminal", "inventory", "property", "guarantor"])
+          .optional(),
         collateralValue: z.number().min(0).optional(),
         idempotencyKey: z.string().min(16).max(64),
       })
@@ -62,7 +75,10 @@ export const agentLoanOriginationRouter = router({
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -80,15 +96,26 @@ export const agentLoanOriginationRouter = router({
           .limit(1);
 
         if (!agent)
-          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Agent not found",
+          });
 
         // Determine credit tier
         const score = agent.creditScore ?? 0;
         let creditTier = "unscored";
-        for (const [tier, thresholds] of Object.entries(CREDIT_SCORE_THRESHOLDS)) {
-          if (score >= thresholds.min) { creditTier = tier; break; }
+        for (const [tier, thresholds] of Object.entries(
+          CREDIT_SCORE_THRESHOLDS
+        )) {
+          if (score >= thresholds.min) {
+            creditTier = tier;
+            break;
+          }
         }
-        const tierConfig = CREDIT_SCORE_THRESHOLDS[creditTier as keyof typeof CREDIT_SCORE_THRESHOLDS];
+        const tierConfig =
+          CREDIT_SCORE_THRESHOLDS[
+            creditTier as keyof typeof CREDIT_SCORE_THRESHOLDS
+          ];
 
         // Validate tenor against credit tier
         if (input.tenorDays > tierConfig.maxTenor)
@@ -123,8 +150,16 @@ export const agentLoanOriginationRouter = router({
 
         // Calculate interest rate and repayment schedule
         const annualRate = tierConfig.maxRate;
-        const interestResult = calculateSimpleInterest(input.amount, annualRate, input.tenorDays);
-        const repayment = calculateLoanRepayment(input.amount, annualRate, input.tenorDays);
+        const interestResult = calculateSimpleInterest(
+          input.amount,
+          annualRate,
+          input.tenorDays
+        );
+        const repayment = calculateLoanRepayment(
+          input.amount,
+          annualRate,
+          input.tenorDays
+        );
         const processingFee = calculateFee(input.amount, "loanDisbursement");
 
         const ref = `LN-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
@@ -190,7 +225,10 @@ export const agentLoanOriginationRouter = router({
     .mutation(async ({ input, ctx }) => {
       const session = await getAgentFromCookie(ctx.req);
       if (!session || session.role !== "admin")
-        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admin access required",
+        });
 
       const db = (await getDb())!;
 
@@ -205,11 +243,15 @@ export const agentLoanOriginationRouter = router({
 
       // Enforce state machine
       const transition = validateStatusTransition(
-        loan.status, input.decision === "approved" ? "approved" : "rejected",
+        loan.status,
+        input.decision === "approved" ? "approved" : "rejected",
         LOAN_STATUS_TRANSITIONS
       );
       if (!transition.valid)
-        throw new TRPCError({ code: "BAD_REQUEST", message: transition.error! });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: transition.error!,
+        });
 
       await db
         .update(agentLoans)
@@ -223,7 +265,8 @@ export const agentLoanOriginationRouter = router({
       await writeAuditLog({
         agentId: session.id,
         agentCode: session.agentCode,
-        action: input.decision === "approved" ? "LOAN_APPROVED" : "LOAN_REJECTED",
+        action:
+          input.decision === "approved" ? "LOAN_APPROVED" : "LOAN_REJECTED",
         resource: "agent_loan",
         resourceId: String(input.loanId),
         status: "success",
@@ -245,9 +288,12 @@ export const agentLoanOriginationRouter = router({
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session || session.role !== "admin")
-          throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Admin access required",
+          });
 
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           const db = tx ?? (await getDb())!;
 
           const [loan] = await db
@@ -257,11 +303,21 @@ export const agentLoanOriginationRouter = router({
             .limit(1);
 
           if (!loan)
-            throw new TRPCError({ code: "NOT_FOUND", message: "Loan not found" });
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Loan not found",
+            });
 
-          const transition = validateStatusTransition(loan.status, "disbursed", LOAN_STATUS_TRANSITIONS);
+          const transition = validateStatusTransition(
+            loan.status,
+            "disbursed",
+            LOAN_STATUS_TRANSITIONS
+          );
           if (!transition.valid)
-            throw new TRPCError({ code: "BAD_REQUEST", message: transition.error! });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: transition.error!,
+            });
 
           const amount = Number(loan.principalAmount);
           const fee = calculateFee(amount, "loanDisbursement");
@@ -271,13 +327,19 @@ export const agentLoanOriginationRouter = router({
           // Credit agent float with loan amount (minus processing fee)
           await db
             .update(agents)
-            .set({ floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netDisbursement)}` })
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netDisbursement)}`,
+            })
             .where(eq(agents.id, loan.agentId));
 
           // Update loan status
           await db
             .update(agentLoans)
-            .set({ status: "disbursed", disbursedAt: new Date(), updatedAt: new Date() })
+            .set({
+              status: "disbursed",
+              disbursedAt: new Date(),
+              updatedAt: new Date(),
+            })
             .where(eq(agentLoans.id, input.loanId));
 
           // Record as transaction
@@ -316,7 +378,12 @@ export const agentLoanOriginationRouter = router({
             resource: "agent_loan",
             resourceId: ref,
             status: "success",
-            metadata: { loanId: input.loanId, amount, fee: fee.fee, net: netDisbursement },
+            metadata: {
+              loanId: input.loanId,
+              amount,
+              fee: fee.fee,
+              net: netDisbursement,
+            },
           });
 
           return {
@@ -344,23 +411,38 @@ export const agentLoanOriginationRouter = router({
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           const db = tx ?? (await getDb())!;
 
           const [loan] = await db
             .select()
             .from(agentLoans)
-            .where(and(eq(agentLoans.id, input.loanId), eq(agentLoans.agentId, session.id)))
+            .where(
+              and(
+                eq(agentLoans.id, input.loanId),
+                eq(agentLoans.agentId, session.id)
+              )
+            )
             .limit(1);
 
           if (!loan)
-            throw new TRPCError({ code: "NOT_FOUND", message: "Loan not found" });
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Loan not found",
+            });
           if (!["active", "delinquent"].includes(loan.status))
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot repay loan in '${loan.status}' status` });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Cannot repay loan in '${loan.status}' status`,
+            });
 
-          const outstanding = Number(loan.totalRepayable) - Number(loan.amountRepaid ?? 0);
+          const outstanding =
+            Number(loan.totalRepayable) - Number(loan.amountRepaid ?? 0);
           if (input.amount > outstanding)
             throw new TRPCError({
               code: "BAD_REQUEST",
@@ -375,12 +457,17 @@ export const agentLoanOriginationRouter = router({
             .limit(1);
 
           if (Number(agent?.floatBalance ?? 0) < input.amount)
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient float balance for repayment" });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient float balance for repayment",
+            });
 
           // Debit agent float
           await db
             .update(agents)
-            .set({ floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}` })
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            })
             .where(eq(agents.id, session.id));
 
           // Update loan — track repaid amount
@@ -391,7 +478,11 @@ export const agentLoanOriginationRouter = router({
             .update(agentLoans)
             .set({
               amountRepaid: String(newRepaid),
-              status: isFullyPaid ? "paid_off" : loan.status === "delinquent" ? "active" : loan.status,
+              status: isFullyPaid
+                ? "paid_off"
+                : loan.status === "delinquent"
+                  ? "active"
+                  : loan.status,
               lastPaymentDate: new Date(),
             })
             .where(eq(agentLoans.id, input.loanId));
@@ -409,7 +500,11 @@ export const agentLoanOriginationRouter = router({
             currency: "NGN",
             status: "success",
             channel: "System",
-            metadata: { loanId: input.loanId, type: "loan_repayment", isFullyPaid },
+            metadata: {
+              loanId: input.loanId,
+              type: "loan_repayment",
+              isFullyPaid,
+            },
           });
 
           // Double-entry: Debit Agent Float, Credit Loan Receivable
@@ -433,7 +528,12 @@ export const agentLoanOriginationRouter = router({
             resource: "agent_loan",
             resourceId: ref,
             status: "success",
-            metadata: { loanId: input.loanId, amount: input.amount, outstanding: outstanding - input.amount, isFullyPaid },
+            metadata: {
+              loanId: input.loanId,
+              amount: input.amount,
+              outstanding: outstanding - input.amount,
+              isFullyPaid,
+            },
           });
 
           return {
@@ -453,7 +553,10 @@ export const agentLoanOriginationRouter = router({
   myLoans: protectedProcedure.query(async ({ ctx }) => {
     const session = await getAgentFromCookie(ctx.req);
     if (!session)
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Agent session required",
+      });
 
     const db = (await getDb())!;
     const loans = await db
@@ -472,13 +575,21 @@ export const agentLoanOriginationRouter = router({
     .query(async ({ input, ctx }) => {
       const session = await getAgentFromCookie(ctx.req);
       if (!session)
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
+        });
 
       const db = (await getDb())!;
       const [loan] = await db
         .select()
         .from(agentLoans)
-        .where(and(eq(agentLoans.id, input.loanId), eq(agentLoans.agentId, session.id)))
+        .where(
+          and(
+            eq(agentLoans.id, input.loanId),
+            eq(agentLoans.agentId, session.id)
+          )
+        )
         .limit(1);
 
       if (!loan)
@@ -487,9 +598,15 @@ export const agentLoanOriginationRouter = router({
       // Calculate penalty if delinquent
       let penalty = null;
       if (loan.status === "defaulted" && loan.disbursedAt) {
-        const daysOverdue = Math.floor((Date.now() - new Date(loan.disbursedAt).getTime()) / 86400000) - (loan.tenorDays ?? 0);
+        const daysOverdue =
+          Math.floor(
+            (Date.now() - new Date(loan.disbursedAt).getTime()) / 86400000
+          ) - (loan.tenorDays ?? 0);
         if (daysOverdue > 0) {
-          penalty = calculateLatePenalty(Number(loan.totalRepayable) - Number(loan.amountRepaid ?? 0), daysOverdue);
+          penalty = calculateLatePenalty(
+            Number(loan.totalRepayable) - Number(loan.amountRepaid ?? 0),
+            daysOverdue
+          );
         }
       }
 
@@ -499,11 +616,27 @@ export const agentLoanOriginationRouter = router({
   getStats: protectedProcedure.query(async ({ ctx }) => {
     const session = await getAgentFromCookie(ctx.req);
     if (!session)
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Agent session required",
+      });
 
     const db = (await getDb())!;
-    const [totalLoans] = await db.select({ value: count() }).from(agentLoans).where(eq(agentLoans.agentId, session.id)).limit(100);
-    const [activeLoans] = await db.select({ value: count() }).from(agentLoans).where(and(eq(agentLoans.agentId, session.id), eq(agentLoans.status, "disbursed"))).limit(100);
+    const [totalLoans] = await db
+      .select({ value: count() })
+      .from(agentLoans)
+      .where(eq(agentLoans.agentId, session.id))
+      .limit(100);
+    const [activeLoans] = await db
+      .select({ value: count() })
+      .from(agentLoans)
+      .where(
+        and(
+          eq(agentLoans.agentId, session.id),
+          eq(agentLoans.status, "disbursed")
+        )
+      )
+      .limit(100);
     return {
       totalLoans: Number(totalLoans.value),
       activeLoans: Number(activeLoans.value),

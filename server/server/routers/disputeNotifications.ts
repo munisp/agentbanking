@@ -283,11 +283,14 @@ export const disputeNotificationsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -304,29 +307,36 @@ try {
         .limit(1);
       if (!dispute)
         await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
 
-          agentId: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.id ?? 0 : 0,
-
-          agentCode: typeof ctx === "object" && ctx !== null && "user" in ctx ? (ctx as any).user?.agentCode ?? "system" : "system",
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
 
           action: "MUTATION",
 
           resource: "disputeNotifications",
 
-          resourceId: typeof input === "object" && input !== null && "id" in input ? String((input as any).id) : "new",
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
 
           status: "success",
 
           metadata: { input: typeof input === "object" ? input : {} },
-
         });
 
-        return {
-          success: false,
-          message: "Dispute not found",
-          id: 0,
-          timestamp: new Date().toISOString(),
-        };
+      return {
+        success: false,
+        message: "Dispute not found",
+        id: 0,
+        timestamp: new Date().toISOString(),
+      };
       const notif = {
         id: nextNotifId++,
         disputeId: input.disputeId,

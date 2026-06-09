@@ -385,11 +385,14 @@ export const tenantBillingOnboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "billPayment");
       const commission = calculateCommission(fees.fee, "billPayment");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         // Check if tenant already has billing configured
         const [existing] = await (await db())
           .select()

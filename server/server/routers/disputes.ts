@@ -322,11 +322,14 @@ export const disputesRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "transfer");
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
-if (
+      if (
         !ctx.user ||
         (ctx.user.role !== "admin" && ctx.user.role !== "supervisor")
       ) {

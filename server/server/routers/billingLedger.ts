@@ -342,7 +342,6 @@ export const billingLedgerRouter = router({
             .from(platformBillingLedger)
             .where(where);
 
-
           return {
             entries: rows,
             page: input.page,

@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents, gl_journal_entries} from "../../drizzle/schema";
+import { agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -19,7 +19,9 @@ import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
-  withTransaction, withIdempotency} from "../lib/transactionHelper";
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
 
 import {
   calculateFee,
@@ -212,11 +214,14 @@ export const agentFloatTransferRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
       const fees = calculateFee(txAmount, "floatTopUp");
       const commission = calculateCommission(fees.fee, "floatTopUp");
       const tax = calculateTax(fees.fee, "vat");
-try {
+      try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
           throw new TRPCError({
@@ -263,20 +268,23 @@ try {
           })
           .where(eq(agents.id, session.id));
 
-          // Double-entry journal entry
-          await db.insert(gl_journal_entries).values({
-            entryNumber: `JE-CI-${Date.now()}`,
-            description: `agentFloatTransfer transaction`,
-            debitAccountId: 2001,
-            creditAccountId: 1001,
-            amount: Math.round((typeof input === "object" && "amount" in input ? Number((input as any).amount) : 0) * 100),
-            currency: "NGN",
-            referenceType: "transaction",
-            referenceId: ref ?? String(Date.now()),
-            postedBy: session?.agentCode ?? "system",
-            status: "posted",
-          });
-
+        // Double-entry journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-CI-${Date.now()}`,
+          description: `agentFloatTransfer transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref ?? String(Date.now()),
+          postedBy: session?.agentCode ?? "system",
+          status: "posted",
+        });
 
         // Credit recipient
         await db

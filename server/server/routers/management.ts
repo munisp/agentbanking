@@ -263,24 +263,29 @@ export const managementRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-      
-      // Enforce STATUS_TRANSITIONS state machine
-      if (typeof input === "object" && "status" in input) {
-        const currentStatus = "pending"; // Will be overridden by DB lookup
-        const newStatus = (input as any).status;
-        const allowed = STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition`,
-          });
+        // Enforce STATUS_TRANSITIONS state machine
+        if (typeof input === "object" && "status" in input) {
+          const currentStatus = "pending"; // Will be overridden by DB lookup
+          const newStatus = (input as any).status;
+          const allowed =
+            STATUS_TRANSITIONS[
+              currentStatus as keyof typeof STATUS_TRANSITIONS
+            ];
+          if (allowed && !allowed.includes(newStatus)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid status transition`,
+            });
+          }
         }
-      }
-const txAmount = typeof input === "object" && "amount" in input ? Number((input as Record<string, unknown>).amount) : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-try {
+        const txAmount =
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0;
+        const fees = calculateFee(txAmount, "transfer");
+        const commission = calculateCommission(fees.fee, "transfer");
+        const tax = calculateTax(fees.fee, "vat");
+        try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
@@ -339,7 +344,6 @@ try {
         try {
           const db = (await getDb())!;
           if (!db)
-
             return {
               txCount: 0,
               volume: "0",

@@ -198,6 +198,13 @@ export const splitPaymentsRouter = router({
               agentId: session.id,
               type: "Transfer",
               amount: String(split.amount),
+              fee: String(calculateFee(split.amount, "transfer").fee),
+              commission: String(
+                calculateCommission(
+                  calculateFee(split.amount, "transfer").fee,
+                  "transfer"
+                ).agentShare
+              ),
               status: "success",
               channel: "App",
               customerPhone: split.recipientPhone ?? null,

@@ -2,7 +2,11 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { eq, desc, sql, count, sum, and, gte, lte } from "drizzle-orm";
-import { transactions, auditLog } from "../../drizzle/schema";
+import {
+  transactions,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -168,12 +172,26 @@ export const savingsProductsRouter = router({
           .values({
             agentId: input.agentId ?? input.accountId,
             amount: String(input.amount),
+            fee: String(fees.fee),
+            commission: String(commission.agentShare),
             type: "Cash In",
             status: "success",
             channel: "Cash",
             ref,
           })
           .returning();
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-SAV-${Date.now()}`,
+          description: "Savings deposit",
+          debitAccountId: 1001,
+          creditAccountId: 3001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref,
+          postedBy: "system",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "savings_deposit",
           resource: "savings_transactions",
@@ -244,12 +262,31 @@ export const savingsProductsRouter = router({
           .values({
             agentId: input.agentId ?? input.accountId,
             amount: String(input.amount),
+            fee: String(calculateFee(input.amount, "cashOut").fee),
+            commission: String(
+              calculateCommission(
+                calculateFee(input.amount, "cashOut").fee,
+                "cashOut"
+              ).agentShare
+            ),
             type: "Cash Out",
             status: "success",
             channel: "Cash",
             ref,
           })
           .returning();
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-SAV-W-${Date.now()}`,
+          description: "Savings withdrawal",
+          debitAccountId: 3001,
+          creditAccountId: 1001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref,
+          postedBy: "system",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "savings_withdrawal",
           resource: "savings_transactions",

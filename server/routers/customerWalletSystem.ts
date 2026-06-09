@@ -2,7 +2,12 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
-import { customers, transactions, auditLog } from "../../drizzle/schema";
+import {
+  customers,
+  transactions,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -183,12 +188,26 @@ export const customerWalletSystemRouter = router({
           .values({
             customerId: input.customerId,
             amount: String(input.amount),
+            fee: String(fees.fee),
+            commission: String(commission.agentShare),
             type: "Cash In",
             status: "success",
             channel: "App",
             reference: "TOP-" + crypto.randomUUID(),
           } as any)
           .returning();
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-WLT-${Date.now()}`,
+          description: "Customer wallet topup",
+          debitAccountId: 1001,
+          creditAccountId: 2001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: String(tx.id),
+          postedBy: "system",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "wallet_topup",
           resource: "transactions",

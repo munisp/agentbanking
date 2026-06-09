@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -246,8 +246,24 @@ const cancelBatch = protectedProcedure
       }
       const [row] = await db
         .insert(transactions)
-        .values(input.data || ({} as any))
+        .values({
+          ...(input.data || {}),
+          fee: String(fees.fee),
+          commission: String(commission.agentShare),
+        } as any)
         .returning();
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-BLK-${Date.now()}`,
+        description: "Bulk transaction",
+        debitAccountId: 2001,
+        creditAccountId: 1001,
+        amount: Math.round(fees.fee * 100),
+        currency: "NGN",
+        referenceType: "transaction",
+        referenceId: row?.ref ?? String(Date.now()),
+        postedBy: "system",
+        status: "posted",
+      });
       return { success: true, ...row, message: "cancelBatch completed" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

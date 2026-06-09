@@ -194,6 +194,21 @@ export const offlineSyncRouter = router({
                 destinationBank: tx.destinationBank ?? null,
                 destinationAccount: tx.destinationAccount ?? null,
                 channel: tx.channel,
+                fee: String(
+                  calculateFee(
+                    tx.amount,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).fee
+                ),
+                commission: String(
+                  calculateCommission(
+                    calculateFee(
+                      tx.amount,
+                      tx.type === "Cash In" ? "cashIn" : "cashOut"
+                    ).fee,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).agentShare
+                ),
                 status: "pending",
                 deviceToken: input.deviceToken ?? null,
                 metadata: {

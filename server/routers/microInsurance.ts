@@ -310,6 +310,99 @@ export const microInsuranceRouter = router({
       };
     }),
 
+  adjudicateClaim: protectedProcedure
+    .input(
+      z.object({
+        claimNumber: z.string(),
+        decision: z.enum(["approved", "rejected", "needs_more_info"]),
+        notes: z.string().optional(),
+        approvedAmount: z.number().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+      // Look up claim
+      const claimResult = await db.execute(
+        sql`SELECT id, claim_number, policy_number, amount, status FROM "insurance_claims" WHERE claim_number = ${input.claimNumber}`,
+      );
+      const claim = (claimResult as any).rows?.[0];
+      if (!claim) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Claim not found",
+        });
+      }
+      if (claim.status !== "submitted" && claim.status !== "under_review") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Claim already ${claim.status}`,
+        });
+      }
+
+      const newStatus =
+        input.decision === "approved"
+          ? "approved"
+          : input.decision === "rejected"
+            ? "rejected"
+            : "under_review";
+
+      const approvedAmount =
+        input.decision === "approved"
+          ? input.approvedAmount ?? claim.amount
+          : null;
+
+      await db.execute(
+        sql`UPDATE "insurance_claims" SET status = ${newStatus}, adjudication_notes = ${input.notes ?? ""}, resolved_at = ${input.decision !== "needs_more_info" ? new Date().toISOString() : null} WHERE claim_number = ${input.claimNumber}`,
+      );
+
+      await writeAuditLog({
+        agentId: session.id,
+        agentCode: session.agentCode,
+        action: "INSURANCE_CLAIM_ADJUDICATED",
+        resource: "micro_insurance",
+        resourceId: input.claimNumber,
+        status: "success",
+        metadata: {
+          decision: input.decision,
+          approvedAmount,
+          notes: input.notes,
+        },
+      });
+
+      return {
+        claimNumber: input.claimNumber,
+        decision: input.decision,
+        newStatus,
+        approvedAmount,
+        adjudicatedAt: new Date().toISOString(),
+      };
+    }),
+
+  listClaims: protectedProcedure.query(async ({ ctx }) => {
+    const db = (await getDb())!;
+    const session = await getAgentFromCookie(ctx.req);
+    if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+    const result = await db.execute(
+      sql`SELECT claim_number, policy_number, claim_type, amount, status, created_at FROM "insurance_claims" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`,
+    );
+    return { claims: (result as any).rows ?? [] };
+  }),
+
+  listPolicies: protectedProcedure.query(async ({ ctx }) => {
+    const db = (await getDb())!;
+    const session = await getAgentFromCookie(ctx.req);
+    if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+    const result = await db.execute(
+      sql`SELECT policy_number, product_name, category, monthly_premium, coverage_amount, status, start_date, waiting_period_ends FROM "insurance_policies" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`,
+    );
+    return { policies: (result as any).rows ?? [] };
+  }),
+
   stats: protectedProcedure.query(async ({ ctx }) => {
     const session = await getAgentFromCookie(ctx.req);
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -318,10 +411,10 @@ export const microInsuranceRouter = router({
       totalProducts: PRODUCTS.length,
       categories: 4,
       avgMonthlyPremium: Math.round(
-        PRODUCTS.reduce((s, p) => s + p.monthlyPremium, 0) / PRODUCTS.length
+        PRODUCTS.reduce((s, p) => s + p.monthlyPremium, 0) / PRODUCTS.length,
       ),
       avgCoverage: Math.round(
-        PRODUCTS.reduce((s, p) => s + p.coverageAmount, 0) / PRODUCTS.length
+        PRODUCTS.reduce((s, p) => s + p.coverageAmount, 0) / PRODUCTS.length,
       ),
     };
   }),

@@ -35,7 +35,7 @@ if (
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
-  user: User | null;
+  user: (User & { agentCode?: string }) | null;
 };
 
 function parseCookies(cookieHeader: string): Map<string, string> {

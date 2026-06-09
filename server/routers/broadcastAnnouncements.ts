@@ -36,6 +36,17 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
 // Announcement types: "info", "warning", "critical", "maintenance", "feature"
 // Targets: "all", "agents", "admins", "merchants"
 // Channels: "banner", "inbox", "push", "email", "sms"

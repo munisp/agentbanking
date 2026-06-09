@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
+import { writeAuditLog } from "../db";
 import {
   getCacheMetrics,
   invalidateCache,
@@ -292,6 +293,11 @@ export const cdnCacheManagerRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await writeAuditLog({
+        action: "mutation",
+        resource: "cdnCacheManager",
+        status: "success",
+      });
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

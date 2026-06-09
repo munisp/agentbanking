@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
+import { writeAuditLog } from "../db";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -181,6 +182,11 @@ export const kycEnforcementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await writeAuditLog({
+        action: "mutation",
+        resource: "kycEnforcement",
+        status: "success",
+      });
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

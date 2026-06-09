@@ -2,6 +2,7 @@
 // Wraps serengil/deepface microservice (port 8133) with tRPC procedures
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { writeAuditLog } from "../db";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -157,6 +158,11 @@ export const deepfaceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await writeAuditLog({
+        action: "mutation",
+        resource: "deepface",
+        status: "success",
+      });
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

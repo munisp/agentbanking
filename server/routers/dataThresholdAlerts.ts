@@ -35,6 +35,17 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
 // Metric categories: "transactions", "agents", "risk", "finance", "system"
 // Operators: "gt", "lt", "gte", "lte", "eq", "neq", "pct_change_up", "pct_change_down"
 // Severities: "low", "medium", "high", "critical", "warning"

@@ -33,6 +33,17 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   revoked: [],
 };
 
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
 // ── Domain Calculations ────────────────────────────────────────────────────
 
 // ── Error Handling ─────────────────────────────────────────────────────────

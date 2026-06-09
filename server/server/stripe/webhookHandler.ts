@@ -142,7 +142,8 @@ export async function handleStripeWebhook(req: Request, res: Response) {
             metadata: { eventId: event.id, source: "stripe_webhook" },
           });
           await db.insert(platformBillingLedger).values({
-            transactionId: crypto.getRandomValues(new Uint32Array(1))[0] % 1000000,
+            transactionId:
+              crypto.getRandomValues(new Uint32Array(1))[0] % 1000000,
             tenantId,
             agentId: 0,
             posTerminalId: 0,

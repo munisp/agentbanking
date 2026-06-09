@@ -8,7 +8,10 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { posTerminals, platformSettings , gl_journal_entries,
+import {
+  posTerminals,
+  platformSettings,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";

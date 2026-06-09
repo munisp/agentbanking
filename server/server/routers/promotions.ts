@@ -219,7 +219,7 @@ export const promotionsRouter = router({
           startDate: new Date(input.startDate),
           endDate: new Date(input.endDate),
         })
-          .returning();
+        .returning();
       return promo;
     }),
 

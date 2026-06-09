@@ -15,7 +15,10 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { systemConfig, auditLog , gl_journal_entries,
+import {
+  systemConfig,
+  auditLog,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 

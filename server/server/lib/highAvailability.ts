@@ -196,7 +196,10 @@ export async function retryWithBackoff<T>(
 
       // Add jitter to prevent thundering herd
       if (opts.jitter) {
-        delay = delay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 0.5);
+        delay =
+          delay *
+          (0.5 +
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.5);
       }
 
       logger.warn(

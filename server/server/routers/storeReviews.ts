@@ -225,7 +225,7 @@ export const storeReviewsRouter = router({
           isVerifiedPurchase: input.isVerifiedPurchase,
           images: input.images ?? [],
         })
-          .returning();
+        .returning();
 
       // Update store average rating
       const [ratingStats] = await database
@@ -358,7 +358,7 @@ export const storeReviewsRouter = router({
           body: input.body ?? null,
           orderId: input.orderId ?? null,
         })
-          .returning();
+        .returning();
 
       // Update store average rating
       const [stats] = await database

@@ -202,7 +202,7 @@ export const geoFencingRouter = router({
           polygonJson: input.coordinates,
           isActive: true,
         })
-          .returning();
+        .returning();
       return { id: String(zone.id), name: zone.name, created: true };
     }),
 
@@ -291,7 +291,7 @@ export const geoFencingRouter = router({
           radiusMeters: Math.round(input.radiusKm * 1000),
           isActive: true,
         })
-          .returning();
+        .returning();
       return {
         id: String(zone.id),
         name: zone.name,

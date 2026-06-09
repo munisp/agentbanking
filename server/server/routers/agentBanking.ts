@@ -459,7 +459,7 @@ export const agentBankingRouter = router({
               description: input.description,
               expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
             })
-          .returning();
+            .returning();
           return qr;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -636,7 +636,7 @@ export const agentBankingRouter = router({
               reason: input.reason,
               evidence: input.evidence,
             })
-          .returning();
+            .returning();
           return dispute;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

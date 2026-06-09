@@ -70,7 +70,7 @@ export async function checkDbHealth(): Promise<DbHealthStatus> {
       latencyMs,
       poolSize: 10,
       activeConnections: crypto.getRandomValues(new Uint32Array(1))[0] % 5,
-      idleConnections: crypto.getRandomValues(new Uint32Array(1))[0] % 5 + 5,
+      idleConnections: (crypto.getRandomValues(new Uint32Array(1))[0] % 5) + 5,
       waitingQueries: 0,
       lastChecked: new Date().toISOString(),
       uptime: process.uptime(),
@@ -141,7 +141,10 @@ export async function withRetry<T>(
         opts.baseDelayMs * Math.pow(opts.backoffMultiplier, attempt - 1),
         opts.maxDelayMs
       );
-      const jitter = delay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 0.5);
+      const jitter =
+        delay *
+        (0.5 +
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.5);
 
       console.warn(
         `[DB Retry] Attempt ${attempt}/${opts.maxRetries} failed: ${err.message}. ` +

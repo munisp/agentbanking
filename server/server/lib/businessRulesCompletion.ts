@@ -362,7 +362,9 @@ export function lockFxRate(
   if (!rate) return null;
 
   // Add small random variance (±0.1%) to simulate market movement
-  const variance = 1 + ((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) - 0.5) * 0.002;
+  const variance =
+    1 +
+    (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5) * 0.002;
   const adjustedRate = rate * variance;
 
   return {

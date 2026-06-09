@@ -249,7 +249,7 @@ export const nfc = {
             const record = event.message.records[0];
             resolve({
               success: true,
-              cardNumber: `**** **** **** ${Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 9000 + 1000)}`,
+              cardNumber: `**** **** **** ${Math.floor((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 9000 + 1000)}`,
               cardType: "Verve",
             });
           };
@@ -272,8 +272,14 @@ export const nfc = {
     const cardTypes = ["Verve", "Mastercard", "Visa"];
     return {
       success: true,
-      cardNumber: `**** **** **** ${Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 9000 + 1000)}`,
-      cardType: cardTypes[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * cardTypes.length)],
+      cardNumber: `**** **** **** ${Math.floor((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 9000 + 1000)}`,
+      cardType:
+        cardTypes[
+          Math.floor(
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+              cardTypes.length
+          )
+        ],
     };
   },
 };
@@ -287,12 +293,26 @@ export const emv = {
   async readCard(): Promise<CardResult> {
     await new Promise(r => setTimeout(r, 1500));
     const cardTypes = ["Verve", "Mastercard", "Visa"];
-    const year = new Date().getFullYear() + Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 4 + 1);
+    const year =
+      new Date().getFullYear() +
+      Math.floor(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 4 + 1
+      );
     return {
       success: true,
-      maskedPan: `**** **** **** ${Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 9000 + 1000)}`,
-      cardType: cardTypes[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * cardTypes.length)],
-      expiryMonth: String(Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 12 + 1)).padStart(2, "0"),
+      maskedPan: `**** **** **** ${Math.floor((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 9000 + 1000)}`,
+      cardType:
+        cardTypes[
+          Math.floor(
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+              cardTypes.length
+          )
+        ],
+      expiryMonth: String(
+        Math.floor(
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 12 + 1
+        )
+      ).padStart(2, "0"),
       expiryYear: String(year).slice(-2),
     };
   },

@@ -3,8 +3,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { floatReconciliations , gl_journal_entries,
-} from "../../drizzle/schema";
+import { floatReconciliations, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
@@ -231,7 +230,7 @@ export const floatReconciliationsRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

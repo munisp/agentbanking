@@ -226,7 +226,7 @@ export const receiptTemplatesRouter = router({
           bodyTemplate: input.content,
           channel: input.type,
         })
-          .returning();
+        .returning();
       return {
         id: item.id,
         name: item.name,

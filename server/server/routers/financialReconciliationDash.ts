@@ -6,7 +6,8 @@ import { eq, desc, and, sql, count, sum, gte, lte } from "drizzle-orm";
 import {
   reconciliationBatches,
   reconciliationItems,
-  transactions, gl_journal_entries,
+  transactions,
+  gl_journal_entries,
   auditLog,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
@@ -194,7 +195,7 @@ export const financialReconciliationDashRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

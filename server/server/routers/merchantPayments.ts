@@ -8,7 +8,12 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, gl_journal_entries, agents, merchants } from "../../drizzle/schema";
+import {
+  transactions,
+  gl_journal_entries,
+  agents,
+  merchants,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -194,7 +199,7 @@ export const merchantPaymentsRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

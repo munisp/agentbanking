@@ -160,7 +160,7 @@ async function executeBillingProvisioning(params: {
         status: "in_progress",
         temporalWorkflowId: temporalWorkflowId || null,
       })
-          .returning();
+      .returning();
 
     try {
       let details: any = {};
@@ -198,7 +198,7 @@ async function executeBillingProvisioning(params: {
               provisionedBy,
               status: "active",
             })
-          .returning();
+            .returning();
           details = { configId: config.id, billingModel };
           break;
         }

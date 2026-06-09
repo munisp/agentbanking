@@ -7,7 +7,10 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { disputes, transactions, gl_journal_entries,
+import {
+  disputes,
+  transactions,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -184,7 +187,7 @@ export const posDisputeRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

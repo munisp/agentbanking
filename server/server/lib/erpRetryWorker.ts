@@ -24,7 +24,10 @@ export function computeNextRetryAt(retryCount: number): Date {
     BASE_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, retryCount),
     MAX_DELAY_MS
   );
-  const jitter = base * JITTER_FACTOR * (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 2 - 1); // ±20%
+  const jitter =
+    base *
+    JITTER_FACTOR *
+    ((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 2 - 1); // ±20%
   return new Date(Date.now() + base + jitter);
 }
 

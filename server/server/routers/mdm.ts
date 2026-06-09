@@ -501,7 +501,7 @@ export const mdmRouter = router({
               lastSeenAt: new Date(),
               ...telemetryFields,
             })
-          .returning();
+            .returning();
         } else {
           await db
             .update(devices)
@@ -1139,7 +1139,7 @@ export const mdmRouter = router({
               enforcementAction: input.enforcementAction,
               createdBy: ctx.user.name ?? ctx.user.keycloakSub,
             })
-          .returning();
+            .returning();
           return { id: row.id, action: "created" };
         }
       } catch (error) {

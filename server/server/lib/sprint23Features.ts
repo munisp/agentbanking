@@ -606,7 +606,8 @@ export function processWebhookRetry(
     delivery.status = "failed";
     // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s, 8s, 16s)
     const backoffMs = Math.pow(2, delivery.attempts) * 1000;
-    const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 1000;
+    const jitter =
+      (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 1000;
     delivery.nextRetryAt = new Date(
       Date.now() + backoffMs + jitter
     ).toISOString();

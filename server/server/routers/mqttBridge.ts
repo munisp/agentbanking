@@ -199,7 +199,7 @@ export const mqttBridgeRouter = router({
               ...input,
               updatedAt: now,
             })
-          .returning();
+            .returning();
           return row;
         }
         const [row] = await db

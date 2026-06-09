@@ -7,8 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { merchantKycDocs , gl_journal_entries,
-} from "../../drizzle/schema";
+import { merchantKycDocs, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -198,7 +197,7 @@ export const merchantKycOnboardingRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

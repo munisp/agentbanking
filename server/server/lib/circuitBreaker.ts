@@ -151,7 +151,10 @@ export async function withRetry<T>(
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxRetries) {
         const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-        const jitter = delay * (0.5 + (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.5);
+        const jitter =
+          delay *
+          (0.5 +
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 0.5);
         await new Promise(resolve => setTimeout(resolve, jitter));
       }
     }

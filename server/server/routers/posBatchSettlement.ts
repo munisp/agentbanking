@@ -11,7 +11,8 @@ import { getDb, writeAuditLog } from "../db";
 import {
   posSettlementBatches,
   posTerminals,
-  transactions, gl_journal_entries,
+  transactions,
+  gl_journal_entries,
   agents,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, count, sum } from "drizzle-orm";
@@ -159,7 +160,7 @@ export const posBatchSettlementRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

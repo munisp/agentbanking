@@ -91,7 +91,11 @@ export async function grpcCall<TReq, TRes>(
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < cfg.maxRetries) {
         await new Promise(r =>
-          setTimeout(r, Math.pow(2, attempt) * 200 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 100)
+          setTimeout(
+            r,
+            Math.pow(2, attempt) * 200 +
+              (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 100
+          )
         );
       }
     }

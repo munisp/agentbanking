@@ -504,7 +504,9 @@ export default function LivenessCameraCapture({
   // ── Active Liveness ───────────────────────────────────────────────────────
 
   const startActiveLiveness = useCallback(() => {
-    const shuffled = [...CHALLENGE_POOL].sort(() => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5);
+    const shuffled = [...CHALLENGE_POOL].sort(
+      () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5
+    );
     const selected = shuffled.slice(0, challengeCount).map(c => ({ ...c }));
     setChallenges(selected);
     setCurrentChallengeIdx(0);

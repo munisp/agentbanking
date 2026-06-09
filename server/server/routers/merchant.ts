@@ -15,7 +15,8 @@ import { eq, desc, and, isNull } from "drizzle-orm";
 import { getDb, writeAuditLog } from "../db";
 import {
   merchants,
-  transactions, gl_journal_entries,
+  transactions,
+  gl_journal_entries,
   merchantSettlements,
   disputes,
 } from "../../drizzle/schema";

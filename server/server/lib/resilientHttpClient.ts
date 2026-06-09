@@ -90,7 +90,9 @@ export async function resilientFetch(
     }
 
     if (attempt < maxRetries) {
-      const delay = backoffMs * Math.pow(2, attempt) + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 100;
+      const delay =
+        backoffMs * Math.pow(2, attempt) +
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 100;
       await new Promise(r => setTimeout(r, delay));
     }
   }

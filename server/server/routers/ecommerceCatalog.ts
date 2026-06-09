@@ -388,7 +388,7 @@ export const ecommerceCatalogRouter = router({
           imageUrl: input.imageUrl ?? null,
           sortOrder: input.sortOrder,
         })
-          .returning();
+        .returning();
 
       return category;
     }),

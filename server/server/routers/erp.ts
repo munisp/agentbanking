@@ -93,7 +93,7 @@ async function getOrCreateConfig(db: Awaited<ReturnType<typeof getDb>>) {
       name: "Default ERP",
       baseUrl: "",
     })
-          .returning();
+    .returning();
   return created;
 }
 

@@ -9,8 +9,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents, gl_journal_entries,
-} from "../../drizzle/schema";
+import { agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";

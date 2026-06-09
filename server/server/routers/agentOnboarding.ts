@@ -110,7 +110,7 @@ export const agentOnboardingRouter = router({
               agentCode: input.agentCode,
               currentStep: "profile",
             })
-          .returning();
+            .returning();
           return { ...created, agent };
         }
 

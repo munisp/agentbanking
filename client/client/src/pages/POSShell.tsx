@@ -1842,7 +1842,8 @@ function TileComponent({
       setWobble(false);
       return;
     }
-    const delay = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 300;
+    const delay =
+      (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 300;
     const t = setTimeout(() => setWobble(true), delay);
     return () => clearTimeout(t);
   }, [editMode]);
@@ -4727,7 +4728,9 @@ function pickChallenges(count: number): Array<{
   instruction: string;
   completed: boolean;
 }> {
-  const shuffled = [...KYC_CHALLENGE_POOL].sort(() => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5);
+  const shuffled = [...KYC_CHALLENGE_POOL].sort(
+    () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5
+  );
   return shuffled
     .slice(0, Math.min(count, shuffled.length))
     .map((c: any) => ({ ...c, completed: false }));

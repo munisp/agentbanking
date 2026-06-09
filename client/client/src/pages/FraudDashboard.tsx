@@ -172,8 +172,14 @@ const SHAP_TEMPLATES = [
 let _eventCounter = 0;
 function generateEvent(): FraudEvent {
   _eventCounter++;
-  const agent = AGENTS[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * AGENTS.length)];
-  const risk = crypto.getRandomValues(new Uint32Array(1))[0] % 60 + 40;
+  const agent =
+    AGENTS[
+      Math.floor(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+          AGENTS.length
+      )
+    ];
+  const risk = (crypto.getRandomValues(new Uint32Array(1))[0] % 60) + 40;
   const severity: Severity =
     risk >= 85
       ? "critical"
@@ -188,8 +194,17 @@ function generateEvent(): FraudEvent {
     agentCode: agent.code,
     agentName: agent.name,
     location: agent.location,
-    txType: TX_TYPES[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * TX_TYPES.length)],
-    amount: Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 490_000) + 10_000,
+    txType:
+      TX_TYPES[
+        Math.floor(
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+            TX_TYPES.length
+        )
+      ],
+    amount:
+      Math.floor(
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 490_000
+      ) + 10_000,
     customer: [
       "Emeka Eze",
       "Fatima Bello",
@@ -199,7 +214,13 @@ function generateEvent(): FraudEvent {
     ][crypto.getRandomValues(new Uint32Array(1))[0] % 5],
     riskScore: risk,
     severity,
-    reason: REASONS[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * REASONS.length)],
+    reason:
+      REASONS[
+        Math.floor(
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+            REASONS.length
+        )
+      ],
     time: now.toLocaleTimeString("en-NG", {
       hour: "2-digit",
       minute: "2-digit",
@@ -207,9 +228,16 @@ function generateEvent(): FraudEvent {
     }),
     timestamp: now.getTime(),
     status: "open",
-    channel: ["POS", "USSD", "Mobile", "Web"][crypto.getRandomValues(new Uint32Array(1))[0] % 4],
+    channel: ["POS", "USSD", "Mobile", "Web"][
+      crypto.getRandomValues(new Uint32Array(1))[0] % 4
+    ],
     shapFeatures:
-      SHAP_TEMPLATES[Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * SHAP_TEMPLATES.length)],
+      SHAP_TEMPLATES[
+        Math.floor(
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+            SHAP_TEMPLATES.length
+        )
+      ],
   };
 }
 
@@ -546,7 +574,7 @@ export default function FraudDashboard() {
           );
         }
       },
-      4500 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 3000
+      4500 + (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 3000
     );
     return () => clearInterval(iv);
   }, [paused, storeEvents.length]);

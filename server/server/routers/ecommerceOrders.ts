@@ -250,7 +250,7 @@ export const ecommerceOrdersRouter = router({
           shippingAddress: input.shippingAddress,
           notes: input.notes ?? null,
         })
-          .returning();
+        .returning();
 
       // Insert order items
       for (const item of cartItems) {
@@ -528,7 +528,7 @@ export const ecommerceOrdersRouter = router({
               offlineCreated: true,
               syncedAt: new Date(),
             })
-          .returning();
+            .returning();
 
           for (const item of offlineOrder.items) {
             const lineTotal = parseFloat(item.unitPrice) * item.quantity;

@@ -6,8 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { merchantPayouts , gl_journal_entries,
-} from "../../drizzle/schema";
+import { merchantPayouts, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
 import {
   validateAmount,
@@ -210,7 +209,7 @@ export const merchantPayoutSettlementRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

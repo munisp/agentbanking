@@ -108,7 +108,10 @@ export function initRealtimeStreaming(io: SocketServer) {
       const healthData = GO_SERVICES.map(name => ({
         name,
         status: "healthy" as const,
-        latencyMs: Math.floor(50 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 200),
+        latencyMs: Math.floor(
+          50 +
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 200
+        ),
         lastCheck: Date.now(),
       }));
       notificationsNs.emit("service:health", healthData);
@@ -222,7 +225,9 @@ function emitServiceHealth(socket: any) {
   const healthData: ServiceHealthEntry[] = GO_SERVICES.map(name => ({
     name,
     status: "healthy" as const,
-    latencyMs: Math.floor(50 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 200),
+    latencyMs: Math.floor(
+      50 + (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 200
+    ),
     lastCheck: Date.now(),
   }));
   socket.emit("service:health", healthData);

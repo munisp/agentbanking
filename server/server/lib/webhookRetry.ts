@@ -74,7 +74,12 @@ export function calculateBackoffDelay(
   const base = 1000 * Math.pow(2, attempt);
   const delay = Math.min(base, 300000);
   if (jitter) {
-    return Math.round(delay + delay * 0.25 * ((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 2 - 1));
+    return Math.round(
+      delay +
+        delay *
+          0.25 *
+          ((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 2 - 1)
+    );
   }
   return delay;
 }

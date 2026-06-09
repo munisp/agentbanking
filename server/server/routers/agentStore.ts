@@ -206,7 +206,7 @@ export const agentStoreRouter = router({
           businessHours: input.businessHours ?? null,
           status: "active",
         })
-          .returning();
+        .returning();
 
       return store;
     }),
@@ -559,7 +559,7 @@ export const agentStoreRouter = router({
           maxDistanceKm: input.maxDistanceKm ?? null,
           areas: input.areas ?? [],
         })
-          .returning();
+        .returning();
 
       return zone;
     }),
@@ -646,7 +646,7 @@ export const agentStoreRouter = router({
           deliveryNotes: input.deliveryNotes ?? null,
           status: "pending",
         })
-          .returning();
+        .returning();
 
       return tracking;
     }),
@@ -743,7 +743,7 @@ export const agentStoreRouter = router({
           agentPayout: agentPayout.toFixed(2),
           taxAmount: vatOnFee.toFixed(2),
         })
-          .returning();
+        .returning();
 
       return split;
     }),

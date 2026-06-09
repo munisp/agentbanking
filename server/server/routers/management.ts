@@ -493,7 +493,7 @@ export const managementRouter = router({
               reviewedAt: new Date(),
               status: "approved",
             })
-          .returning();
+            .returning();
           return req;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -1861,7 +1861,7 @@ export const managementRouter = router({
               retryCount: 0,
               tenantId: input.tenantId,
             })
-          .returning();
+            .returning();
           return row;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

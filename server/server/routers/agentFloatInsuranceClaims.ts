@@ -14,7 +14,11 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { floatReconciliations, agents, auditLog , gl_journal_entries,
+import {
+  floatReconciliations,
+  agents,
+  auditLog,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -201,7 +205,7 @@ export const agentFloatInsuranceClaimsRouter = router({
           amount: Math.round(
             (typeof input === "object" && "amount" in input
               ? Number((input as any).amount)
-              : 0) * 100,
+              : 0) * 100
           ),
           currency: "NGN",
           status: "posted",

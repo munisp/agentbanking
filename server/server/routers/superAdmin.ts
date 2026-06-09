@@ -491,7 +491,7 @@ export const superAdminRouter = router({
               periodEnd: input.periodEnd,
               generatedBy: "super_admin",
             })
-          .returning();
+            .returning();
           return report;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

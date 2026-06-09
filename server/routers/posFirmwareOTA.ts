@@ -259,7 +259,7 @@ export const posFirmwareOTARouter = router({
             versions = JSON.parse(String(versionRows[0].value));
           } catch {}
         }
-        const versionEntry = versions.find((v) => v.version === input.version);
+        const versionEntry = versions.find(v => v.version === input.version);
         if (!versionEntry)
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -287,9 +287,7 @@ export const posFirmwareOTARouter = router({
           .from(posTerminals)
           .where(and(...terminalConditions));
 
-        const targetCount = Math.ceil(
-          (total * input.rolloutPercentage) / 100
-        );
+        const targetCount = Math.ceil((total * input.rolloutPercentage) / 100);
 
         // Store rollout state
         await db
@@ -476,7 +474,10 @@ export const posFirmwareOTARouter = router({
           .where(eq(platformSettings.key, `rollout_${input.rolloutId}`))
           .limit(1);
         if (!rolloutRow?.value)
-          throw new TRPCError({ code: "NOT_FOUND", message: "Rollout not found" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Rollout not found",
+          });
 
         const state = JSON.parse(String(rolloutRow.value));
         if (state.status !== "in_progress")
@@ -488,7 +489,8 @@ export const posFirmwareOTARouter = router({
         // Check failure rate before advancing
         const failureRate =
           state.successCount + state.failureCount > 0
-            ? (state.failureCount / (state.successCount + state.failureCount)) * 100
+            ? (state.failureCount / (state.successCount + state.failureCount)) *
+              100
             : 0;
         if (failureRate > state.maxFailureRate && state.autoRollbackOnFailure) {
           state.status = "auto_rolled_back";

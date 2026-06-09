@@ -88,110 +88,110 @@ export const posBatchSettlementRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       return withIdempotency(input.idempotencyKey, async () => {
-      return executeInTransaction(async () => {
-        const db = (await getDb())!;
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        return executeInTransaction(async () => {
+          const db = (await getDb())!;
+          const session = await getAgentFromCookie(ctx.req);
+          if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [terminal] = await db
-          .select()
-          .from(posTerminals)
-          .where(eq(posTerminals.id, input.terminalId))
-          .limit(1);
-        if (!terminal)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Terminal not found",
+          const [terminal] = await db
+            .select()
+            .from(posTerminals)
+            .where(eq(posTerminals.id, input.terminalId))
+            .limit(1);
+          if (!terminal)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Terminal not found",
+            });
+
+          const periodStart = new Date(input.periodStart);
+          const periodEnd = new Date(input.periodEnd);
+          if (periodEnd <= periodStart)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "periodEnd must be after periodStart",
+            });
+
+          const [txAgg] = await db
+            .select({
+              txCount: count(),
+              totalAmt: sum(transactions.amount),
+            })
+            .from(transactions)
+            .where(
+              and(
+                eq(transactions.agentId, terminal.agentId ?? 0),
+                gte(transactions.createdAt, periodStart),
+                lte(transactions.createdAt, periodEnd),
+                eq(transactions.status, "success")
+              )
+            );
+
+          const txCount = Number(txAgg?.txCount ?? 0);
+          const totalAmount = Math.round(Number(txAgg?.totalAmt ?? 0));
+          const feeResult = calculateFee(totalAmount, "pos_settlement");
+          const totalFees = feeResult.fee;
+          const netAmount = totalAmount - totalFees;
+
+          const batchRef = `POS-BATCH-${input.terminalId}-${Date.now()}`;
+
+          const [batch] = await db
+            .insert(posSettlementBatches)
+            .values({
+              batchRef,
+              terminalId: input.terminalId,
+              agentId: terminal.agentId,
+              transactionCount: txCount,
+              totalAmount,
+              totalFees,
+              netAmount,
+              currency: input.currency,
+              status: "pending",
+              periodStart,
+              periodEnd,
+            })
+            .returning();
+
+          // Double-entry GL journal entry
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${Date.now()}`,
+            description: `posBatchSettlement transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            status: "posted",
           });
 
-        const periodStart = new Date(input.periodStart);
-        const periodEnd = new Date(input.periodEnd);
-        if (periodEnd <= periodStart)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "periodEnd must be after periodStart",
-          });
-
-        const [txAgg] = await db
-          .select({
-            txCount: count(),
-            totalAmt: sum(transactions.amount),
-          })
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.agentId, terminal.agentId ?? 0),
-              gte(transactions.createdAt, periodStart),
-              lte(transactions.createdAt, periodEnd),
-              eq(transactions.status, "success")
-            )
-          );
-
-        const txCount = Number(txAgg?.txCount ?? 0);
-        const totalAmount = Math.round(Number(txAgg?.totalAmt ?? 0));
-        const feeResult = calculateFee(totalAmount, "pos_settlement");
-        const totalFees = feeResult.fee;
-        const netAmount = totalAmount - totalFees;
-
-        const batchRef = `POS-BATCH-${input.terminalId}-${Date.now()}`;
-
-        const [batch] = await db
-          .insert(posSettlementBatches)
-          .values({
+          logOperation("batch_created", {
             batchRef,
             terminalId: input.terminalId,
-            agentId: terminal.agentId,
-            transactionCount: txCount,
+            txCount,
             totalAmount,
-            totalFees,
             netAmount,
-            currency: input.currency,
-            status: "pending",
-            periodStart,
-            periodEnd,
-          })
-          .returning();
+          });
 
-        // Double-entry GL journal entry
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-${Date.now()}`,
-          description: `posBatchSettlement transaction`,
-          debitAccountId: 2001,
-          creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
-          currency: "NGN",
-          status: "posted",
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "POS_SETTLEMENT_BATCH_CREATED",
+            resource: "pos_settlement_batch",
+            resourceId: String(batch.id),
+            status: "success",
+            metadata: { batchRef, txCount, totalAmount, netAmount },
+          });
+
+          return {
+            success: true,
+            message: `Settlement batch created with ${txCount} transactions`,
+            batch,
+          };
         });
-
-        logOperation("batch_created", {
-          batchRef,
-          terminalId: input.terminalId,
-          txCount,
-          totalAmount,
-          netAmount,
-        });
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "POS_SETTLEMENT_BATCH_CREATED",
-          resource: "pos_settlement_batch",
-          resourceId: String(batch.id),
-          status: "success",
-          metadata: { batchRef, txCount, totalAmount, netAmount },
-        });
-
-        return {
-          success: true,
-          message: `Settlement batch created with ${txCount} transactions`,
-          batch,
-        };
-      });
       });
     }),
 
@@ -259,92 +259,92 @@ export const posBatchSettlementRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       return withIdempotency(input.idempotencyKey, async () => {
-      return executeInTransaction(async () => {
-        const db = (await getDb())!;
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        return executeInTransaction(async () => {
+          const db = (await getDb())!;
+          const session = await getAgentFromCookie(ctx.req);
+          if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [batch] = await db
-          .select()
-          .from(posSettlementBatches)
-          .where(eq(posSettlementBatches.id, input.batchId))
-          .limit(1);
-        if (!batch) throw new TRPCError({ code: "NOT_FOUND" });
+          const [batch] = await db
+            .select()
+            .from(posSettlementBatches)
+            .where(eq(posSettlementBatches.id, input.batchId))
+            .limit(1);
+          if (!batch) throw new TRPCError({ code: "NOT_FOUND" });
 
-        const allowed = STATUS_TRANSITIONS[batch.status] ?? [];
-        if (!allowed.includes("processing") && !allowed.includes("settled"))
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Cannot process batch in '${batch.status}' status`,
+          const allowed = STATUS_TRANSITIONS[batch.status] ?? [];
+          if (!allowed.includes("processing") && !allowed.includes("settled"))
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Cannot process batch in '${batch.status}' status`,
+            });
+
+          const settleRef =
+            input.settlementRef ?? `SETTLE-${batch.batchRef}-${Date.now()}`;
+
+          const [updated] = await db
+            .update(posSettlementBatches)
+            .set({
+              status: "settled",
+              settledAt: new Date(),
+              settlementRef: settleRef,
+              updatedAt: new Date(),
+            })
+            .where(eq(posSettlementBatches.id, input.batchId))
+            .returning();
+
+          // Credit agent's float balance with net settlement amount
+          if (batch.agentId && batch.netAmount > 0) {
+            await db
+              .update(agents)
+              .set({
+                floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(batch.netAmount)}`,
+              })
+              .where(eq(agents.id, batch.agentId));
+          }
+
+          // Double-entry GL: debit settlement clearing, credit agent float
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-SETTLE-${Date.now()}`,
+            description: `POS batch settlement payout to agent ${batch.agentId}`,
+            debitAccountId: 3001,
+            creditAccountId: 1001,
+            amount: Math.round(batch.netAmount * 100),
+            currency: batch.currency ?? "NGN",
+            referenceType: "pos_settlement",
+            referenceId: settleRef,
+            postedBy: session.agentCode,
+            status: "posted",
           });
 
-        const settleRef =
-          input.settlementRef ?? `SETTLE-${batch.batchRef}-${Date.now()}`;
-
-        const [updated] = await db
-          .update(posSettlementBatches)
-          .set({
-            status: "settled",
-            settledAt: new Date(),
-            settlementRef: settleRef,
-            updatedAt: new Date(),
-          })
-          .where(eq(posSettlementBatches.id, input.batchId))
-          .returning();
-
-        // Credit agent's float balance with net settlement amount
-        if (batch.agentId && batch.netAmount > 0) {
-          await db
-            .update(agents)
-            .set({
-              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(batch.netAmount)}`,
-            })
-            .where(eq(agents.id, batch.agentId));
-        }
-
-        // Double-entry GL: debit settlement clearing, credit agent float
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-SETTLE-${Date.now()}`,
-          description: `POS batch settlement payout to agent ${batch.agentId}`,
-          debitAccountId: 3001,
-          creditAccountId: 1001,
-          amount: Math.round(batch.netAmount * 100),
-          currency: batch.currency ?? "NGN",
-          referenceType: "pos_settlement",
-          referenceId: settleRef,
-          postedBy: session.agentCode,
-          status: "posted",
-        });
-
-        logOperation("batch_settled", {
-          batchId: input.batchId,
-          batchRef: batch.batchRef,
-          netAmount: batch.netAmount,
-          settlementRef: settleRef,
-          agentCredited: batch.agentId,
-        });
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "POS_SETTLEMENT_BATCH_SETTLED",
-          resource: "pos_settlement_batch",
-          resourceId: String(input.batchId),
-          status: "success",
-          metadata: {
+          logOperation("batch_settled", {
+            batchId: input.batchId,
             batchRef: batch.batchRef,
             netAmount: batch.netAmount,
             settlementRef: settleRef,
-          },
-        });
+            agentCredited: batch.agentId,
+          });
 
-        return {
-          success: true,
-          message: "Batch settled successfully",
-          batch: updated,
-        };
-      });
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "POS_SETTLEMENT_BATCH_SETTLED",
+            resource: "pos_settlement_batch",
+            resourceId: String(input.batchId),
+            status: "success",
+            metadata: {
+              batchRef: batch.batchRef,
+              netAmount: batch.netAmount,
+              settlementRef: settleRef,
+            },
+          });
+
+          return {
+            success: true,
+            message: "Batch settled successfully",
+            batch: updated,
+          };
+        });
       });
     }),
 

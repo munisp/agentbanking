@@ -362,7 +362,13 @@ export const offlinePosModeRouter = router({
     .input(
       z.object({
         amount: z.number().positive(),
-        type: z.enum(["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"]),
+        type: z.enum([
+          "Cash In",
+          "Cash Out",
+          "Transfer",
+          "Airtime",
+          "Bill Payment",
+        ]),
         customerPhone: z.string().optional(),
       })
     )
@@ -370,7 +376,10 @@ export const offlinePosModeRouter = router({
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -385,7 +394,12 @@ export const offlinePosModeRouter = router({
         const tier = agentRows[0]?.tier ?? "Bronze";
 
         // Check CBN daily limit for the agent
-        const limitCheck = await checkDailyLimit(db, session.id, tier, input.amount);
+        const limitCheck = await checkDailyLimit(
+          db,
+          session.id,
+          tier,
+          input.amount
+        );
         if (!limitCheck.allowed) {
           await writeAuditLog({
             agentId: session.id,
@@ -408,7 +422,10 @@ export const offlinePosModeRouter = router({
           });
         }
         const tierMultipliers: Record<string, number> = {
-          Bronze: 1, Silver: 1.5, Gold: 2, Platinum: 3,
+          Bronze: 1,
+          Silver: 1.5,
+          Gold: 2,
+          Platinum: 3,
         };
         const multiplier = tierMultipliers[tier] ?? 1;
         const maxOfflineAmount = OFFLINE_DEFAULTS.maxOfflineAmount * multiplier;
@@ -422,7 +439,11 @@ export const offlinePosModeRouter = router({
 
         // Float balance check for debit operations
         const floatBalance = Number(agentRows[0]?.floatBalance ?? 0);
-        if (["Cash Out", "Transfer", "Airtime", "Bill Payment"].includes(input.type)) {
+        if (
+          ["Cash Out", "Transfer", "Airtime", "Bill Payment"].includes(
+            input.type
+          )
+        ) {
           if (floatBalance < input.amount) {
             throw new TRPCError({
               code: "BAD_REQUEST",
@@ -438,10 +459,14 @@ export const offlinePosModeRouter = router({
           tier,
           cbnLimitRemaining: limitCheck.remaining,
           offlineLimitRemaining: maxOfflineAmount - input.amount,
-          floatAfter:
-            ["Cash Out", "Transfer", "Airtime", "Bill Payment"].includes(input.type)
-              ? floatBalance - input.amount
-              : floatBalance + input.amount,
+          floatAfter: [
+            "Cash Out",
+            "Transfer",
+            "Airtime",
+            "Bill Payment",
+          ].includes(input.type)
+            ? floatBalance - input.amount
+            : floatBalance + input.amount,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

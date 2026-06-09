@@ -325,7 +325,10 @@ export const posDisputeRouter = router({
         let escalatedCount = 0;
         if (input.autoEscalate && breachedDisputes.length > 0) {
           for (const dispute of breachedDisputes) {
-            if (dispute.status === "open" || dispute.status === "investigating") {
+            if (
+              dispute.status === "open" ||
+              dispute.status === "investigating"
+            ) {
               await db
                 .update(disputes)
                 .set({ status: "escalated", updatedAt: new Date() })
@@ -352,15 +355,23 @@ export const posDisputeRouter = router({
           totalBreached: breachedDisputes.length,
           escalatedCount,
           slaHours: input.slaHours,
-          breachedDisputes: breachedDisputes.map((d: { id: number; ref: string | null; status: string; createdAt: Date }) => ({
-            id: d.id,
-            ref: d.ref,
-            status: d.status,
-            createdAt: d.createdAt,
-            hoursOpen: Math.round(
-              (Date.now() - new Date(d.createdAt).getTime()) / (60 * 60 * 1000)
-            ),
-          })),
+          breachedDisputes: breachedDisputes.map(
+            (d: {
+              id: number;
+              ref: string | null;
+              status: string;
+              createdAt: Date;
+            }) => ({
+              id: d.id,
+              ref: d.ref,
+              status: d.status,
+              createdAt: d.createdAt,
+              hoursOpen: Math.round(
+                (Date.now() - new Date(d.createdAt).getTime()) /
+                  (60 * 60 * 1000)
+              ),
+            })
+          ),
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -401,7 +412,10 @@ export const posDisputeRouter = router({
           .where(eq(disputes.id, input.disputeId))
           .limit(1);
         if (!dispute)
-          throw new TRPCError({ code: "NOT_FOUND", message: "Dispute not found" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Dispute not found",
+          });
 
         // Enforce status transitions
         const allowed = STATUS_TRANSITIONS[dispute.status] ?? [];
@@ -427,7 +441,11 @@ export const posDisputeRouter = router({
           .returning();
 
         // If resolved with refund, credit agent
-        if (input.newStatus === "resolved" && input.refundAmount && input.refundAmount > 0) {
+        if (
+          input.newStatus === "resolved" &&
+          input.refundAmount &&
+          input.refundAmount > 0
+        ) {
           const agentId = dispute.agentId;
           await db
             .update(agents)
@@ -479,7 +497,8 @@ export const posDisputeRouter = router({
   getStats_posDispute: protectedProcedure.query(async () => {
     try {
       const db = (await getDb())!;
-      if (!db) return { totalRecords: 0, open: 0, resolved: 0, avgResolutionHours: 0 };
+      if (!db)
+        return { totalRecords: 0, open: 0, resolved: 0, avgResolutionHours: 0 };
 
       const stats = await db
         .select({
@@ -507,7 +526,13 @@ export const posDisputeRouter = router({
         status: "operational",
       };
     } catch {
-      return { totalRecords: 0, open: 0, resolved: 0, lastUpdated: new Date().toISOString(), status: "operational" };
+      return {
+        totalRecords: 0,
+        open: 0,
+        resolved: 0,
+        lastUpdated: new Date().toISOString(),
+        status: "operational",
+      };
     }
   }),
 

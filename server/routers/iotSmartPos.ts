@@ -369,7 +369,9 @@ export const iotSmartPosRouter = router({
 
       for (const row of (alertDevices as any).rows ?? []) {
         const data =
-          typeof row.data === "string" ? JSON.parse(row.data) : row.data ?? {};
+          typeof row.data === "string"
+            ? JSON.parse(row.data)
+            : (row.data ?? {});
 
         let severity = "medium";
         let alertType = "unknown";
@@ -380,11 +382,17 @@ export const iotSmartPosRouter = router({
           severity = "critical";
           alertType = "tamper";
           message = "Device tamper detected — immediate investigation required";
-        } else if (data.battery_level !== undefined && data.battery_level < 10) {
+        } else if (
+          data.battery_level !== undefined &&
+          data.battery_level < 10
+        ) {
           severity = "high";
           alertType = "battery_critical";
           message = `Battery critically low: ${data.battery_level}%`;
-        } else if (data.battery_level !== undefined && data.battery_level < 25) {
+        } else if (
+          data.battery_level !== undefined &&
+          data.battery_level < 25
+        ) {
           severity = "medium";
           alertType = "battery_low";
           message = `Battery low: ${data.battery_level}%`;
@@ -443,8 +451,8 @@ export const iotSmartPosRouter = router({
           totalAlerts: alerts.length,
           escalatedCount,
           severityThreshold: input.severityThreshold,
-          criticalCount: alerts.filter((a) => a.severity === "critical").length,
-          highCount: alerts.filter((a) => a.severity === "high").length,
+          criticalCount: alerts.filter(a => a.severity === "critical").length,
+          highCount: alerts.filter(a => a.severity === "high").length,
         },
       });
 
@@ -453,10 +461,10 @@ export const iotSmartPosRouter = router({
         escalatedCount,
         alerts: alerts.slice(0, 50),
         summary: {
-          critical: alerts.filter((a) => a.severity === "critical").length,
-          high: alerts.filter((a) => a.severity === "high").length,
-          medium: alerts.filter((a) => a.severity === "medium").length,
-          low: alerts.filter((a) => a.severity === "low").length,
+          critical: alerts.filter(a => a.severity === "critical").length,
+          high: alerts.filter(a => a.severity === "high").length,
+          medium: alerts.filter(a => a.severity === "medium").length,
+          low: alerts.filter(a => a.severity === "low").length,
         },
         checkedAt: new Date().toISOString(),
       };

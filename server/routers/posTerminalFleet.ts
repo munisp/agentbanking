@@ -201,92 +201,94 @@ export const posTerminalFleetRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       return withIdempotency(input.idempotencyKey, async () => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as any).status as string;
-        const currentStatus =
-          ((input as any).currentStatus as string) || "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
+        // ── Enforce STATUS_TRANSITIONS state machine ──
+        if (typeof input === "object" && "status" in input) {
+          const newStatus = (input as any).status as string;
+          const currentStatus =
+            ((input as any).currentStatus as string) || "pending";
+          const allowed =
+            STATUS_TRANSITIONS[
+              currentStatus as keyof typeof STATUS_TRANSITIONS
+            ];
+          if (allowed && !allowed.includes(newStatus)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+            });
+          }
+        }
+        const txAmount =
+          typeof input === "object" && "amount" in input
+            ? Number((input as any).amount)
+            : 0;
+        const fees = calculateFee(txAmount, "posTransaction");
+        const commission = calculateCommission(fees.fee, "posTransaction");
+        const tax = calculateTax(fees.fee, "vat");
+        try {
+          const session = await getAgentFromCookie(ctx.req);
+          if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+          const db = (await getDb())!;
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+          const existing = await db
+            .select({ id: posTerminals.id })
+            .from(posTerminals)
+            .where(eq(posTerminals.serialNumber, input.serialNumber))
+            .limit(1);
+          if (existing[0])
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Serial number already registered",
+            });
+
+          const [terminal] = await db
+            .insert(posTerminals)
+            .values({
+              serialNumber: input.serialNumber,
+              model: input.model,
+              agentId: input.agentId ?? null,
+              groupId: input.groupId ?? null,
+              imei: input.imei ?? null,
+              simIccid: input.simIccid ?? null,
+              status: input.agentId ? "active" : "unassigned",
+            })
+            .returning();
+
+          // Double-entry GL journal entry
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${Date.now()}`,
+            description: `posTerminalFleet transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            status: "posted",
+          });
+
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "TERMINAL_PROVISIONED",
+            resource: "pos_terminal",
+            resourceId: String(terminal.id),
+            status: "success",
+            metadata: { serialNumber: input.serialNumber, model: input.model },
+          });
+
+          return terminal;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              error instanceof Error ? error.message : "Internal server error",
           });
         }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as any).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "posTransaction");
-      const commission = calculateCommission(fees.fee, "posTransaction");
-      const tax = calculateTax(fees.fee, "vat");
-      try {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
-
-        const db = (await getDb())!;
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
-        const existing = await db
-          .select({ id: posTerminals.id })
-          .from(posTerminals)
-          .where(eq(posTerminals.serialNumber, input.serialNumber))
-          .limit(1);
-        if (existing[0])
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Serial number already registered",
-          });
-
-        const [terminal] = await db
-          .insert(posTerminals)
-          .values({
-            serialNumber: input.serialNumber,
-            model: input.model,
-            agentId: input.agentId ?? null,
-            groupId: input.groupId ?? null,
-            imei: input.imei ?? null,
-            simIccid: input.simIccid ?? null,
-            status: input.agentId ? "active" : "unassigned",
-          })
-          .returning();
-
-        // Double-entry GL journal entry
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-${Date.now()}`,
-          description: `posTerminalFleet transaction`,
-          debitAccountId: 2001,
-          creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
-          currency: "NGN",
-          status: "posted",
-        });
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "TERMINAL_PROVISIONED",
-          resource: "pos_terminal",
-          resourceId: String(terminal.id),
-          status: "success",
-          metadata: { serialNumber: input.serialNumber, model: input.model },
-        });
-
-        return terminal;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
       });
     }),
 

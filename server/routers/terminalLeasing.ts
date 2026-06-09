@@ -88,123 +88,123 @@ export const terminalLeasingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       return withIdempotency(input.idempotencyKey, async () => {
-      return executeInTransaction(async () => {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+        return executeInTransaction(async () => {
+          const session = await getAgentFromCookie(ctx.req);
+          if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-        const db = (await getDb())!;
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          const db = (await getDb())!;
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [terminal] = await db
-          .select()
-          .from(posTerminals)
-          .where(eq(posTerminals.id, input.terminalId))
-          .limit(1);
-        if (!terminal)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Terminal not found",
-          });
+          const [terminal] = await db
+            .select()
+            .from(posTerminals)
+            .where(eq(posTerminals.id, input.terminalId))
+            .limit(1);
+          if (!terminal)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Terminal not found",
+            });
 
-        const [agent] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.agentId))
-          .limit(1);
-        if (!agent)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Agent not found",
-          });
+          const [agent] = await db
+            .select()
+            .from(agents)
+            .where(eq(agents.id, input.agentId))
+            .limit(1);
+          if (!agent)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Agent not found",
+            });
 
-        const existingLease = await db
-          .select()
-          .from(terminalLeases)
-          .where(
-            and(
-              eq(terminalLeases.terminalId, input.terminalId),
-              eq(terminalLeases.status, "active")
+          const existingLease = await db
+            .select()
+            .from(terminalLeases)
+            .where(
+              and(
+                eq(terminalLeases.terminalId, input.terminalId),
+                eq(terminalLeases.status, "active")
+              )
             )
-          )
-          .limit(1);
-        if (existingLease.length > 0)
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Terminal already has an active lease",
+            .limit(1);
+          if (existingLease.length > 0)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Terminal already has an active lease",
+            });
+
+          const startDate = new Date();
+          const endDate = new Date();
+          endDate.setMonth(endDate.getMonth() + input.durationMonths);
+
+          const insuranceRate = input.includeInsurance
+            ? Math.round(input.monthlyRate * 0.1)
+            : 0;
+
+          const nextPaymentDue = new Date();
+          nextPaymentDue.setMonth(nextPaymentDue.getMonth() + 1);
+          nextPaymentDue.setDate(input.paymentDay);
+
+          const [lease] = await db
+            .insert(terminalLeases)
+            .values({
+              terminalId: input.terminalId,
+              agentId: input.agentId,
+              leaseType: input.leaseType,
+              monthlyRate: input.monthlyRate,
+              depositAmount: input.depositAmount,
+              insuranceRate,
+              startDate,
+              endDate,
+              status: "active",
+              paymentDay: input.paymentDay,
+              totalPaid: input.depositAmount,
+              missedPayments: 0,
+              nextPaymentDue,
+            })
+            .returning();
+
+          await db
+            .update(posTerminals)
+            .set({
+              agentId: input.agentId,
+              status: "active",
+              updatedAt: new Date(),
+            })
+            .where(eq(posTerminals.id, input.terminalId));
+
+          logOperation("lease_created", {
+            leaseId: lease.id,
+            terminalId: input.terminalId,
+            agentId: input.agentId,
+            monthlyRate: input.monthlyRate,
           });
 
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + input.durationMonths);
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "TERMINAL_LEASE_CREATED",
+            resource: "terminal_lease",
+            resourceId: String(lease.id),
+            status: "success",
+            metadata: {
+              terminalId: input.terminalId,
+              monthlyRate: input.monthlyRate,
+              duration: input.durationMonths,
+              leaseType: input.leaseType,
+            },
+          });
 
-        const insuranceRate = input.includeInsurance
-          ? Math.round(input.monthlyRate * 0.1)
-          : 0;
-
-        const nextPaymentDue = new Date();
-        nextPaymentDue.setMonth(nextPaymentDue.getMonth() + 1);
-        nextPaymentDue.setDate(input.paymentDay);
-
-        const [lease] = await db
-          .insert(terminalLeases)
-          .values({
-            terminalId: input.terminalId,
-            agentId: input.agentId,
-            leaseType: input.leaseType,
-            monthlyRate: input.monthlyRate,
-            depositAmount: input.depositAmount,
-            insuranceRate,
-            startDate,
-            endDate,
-            status: "active",
-            paymentDay: input.paymentDay,
-            totalPaid: input.depositAmount,
-            missedPayments: 0,
-            nextPaymentDue,
-          })
-          .returning();
-
-        await db
-          .update(posTerminals)
-          .set({
-            agentId: input.agentId,
-            status: "active",
-            updatedAt: new Date(),
-          })
-          .where(eq(posTerminals.id, input.terminalId));
-
-        logOperation("lease_created", {
-          leaseId: lease.id,
-          terminalId: input.terminalId,
-          agentId: input.agentId,
-          monthlyRate: input.monthlyRate,
+          return {
+            success: true,
+            message: "Lease created successfully",
+            lease,
+            totalCost:
+              input.monthlyRate * input.durationMonths +
+              insuranceRate * input.durationMonths +
+              input.depositAmount,
+          };
         });
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "TERMINAL_LEASE_CREATED",
-          resource: "terminal_lease",
-          resourceId: String(lease.id),
-          status: "success",
-          metadata: {
-            terminalId: input.terminalId,
-            monthlyRate: input.monthlyRate,
-            duration: input.durationMonths,
-            leaseType: input.leaseType,
-          },
-        });
-
-        return {
-          success: true,
-          message: "Lease created successfully",
-          lease,
-          totalCost:
-            input.monthlyRate * input.durationMonths +
-            insuranceRate * input.durationMonths +
-            input.depositAmount,
-        };
-      });
       });
     }),
 

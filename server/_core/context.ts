@@ -36,7 +36,16 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: (User & { agentCode?: string }) | null;
+  agent?: { id: number; agentCode: string; name?: string } | null;
 };
+
+/** Type-safe accessor for DB query result rows */
+export type DbResult = { rows?: Array<Record<string, unknown>> };
+
+/** Type guard for noop DB (used in health checks) */
+export function isNoopDb(db: unknown): boolean {
+  return !!(db && typeof db === "object" && "_isNoop" in db);
+}
 
 function parseCookies(cookieHeader: string): Map<string, string> {
   const map = new Map<string, string>();

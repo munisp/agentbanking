@@ -953,9 +953,7 @@ export const resilienceRouter = router({
             s => !s.lastAlertedAt || s.lastAlertedAt < throttleWindow
           );
           if (eligibleSubs.length === 0) {
-            console.log(
-              `[alertOnPoorConnectivity] Agent ${input.agentCode}: throttled — all subs alerted within 30 min`
-            );
+            // Throttled: all subscribers alerted within 30 min
             return { alerted: false, reason: "throttled" as const, uptimePct };
           }
         }
@@ -1010,10 +1008,7 @@ export const resilienceRouter = router({
           console.warn("[alertOnPoorConnectivity] VAPID push error:", err);
         }
 
-        console.log(
-          `[alertOnPoorConnectivity] Agent ${input.agentCode}: ${uptimePct}% uptime — ` +
-            `ownerNotified=${ownerNotified}, pushCount=${pushCount}`
-        );
+        // Alert dispatched for poor connectivity
 
         return { alerted: true, uptimePct, ownerNotified, pushCount };
       } catch (error) {

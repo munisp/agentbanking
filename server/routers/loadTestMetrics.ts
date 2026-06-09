@@ -215,7 +215,7 @@ async function checkP99ThresholdAndNotify(run: any) {
       content: `Run ${run.runId} has ${violations.length} threshold violation(s):\n${violations.join("\n")}`,
     });
   } else {
-    console.log(`Run ${run.runId} passed all thresholds`);
+    // Run passed all thresholds
   }
 }
 

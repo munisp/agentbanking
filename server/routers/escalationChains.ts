@@ -427,9 +427,7 @@ export function dispatchEscalation(
   },
   alertMessage: string
 ) {
-  console.log(
-    `[Escalation] Dispatching via ${level.recipientType} to ${level.recipient}: ${alertMessage}`
-  );
+  // Dispatch notification via configured channel
   return {
     status: "sent" as const,
     message: `Dispatched via ${level.recipientType} to ${level.recipient}`,
@@ -443,8 +441,6 @@ export function checkAndEscalate() {
     if (event.status === "escalating") escalated++;
     if (event.status === "acknowledged") acknowledged++;
   }
-  console.log(
-    `[EscalationCheck] escalated=${escalated}, acknowledged=${acknowledged}`
-  );
+  // Escalation check complete
   return { escalated, acknowledged };
 }

@@ -758,9 +758,7 @@ export const transactionsRouter = router({
         });
 
         if (tbResult) {
-          console.log(
-            `[TB] Transfer committed: ${tbResult.id} (syncStatus=${tbResult.syncStatus})`
-          );
+          // TigerBeetle transfer committed successfully
         } else {
           console.warn(
             `[TB] Sidecar unavailable — transaction ${ref} persisted to PostgreSQL only`

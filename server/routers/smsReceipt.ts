@@ -51,7 +51,7 @@ async function sendTermiiSMS(
 
   if (!apiKey) {
     // Graceful fallback — log receipt to console for demo purposes
-    console.log(`[SMS Fallback] To: ${to}\nMessage: ${message}`);
+    // SMS fallback: Termii API key not configured
     return { success: true, messageId: `DEMO-${Date.now()}` };
   }
 

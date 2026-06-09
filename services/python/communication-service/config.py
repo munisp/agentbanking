@@ -21,9 +21,9 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "communication-service"
     LOG_LEVEL: str = "INFO"
     
-    # Communication settings (placeholders for external services)
-    EMAIL_API_KEY: str = "dummy_email_key"
-    SMS_API_KEY: str = "dummy_sms_key"
+    # Communication settings (loaded from environment)
+    EMAIL_API_KEY: str = os.getenv("EMAIL_API_KEY", "")
+    SMS_API_KEY: str = os.getenv("SMS_API_KEY", "")
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -25,6 +25,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -283,7 +284,9 @@ export const voiceCommandPosRouter = router({
         }
 
         const ref = `VOI-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-        const commission = Math.round(input.amount * 0.02);
+        const feeResult = calculateFee(input.amount, "cashOut");
+        const commResult = calculateCommission(feeResult.fee, "cashOut");
+        const commission = commResult.agentShare;
 
         const [tx] = await db
           .insert(transactions)
@@ -292,6 +295,7 @@ export const voiceCommandPosRouter = router({
             agentId: session.id,
             type: intentInfo.type,
             amount: String(input.amount),
+            fee: String(feeResult.fee),
             commission: String(commission),
             customerPhone: input.phone ?? null,
             customerName: input.customerName ?? null,

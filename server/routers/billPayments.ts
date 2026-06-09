@@ -244,7 +244,8 @@ export const billPaymentsRouter = router({
             message: "Insufficient float balance",
           });
 
-        const commission = Math.round(input.amount * 0.015);
+        const feeResult = calculateFee(input.amount, "billPayment");
+        const commResult = calculateCommission(feeResult.fee, "billPayment");
         const ref = `BIL-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
@@ -254,8 +255,8 @@ export const billPaymentsRouter = router({
             agentId: session.id,
             type: "Bill Payment",
             amount: String(input.amount),
-            fee: "0",
-            commission: String(commission),
+            fee: String(feeResult.fee),
+            commission: String(commResult.agentShare),
             customerName: input.customerName ?? null,
             customerPhone: input.customerPhone ?? null,
             customerAccount: input.customerReference,
@@ -314,7 +315,8 @@ export const billPaymentsRouter = router({
           billerId: input.billerId,
           billerName: biller.name,
           amount: input.amount,
-          commission,
+          fee: feeResult.fee,
+          commission: commResult.agentShare,
           status: "success",
           transactionId: tx.id,
         };

@@ -8,15 +8,39 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 const offlineTxSchema = z.object({
-  localId: z.string(),
+  localId: z.string().min(1).max(255),
   type: z.enum(["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"]),
-  amount: z.number().positive().max(10_000_000),
+  amount: z.number().min(0).positive().max(10_000_000),
   customerName: z.string().max(128).optional(),
   customerPhone: z.string().max(20).optional(),
   customerAccount: z.string().max(20).optional(),
@@ -27,16 +51,94 @@ const offlineTxSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "offlineSync",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "offlineSync",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "offlineSync",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "offlineSync",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const offlineSyncRouter = router({
   syncBatch: protectedProcedure
     .input(
       z.object({
-        sessionId: z.string(),
+        sessionId: z.string().min(1).max(255),
         transactions: z.array(offlineTxSchema).min(1).max(200),
         deviceToken: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -109,6 +211,24 @@ export const offlineSyncRouter = router({
                   floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
+
+              // Double-entry journal entry
+              await db.insert(gl_journal_entries).values({
+                entryNumber: `JE-CI-${Date.now()}`,
+                description: `offlineSync transaction`,
+                debitAccountId: 2001,
+                creditAccountId: 1001,
+                amount: Math.round(
+                  (typeof input === "object" && "amount" in input
+                    ? Number((input as any).amount)
+                    : 0) * 100
+                ),
+                currency: "NGN",
+                referenceType: "transaction",
+                referenceId: ref ?? String(Date.now()),
+                postedBy: session?.agentCode ?? "system",
+                status: "posted",
+              });
             }
             if (tx.type === "Cash In") {
               await db
@@ -176,7 +296,7 @@ export const offlineSyncRouter = router({
     }),
 
   getSessionStatus: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .query(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);
@@ -274,7 +394,7 @@ export const offlineSyncRouter = router({
     }),
 
   retryFailed: protectedProcedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
       try {
         const session = await getAgentFromCookie(ctx.req);

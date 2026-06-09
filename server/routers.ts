@@ -181,7 +181,6 @@ import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
 import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
-import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -202,6 +201,7 @@ import { advancedLoadingStatesRouter } from "./routers/advancedLoadingStates";
 import { financialNlEngineRouter } from "./routers/financialNlEngine";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { agentGamificationRouter } from "./routers/agentGamification";
+import { microInsuranceRouter } from "./routers/microInsurance";
 import { bulkTransactionProcessingRouter } from "./routers/bulkTransactionProcessing";
 import { customer360ViewRouter } from "./routers/customer360View";
 import { platformFeatureFlagsRouter } from "./routers/platformFeatureFlags";
@@ -288,6 +288,7 @@ import { platformSlaMonitorRouter } from "./routers/platformSlaMonitor";
 import { bulkDisbursementEngineRouter } from "./routers/bulkDisbursementEngine";
 import { transactionReversalManagerRouter } from "./routers/transactionReversalManager";
 import { agentLoanOriginationRouter } from "./routers/agentLoanOrigination";
+import { agentLoanOrigination2Router } from "./routers/agentLoanOrigination2";
 import { multiChannelNotificationHubRouter } from "./routers/multiChannelNotificationHub";
 import { platformMigrationToolkitRouter } from "./routers/platformMigrationToolkit";
 import { agentPerformanceIncentivesRouter } from "./routers/agentPerformanceIncentives";
@@ -306,7 +307,8 @@ import { txVelocityMonitorRouter } from "./routers/txVelocityMonitor";
 import { customerSurveysRouter } from "./routers/customerSurveys";
 import { agentTerritoryHeatmapRouter } from "./routers/agentTerritoryHeatmap";
 import { gatewayHealthMonitorRouter } from "./routers/gatewayHealthMonitor";
-import { agentLoanOrigination2Router } from "./routers/agentLoanOrigination2";
+import { cashInRouter } from "./routers/cashIn";
+import { cashOutRouter } from "./routers/cashOut";
 import { mfaManagerRouter } from "./routers/mfaManager";
 import { incidentPlaybookRouter } from "./routers/incidentPlaybook";
 import { deviceFleetManagerRouter } from "./routers/deviceFleetManager";
@@ -468,6 +470,7 @@ import { splitPaymentsRouter } from "./routers/splitPayments";
 import { recurringPaymentsRouter } from "./routers/recurringPayments";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
+import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
 import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
@@ -495,6 +498,30 @@ import { kycEnforcementRouter } from "./routers/kycEnforcement";
 // ── Agent Store E-Commerce ──
 import { agentStoreRouter } from "./routers/agentStore";
 import { storeReviewsRouter } from "./routers/storeReviews";
+
+// ── Future-Proofing Features (20 services × 4 languages) ──
+import { openBankingApiRouter } from "./routers/openBankingApi";
+import { bnplEngineRouter } from "./routers/bnplEngine";
+import { nfcTapToPayRouter } from "./routers/nfcTapToPay";
+import { aiCreditScoringRouter } from "./routers/aiCreditScoring";
+import { agritechPaymentsRouter } from "./routers/agritechPayments";
+import { superAppFrameworkRouter } from "./routers/superAppFramework";
+import { embeddedFinanceAnaasRouter } from "./routers/embeddedFinanceAnaas";
+import { payrollDisbursementRouter } from "./routers/payrollDisbursement";
+import { healthInsuranceMicroRouter } from "./routers/healthInsuranceMicro";
+import { educationPaymentsRouter } from "./routers/educationPayments";
+import { conversationalBankingRouter } from "./routers/conversationalBanking";
+import { stablecoinRailsRouter } from "./routers/stablecoinRails";
+import { iotSmartPosRouter } from "./routers/iotSmartPos";
+import { wearablePaymentsRouter } from "./routers/wearablePayments";
+import { satelliteConnectivityRouter } from "./routers/satelliteConnectivity";
+import { digitalIdentityLayerRouter } from "./routers/digitalIdentityLayer";
+import { pensionMicroRouter } from "./routers/pensionMicro";
+import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
+import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
+import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
+import { aiAgentSupportRouter } from "./routers/aiAgentSupport";
+import { predictiveFloatRouter } from "./routers/predictiveFloat";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -797,7 +824,6 @@ export const appRouter = router({
   customerLoyaltyProgram: customerLoyaltyProgramRouter,
   fraudCaseManagement: fraudCaseManagementRouter,
   posTerminalFleet: posTerminalFleetRouter,
-  posBatchSettlement: posBatchSettlementRouter,
   financialReconciliationDash: financialReconciliationDashRouter,
   apiAnalyticsDash: apiAnalyticsDashRouter,
   agentCommunicationHub: agentCommunicationHubRouter,
@@ -819,6 +845,7 @@ export const appRouter = router({
   financialNlEngine: financialNlEngineRouter,
   partnerRevenueSharing: partnerRevenueSharingRouter,
   agentGamification: agentGamificationRouter,
+  microInsurance: microInsuranceRouter,
   bulkTransactionProcessing: bulkTransactionProcessingRouter,
   customer360View: customer360ViewRouter,
   platformFeatureFlags: platformFeatureFlagsRouter,
@@ -926,6 +953,7 @@ export const appRouter = router({
   bulkDisbursementEngine: bulkDisbursementEngineRouter,
   transactionReversalManager: transactionReversalManagerRouter,
   agentLoanOrigination: agentLoanOriginationRouter,
+  agentLoanOrigination2: agentLoanOrigination2Router,
   multiChannelNotificationHub: multiChannelNotificationHubRouter,
   platformMigrationToolkit: platformMigrationToolkitRouter,
   agentPerformanceIncentives: agentPerformanceIncentivesRouter,
@@ -940,7 +968,8 @@ export const appRouter = router({
   customerSurveys: customerSurveysRouter,
   agentTerritoryHeatmap: agentTerritoryHeatmapRouter,
   gatewayHealthMonitor: gatewayHealthMonitorRouter,
-  agentLoanOrigination2: agentLoanOrigination2Router,
+  cashIn: cashInRouter,
+  cashOut: cashOutRouter,
   mfaManager: mfaManagerRouter,
   incidentPlaybook: incidentPlaybookRouter,
   deviceFleetManager: deviceFleetManagerRouter,
@@ -1065,6 +1094,7 @@ export const appRouter = router({
   recurringPayments: recurringPaymentsRouter,
   terminalLeasing: terminalLeasingRouter,
   posDispute: posDisputeRouter,
+  posBatchSettlement: posBatchSettlementRouter,
   crossBorderRemittance: crossBorderRemittanceRouter,
   agentTrainingGamification: agentTrainingGamificationRouter,
   // Sprint 97: Frontend-Backend Gap Closure
@@ -1096,6 +1126,29 @@ export const appRouter = router({
   // Agent Store E-Commerce
   agentStore: agentStoreRouter,
   storeReviews: storeReviewsRouter,
+  // ── Future-Proofing Features ──
+  openBankingApi: openBankingApiRouter,
+  bnplEngine: bnplEngineRouter,
+  nfcTapToPay: nfcTapToPayRouter,
+  aiCreditScoring: aiCreditScoringRouter,
+  agritechPayments: agritechPaymentsRouter,
+  superAppFramework: superAppFrameworkRouter,
+  embeddedFinanceAnaas: embeddedFinanceAnaasRouter,
+  payrollDisbursement: payrollDisbursementRouter,
+  healthInsuranceMicro: healthInsuranceMicroRouter,
+  educationPayments: educationPaymentsRouter,
+  conversationalBanking: conversationalBankingRouter,
+  stablecoinRails: stablecoinRailsRouter,
+  iotSmartPos: iotSmartPosRouter,
+  wearablePayments: wearablePaymentsRouter,
+  satelliteConnectivity: satelliteConnectivityRouter,
+  digitalIdentityLayer: digitalIdentityLayerRouter,
+  pensionMicro: pensionMicroRouter,
+  carbonCreditMarketplace: carbonCreditMarketplaceRouter,
+  tokenizedAssets: tokenizedAssetsRouter,
+  coalitionLoyalty: coalitionLoyaltyRouter,
+  aiAgentSupport: aiAgentSupportRouter,
+  predictiveFloat: predictiveFloatRouter,
 });
 
 export type AppRouter = typeof appRouter;

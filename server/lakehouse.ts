@@ -187,11 +187,117 @@ export async function getSnapshotDownloadUrl(
   }
 }
 
+// ── Unified Lakehouse Service Integration ─────────────────────────────────────
+// Forward data to the Python Lakehouse service for Bronze/Silver/Gold processing
+
+const LAKEHOUSE_API_URL =
+  process.env.LAKEHOUSE_SERVICE_URL ?? "http://localhost:8156";
+
+/**
+ * Forward data to the unified Lakehouse API for Bronze layer ingestion.
+ * Called after MinIO upload to maintain dual-write consistency.
+ */
+export async function ingestToLakehouse(
+  table: string,
+  data: Record<string, unknown> | Record<string, unknown>[],
+  source: string = "typescript-minio"
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${LAKEHOUSE_API_URL}/v1/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table, data, source }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      logger.info(`[Lakehouse] Ingested to ${table} via unified API`);
+      return true;
+    }
+    logger.warn(`[Lakehouse] Ingest to ${table} returned ${res.status}`);
+    return false;
+  } catch (err) {
+    logger.warn({ err }, `[Lakehouse] Ingest to ${table} failed`);
+    return false;
+  }
+}
+
+/**
+ * Query the unified Lakehouse via SQL (DuckDB/DataFusion backend).
+ */
+export async function queryLakehouse(
+  sql: string,
+  layer: string = "gold"
+): Promise<Record<string, unknown>[]> {
+  try {
+    const res = await fetch(`${LAKEHOUSE_API_URL}/v1/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, layer }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const result = (await res.json()) as {
+      results?: Record<string, unknown>[];
+    };
+    return result.results ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get the Lakehouse catalog (all registered tables and schemas).
+ */
+export async function getLakehouseCatalog(
+  layer?: string
+): Promise<Record<string, unknown>> {
+  try {
+    const url = layer
+      ? `${LAKEHOUSE_API_URL}/v1/catalog?layer=${layer}`
+      : `${LAKEHOUSE_API_URL}/v1/catalog`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return { tables: [], total: 0 };
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return { tables: [], total: 0 };
+  }
+}
+
+/**
+ * Trigger ETL promotion (Bronze→Silver or Silver→Gold).
+ */
+export async function promoteLakehouseTable(
+  table: string,
+  sourceLayer: string = "bronze",
+  targetLayer: string = "silver"
+): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${LAKEHOUSE_API_URL}/v1/etl/promote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table,
+        source_layer: sourceLayer,
+        target_layer: targetLayer,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   uploadTransactionSnapshot,
   uploadSettlementSummary,
   uploadFraudEvents,
   listSnapshots,
   getSnapshotDownloadUrl,
+  ingestToLakehouse,
+  queryLakehouse,
+  getLakehouseCatalog,
+  promoteLakehouseTable,
   BUCKETS,
 };

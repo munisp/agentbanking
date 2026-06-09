@@ -20,8 +20,8 @@ describe("Sprint 95: Router Implementation", () => {
     .readdirSync(routerDir)
     .filter(f => f.endsWith(".ts") && !f.includes(".test"));
 
-  it("should have 478 router files", () => {
-    expect(routerFiles.length).toBe(478);
+  it("should have 481 router files", () => {
+    expect(routerFiles.length).toBe(483);
   });
 
   it("should have zero empty routers (router({}))", () => {

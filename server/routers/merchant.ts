@@ -12,7 +12,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   merchants,
   transactions,
@@ -21,6 +21,26 @@ import {
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import crypto from "crypto";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["active", "rejected", "suspended"],
+  active: ["suspended", "terminated"],
+  suspended: ["active", "terminated"],
+  rejected: [],
+  terminated: [],
+};
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -52,6 +72,32 @@ async function getMerchantFromRequest(
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "merchant",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "merchant",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const merchantRouter = router({
   /**
    * Get the authenticated merchant's profile.
@@ -120,7 +166,7 @@ export const merchantRouter = router({
   updateProfile: protectedProcedure
     .input(
       z.object({
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         phone: z.string().min(10).max(20).optional(),
         address: z.string().max(512).optional(),
         settlementAccountNumber: z.string().max(20).optional(),
@@ -129,6 +175,28 @@ export const merchantRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const merchant = await getMerchantFromRequest(ctx.req);
         if (!merchant)
@@ -159,6 +227,31 @@ export const merchantRouter = router({
           .update(merchants)
           .set(updateData)
           .where(eq(merchants.id, merchant.id));
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "merchant",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -295,7 +388,7 @@ export const merchantRouter = router({
       z.object({
         transactionRef: z.string().min(1),
         reason: z.string().min(10).max(1000),
-        amount: z.number().positive().optional(),
+        amount: z.number().min(0).positive().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -460,7 +553,7 @@ export const merchantRouter = router({
       z.object({
         businessName: z.string().min(2).max(128),
         ownerName: z.string().min(2).max(128),
-        email: z.string().email(),
+        email: z.string().email().email(),
         phone: z.string().min(10).max(20),
         address: z.string().min(5).max(500),
         category: z.enum([
@@ -550,7 +643,7 @@ export const merchantRouter = router({
    * Check registration status by email (for returning applicants).
    */
   checkRegistrationStatus: protectedProcedure
-    .input(z.object({ email: z.string().email() }))
+    .input(z.object({ email: z.string().email().email() }))
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;

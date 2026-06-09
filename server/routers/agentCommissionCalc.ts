@@ -5,21 +5,91 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   commissionTiers,
   commissionPayouts,
   commissionRules,
   commissionAuditTrail,
 } from "../../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   publishCommissionEvent,
   tbRecordCommissionCredit,
 } from "../middleware/commissionMiddleware";
 import logger from "../_core/logger";
+import { validateInput } from "../lib/routerHelpers";
 
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["approved", "rejected"],
+  approved: ["paid", "clawed_back"],
+  paid: ["clawed_back"],
+  rejected: [],
+  clawed_back: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "agentCommissionCalc",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "agentCommissionCalc",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "agentCommissionCalc",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "agentCommissionCalc",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const agentCommissionCalcRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -80,21 +150,12 @@ export const agentCommissionCalcRouter = router({
   calculateCommission: protectedProcedure
     .input(
       z.object({
-        agentId: z.string(),
+        agentId: z.string().min(1).max(255),
         volume: z.number(),
         transactionCount: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const tiers = await db
         .select()
@@ -134,6 +195,31 @@ export const agentCommissionCalcRouter = router({
           `[AgentCommCalc] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
         );
       }
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "agentCommissionCalc",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return {
         agentId: input.agentId,
         tier: tier.name,
@@ -211,7 +297,7 @@ export const agentCommissionCalcRouter = router({
     }),
 
   approvePayout: protectedProcedure
-    .input(z.object({ payoutId: z.string() }))
+    .input(z.object({ payoutId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;

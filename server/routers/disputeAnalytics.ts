@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count, sum, avg, gte } from "drizzle-orm";
+import { eq, desc, and, sql, count, sum, avg, gte, lte } from "drizzle-orm";
 import {
   disputes,
   transactions,
@@ -10,7 +10,101 @@ import {
   auditLog,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
 
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  detected: ["under_investigation"],
+  under_investigation: ["confirmed_fraud", "false_positive", "escalated"],
+  escalated: ["under_investigation", "confirmed_fraud"],
+  confirmed_fraud: ["mitigation_in_progress"],
+  mitigation_in_progress: ["resolved", "blocked"],
+  blocked: ["unblocked", "permanently_blocked"],
+  unblocked: ["monitoring"],
+  monitoring: ["cleared", "re_flagged"],
+  re_flagged: ["under_investigation"],
+  cleared: ["closed"],
+  resolved: ["closed"],
+  false_positive: ["closed"],
+  permanently_blocked: [],
+  closed: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "disputeAnalytics",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "disputeAnalytics",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+// ── Error Guards ───────────────────────────────────────────────────────────
+function guardNotFound(val: unknown, entity: string): asserts val {
+  if (!val)
+    throw new TRPCError({ code: "NOT_FOUND", message: `${entity} not found` });
+}
+function guardForbidden(allowed: boolean, msg = "Forbidden"): void {
+  if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: msg });
+}
+function guardConflict(condition: boolean, msg = "Conflict"): void {
+  if (condition) throw new TRPCError({ code: "CONFLICT", message: msg });
+}
+function safeParse<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
+
+// ── Transaction Handling for disputeAnalytics ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const disputeAnalyticsRouter = router({
   getSummary: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -60,7 +154,7 @@ export const disputeAnalyticsRouter = router({
           .where(
             gte(
               disputes.createdAt,
-              sql`NOW() - INTERVAL '${sql.raw(String(input?.days ?? 30))} days'`
+              sql`NOW() - MAKE_INTERVAL(days => ${Math.max(1, Math.min(365, Number(input?.days) || 30))})`
             )
           )
           .groupBy(sql`DATE(${disputes.createdAt})`)

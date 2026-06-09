@@ -4,17 +4,40 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getDb } from "../db";
+import {
+  getAgentById,
+  getDb,
+  updateAgentFloat,
+  withTransaction,
+  writeAuditLog,
+} from "../db";
 import { agents, floatTopUpRequests } from "../../drizzle/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
-  writeAuditLog,
-  updateAgentFloat,
-  getAgentById,
-  withTransaction,
-} from "../db";
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
+  rejected: [],
+};
 
 async function requireAdmin(req: any) {
   const session = await getAgentFromCookie(req);
@@ -44,6 +67,20 @@ async function requireAdmin(req: any) {
   }
   return { session, agent };
 }
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const agentManagementRouter = router({
   // ── List all agents ───────────────────────────────────────────────────────
@@ -96,6 +133,28 @@ export const agentManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const { session } = await requireAdmin(ctx.req);
         if (input.agentId === session.id) {
@@ -425,7 +484,11 @@ export const agentManagementRouter = router({
   submitTopUpRequest: protectedProcedure
     .input(
       z.object({
-        amount: z.number().positive().min(1000, "Minimum top-up is ₦1,000"),
+        amount: z
+          .number()
+          .min(0)
+          .positive()
+          .min(1000, "Minimum top-up is ₦1,000"),
         notes: z.string().max(500).optional(),
       })
     )

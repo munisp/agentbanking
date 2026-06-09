@@ -5,6 +5,8 @@ import type { TrpcContext } from "./context";
 import { permifyCheck } from "../_core/permify";
 import { createObservabilityMiddleware } from "../middleware/observabilityMiddleware";
 import { createSidecarMiddleware } from "../middleware/sidecarIntegration";
+import { createTrpcCacheMiddleware } from "../middleware/trpcCacheMiddleware";
+import { createProductionHardeningMiddleware } from "../middleware/productionHardeningMiddleware";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -17,11 +19,15 @@ export const middleware = t.middleware;
 //    Fluvio, TigerBeetle (fire-and-forget, fail-open) ────────────────────────
 const observability = createObservabilityMiddleware(t);
 const sidecarMiddleware = createSidecarMiddleware(t);
+const trpcCache = createTrpcCacheMiddleware(t);
+const productionHardening = createProductionHardeningMiddleware(t);
 
 // Base: t.procedure.use(observability) applied to all procedure levels
 export const publicProcedure = t.procedure
   .use(observability)
-  .use(sidecarMiddleware);
+  .use(sidecarMiddleware)
+  .use(trpcCache)
+  .use(productionHardening);
 
 // ── requireUser: verify JWT session ──────────────────────────────────────────
 const requireUser = t.middleware(async opts => {
@@ -78,6 +84,8 @@ const requirePermify = t.middleware(async opts => {
 export const protectedProcedure = t.procedure
   .use(observability)
   .use(sidecarMiddleware)
+  .use(trpcCache)
+  .use(productionHardening)
   .use(requireUser)
   .use(requirePermify);
 

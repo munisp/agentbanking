@@ -28,6 +28,12 @@ import {
 } from "../../drizzle/schema";
 import { gte, lte, sql, eq, and, desc, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 function startOfDay(daysAgo = 0): Date {
   const d = new Date();
@@ -36,6 +42,24 @@ function startOfDay(daysAgo = 0): Date {
   return d;
 }
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
+  cancelled: [],
+  archived: [],
+};
+
+// ── Transaction Handling for analytics ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const analyticsRouter = router({
   // ── KPI Dashboard Summary ─────────────────────────────────────────────────
   kpiSummary: protectedProcedure

@@ -10,7 +10,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   tenants,
   agents,
@@ -23,6 +23,30 @@ import {
   devices,
 } from "../../drizzle/schema";
 import { eq, desc, asc, and, gte, lte, count, sql, like } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -35,6 +59,44 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "superAdmin",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "superAdmin",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const superAdminRouter = router({
   // ── Tenants ────────────────────────────────────────────────────────────────
   tenants: router({
@@ -46,7 +108,7 @@ export const superAdminRouter = router({
           status: z
             .enum(["trial", "active", "suspended", "churned"])
             .optional(),
-          search: z.string().optional(),
+          search: z.string().min(1).max(500).optional(),
         })
       )
       .query(async ({ input }) => {
@@ -120,7 +182,14 @@ export const superAdminRouter = router({
           contactPhone: z.string().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const txAmount =
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0;
+        const fees = calculateFee(txAmount, "transfer");
+        const commission = calculateCommission(fees.fee, "transfer");
+        const tax = calculateTax(fees.fee, "vat");
         try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

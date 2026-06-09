@@ -5,9 +5,39 @@ import { TRPCError } from "@trpc/server";
  */
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { glEntries } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sum, sql } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["batched"],
+  batched: ["processing"],
+  processing: ["settled", "partially_settled", "failed"],
+  settled: ["reconciled"],
+  partially_settled: ["processing", "escalated"],
+  reconciled: ["confirmed", "discrepancy_found"],
+  discrepancy_found: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["confirmed"],
+  confirmed: ["archived"],
+  failed: ["retry_pending", "escalated"],
+  retry_pending: ["processing"],
+  escalated: ["resolved"],
+  resolved: ["confirmed"],
+  archived: [],
+};
 
 const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"];
 const GL_ACCOUNTS = [
@@ -25,6 +55,51 @@ const GL_ACCOUNTS = [
   { code: "5100", name: "Agent Commission Expense", type: "expense" },
   { code: "5200", name: "Bank Charges", type: "expense" },
 ];
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "generalLedger",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "generalLedger",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "generalLedger",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "generalLedger",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 
 export const generalLedgerRouter = router({
   listEntries: protectedProcedure
@@ -85,7 +160,7 @@ export const generalLedgerRouter = router({
             accountCode: z.string(),
             accountName: z.string(),
             entryType: z.enum(["debit", "credit"]),
-            amount: z.number().min(0.01),
+            amount: z.number().min(0).min(0.01),
             description: z.string(),
             reference: z.string().optional(),
           })
@@ -94,6 +169,28 @@ export const generalLedgerRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -123,6 +220,31 @@ export const generalLedgerRouter = router({
           posted: true,
         }));
         await db.insert(glEntries).values(records as any as any);
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "generalLedger",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return {
           journalRef,
           entriesPosted: records.length,

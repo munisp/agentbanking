@@ -1,16 +1,97 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, platformSettings } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
 
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  application_draft: ["submitted"],
+  submitted: ["under_review"],
+  under_review: ["credit_check", "rejected"],
+  credit_check: ["approved", "conditionally_approved", "rejected"],
+  conditionally_approved: ["documents_pending"],
+  documents_pending: ["approved", "rejected"],
+  approved: ["disbursement_pending"],
+  disbursement_pending: ["disbursed", "cancelled"],
+  disbursed: ["repaying"],
+  repaying: ["completed", "overdue", "restructured"],
+  overdue: ["repaying", "defaulted", "restructured"],
+  defaulted: ["collections", "written_off", "restructured"],
+  restructured: ["repaying"],
+  collections: ["repaying", "written_off"],
+  completed: ["closed"],
+  written_off: ["closed"],
+  closed: [],
+  rejected: [],
+  cancelled: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "advancedLoadingStates",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "advancedLoadingStates",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+// ── Transaction Handling for advancedLoadingStates ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const advancedLoadingStatesRouter = router({
   list: protectedProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {

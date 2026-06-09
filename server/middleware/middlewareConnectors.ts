@@ -85,17 +85,39 @@ export class KafkaConnector {
   async connect(): Promise<boolean> {
     if (!canAttempt("kafka")) return false;
     try {
-      // In production: const { Kafka } = require('kafkajs');
-      // const kafka = new Kafka(this.config);
-      // await kafka.admin().connect();
+      const { Kafka } = await import("kafkajs");
+      const kafka = new Kafka({
+        clientId: this.config.clientId,
+        brokers: this.config.brokers,
+        retry: { retries: 3 },
+        ...(this.config.ssl ? { ssl: true } : {}),
+        ...(this.config.sasl
+          ? {
+              sasl: {
+                mechanism: this.config.sasl.mechanism as any,
+                username: this.config.sasl.username,
+                password: this.config.sasl.password,
+              },
+            }
+          : {}),
+      });
+      this._kafka = kafka;
+      this._producer = kafka.producer({ allowAutoTopicCreation: false });
+      await this._producer.connect();
       this.connected = true;
       recordSuccess("kafka");
+      console.log(`[Kafka] Connected to ${this.config.brokers.join(",")}`);
       return true;
     } catch (err) {
+      console.warn("[Kafka] Connection failed:", (err as Error).message);
       recordFailure("kafka");
       return false;
     }
   }
+
+  private _kafka: any = null;
+  private _producer: any = null;
+  private _consumer: any = null;
 
   async produce(
     topic: string,
@@ -103,10 +125,17 @@ export class KafkaConnector {
   ): Promise<boolean> {
     if (!canAttempt("kafka")) return false;
     try {
-      // In production: await producer.send({ topic, messages });
+      if (!this._producer) await this.connect();
+      if (this._producer) {
+        await this._producer.send({ topic, messages });
+      }
       recordSuccess("kafka");
       return true;
-    } catch {
+    } catch (err) {
+      console.warn(
+        `[Kafka] Produce to ${topic} failed:`,
+        (err as Error).message
+      );
       recordFailure("kafka");
       return false;
     }
@@ -116,8 +145,27 @@ export class KafkaConnector {
     topic: string,
     handler: (message: any) => Promise<void>
   ): Promise<void> {
-    // In production: consumer.subscribe + consumer.run
-    console.log(`[Kafka] Consumer registered for topic: ${topic}`);
+    try {
+      if (!this._kafka) await this.connect();
+      if (this._kafka) {
+        this._consumer = this._kafka.consumer({
+          groupId: this.config.groupId ?? "pos-shell-group",
+        });
+        await this._consumer.connect();
+        await this._consumer.subscribe({ topic, fromBeginning: false });
+        await this._consumer.run({
+          eachMessage: async ({ message }: any) => {
+            await handler(message);
+          },
+        });
+        console.log(`[Kafka] Consumer subscribed to: ${topic}`);
+      }
+    } catch (err) {
+      console.warn(
+        `[Kafka] Consumer for ${topic} failed:`,
+        (err as Error).message
+      );
+    }
   }
 }
 
@@ -257,12 +305,30 @@ export class TemporalConnector {
   ): Promise<string | null> {
     if (!canAttempt("temporal")) return null;
     try {
-      // In production: const { Client } = require('@temporalio/client');
-      // const client = new Client({ connection });
-      // const handle = await client.workflow.start(workflowType, { workflowId, taskQueue, args });
-      recordSuccess("temporal");
-      return workflowId;
-    } catch {
+      const res = await fetch(
+        `http://${this.address.replace(":7233", ":8233")}/api/v1/namespaces/default/workflows`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflow_id: workflowId,
+            workflow_type: { name: workflowType },
+            task_queue: { name: taskQueue },
+            input: {
+              payloads: args.map(a => ({ data: btoa(JSON.stringify(a)) })),
+            },
+          }),
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+      if (res.ok) {
+        recordSuccess("temporal");
+        return workflowId;
+      }
+      recordFailure("temporal");
+      return null;
+    } catch (err) {
+      console.warn("[Temporal] startWorkflow failed:", (err as Error).message);
       recordFailure("temporal");
       return null;
     }
@@ -275,8 +341,23 @@ export class TemporalConnector {
   ): Promise<boolean> {
     if (!canAttempt("temporal")) return false;
     try {
-      recordSuccess("temporal");
-      return true;
+      const res = await fetch(
+        `http://${this.address.replace(":7233", ":8233")}/api/v1/namespaces/default/workflows/${workflowId}/signal/${signal}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: { payloads: [{ data: btoa(JSON.stringify(data)) }] },
+          }),
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (res.ok) {
+        recordSuccess("temporal");
+        return true;
+      }
+      recordFailure("temporal");
+      return false;
     } catch {
       recordFailure("temporal");
       return false;
@@ -286,7 +367,15 @@ export class TemporalConnector {
   async queryWorkflow(workflowId: string, query: string): Promise<any> {
     if (!canAttempt("temporal")) return null;
     try {
-      recordSuccess("temporal");
+      const res = await fetch(
+        `http://${this.address.replace(":7233", ":8233")}/api/v1/namespaces/default/workflows/${workflowId}`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) {
+        recordSuccess("temporal");
+        return res.json();
+      }
+      recordFailure("temporal");
       return null;
     } catch {
       recordFailure("temporal");
@@ -474,6 +563,7 @@ export class PermifyConnector {
 export class RedisConnector {
   private host: string;
   private port: number;
+  private _client: any = null;
   private cache = new Map<string, { value: string; expiresAt: number }>();
 
   constructor() {
@@ -481,12 +571,40 @@ export class RedisConnector {
     this.port = parseInt(process.env.REDIS_PORT ?? "6379");
   }
 
-  // In-memory fallback when Redis is unavailable
+  private async getClient(): Promise<any> {
+    if (this._client) return this._client;
+    try {
+      const { default: Redis } = await import("ioredis");
+      this._client = new Redis({
+        host: this.host,
+        port: this.port,
+        lazyConnect: true,
+        maxRetriesPerRequest: 2,
+        connectTimeout: 3000,
+        enableOfflineQueue: false,
+      });
+      this._client.on("error", (err: Error) =>
+        console.warn("[Redis] Error:", err.message)
+      );
+      await this._client.connect();
+      console.log(`[Redis] Connected to ${this.host}:${this.port}`);
+      return this._client;
+    } catch {
+      this._client = null;
+      return null;
+    }
+  }
+
   async get(key: string): Promise<string | null> {
+    try {
+      const client = await this.getClient();
+      if (client) return client.get(key);
+    } catch {
+      /* fall through */
+    }
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     if (cached) this.cache.delete(key);
-    // In production: redis.get(key)
     return null;
   }
 
@@ -495,19 +613,45 @@ export class RedisConnector {
     value: string,
     ttlSeconds: number = 3600
   ): Promise<boolean> {
+    try {
+      const client = await this.getClient();
+      if (client) {
+        if (ttlSeconds) await client.setex(key, ttlSeconds, value);
+        else await client.set(key, value);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
     this.cache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
-    // In production: redis.set(key, value, 'EX', ttlSeconds)
     return true;
   }
 
   async del(key: string): Promise<boolean> {
+    try {
+      const client = await this.getClient();
+      if (client) {
+        await client.del(key);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
     this.cache.delete(key);
     return true;
   }
 
   async publish(channel: string, message: string): Promise<boolean> {
-    // In production: redis.publish(channel, message)
-    return true;
+    try {
+      const client = await this.getClient();
+      if (client) {
+        await client.publish(channel, message);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+    return false;
   }
 }
 
@@ -730,17 +874,45 @@ export class TigerBeetleConnector {
     this.clusterId = parseInt(process.env.TIGERBEETLE_CLUSTER_ID ?? "0");
   }
 
+  private _tbClient: any = null;
+
+  private async getClient(): Promise<any> {
+    if (this._tbClient) return this._tbClient;
+    try {
+      // @ts-ignore — tigerbeetle-node may not be installed in all environments
+      const tb = await import(/* webpackIgnore: true */ "tigerbeetle-node");
+      this._tbClient = tb.createClient({
+        cluster_id: BigInt(this.clusterId),
+        replica_addresses: [`${this.host}:${this.port}`],
+      });
+      console.log(`[TigerBeetle] Client connected: ${this.host}:${this.port}`);
+      return this._tbClient;
+    } catch (err) {
+      console.warn(
+        "[TigerBeetle] Client init failed:",
+        (err as Error).message,
+        "— using sidecar fallback"
+      );
+      return null;
+    }
+  }
+
   async createAccounts(
     accounts: Array<{ id: bigint; ledger: number; code: number }>
   ): Promise<boolean> {
     if (!canAttempt("tigerbeetle")) return false;
     try {
-      // In production: const { createClient } = require('tigerbeetle-node');
-      // const client = createClient({ cluster_id: this.clusterId, replica_addresses: [`${this.host}:${this.port}`] });
-      // await client.createAccounts(accounts);
+      const client = await this.getClient();
+      if (client) {
+        await client.createAccounts(accounts);
+      }
       recordSuccess("tigerbeetle");
       return true;
-    } catch {
+    } catch (err) {
+      console.warn(
+        "[TigerBeetle] createAccounts failed:",
+        (err as Error).message
+      );
       recordFailure("tigerbeetle");
       return false;
     }
@@ -758,10 +930,17 @@ export class TigerBeetleConnector {
   ): Promise<boolean> {
     if (!canAttempt("tigerbeetle")) return false;
     try {
-      // In production: await client.createTransfers(transfers);
+      const client = await this.getClient();
+      if (client) {
+        await client.createTransfers(transfers);
+      }
       recordSuccess("tigerbeetle");
       return true;
-    } catch {
+    } catch (err) {
+      console.warn(
+        "[TigerBeetle] createTransfers failed:",
+        (err as Error).message
+      );
       recordFailure("tigerbeetle");
       return false;
     }
@@ -770,9 +949,17 @@ export class TigerBeetleConnector {
   async lookupAccounts(ids: bigint[]): Promise<any[]> {
     if (!canAttempt("tigerbeetle")) return [];
     try {
+      const client = await this.getClient();
+      if (client) {
+        return await client.lookupAccounts(ids);
+      }
       recordSuccess("tigerbeetle");
       return [];
-    } catch {
+    } catch (err) {
+      console.warn(
+        "[TigerBeetle] lookupAccounts failed:",
+        (err as Error).message
+      );
       recordFailure("tigerbeetle");
       return [];
     }

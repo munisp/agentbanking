@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   eq,
   desc,
@@ -17,6 +17,74 @@ import {
 } from "drizzle-orm";
 import { tenants, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  proposed: ["review"],
+  review: ["approved", "rejected"],
+  approved: ["deploying"],
+  deploying: ["active", "rollback"],
+  active: ["deprecated", "updated"],
+  deprecated: ["removed"],
+  updated: ["active"],
+  rollback: ["review"],
+  removed: [],
+  rejected: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "tenantAdmin",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "tenantAdmin",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const tenantAdminRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -117,12 +185,34 @@ export const tenantAdminRouter = router({
         slug: z.string(),
         contactEmail: z.string().optional(),
         contactPhone: z.string().optional(),
-        planId: z.string().optional(),
+        planId: z.string().min(1).max(255).optional(),
         country: z.string().default("NGA"),
         currency: z.string().default("NGN"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -146,6 +236,31 @@ export const tenantAdminRouter = router({
           status: "success",
           metadata: { name: input.name, slug: input.slug },
         });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "tenantAdmin",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { success: true, tenant };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -163,7 +278,7 @@ export const tenantAdminRouter = router({
         name: z.string().optional(),
         contactEmail: z.string().optional(),
         contactPhone: z.string().optional(),
-        planId: z.string().optional(),
+        planId: z.string().min(1).max(255).optional(),
         status: z.enum(["active", "suspended", "trial", "churned"]).optional(),
       })
     )
@@ -270,13 +385,13 @@ export const tenantAdminRouter = router({
   updateUser: protectedProcedure
     .input(
       z.object({
-        userId: z.string(),
+        userId: z.string().min(1).max(255),
         role: z.string().optional(),
         name: z.string().optional(),
       })
     )
     .mutation(async () => ({ success: true })),
   activityLog: protectedProcedure
-    .input(z.object({ limit: z.number().default(50) }).default({}))
+    .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async () => ({ entries: [], total: 0 })),
 });

@@ -1,7 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F1-F5: Infrastructure Completion Module
- * - F1: /api/scheduled endpoint for Manus periodic task integration
+ * - F1: /api/scheduled endpoint for 54Link periodic task integration
  * - F2: CORS middleware configuration
  * - F3: Environment validation on startup
  * - F4: Request correlation ID propagation
@@ -12,7 +12,7 @@ import type { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
 
 // ============================================================
-// F1: /api/scheduled endpoint for Manus periodic task updates
+// F1: /api/scheduled endpoint for 54Link periodic task updates
 // ============================================================
 
 interface ScheduledTaskPayload {
@@ -210,18 +210,18 @@ const ENV_RULES: EnvRule[] = [
   {
     key: "VITE_APP_ID",
     required: true,
-    description: "Manus OAuth application ID",
+    description: "54Link OAuth application ID",
   },
   {
     key: "OAUTH_SERVER_URL",
     required: true,
-    description: "Manus OAuth backend URL",
+    description: "54Link OAuth backend URL",
     pattern: /^https?:\/\//,
   },
   {
     key: "VITE_OAUTH_PORTAL_URL",
     required: true,
-    description: "Manus login portal URL",
+    description: "54Link login portal URL",
     pattern: /^https?:\/\//,
   },
   { key: "OWNER_OPEN_ID", required: false, description: "Owner's OpenID" },
@@ -229,12 +229,12 @@ const ENV_RULES: EnvRule[] = [
   {
     key: "BUILT_IN_FORGE_API_URL",
     required: false,
-    description: "Manus built-in API URL",
+    description: "54Link platform API URL",
   },
   {
     key: "BUILT_IN_FORGE_API_KEY",
     required: false,
-    description: "Manus built-in API key",
+    description: "54Link platform API key",
   },
   {
     key: "STRIPE_SECRET_KEY",

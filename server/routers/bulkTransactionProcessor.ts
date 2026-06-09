@@ -1,5 +1,6 @@
 // Sprint 87: Upgraded from mock data to real DB queries — bulkTransactionProcessor
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, gl_journal_entries } from "../../drizzle/schema";
@@ -12,6 +13,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,

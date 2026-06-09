@@ -6,6 +6,7 @@
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";

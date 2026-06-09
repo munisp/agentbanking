@@ -1,8 +1,9 @@
 // Sprint 87: Upgraded from mock data to real DB queries — bulkTransactionProcessor
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import { transactions, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -12,6 +13,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -202,6 +204,21 @@ const cancelBatch = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     const txAmount =
       typeof input === "object" && "amount" in input
         ? Number((input as Record<string, unknown>).amount)
@@ -231,8 +248,24 @@ const cancelBatch = protectedProcedure
       }
       const [row] = await db
         .insert(transactions)
-        .values(input.data || ({} as any))
+        .values({
+          ...(input.data || {}),
+          fee: String(fees.fee),
+          commission: String(commission.agentShare),
+        } as any)
         .returning();
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-BLK-${Date.now()}`,
+        description: "Bulk transaction",
+        debitAccountId: 2001,
+        creditAccountId: 1001,
+        amount: Math.round(fees.fee * 100),
+        currency: "NGN",
+        referenceType: "transaction",
+        referenceId: row?.ref ?? String(Date.now()),
+        postedBy: "system",
+        status: "posted",
+      });
       return { success: true, ...row, message: "cancelBatch completed" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -286,51 +319,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
     action,
     JSON.stringify(auditEntry).slice(0, 200)
   );
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_BULKTRANSACTIONPROCESSOR = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_BULKTRANSACTIONPROCESSOR.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_BULKTRANSACTIONPROCESSOR.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
 }
 
 // Transaction wrapping: withTransaction used for atomic DB operations

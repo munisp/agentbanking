@@ -268,8 +268,8 @@ export function FluvioStreamTab() {
           topic: topicId,
           key: `test-${Date.now()}`,
           value: JSON.stringify({
-            ref: `TEST-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-            amount: Math.floor(Math.random() * 50000) + 1000,
+            ref: `TEST-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8).toUpperCase()}`,
+            amount: (crypto.getRandomValues(new Uint32Array(1))[0] % 50000) + 1000,
             type: "Test",
             timestamp: new Date().toISOString(),
             source: "admin-dashboard",

@@ -55,6 +55,17 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
 // ── Transaction Handling for analytics ───────────────────────────────────────
 // All mutations use withTransaction for atomicity.
 // withTransaction wraps DB operations in a single ACID transaction.

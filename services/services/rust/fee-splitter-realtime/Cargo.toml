@@ -1,0 +1,15 @@
+[package]
+name = "fee-splitter-realtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rdkafka = "0.36"
+redis = "0.25"
+# tigerbeetle-client = "0.15"  # Not available on crates.io yet
+actix-web = "4"
+tracing = "0.1"
+tracing-subscriber = "0.3"

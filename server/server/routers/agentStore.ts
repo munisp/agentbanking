@@ -92,10 +92,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -210,7 +206,7 @@ export const agentStoreRouter = router({
           businessHours: input.businessHours ?? null,
           status: "active",
         })
-        .returning();
+          .returning();
 
       return store;
     }),
@@ -563,7 +559,7 @@ export const agentStoreRouter = router({
           maxDistanceKm: input.maxDistanceKm ?? null,
           areas: input.areas ?? [],
         })
-        .returning();
+          .returning();
 
       return zone;
     }),
@@ -650,7 +646,7 @@ export const agentStoreRouter = router({
           deliveryNotes: input.deliveryNotes ?? null,
           status: "pending",
         })
-        .returning();
+          .returning();
 
       return tracking;
     }),
@@ -747,7 +743,7 @@ export const agentStoreRouter = router({
           agentPayout: agentPayout.toFixed(2),
           taxAmount: vatOnFee.toFixed(2),
         })
-        .returning();
+          .returning();
 
       return split;
     }),

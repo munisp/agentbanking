@@ -1,0 +1,213 @@
+# NPCI UPI Configuration
+# National Payments Corporation of India - UPI Integration
+
+# Environment Configuration
+environment: production  # development, staging, production
+
+# NPCI API Configuration
+npci:
+  # API Endpoints
+  api_base_url: "https://api.npci.org.in/upi/v1"
+  sandbox_url: "https://sandbox.npci.org.in/upi/v1"
+  
+  # Authentication
+  merchant_id: "${NPCI_MERCHANT_ID}"  # Set via environment variable
+  api_key: "${NPCI_API_KEY}"          # Set via environment variable
+  api_secret: "${NPCI_API_SECRET}"    # Set via environment variable
+  
+  # PSP Configuration
+  psp_name: "Nigerian Remittance Platform"
+  psp_code: "NRP"
+  psp_bank_code: "NRPBANK"
+  
+  # Timeout Configuration (milliseconds)
+  timeouts:
+    connection: 5000
+    read: 10000
+    write: 5000
+  
+  # Retry Configuration
+  retry:
+    max_attempts: 3
+    backoff_multiplier: 2
+    initial_delay_ms: 1000
+    max_delay_ms: 10000
+
+# VPA (Virtual Payment Address) Configuration
+vpa:
+  # VPA Format: username@psp
+  default_psp_handle: "nrp"
+  allowed_psp_handles:
+    - "nrp"
+    - "paytm"
+    - "phonepe"
+    - "googlepay"
+    - "bhim"
+  
+  # VPA Validation
+  validation:
+    min_length: 3
+    max_length: 50
+    allowed_characters: "a-z0-9._-"
+    regex: "^[a-z0-9._-]+@[a-z0-9]+$"
+
+# Transaction Configuration
+transaction:
+  # Amount Limits (INR)
+  limits:
+    min_amount: 1.00
+    max_amount: 100000.00
+    daily_limit: 1000000.00
+  
+  # Transaction Types
+  types:
+    - "P2P"      # Person to Person
+    - "P2M"      # Person to Merchant
+    - "P2A"      # Person to Account
+    - "COLLECT"  # Collect Request
+  
+  # Transaction Status
+  statuses:
+    - "PENDING"
+    - "SUCCESS"
+    - "FAILED"
+    - "TIMEOUT"
+    - "DECLINED"
+
+# Security Configuration
+security:
+  # Encryption
+  encryption:
+    algorithm: "AES-256-GCM"
+    key_rotation_days: 90
+  
+  # Signature
+  signature:
+    algorithm: "SHA256"
+    header_name: "X-NPCI-Signature"
+  
+  # IP Whitelist (NPCI IPs)
+  ip_whitelist:
+    - "103.14.127.0/24"   # NPCI Production
+    - "103.14.128.0/24"   # NPCI Backup
+    - "127.0.0.1"         # Localhost (dev only)
+  
+  # Rate Limiting
+  rate_limiting:
+    requests_per_second: 100
+    requests_per_minute: 5000
+    requests_per_hour: 100000
+
+# Webhook Configuration
+webhooks:
+  # Callback URLs
+  callback_url: "${UPI_CALLBACK_URL}/webhooks/upi/callback"
+  notification_url: "${UPI_NOTIFICATION_URL}/webhooks/upi/notification"
+  
+  # Webhook Security
+  verify_signature: true
+  signature_header: "X-NPCI-Webhook-Signature"
+  
+  # Retry Configuration
+  retry_failed_webhooks: true
+  max_retry_attempts: 5
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARN, ERROR
+  
+  # Log Sensitive Data (NEVER in production)
+  log_request_body: false
+  log_response_body: false
+  log_credentials: false
+  
+  # Audit Logging
+  audit:
+    enabled: true
+    log_all_transactions: true
+    retention_days: 365
+
+# Monitoring Configuration
+monitoring:
+  # Metrics
+  metrics:
+    enabled: true
+    export_interval_seconds: 60
+    
+  # Health Checks
+  health_check:
+    enabled: true
+    interval_seconds: 30
+    timeout_seconds: 5
+  
+  # Alerts
+  alerts:
+    enabled: true
+    failure_threshold: 5
+    notification_channels:
+      - "email"
+      - "slack"
+      - "pagerduty"
+
+# Feature Flags
+features:
+  collect_requests: true
+  qr_code_payments: true
+  mandate_payments: false  # Recurring payments
+  international_payments: false
+
+# Compliance Configuration
+compliance:
+  # KYC Requirements
+  kyc:
+    required: true
+    min_kyc_level: "MINIMUM"  # MINIMUM, MEDIUM, FULL
+  
+  # AML Checks
+  aml:
+    enabled: true
+    check_on_transaction: true
+    daily_limit_check: true
+  
+  # Reporting
+  reporting:
+    daily_reports: true
+    monthly_reports: true
+    regulatory_reports: true
+
+# Development/Testing Configuration
+development:
+  # Use Sandbox
+  use_sandbox: true
+  
+  # Mock Responses
+  mock_npci_responses: false
+  
+  # Test VPAs
+  test_vpas:
+    - "test@nrp"
+    - "demo@nrp"
+    - "sandbox@nrp"
+  
+  # Test Credentials
+  test_merchant_id: "TEST_MERCHANT_001"
+  test_api_key: "test_key_12345"
+
+# Production Configuration
+production:
+  # Strict Mode
+  strict_mode: true
+  
+  # Require HTTPS
+  require_https: true
+  
+  # Certificate Pinning
+  certificate_pinning: true
+  
+  # Production Checks
+  pre_flight_checks:
+    - "verify_credentials"
+    - "check_ip_whitelist"
+    - "validate_certificates"
+    - "test_connectivity"
+

@@ -40,7 +40,7 @@ export default function ReportScheduler() {
         "active",
         "completed",
       ][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
+      col4: `${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 100).toFixed(1)}`,
       col5: new Date(Date.now() - i * 3600000).toLocaleString(),
     }));
   const [search, setSearch] = useState("");

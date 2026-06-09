@@ -54,7 +54,7 @@ export function queueTransaction(
   const store = getStore();
   store.pendingTransactions.push({
     ...tx,
-    id: `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `offline-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     createdAt: Date.now(),
     synced: false,
     retryCount: 0,

@@ -12,6 +12,7 @@ import { notifyOwner } from "../_core/notification";
 import { erpSyncLog, erpConfig } from "../../drizzle/schema";
 import { eq, and, lte, lt } from "drizzle-orm";
 import { recordMetric } from "./analyticsMetrics";
+import crypto from "crypto";
 
 const BASE_DELAY_MS = 30_000; // 30 seconds
 const BACKOFF_MULTIPLIER = 2;
@@ -23,7 +24,7 @@ export function computeNextRetryAt(retryCount: number): Date {
     BASE_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, retryCount),
     MAX_DELAY_MS
   );
-  const jitter = base * JITTER_FACTOR * (Math.random() * 2 - 1); // ±20%
+  const jitter = base * JITTER_FACTOR * (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 2 - 1); // ±20%
   return new Date(Date.now() + base + jitter);
 }
 

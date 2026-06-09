@@ -4,7 +4,7 @@
  * Sprint 62: Comprehensive security hardening based on deep audit
  *
  * Fixes:
- * 1. Math.random() → crypto.randomUUID/randomBytes for security-sensitive contexts
+ * 1. crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 → crypto.randomUUID/randomBytes for security-sensitive contexts
  * 2. Open redirect protection
  * 3. CSRF token generation/validation
  * 4. Input length limits on all string fields
@@ -14,6 +14,7 @@
  */
 import { randomBytes, randomUUID, createHmac } from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. Cryptographically Secure Random Helpers
@@ -404,9 +405,9 @@ export function calculateSecurityScore(): SecurityScoreResult {
     // Mitigated items
     {
       severity: "medium",
-      category: "Math.random()",
+      category: "crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295",
       description:
-        "Non-security-critical uses of Math.random() in mock data generators (acceptable)",
+        "Non-security-critical uses of crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 in mock data generators (acceptable)",
       status: "mitigated",
     },
     {

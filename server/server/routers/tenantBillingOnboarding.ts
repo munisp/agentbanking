@@ -24,6 +24,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -31,6 +32,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["sent", "cancelled"],
@@ -158,7 +160,7 @@ async function executeBillingProvisioning(params: {
         status: "in_progress",
         temporalWorkflowId: temporalWorkflowId || null,
       })
-      .returning();
+          .returning();
 
     try {
       let details: any = {};
@@ -196,7 +198,7 @@ async function executeBillingProvisioning(params: {
               provisionedBy,
               status: "active",
             })
-            .returning();
+          .returning();
           details = { configId: config.id, billingModel };
           break;
         }
@@ -385,6 +387,21 @@ export const tenantBillingOnboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)

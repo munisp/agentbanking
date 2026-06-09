@@ -81,10 +81,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -388,6 +384,23 @@ export const agentBankingRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        // ── Enforce STATUS_TRANSITIONS state machine ──
+        if (typeof input === "object" && "status" in input) {
+          const newStatus = (input as Record<string, unknown>).status as string;
+          const currentStatus =
+            ((input as Record<string, unknown>).currentStatus as string) ||
+            "pending";
+          const allowed =
+            STATUS_TRANSITIONS[
+              currentStatus as keyof typeof STATUS_TRANSITIONS
+            ];
+          if (allowed && !allowed.includes(newStatus)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+            });
+          }
+        }
         const txAmount =
           typeof input === "object" && "amount" in input
             ? Number((input as Record<string, unknown>).amount)
@@ -446,7 +459,7 @@ export const agentBankingRouter = router({
               description: input.description,
               expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
             })
-            .returning();
+          .returning();
           return qr;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -623,7 +636,7 @@ export const agentBankingRouter = router({
               reason: input.reason,
               evidence: input.evidence,
             })
-            .returning();
+          .returning();
           return dispute;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

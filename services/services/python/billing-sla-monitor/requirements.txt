@@ -1,0 +1,9 @@
+aiokafka>=0.10.0
+fastapi>=0.104.0
+opensearch-py>=2.4.0
+pydantic>=2.5.0
+pytest-asyncio>=0.23.0
+pytest>=7.4.0
+redis>=5.0.0
+temporalio>=1.4.0
+uvicorn>=0.24.0

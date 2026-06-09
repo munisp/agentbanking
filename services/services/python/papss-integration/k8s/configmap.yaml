@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: papss-config
+  namespace: remittance-platform
+  labels:
+    app: papss-integration
+data:
+  # PAPSS Configuration
+  papss.yaml: |
+    papss:
+      environment: production
+      api_version: v1
+      timeout_seconds: 30
+      max_retries: 3
+      
+      # Trade Corridors
+      trade_corridors:
+        - name: EAC
+          description: East African Community
+          countries: [KE, TZ, UG, RW, BI, SS]
+          currencies: [KES, TZS, UGX, RWF, BIF, SSP]
+        - name: ECOWAS
+          description: Economic Community of West African States
+          countries: [NG, GH, CI, SN, ML, BF, NE, TG, BJ, GM, GW, SL, LR, CV]
+          currencies: [NGN, GHS, XOF, GMD, SLL, LRD, CVE]
+        - name: SADC
+          description: Southern African Development Community
+          countries: [ZA, ZW, ZM, MW, MZ, BW, NA, LS, SZ, AO, CD, TZ, MG, MU, SC]
+          currencies: [ZAR, ZWL, ZMW, MWK, MZN, BWP, NAD, LSL, SZL, AOA, CDF, TZS, MGA, MUR, SCR]
+        - name: CEMAC
+          description: Central African Economic and Monetary Community
+          countries: [CM, CF, TD, CG, GQ, GA]
+          currencies: [XAF]
+      
+      # Supported Currencies
+      currencies:
+        NGN:
+          name: Nigerian Naira
+          country: NG
+          decimal_places: 2
+          min_amount: 100
+          max_amount: 10000000
+        KES:
+          name: Kenyan Shilling
+          country: KE
+          decimal_places: 2
+          min_amount: 100
+          max_amount: 5000000
+        GHS:
+          name: Ghanaian Cedi
+          country: GH
+          decimal_places: 2
+          min_amount: 10
+          max_amount: 500000
+        ZAR:
+          name: South African Rand
+          country: ZA
+          decimal_places: 2
+          min_amount: 10
+          max_amount: 1000000
+        EGP:
+          name: Egyptian Pound
+          country: EG
+          decimal_places: 2
+          min_amount: 100
+          max_amount: 2000000
+        TZS:
+          name: Tanzanian Shilling
+          country: TZ
+          decimal_places: 2
+          min_amount: 1000
+          max_amount: 10000000
+        UGX:
+          name: Ugandan Shilling
+          country: UG
+          decimal_places: 2
+          min_amount: 1000
+          max_amount: 20000000
+        XOF:
+          name: West African CFA Franc
+          countries: [BJ, BF, CI, GW, ML, NE, SN, TG]
+          decimal_places: 0
+          min_amount: 1000
+          max_amount: 50000000
+        XAF:
+          name: Central African CFA Franc
+          countries: [CM, CF, TD, CG, GQ, GA]
+          decimal_places: 0
+          min_amount: 1000
+          max_amount: 50000000
+      
+      # Mobile Money Operators
+      mobile_money_operators:
+        MPESA:
+          name: M-Pesa
+          countries: [KE, TZ, UG, GH, NG]
+          supported: true
+        OPAY:
+          name: OPay
+          countries: [NG]
+          supported: true
+        MTN_MOBILE_MONEY:
+          name: MTN Mobile Money
+          countries: [GH, UG, RW, ZM, CI, CM, BJ]
+          supported: true
+        AIRTEL_MONEY:
+          name: Airtel Money
+          countries: [KE, TZ, UG, ZM, MW, NG, GH]
+          supported: true
+        ORANGE_MONEY:
+          name: Orange Money
+          countries: [CI, SN, ML, BF, CM, MG]
+          supported: true
+        TIGO_PESA:
+          name: Tigo Pesa
+          countries: [TZ, GH, RW]
+          supported: true
+      
+      # Payment Types
+      payment_types:
+        - personal
+        - business
+        - trade_finance
+        - salary
+        - invoice
+        - remittance
+      
+      # Purpose Codes (ISO 20022)
+      purpose_codes:
+        FAMI: Family Maintenance
+        SALA: Salary Payment
+        SUPP: Supplier Payment
+        TRAD: Trade Services
+        INVS: Investment
+        EDUC: Education
+        MEDI: Medical Treatment
+        RENT: Rent Payment
+        UTIL: Utility Payment
+        LOAN: Loan Payment
+      
+      # Limits
+      limits:
+        daily_transaction_limit: 50000000
+        single_transaction_limit: 10000000
+        monthly_volume_limit: 500000000
+        
+      # Features
+      features:
+        fx_conversion: true
+        mobile_money: true
+        trade_finance: true
+        instant_settlement: true
+        compliance_checks: true
+        
+  # Logging Configuration
+  logging.yaml: |
+    version: 1
+    disable_existing_loggers: false
+    formatters:
+      standard:
+        format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+      json:
+        format: '{"timestamp": "%(asctime)s", "service": "papss-integration", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        level: INFO
+        formatter: json
+        stream: ext://sys.stdout
+      file:
+        class: logging.handlers.RotatingFileHandler
+        level: DEBUG
+        formatter: standard
+        filename: /var/log/papss/papss-integration.log
+        maxBytes: 10485760
+        backupCount: 10
+    loggers:
+      papss:
+        level: DEBUG
+        handlers: [console, file]
+        propagate: false
+      tigerbeetle:
+        level: INFO
+        handlers: [console]
+        propagate: false
+    root:
+      level: INFO
+      handlers: [console]
+

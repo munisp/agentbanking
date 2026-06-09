@@ -102,10 +102,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -497,7 +493,7 @@ export const managementRouter = router({
               reviewedAt: new Date(),
               status: "approved",
             })
-            .returning();
+          .returning();
           return req;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -1865,7 +1861,7 @@ export const managementRouter = router({
               retryCount: 0,
               tenantId: input.tenantId,
             })
-            .returning();
+          .returning();
           return row;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

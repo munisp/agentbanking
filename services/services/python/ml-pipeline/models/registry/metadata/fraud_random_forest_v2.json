@@ -1,0 +1,23 @@
+{
+  "model_name": "fraud_random_forest",
+  "model_type": "fraud_detection",
+  "version": 2,
+  "stage": "development",
+  "registered_at": "2026-05-25T12:05:25.169039",
+  "description": "Continue training from synthetic(seed=10698)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_random_forest/v2/fraud_random_forest.joblib",
+  "artifact_hash": "0d2163ee3439cdce",
+  "artifact_size_bytes": 44122665,
+  "metrics": {
+    "auc": 0.5710718627151297,
+    "delta": 0.04916553493869791
+  },
+  "parameters": {},
+  "tags": {
+    "method": "continue_training",
+    "data_source": "synthetic(seed=10698)"
+  },
+  "promoted_at": null,
+  "deployed_at": null,
+  "deployment_endpoint": null
+}

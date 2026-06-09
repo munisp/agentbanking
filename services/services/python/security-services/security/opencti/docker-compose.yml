@@ -1,0 +1,139 @@
+version: '3'
+services:
+  redis:
+    image: redis:7.2-alpine
+    restart: always
+    volumes:
+      - redisdata:/data
+    networks:
+      - opencti-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+      - xpack.ml.enabled=false
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    restart: always
+    networks:
+      - opencti-network
+
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - s3data:/data
+    ports:
+      - "9000:9000"
+    environment:
+      MINIO_ROOT_USER: opencti
+      MINIO_ROOT_PASSWORD: opencti_password
+    command: server /data
+    restart: always
+    networks:
+      - opencti-network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=opencti
+      - RABBITMQ_DEFAULT_PASS=opencti_password
+    volumes:
+      - amqpdata:/var/lib/rabbitmq
+    restart: always
+    networks:
+      - opencti-network
+
+  opencti:
+    image: opencti/platform:latest
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=8096
+      - APP__PORT=8080
+      - APP__BASE_URL=http://localhost:8080
+      - APP__ADMIN__EMAIL=admin@opencti.io
+      - APP__ADMIN__PASSWORD=admin_password
+      - APP__ADMIN__TOKEN=changeme
+      - APP__APP_LOGS__LOGS_LEVEL=info
+      - REDIS__HOSTNAME=redis
+      - REDIS__PORT=6379
+      - ELASTICSEARCH__URL=http://elasticsearch:9200
+      - MINIO__ENDPOINT=minio
+      - MINIO__PORT=9000
+      - MINIO__USE_SSL=false
+      - MINIO__ACCESS_KEY=opencti
+      - MINIO__SECRET_KEY=opencti_password
+      - RABBITMQ__HOSTNAME=rabbitmq
+      - RABBITMQ__PORT=5672
+      - RABBITMQ__PORT_MANAGEMENT=15672
+      - RABBITMQ__MANAGEMENT_SSL=false
+      - RABBITMQ__USERNAME=opencti
+      - RABBITMQ__PASSWORD=opencti_password
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+      - elasticsearch
+      - minio
+      - rabbitmq
+    restart: always
+    networks:
+      - opencti-network
+
+  worker:
+    image: opencti/worker:latest
+    environment:
+      - OPENCTI_URL=http://opencti:8080
+      - OPENCTI_TOKEN=changeme
+      - WORKER_LOG_LEVEL=info
+    depends_on:
+      - opencti
+    deploy:
+      mode: replicated
+      replicas: 3
+    restart: always
+    networks:
+      - opencti-network
+
+  connector-export-file-stix:
+    image: opencti/connector-export-file-stix:latest
+    environment:
+      - OPENCTI_URL=http://opencti:8080
+      - OPENCTI_TOKEN=changeme
+      - CONNECTOR_ID=export-file-stix
+      - CONNECTOR_TYPE=INTERNAL_EXPORT_FILE
+      - CONNECTOR_NAME=ExportFileStix2
+      - CONNECTOR_SCOPE=application/json
+      - CONNECTOR_LOG_LEVEL=info
+    restart: always
+    networks:
+      - opencti-network
+    depends_on:
+      - opencti
+
+  connector-import-file-stix:
+    image: opencti/connector-import-file-stix:latest
+    environment:
+      - OPENCTI_URL=http://opencti:8080
+      - OPENCTI_TOKEN=changeme
+      - CONNECTOR_ID=import-file-stix
+      - CONNECTOR_TYPE=INTERNAL_IMPORT_FILE
+      - CONNECTOR_NAME=ImportFileStix2
+      - CONNECTOR_SCOPE=application/json
+      - CONNECTOR_LOG_LEVEL=info
+    restart: always
+    networks:
+      - opencti-network
+    depends_on:
+      - opencti
+
+volumes:
+  esdata:
+  s3data:
+  redisdata:
+  amqpdata:
+
+networks:
+  opencti-network:
+    driver: bridge

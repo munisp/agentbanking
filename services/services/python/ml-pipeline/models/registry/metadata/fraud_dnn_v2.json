@@ -1,0 +1,23 @@
+{
+  "model_name": "fraud_dnn",
+  "model_type": "fraud_detection",
+  "version": 2,
+  "stage": "development",
+  "registered_at": "2026-05-25T12:05:25.171400",
+  "description": "Continue training from synthetic(seed=10698)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_dnn/v2/fraud_dnn_best.pt",
+  "artifact_hash": "ae1f9ccd9a77d83a",
+  "artifact_size_bytes": 584893,
+  "metrics": {
+    "auc": 0.5437679052541036,
+    "delta": 0.006064899638963395
+  },
+  "parameters": {},
+  "tags": {
+    "method": "continue_training",
+    "data_source": "synthetic(seed=10698)"
+  },
+  "promoted_at": null,
+  "deployed_at": null,
+  "deployment_endpoint": null
+}

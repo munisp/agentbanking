@@ -1,8 +1,9 @@
 // Sprint 87: Upgraded from mock data to real DB queries — paymentReconciliation
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { floatReconciliations } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import { floatReconciliations , gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -19,6 +20,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -172,6 +175,21 @@ const runReconciliation = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     const txAmount =
       typeof input === "object" && "amount" in input
         ? Number((input as Record<string, unknown>).amount)
@@ -203,6 +221,21 @@ const runReconciliation = protectedProcedure
         .insert(floatReconciliations)
         .values(input.data || ({} as any))
         .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `paymentReconciliation transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100,
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
       return { success: true, ...row, message: "runReconciliation completed" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -221,6 +254,21 @@ const resolveDiscrepancy = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -260,6 +308,21 @@ const updateMatchRules = protectedProcedure
     z.object({ id: z.number(), data: z.record(z.string(), z.any()).optional() })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       const [existing] = await db
@@ -278,6 +341,13 @@ const updateMatchRules = protectedProcedure
           .set(input.data)
           .where(eq(floatReconciliations.id, input.id))
           .returning();
+
+        await writeAuditLog({
+          action: "mutation",
+          resource: "paymentReconciliation",
+          status: "success",
+          metadata: { input: JSON.stringify(input).slice(0, 500) },
+        });
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };
@@ -333,51 +403,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
     action,
     JSON.stringify(auditEntry).slice(0, 200)
   );
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_PAYMENTRECONCILIATION = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_PAYMENTRECONCILIATION.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_PAYMENTRECONCILIATION.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
 }
 
 // Transaction wrapping: withTransaction used for atomic DB operations

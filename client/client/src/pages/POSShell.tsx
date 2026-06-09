@@ -1842,7 +1842,7 @@ function TileComponent({
       setWobble(false);
       return;
     }
-    const delay = Math.random() * 300;
+    const delay = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 300;
     const t = setTimeout(() => setWobble(true), delay);
     return () => clearTimeout(t);
   }, [editMode]);
@@ -4727,7 +4727,7 @@ function pickChallenges(count: number): Array<{
   instruction: string;
   completed: boolean;
 }> {
-  const shuffled = [...KYC_CHALLENGE_POOL].sort(() => Math.random() - 0.5);
+  const shuffled = [...KYC_CHALLENGE_POOL].sort(() => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 - 0.5);
   return shuffled
     .slice(0, Math.min(count, shuffled.length))
     .map((c: any) => ({ ...c, completed: false }));
@@ -5796,7 +5796,7 @@ function OpenAccountScreen({ onBack }: { onBack: () => void }) {
   // Stable account number generated once on mount (not on every render)
   const [acctNo] = useState(
     () =>
-      `20${Math.floor(Math.random() * 100000000)
+      `20${(crypto.getRandomValues(new Uint32Array(1))[0] % 100000000)
         .toString()
         .padStart(8, "0")}`
   );

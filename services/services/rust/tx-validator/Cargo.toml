@@ -1,0 +1,29 @@
+[package]
+name = "tx-validator"
+version = "14.0.0"
+edition = "2021"
+authors = ["54Link Platform Team"]
+description = "Ultra-low-latency transaction validator for 54Link Agency Banking Platform"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.7", features = ["json"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1.0"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+
+[[bin]]
+name = "tx-validator"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

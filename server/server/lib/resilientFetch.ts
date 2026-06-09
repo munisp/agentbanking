@@ -9,6 +9,7 @@
  */
 import logger from "../_core/logger";
 import { getMtlsAgent } from "./mtlsAgent";
+import crypto from "crypto";
 
 // ── Circuit Breaker ──────────────────────────────────────────────────────────
 type CircuitState = "closed" | "open" | "half_open";
@@ -179,7 +180,7 @@ export async function resilientFetch<T>(
         if (isRetryable(response.status) && attempt < retryConfig.maxRetries) {
           const delay = Math.min(
             retryConfig.baseDelayMs * Math.pow(2, attempt) +
-              Math.random() * 100,
+              crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 100,
             retryConfig.maxDelayMs
           );
           logger.debug(
@@ -206,7 +207,7 @@ export async function resilientFetch<T>(
 
       if (attempt < retryConfig.maxRetries) {
         const delay = Math.min(
-          retryConfig.baseDelayMs * Math.pow(2, attempt) + Math.random() * 100,
+          retryConfig.baseDelayMs * Math.pow(2, attempt) + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295 * 100,
           retryConfig.maxDelayMs
         );
         await sleep(delay);

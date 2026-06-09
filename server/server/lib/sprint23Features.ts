@@ -566,7 +566,7 @@ export function createWebhookDelivery(
   payload: string
 ): WebhookDelivery {
   const delivery: WebhookDelivery = {
-    id: `wd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    id: `wd-${Date.now().toString(36)}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 6)}`,
     webhookId,
     url,
     payload,
@@ -606,7 +606,7 @@ export function processWebhookRetry(
     delivery.status = "failed";
     // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s, 8s, 16s)
     const backoffMs = Math.pow(2, delivery.attempts) * 1000;
-    const jitter = Math.random() * 1000;
+    const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 1000;
     delivery.nextRetryAt = new Date(
       Date.now() + backoffMs + jitter
     ).toISOString();
@@ -899,7 +899,7 @@ export function submitKycDocument(
   metadata: Record<string, string> = {}
 ): KycVerificationStep {
   const step: KycVerificationStep = {
-    id: `kyc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    id: `kyc-${Date.now().toString(36)}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 6)}`,
     agentId,
     documentType,
     documentUrl,

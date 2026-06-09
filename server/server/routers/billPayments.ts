@@ -187,72 +187,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _billPayments_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
 export const billPaymentsRouter = router({
   payBill: protectedProcedure
     .input(
@@ -266,6 +200,21 @@ export const billPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -295,7 +244,8 @@ export const billPaymentsRouter = router({
             message: "Insufficient float balance",
           });
 
-        const commission = Math.round(input.amount * 0.015);
+        const feeResult = calculateFee(input.amount, "billPayment");
+        const commResult = calculateCommission(feeResult.fee, "billPayment");
         const ref = `BIL-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
@@ -305,8 +255,8 @@ export const billPaymentsRouter = router({
             agentId: session.id,
             type: "Bill Payment",
             amount: String(input.amount),
-            fee: "0",
-            commission: String(commission),
+            fee: String(feeResult.fee),
+            commission: String(commResult.agentShare),
             customerName: input.customerName ?? null,
             customerPhone: input.customerPhone ?? null,
             customerAccount: input.customerReference,
@@ -365,7 +315,8 @@ export const billPaymentsRouter = router({
           billerId: input.billerId,
           billerName: biller.name,
           amount: input.amount,
-          commission,
+          fee: feeResult.fee,
+          commission: commResult.agentShare,
           status: "success",
           transactionId: tx.id,
         };

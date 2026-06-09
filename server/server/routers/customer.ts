@@ -95,10 +95,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -448,7 +444,7 @@ export const customerRouter = router({
               reason: input.reason,
               evidence: input.evidence,
             })
-            .returning();
+          .returning();
           return dispute;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -503,7 +499,7 @@ export const customerRouter = router({
               agentId: customer.preferredAgentId ?? 0,
               docType: input.docType,
             })
-            .returning();
+          .returning();
           return session;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -568,7 +564,7 @@ export const customerRouter = router({
               counter: 0,
               status: "active",
             })
-            .returning();
+          .returning();
           return row;
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -625,7 +621,7 @@ export const customerRouter = router({
               type: input.type,
               expiresAt,
             })
-            .returning();
+          .returning();
           return { challenge: row.challenge, expiresAt: row.expiresAt };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -809,7 +805,7 @@ export const customerRouter = router({
               termDays: input.termDays,
               status: "pending",
             })
-            .returning();
+          .returning();
           return row;
         } catch (error) {
           if (error instanceof TRPCError) throw error;

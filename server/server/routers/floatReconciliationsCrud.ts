@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { floatReconciliations } from "../../drizzle/schema";
+import { floatReconciliations , gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
@@ -18,6 +19,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -75,72 +78,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _floatReconciliationsCrud_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
 
 export const floatReconciliationsRouter = router({
   list: protectedProcedure
@@ -234,6 +171,21 @@ export const floatReconciliationsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
@@ -269,6 +221,21 @@ export const floatReconciliationsRouter = router({
               : input.notes || null,
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `floatReconciliationsCrud transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100,
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await writeAuditLog({
           agentId:
             typeof ctx === "object" && ctx !== null && "user" in ctx

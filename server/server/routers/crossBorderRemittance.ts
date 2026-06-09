@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { transactions, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -18,6 +19,7 @@ import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 

@@ -1,0 +1,312 @@
+groups:
+  - name: pos_service_alerts
+    rules:
+      # Service Health Alerts
+      - alert: POSServiceDown
+        expr: up{job="pos-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: pos-service
+        annotations:
+          summary: "POS Service is down"
+          description: "POS Service has been down for more than 1 minute"
+
+      - alert: QRValidationServiceDown
+        expr: up{job="qr-validation-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: qr-validation-service
+        annotations:
+          summary: "QR Validation Service is down"
+          description: "QR Validation Service has been down for more than 1 minute"
+
+      - alert: EnhancedPOSServiceDown
+        expr: up{job="enhanced-pos-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: enhanced-pos-service
+        annotations:
+          summary: "Enhanced POS Service is down"
+          description: "Enhanced POS Service has been down for more than 1 minute"
+
+      - alert: DeviceManagerServiceDown
+        expr: up{job="device-manager-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: device-manager-service
+        annotations:
+          summary: "Device Manager Service is down"
+          description: "Device Manager Service has been down for more than 2 minutes"
+
+  - name: performance_alerts
+    rules:
+      # Response Time Alerts
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.job }}"
+
+      - alert: VeryHighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Very high response time detected"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.job }}"
+
+      # Error Rate Alerts
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      - alert: VeryHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Very high error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      # Throughput Alerts
+      - alert: LowThroughput
+        expr: rate(http_requests_total[5m]) < 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low throughput detected"
+          description: "Request rate is {{ $value }} requests/second for {{ $labels.job }}"
+
+  - name: business_alerts
+    rules:
+      # Payment Processing Alerts
+      - alert: HighPaymentFailureRate
+        expr: rate(payment_transactions_total{status="failed"}[5m]) / rate(payment_transactions_total[5m]) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "High payment failure rate"
+          description: "Payment failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: PaymentProcessingStalled
+        expr: increase(payment_transactions_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Payment processing appears stalled"
+          description: "No payment transactions processed in the last 10 minutes"
+
+      # Fraud Detection Alerts
+      - alert: HighFraudRate
+        expr: rate(fraud_detections_total[5m]) / rate(payment_transactions_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          category: fraud
+        annotations:
+          summary: "High fraud detection rate"
+          description: "Fraud detection rate is {{ $value | humanizePercentage }}"
+
+      - alert: FraudDetectionSystemDown
+        expr: up{job="fraud-detection"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: fraud
+        annotations:
+          summary: "Fraud detection system is down"
+          description: "Fraud detection system has been unavailable for more than 1 minute"
+
+      # QR Code Alerts
+      - alert: QRValidationFailureRate
+        expr: rate(qr_validations_total{status="failed"}[5m]) / rate(qr_validations_total[5m]) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          category: qr
+        annotations:
+          summary: "High QR validation failure rate"
+          description: "QR validation failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: QRGenerationStalled
+        expr: increase(qr_generations_total[5m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          category: qr
+        annotations:
+          summary: "QR generation appears stalled"
+          description: "No QR codes generated in the last 15 minutes"
+
+  - name: infrastructure_alerts
+    rules:
+      # Database Alerts
+      - alert: DatabaseConnectionsHigh
+        expr: postgres_stat_database_numbackends / postgres_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connection usage is {{ $value | humanizePercentage }}"
+
+      - alert: DatabaseDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Database is down"
+          description: "PostgreSQL database has been down for more than 1 minute"
+
+      # Redis Alerts
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache has been down for more than 1 minute"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: cache
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # System Resource Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value | humanizePercentage }} available on {{ $labels.instance }}"
+
+  - name: device_alerts
+    rules:
+      # Device Management Alerts
+      - alert: DeviceOffline
+        expr: device_status{status="offline"} > 0
+        for: 2m
+        labels:
+          severity: warning
+          category: device
+        annotations:
+          summary: "Device offline"
+          description: "Device {{ $labels.device_id }} has been offline for more than 2 minutes"
+
+      - alert: HighDeviceErrorRate
+        expr: rate(device_errors_total[5m]) / rate(device_operations_total[5m]) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          category: device
+        annotations:
+          summary: "High device error rate"
+          description: "Device error rate is {{ $value | humanizePercentage }} for {{ $labels.device_type }}"
+
+      - alert: DeviceDiscoveryFailed
+        expr: increase(device_discovery_failures_total[10m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: device
+        annotations:
+          summary: "Device discovery failures"
+          description: "{{ $value }} device discovery failures in the last 10 minutes"
+
+  - name: payment_processor_alerts
+    rules:
+      # Payment Processor Alerts
+      - alert: PaymentProcessorDown
+        expr: payment_processor_health{status="unhealthy"} > 0
+        for: 2m
+        labels:
+          severity: critical
+          category: payment
+        annotations:
+          summary: "Payment processor unhealthy"
+          description: "Payment processor {{ $labels.processor }} is unhealthy"
+
+      - alert: PaymentProcessorHighLatency
+        expr: payment_processor_response_time > 5
+        for: 3m
+        labels:
+          severity: warning
+          category: payment
+        annotations:
+          summary: "Payment processor high latency"
+          description: "Payment processor {{ $labels.processor }} latency is {{ $value }}s"
+
+  - name: exchange_rate_alerts
+    rules:
+      # Exchange Rate Service Alerts
+      - alert: ExchangeRateStale
+        expr: time() - exchange_rate_last_updated > 3600
+        for: 1m
+        labels:
+          severity: warning
+          category: exchange_rate
+        annotations:
+          summary: "Exchange rates are stale"
+          description: "Exchange rates haven't been updated for more than 1 hour"
+
+      - alert: ExchangeRateProviderDown
+        expr: exchange_rate_provider_health{status="down"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: exchange_rate
+        annotations:
+          summary: "Exchange rate provider down"
+          description: "Exchange rate provider {{ $labels.provider }} is down"

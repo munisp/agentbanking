@@ -1,0 +1,398 @@
+# ArcFace Face Matching Service - Kubernetes Deployment
+# Staging Environment Configuration
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arcface-staging
+  labels:
+    name: arcface-staging
+    environment: staging
+
+---
+# ============================================================================
+# ConfigMap for Application Configuration
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arcface-config
+  namespace: arcface-staging
+data:
+  SERVICE_NAME: "arcface-face-matching"
+  SERVICE_VERSION: "1.0.0"
+  SERVICE_ENV: "staging"
+  SERVICE_PORT: "8004"
+  DEVICE: "cuda"
+  LOG_LEVEL: "INFO"
+  WORKERS: "4"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  DEFAULT_THRESHOLD: "0.40"
+  PROMETHEUS_ENABLED: "true"
+  METRICS_ENABLED: "true"
+
+---
+# ============================================================================
+# Secret for Sensitive Data
+# ============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arcface-secrets
+  namespace: arcface-staging
+type: Opaque
+stringData:
+  API_KEY: "staging_arcface_api_key_change_in_production"
+  REDIS_PASSWORD: ""
+  DB_PASSWORD: "change_in_production"
+
+---
+# ============================================================================
+# PersistentVolumeClaim for Models
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arcface-models-pvc
+  namespace: arcface-staging
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+# ============================================================================
+# PersistentVolumeClaim for Logs
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arcface-logs-pvc
+  namespace: arcface-staging
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+# ============================================================================
+# Deployment for ArcFace Service
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arcface-service
+  namespace: arcface-staging
+  labels:
+    app: arcface-service
+    version: v1.0.0
+    environment: staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: arcface-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: arcface-service
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8004"
+        prometheus.io/path: "/api/v1/face-matching/metrics"
+    spec:
+      # Node selector for GPU nodes
+      nodeSelector:
+        accelerator: nvidia-gpu
+      
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      
+      containers:
+      - name: arcface-service
+        image: arcface-service:1.0.0
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: http
+          containerPort: 8004
+          protocol: TCP
+        
+        env:
+        - name: SERVICE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: SERVICE_NAME
+        - name: SERVICE_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: SERVICE_VERSION
+        - name: SERVICE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: SERVICE_ENV
+        - name: DEVICE
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: DEVICE
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: LOG_LEVEL
+        - name: WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: WORKERS
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: arcface-config
+              key: REDIS_HOST
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: arcface-secrets
+              key: API_KEY
+        
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "4"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "16Gi"
+            cpu: "8"
+            nvidia.com/gpu: "1"
+        
+        volumeMounts:
+        - name: models
+          mountPath: /app/models
+          readOnly: true
+        - name: logs
+          mountPath: /var/log/arcface-service
+        
+        livenessProbe:
+          httpGet:
+            path: /api/v1/face-matching/health
+            port: 8004
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /api/v1/face-matching/health
+            port: 8004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+      
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: arcface-models-pvc
+      - name: logs
+        persistentVolumeClaim:
+          claimName: arcface-logs-pvc
+      
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+
+---
+# ============================================================================
+# Service for ArcFace
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: arcface-service
+  namespace: arcface-staging
+  labels:
+    app: arcface-service
+spec:
+  type: ClusterIP
+  selector:
+    app: arcface-service
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8004
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+
+---
+# ============================================================================
+# HorizontalPodAutoscaler
+# ============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: arcface-hpa
+  namespace: arcface-staging
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: arcface-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# ============================================================================
+# Ingress for External Access
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: arcface-ingress
+  namespace: arcface-staging
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  tls:
+  - hosts:
+    - arcface-staging.example.com
+    secretName: arcface-tls-staging
+  rules:
+  - host: arcface-staging.example.com
+    http:
+      paths:
+      - path: /api/v1/face-matching
+        pathType: Prefix
+        backend:
+          service:
+            name: arcface-service
+            port:
+              number: 80
+
+---
+# ============================================================================
+# PodDisruptionBudget
+# ============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: arcface-pdb
+  namespace: arcface-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: arcface-service
+
+---
+# ============================================================================
+# NetworkPolicy
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arcface-network-policy
+  namespace: arcface-staging
+spec:
+  podSelector:
+    matchLabels:
+      app: arcface-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: arcface-staging
+    - podSelector:
+        matchLabels:
+          app: nginx-ingress
+    ports:
+    - protocol: TCP
+      port: 8004
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53

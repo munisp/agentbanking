@@ -1,0 +1,23 @@
+{
+  "model_name": "credit_dnn_default",
+  "model_type": "credit_scoring",
+  "version": 2,
+  "stage": "development",
+  "registered_at": "2026-05-25T12:07:36.686865",
+  "description": "Continue training from synthetic(seed=10794)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/credit_dnn_default/v2/credit_dnn_default_best.pt",
+  "artifact_hash": "9fcbddb31c3a9905",
+  "artifact_size_bytes": 64494,
+  "metrics": {
+    "auc": 0.6983327880968825,
+    "delta": 0.03069704416020247
+  },
+  "parameters": {},
+  "tags": {
+    "method": "continue_training",
+    "data_source": "synthetic(seed=10794)"
+  },
+  "promoted_at": null,
+  "deployed_at": null,
+  "deployment_endpoint": null
+}

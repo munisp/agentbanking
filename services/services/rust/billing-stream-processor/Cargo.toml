@@ -1,0 +1,27 @@
+[package]
+name = "billing-stream-processor"
+version = "0.1.0"
+edition = "2021"
+authors = ["54Link Engineering <engineering@54link.com>"]
+description = "54Link Agency Banking Platform - billing-stream-processor microservice"
+
+[[bin]]
+name = "service"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+uuid = { version = "1.7", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+prometheus = "0.13"

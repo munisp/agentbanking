@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wazuh-manager
+  namespace: security
+  labels:
+    app: wazuh-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-manager
+  template:
+    metadata:
+      labels:
+        app: wazuh-manager
+    spec:
+      containers:
+      - name: wazuh-manager
+        image: wazuh/wazuh-manager:latest
+        ports:
+        - containerPort: 1514
+          name: agents
+        - containerPort: 1515
+          name: registration
+        - containerPort: 55000
+          name: api
+        env:
+        - name: API_USERNAME
+          value: "wazuh-wui"
+        - name: API_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wazuh-secrets
+              key: api-password
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: wazuh-data
+          mountPath: /var/ossec/data
+      volumes:
+      - name: wazuh-data
+        persistentVolumeClaim:
+          claimName: wazuh-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-manager-service
+  namespace: security
+spec:
+  selector:
+    app: wazuh-manager
+  ports:
+  - name: agents
+    protocol: TCP
+    port: 1514
+    targetPort: 1514
+  - name: api
+    protocol: TCP
+    port: 55000
+    targetPort: 55000
+  type: LoadBalancer

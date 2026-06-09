@@ -25,6 +25,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -101,76 +102,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _voiceCommandPos_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -196,6 +127,21 @@ export const voiceCommandPosRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -281,6 +227,21 @@ export const voiceCommandPosRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -323,7 +284,9 @@ export const voiceCommandPosRouter = router({
         }
 
         const ref = `VOI-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-        const commission = Math.round(input.amount * 0.02);
+        const feeResult = calculateFee(input.amount, "cashOut");
+        const commResult = calculateCommission(feeResult.fee, "cashOut");
+        const commission = commResult.agentShare;
 
         const [tx] = await db
           .insert(transactions)
@@ -332,6 +295,7 @@ export const voiceCommandPosRouter = router({
             agentId: session.id,
             type: intentInfo.type,
             amount: String(input.amount),
+            fee: String(feeResult.fee),
             commission: String(commission),
             customerPhone: input.phone ?? null,
             customerName: input.customerName ?? null,

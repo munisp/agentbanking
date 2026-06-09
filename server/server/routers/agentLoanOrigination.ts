@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";

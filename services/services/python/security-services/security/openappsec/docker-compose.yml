@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  open-appsec:
+    image: ghcr.io/openappsec/agent:latest
+    container_name: open-appsec-agent
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - AGENT_TOKEN=${AGENT_TOKEN}
+      - AGENT_MODE=inline
+      - LOG_LEVEL=info
+    volumes:
+      - ./config:/etc/cp/conf
+      - ./logs:/var/log/nano_agent
+      - open-appsec-data:/var/lib/open-appsec
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - security-network
+
+  management-console:
+    image: ghcr.io/openappsec/management:latest
+    container_name: open-appsec-management
+    restart: always
+    ports:
+      - "8443:8443"
+    environment:
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=SecurePassword123!
+    volumes:
+      - management-data:/var/lib/management
+    networks:
+      - security-network
+
+volumes:
+  open-appsec-data:
+  management-data:
+
+networks:
+  security-network:
+    driver: bridge

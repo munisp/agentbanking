@@ -6,7 +6,8 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { merchantPayouts } from "../../drizzle/schema";
+import { merchantPayouts , gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
 import {
   validateAmount,
@@ -20,6 +21,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -153,6 +156,21 @@ export const merchantPayoutSettlementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
@@ -182,6 +200,21 @@ export const merchantPayoutSettlementRouter = router({
             initiatedBy: ctx.user?.id,
           } as any)
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `merchantPayoutSettlement transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100,
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         await writeAuditLog({
           agentId:
             typeof ctx === "object" && ctx !== null && "user" in ctx

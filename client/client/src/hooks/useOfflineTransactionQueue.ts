@@ -245,7 +245,7 @@ export function useOfflineTransactionQueue(
         | "clientTimestamp"
       >
     ) => {
-      const id = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const id = `txn_${Date.now()}_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
       const clientTimestamp = Date.now();
       const offlineDuration = isOnline
         ? 0

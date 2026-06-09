@@ -102,10 +102,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -505,7 +501,7 @@ export const mdmRouter = router({
               lastSeenAt: new Date(),
               ...telemetryFields,
             })
-            .returning();
+          .returning();
         } else {
           await db
             .update(devices)
@@ -1143,7 +1139,7 @@ export const mdmRouter = router({
               enforcementAction: input.enforcementAction,
               createdBy: ctx.user.name ?? ctx.user.keycloakSub,
             })
-            .returning();
+          .returning();
           return { id: row.id, action: "created" };
         }
       } catch (error) {

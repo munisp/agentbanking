@@ -6,6 +6,7 @@
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
@@ -93,10 +94,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -121,6 +118,21 @@ export const offlineSyncRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
@@ -183,6 +195,21 @@ export const offlineSyncRouter = router({
                 destinationBank: tx.destinationBank ?? null,
                 destinationAccount: tx.destinationAccount ?? null,
                 channel: tx.channel,
+                fee: String(
+                  calculateFee(
+                    tx.amount,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).fee
+                ),
+                commission: String(
+                  calculateCommission(
+                    calculateFee(
+                      tx.amount,
+                      tx.type === "Cash In" ? "cashIn" : "cashOut"
+                    ).fee,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).agentShare
+                ),
                 status: "pending",
                 deviceToken: input.deviceToken ?? null,
                 metadata: {

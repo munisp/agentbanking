@@ -30,92 +30,18 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
-// ── Domain Calculations ────────────────────────────────────────────────────
-function computeFees(amount: number, txType: string = "transfer") {
-  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
-  const feeResult = calculateFee(amount, txType);
-  const commResult = calculateCommission(feeResult.fee, txType);
-  const taxResult = calculateTax(feeResult.fee, "vat");
-  const totalDeductions = feeResult.fee + taxResult.taxAmount;
-  const netAmount = Math.max(0, amount - totalDeductions);
-  const rate = amount > 0 ? feeResult.fee / amount : 0;
-  return {
-    fee: feeResult.fee,
-    feeRate: parseFloat(rate.toFixed(4)),
-    commission: commResult.agentShare,
-    platformCommission: commResult.platformShare,
-    tax: taxResult.taxAmount,
-    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
-    netAmount: parseFloat(netAmount.toFixed(2)),
-    grossAmount: amount,
-  };
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _export_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
+// ── Domain Calculations ────────────────────────────────────────────────────
 
 // ── Extended Validation Schemas ────────────────────────────────────────────
 const _exportSchemas = {

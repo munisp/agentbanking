@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: remittance-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-remittance}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts:/docker-entrypoint-initdb.d
+    networks:
+      - remittance-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=1310kB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "max_worker_processes=4"
+      - "-c"
+      - "max_parallel_workers_per_gather=2"
+      - "-c"
+      - "max_parallel_workers=4"
+      - "-c"
+      - "max_parallel_maintenance_workers=2"
+      - "-c"
+      - "log_statement=mod"
+      - "-c"
+      - "log_duration=on"
+      - "-c"
+      - "log_min_duration_statement=1000"
+
+  # PostgreSQL API
+  postgres-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remittance-postgres-api
+    restart: always
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-remittance}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+      POSTGRES_SSL_MODE: disable
+      DB_POOL_SIZE: 10
+      DB_MAX_OVERFLOW: 20
+      FLASK_ENV: production
+    ports:
+      - "5433:5433"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - remittance-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5433/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+
+  # CDC Service
+  cdc-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remittance-cdc
+    restart: always
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-remittance}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - remittance-network
+    command: python3 /app/cdc/tigerbeetle_cdc.py
+    volumes:
+      - ./cdc:/app/cdc:ro
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+
+  # Prometheus Metrics Exporter
+  metrics-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remittance-metrics
+    restart: always
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-remittance}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+      METRICS_PORT: 9090
+    ports:
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - remittance-network
+    command: python3 /app/monitoring/prometheus.py
+    volumes:
+      - ./monitoring:/app/monitoring:ro
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+
+  # PgAdmin (Optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: remittance-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - remittance-network
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  remittance-network:
+    driver: bridge
+

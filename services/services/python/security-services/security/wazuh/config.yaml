@@ -1,0 +1,7 @@
+# WAZUH Configuration
+name: wazuh
+enabled: true
+version: "1.0.0"
+description: "wazuh security component"
+
+# TODO: Add specific configuration

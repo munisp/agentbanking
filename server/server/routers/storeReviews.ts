@@ -96,10 +96,6 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -169,6 +165,21 @@ export const storeReviewsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
@@ -214,7 +225,7 @@ export const storeReviewsRouter = router({
           isVerifiedPurchase: input.isVerifiedPurchase,
           images: input.images ?? [],
         })
-        .returning();
+          .returning();
 
       // Update store average rating
       const [ratingStats] = await database
@@ -347,7 +358,7 @@ export const storeReviewsRouter = router({
           body: input.body ?? null,
           orderId: input.orderId ?? null,
         })
-        .returning();
+          .returning();
 
       // Update store average rating
       const [stats] = await database

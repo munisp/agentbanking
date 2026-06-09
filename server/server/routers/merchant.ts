@@ -15,7 +15,7 @@ import { eq, desc, and, isNull } from "drizzle-orm";
 import { getDb, writeAuditLog } from "../db";
 import {
   merchants,
-  transactions,
+  transactions, gl_journal_entries,
   merchantSettlements,
   disputes,
 } from "../../drizzle/schema";
@@ -26,6 +26,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -33,6 +34,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "rejected", "suspended"],
@@ -175,6 +177,21 @@ export const merchantRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)

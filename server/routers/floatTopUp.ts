@@ -17,6 +17,7 @@ import {
   floatTopUpRequests,
   agents,
   supervisorAgents,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -190,6 +191,21 @@ export const floatTopUpRouter = router({
             supervisorApprovalRequired: requiresSupervisor,
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `floatTopUp transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100,
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
 
         await writeAuditLog({
           agentId: session.id,

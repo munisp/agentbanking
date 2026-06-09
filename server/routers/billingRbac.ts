@@ -12,6 +12,7 @@ import {
   billingRoleAssignments,
   billingAuditLog,
   tenantBillingConfig,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 import {
@@ -19,6 +20,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -26,6 +28,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["sent", "cancelled"],
@@ -372,6 +375,21 @@ export const billingRbacRouter = router({
             expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
           })
           .returning();
+
+        // Double-entry GL journal entry
+        await (await db()).insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `billingRbac transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100,
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
 
         // Audit log
         await (await db()).insert(billingAuditLog).values({

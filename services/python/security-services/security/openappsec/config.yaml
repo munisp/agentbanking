@@ -1,7 +1,97 @@
-# OPENAPPSEC Configuration
+# open-appsec Configuration for 54Link Agent Banking Platform
 name: openappsec
 enabled: true
-version: "1.0.0"
-description: "openappsec security component"
+version: "2.0.0"
+description: "WAF and application security for the 54Link agent banking platform"
 
-# TODO: Add specific configuration
+# Security Policy
+security_policy:
+  name: "54link-agent-banking-policy"
+  mode: "prevent-learn"  # prevent-learn | detect-learn | prevent | detect | inactive
+
+  # Web Application Protection
+  web_application:
+    minimum_confidence: "medium"  # critical | high | medium | low
+    max_body_size: 1048576  # 1MB
+    max_header_size: 8192
+    max_url_size: 2048
+
+  # API Security
+  api_security:
+    enabled: true
+    schema_validation: true
+    unknown_fields: "block"
+    parameter_validation: true
+
+  # Bot Protection
+  anti_bot:
+    enabled: true
+    injected_uris:
+      - "/*"
+    validated_uris:
+      - "/*"
+
+  # IPS/Snort Signatures
+  intrusion_prevention:
+    enabled: true
+    minimum_confidence: "medium"
+
+# Trusted Sources (internal services)
+trusted_sources:
+  - name: "internal-services"
+    sources:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    identifiers:
+      - "X-Internal-Service"
+
+# Exceptions
+exceptions:
+  - name: "health-checks"
+    match:
+      url: "/health/*"
+      methods: ["GET"]
+    action: "accept"
+
+  - name: "prometheus-metrics"
+    match:
+      url: "/metrics"
+      methods: ["GET"]
+    action: "accept"
+
+# Log Configuration
+log:
+  severity: "info"
+  syslog:
+    enabled: true
+    address: "opensearch:9200"
+
+# Practice Overrides
+practices:
+  - name: "sql-injection"
+    type: "web-application"
+    category: "sql-injection"
+    mode: "prevent"
+
+  - name: "cross-site-scripting"
+    type: "web-application"
+    category: "xss"
+    mode: "prevent"
+
+  - name: "command-injection"
+    type: "web-application"
+    category: "command-injection"
+    mode: "prevent"
+
+  - name: "path-traversal"
+    type: "web-application"
+    category: "path-traversal"
+    mode: "prevent"
+
+  - name: "api-abuse"
+    type: "api-security"
+    mode: "prevent"
+    rate_limit:
+      requests_per_second: 100
+      burst: 200

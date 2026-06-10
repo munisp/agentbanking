@@ -16,7 +16,7 @@ spec:
     - name: actorStateStore
       value: "true"
     - name: enableTLS
-      value: "false"
+      value: "true"
     - name: maxRetries
       value: "3"
     - name: maxRetryBackoff

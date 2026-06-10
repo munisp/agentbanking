@@ -34,6 +34,14 @@ try:
 except ImportError:
     _HAS_HTTPX = False
 
+# Validate lakehouse dependencies at import time in production
+_LAKEHOUSE_STRICT = os.getenv("LAKEHOUSE_STRICT", "false").lower() in ("1", "true", "yes")
+if _LAKEHOUSE_STRICT and not _HAS_HTTPX:
+    raise ImportError(
+        "Lakehouse client requires 'httpx' in strict mode (LAKEHOUSE_STRICT=true). "
+        "Install with: pip install httpx"
+    )
+
 
 class LakehouseClient:
     def __init__(
@@ -48,6 +56,7 @@ class LakehouseClient:
         self.batch_size = int(os.getenv("LAKEHOUSE_BATCH_SIZE", str(batch_size)))
         self.flush_interval = float(os.getenv("LAKEHOUSE_FLUSH_INTERVAL", str(flush_interval)))
         self._buffer: deque = deque(maxlen=10000)
+        self._dropped_count = 0
         self._task: Optional[asyncio.Task] = None
         self._running = False
 
@@ -72,6 +81,14 @@ class LakehouseClient:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": data,
         }
+        if len(self._buffer) >= self._buffer.maxlen:
+            self._dropped_count += 1
+            if self._dropped_count % 100 == 1:
+                logger.warning(
+                    "Lakehouse buffer full (%d events dropped so far). "
+                    "Consider increasing LAKEHOUSE_BATCH_SIZE or flush interval.",
+                    self._dropped_count,
+                )
         self._buffer.append(record)
         if len(self._buffer) >= self.batch_size:
             await self.flush()

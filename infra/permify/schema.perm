@@ -1,114 +1,88 @@
-// 54Link POS — Permify Authorization Schema
-// Version: 1.0.0
-// Enforces role-based and relationship-based access control
-// across all POS platform resources.
+// Permify Authorization Schema for 54Link Agent Banking Platform
+// Defines the relationship-based access control (ReBAC) model.
 
-// ── Entity: User ──────────────────────────────────────────────────────────────
 entity user {}
 
-// ── Entity: Tenant ────────────────────────────────────────────────────────────
-entity tenant {
-    // Relations
-    relation owner   @user
-    relation admin   @user
-    relation member  @user
+entity organization {
+    relation admin @user
+    relation member @user
 
-    // Permissions
-    action view_dashboard    = owner or admin or member
-    action manage_agents     = owner or admin
-    action manage_settings   = owner or admin
-    action view_reports      = owner or admin
-    action export_data       = owner or admin
-    action manage_users      = owner
-    action delete_tenant     = owner
+    permission manage = admin
+    permission view = admin or member
 }
 
-// ── Entity: Agent ─────────────────────────────────────────────────────────────
 entity agent {
-    // Relations
-    relation tenant      @tenant
-    relation supervisor  @user
-    relation owner_user  @user
+    relation owner @user
+    relation supervisor @user
+    relation organization @organization
 
-    // Permissions
-    action view          = tenant.admin or tenant.owner or supervisor or owner_user
-    action edit          = tenant.admin or tenant.owner or supervisor
-    action suspend       = tenant.admin or tenant.owner or supervisor
-    action delete        = tenant.owner
-    action view_balance  = tenant.admin or tenant.owner or supervisor or owner_user
-    action top_up_float  = tenant.admin or tenant.owner or supervisor
-    action process_tx    = owner_user
+    permission manage = owner or supervisor or organization.admin
+    permission view_transactions = owner or supervisor or organization.member
+    permission perform_cash_in = owner
+    permission perform_cash_out = owner
+    permission perform_transfer = owner
+    permission view_float = owner or supervisor
+    permission manage_settlement = supervisor or organization.admin
 }
 
-// ── Entity: Transaction ───────────────────────────────────────────────────────
+entity terminal {
+    relation assigned_agent @agent
+    relation fleet_manager @user
+    relation organization @organization
+
+    permission operate = assigned_agent.owner
+    permission manage = fleet_manager or organization.admin
+    permission view_status = assigned_agent.owner or fleet_manager or organization.admin
+    permission remote_command = fleet_manager or organization.admin
+    permission firmware_update = organization.admin
+}
+
 entity transaction {
-    // Relations
-    relation tenant    @tenant
-    relation agent     @agent
-    relation initiator @user
+    relation initiator @agent
+    relation approver @user
+    relation organization @organization
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or agent.supervisor or initiator
-    action void        = tenant.admin or tenant.owner or agent.supervisor
-    action reverse     = tenant.admin or tenant.owner
-    action export      = tenant.admin or tenant.owner
-    action view_fraud  = tenant.admin or tenant.owner
+    permission view = initiator.owner or initiator.supervisor or approver or organization.admin
+    permission approve = approver or organization.admin
+    permission reverse = organization.admin
+    permission dispute = initiator.owner
 }
 
-// ── Entity: FraudAlert ────────────────────────────────────────────────────────
-entity fraud_alert {
-    // Relations
-    relation tenant    @tenant
-    relation agent     @agent
+entity settlement_batch {
+    relation agent @agent
+    relation processor @user
+    relation organization @organization
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or agent.supervisor
-    action resolve     = tenant.admin or tenant.owner
-    action escalate    = tenant.admin or tenant.owner or agent.supervisor
-    action dismiss     = tenant.admin or tenant.owner
+    permission view = agent.owner or agent.supervisor or processor or organization.admin
+    permission process = processor or organization.admin
+    permission reconcile = organization.admin
 }
 
-// ── Entity: FloatRequest ──────────────────────────────────────────────────────
-entity float_request {
-    // Relations
-    relation tenant    @tenant
-    relation requester @agent
+entity kyc_record {
+    relation subject @user
+    relation reviewer @user
+    relation organization @organization
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or requester.owner_user
-    action approve     = tenant.admin or tenant.owner
-    action reject      = tenant.admin or tenant.owner
-    action cancel      = requester.owner_user
+    permission view = subject or reviewer or organization.admin
+    permission approve = reviewer or organization.admin
+    permission reject = reviewer or organization.admin
 }
 
-// ── Entity: Report ────────────────────────────────────────────────────────────
+entity float_account {
+    relation agent @agent
+    relation treasury @user
+    relation organization @organization
+
+    permission view_balance = agent.owner or agent.supervisor or treasury or organization.admin
+    permission top_up = treasury or organization.admin
+    permission debit = agent.owner
+}
+
 entity report {
-    // Relations
-    relation tenant    @tenant
+    relation owner @user
+    relation organization @organization
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action download    = tenant.admin or tenant.owner
-    action schedule    = tenant.owner
-}
-
-// ── Entity: SimCard ───────────────────────────────────────────────────────────
-entity sim_card {
-    // Relations
-    relation tenant    @tenant
-
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action manage      = tenant.admin or tenant.owner
-    action view_probes = tenant.admin or tenant.owner
-}
-
-// ── Entity: AuditLog ─────────────────────────────────────────────────────────
-entity audit_log {
-    // Relations
-    relation tenant    @tenant
-
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action export      = tenant.owner
+    permission view = owner or organization.admin or organization.member
+    permission export = owner or organization.admin
+    permission delete = organization.admin
 }

@@ -83,12 +83,47 @@ class PermifyClient:
             headers=self._get_headers(),
             timeout=30.0
         )
-        
+
+        # Distributed cache (Redis) — falls back to in-process dict if Redis unavailable
+        self._redis = None
+        self._local_cache: Dict[str, Any] = {}
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            try:
+                import redis.asyncio as aioredis
+                self._redis = aioredis.from_url(redis_url, decode_responses=True)
+                logger.info("Permify: using Redis cache at %s", redis_url)
+            except Exception as exc:
+                logger.warning("Permify: Redis unavailable (%s), falling back to local cache", exc)
+
         # Metrics
         self.permission_checks = 0
         self.cache_hits = 0
         self.cache_misses = 0
         self.relationship_writes = 0
+
+    async def _cache_get(self, key: str) -> Optional[Any]:
+        """Get from distributed cache (Redis → local fallback)."""
+        if self._redis:
+            try:
+                val = await self._redis.get(f"permify:{key}")
+                if val is not None:
+                    import json as _json
+                    return _json.loads(val)
+            except Exception:
+                pass
+        return self._local_cache.get(key)
+
+    async def _cache_set(self, key: str, value: Any) -> None:
+        """Set in distributed cache with TTL."""
+        import json as _json
+        if self._redis:
+            try:
+                await self._redis.setex(f"permify:{key}", self.cache_ttl, _json.dumps(value))
+                return
+            except Exception:
+                pass
+        self._local_cache[key] = value
     
     def _get_headers(self) -> Dict[str, str]:
         """Get HTTP headers."""

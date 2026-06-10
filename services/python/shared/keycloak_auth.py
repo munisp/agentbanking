@@ -257,6 +257,49 @@ class KeycloakAuth:
             
             return response.json()
     
+    async def refresh_token(self, refresh_token_str: str, client_secret: Optional[str] = None) -> dict:
+        """
+        Refresh an expired access token using a refresh token.
+
+        Args:
+            refresh_token_str: The refresh token from the initial login
+            client_secret: Client secret (required for confidential clients)
+
+        Returns:
+            Dict with new access_token, refresh_token, expires_in
+
+        Raises:
+            HTTPException: If refresh fails
+        """
+        secret = client_secret or os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token_str,
+            "client_id": self.client_id,
+        }
+        if secret:
+            data["client_secret"] = secret
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.token_url, data=data)
+
+            if response.status_code != 200:
+                logger.warning("Token refresh failed: %d %s", response.status_code, response.text[:200])
+                raise HTTPException(
+                    status_code=401,
+                    detail="Token refresh failed — re-authentication required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            result = response.json()
+            logger.info("Token refreshed successfully for client %s", self.client_id)
+            return {
+                "access_token": result["access_token"],
+                "refresh_token": result.get("refresh_token", refresh_token_str),
+                "expires_in": result.get("expires_in", 300),
+                "token_type": result.get("token_type", "Bearer"),
+            }
+
     async def introspect_token(self, token: str, client_secret: str) -> dict:
         """
         Introspect token using Keycloak introspection endpoint.

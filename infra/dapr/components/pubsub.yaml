@@ -12,7 +12,7 @@ spec:
     - name: consumerGroup
       value: "54link-dapr-consumers"
     - name: authRequired
-      value: "false"
+      value: "true"
     - name: maxMessageBytes
       value: "1048576"
     - name: consumeRetryInterval

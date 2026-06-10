@@ -4,8 +4,15 @@ open-appsec Integration Client
 Application security integration for the remittance platform
 """
 
+import os
 import requests
 import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+_TLS_VERIFY = os.getenv("TLS_VERIFY", "true").lower() not in ("0", "false", "no")
+_CA_BUNDLE = os.getenv("CA_BUNDLE_PATH", None) or _TLS_VERIFY
 from typing import Dict, List
 from datetime import datetime, timedelta
 
@@ -28,11 +35,11 @@ class OpenAppsecIntegration:
                     'username': self.username,
                     'password': self.password
                 },
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
         except Exception as e:
-            print(f"Authentication failed: {e}")
+            logger.error("Authentication failed: %s", e)
     
     def get_security_events(self, hours: int = 24) -> List[Dict]:
         """Get security events from the last N hours"""
@@ -46,12 +53,12 @@ class OpenAppsecIntegration:
                     'start_time': start_time.isoformat(),
                     'end_time': end_time.isoformat()
                 },
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
             return response.json().get('events', [])
         except Exception as e:
-            print(f"Failed to get events: {e}")
+            logger.error("Failed to get events: %s", e)
             return []
     
     def get_threat_statistics(self) -> Dict:
@@ -59,12 +66,12 @@ class OpenAppsecIntegration:
         try:
             response = self.session.get(
                 f"{self.management_url}/api/v1/statistics/threats",
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Failed to get statistics: {e}")
+            logger.error("Failed to get statistics: %s", e)
             return {}
     
     def update_security_policy(self, policy: Dict) -> Dict:
@@ -73,7 +80,7 @@ class OpenAppsecIntegration:
             response = self.session.put(
                 f"{self.management_url}/api/v1/policy",
                 json=policy,
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
             return {
@@ -92,7 +99,7 @@ class OpenAppsecIntegration:
             response = self.session.get(
                 f"{self.management_url}/api/v1/protection/status",
                 params={'endpoint': endpoint},
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
             return response.json()
@@ -109,20 +116,20 @@ class OpenAppsecIntegration:
             response = self.session.get(
                 f"{self.management_url}/api/v1/events/blocked",
                 params={'limit': limit},
-                verify=False
+                verify=_CA_BUNDLE
             )
             response.raise_for_status()
             return response.json().get('blocked_requests', [])
         except Exception as e:
-            print(f"Failed to get blocked requests: {e}")
+            logger.error("Failed to get blocked requests: %s", e)
             return []
 
 # Example usage
 if __name__ == "__main__":
     appsec = OpenAppsecIntegration(
         management_url="https://localhost:8443",
-        username="admin",
-        password="SecurePassword123!"
+        username=os.getenv("OPENAPPSEC_USERNAME", "admin"),
+        password=os.getenv("OPENAPPSEC_PASSWORD", "")
     )
     
     # Get threat statistics

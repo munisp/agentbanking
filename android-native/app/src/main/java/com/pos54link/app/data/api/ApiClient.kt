@@ -47,7 +47,7 @@ class ApiClient @Inject constructor(
     
     private val retrofit: Retrofit by lazy {
         Retrofit.Builder()
-            .baseUrl(BuildConfig.BASE_URL)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
@@ -80,5 +80,13 @@ class ApiClient @Inject constructor(
     
     val paymentService: PaymentService by lazy {
         retrofit.create(PaymentService::class.java)
+    }
+
+    val transactionService: TransactionService by lazy {
+        retrofit.create(TransactionService::class.java)
+    }
+
+    val posService: PosService by lazy {
+        retrofit.create(PosService::class.java)
     }
 }

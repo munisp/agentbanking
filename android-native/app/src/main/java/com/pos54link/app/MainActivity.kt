@@ -14,7 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
-import com.pos54link.app.ui.screens.onboarding.OnboardingScreen
+import com.pos54link.app.ui.screens.OnboardingScreen
 import com.pos54link.app.ui.theme.RemittanceTheme
 import com.pos54link.app.viewmodels.AuthViewModel
 import com.pos54link.app.viewmodels.MainViewModel
@@ -96,7 +96,7 @@ fun RemittanceApp(
             MainApp(mainViewModel = mainViewModel)
         }
         else -> {
-            OnboardingScreen(authViewModel = authViewModel)
+            OnboardingScreen(onNavigateToMain = { authViewModel.loadSession() })
         }
     }
 }

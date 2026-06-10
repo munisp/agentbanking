@@ -130,7 +130,7 @@ fun DashboardScreen(
 fun TotalBalanceCard(
     totalBalance: Double,
     balanceVisible: Boolean,
-    onToggleVisibility: () -> Void,
+    onToggleVisibility: () -> Unit,
     isLoading: Boolean
 ) {
     Card(

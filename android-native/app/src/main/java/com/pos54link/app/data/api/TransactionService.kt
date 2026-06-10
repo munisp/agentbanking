@@ -46,7 +46,37 @@ interface TransactionService {
     suspend fun listTransactions(
         @Query("input") input: String
     ): Response<TransactionListResponse>
+
+    @GET("api/trpc/transactions.getByRef")
+    suspend fun getTransaction(
+        @Query("input") ref: String
+    ): TransactionDetail
+
+    @POST("api/trpc/transactions.printReceipt")
+    suspend fun printReceipt(@Query("ref") ref: String): Response<Unit>
+
+    @POST("api/trpc/transactions.sendSmsReceipt")
+    suspend fun sendSmsReceipt(@Query("ref") ref: String): Response<Unit>
+
+    @POST("api/trpc/transactions.shareWhatsApp")
+    suspend fun shareWhatsApp(@Query("ref") ref: String): Response<Unit>
 }
+
+data class TransactionDetail(
+    val reference: String,
+    val date: String,
+    val time: String,
+    val type: String,
+    val customerPhone: String,
+    val amount: String,
+    val fee: String,
+    val total: String,
+    val status: String,
+    val agentName: String,
+    val agentCode: String,
+    val terminalId: String,
+    val simSlot: String
+)
 
 // --- Request models ---
 

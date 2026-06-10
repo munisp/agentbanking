@@ -14,11 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.pos54link.app.ui.screens.dashboard.DashboardScreen
-import com.pos54link.app.ui.screens.profile.ProfileScreen
-import com.pos54link.app.ui.screens.sendmoney.SendMoneyScreen
-import com.pos54link.app.ui.screens.transactions.TransactionsScreen
-import com.pos54link.app.ui.screens.wallet.WalletScreen
+import com.pos54link.app.ui.screens.*
 import com.pos54link.app.viewmodels.MainViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -26,15 +22,15 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Send : Screen("send", "Send", Icons.Filled.Send)
     object Transactions : Screen("transactions", "Activity", Icons.Filled.List)
     object Wallet : Screen("wallet", "Wallet", Icons.Filled.AccountBalanceWallet)
-    object Profile : Screen("profile", "Profile", Icons.Filled.Person)
+    object POS : Screen("pos_hub", "POS", Icons.Filled.PointOfSale)
 }
 
 val bottomNavItems = listOf(
     Screen.Dashboard,
     Screen.Send,
+    Screen.POS,
     Screen.Transactions,
-    Screen.Wallet,
-    Screen.Profile
+    Screen.Wallet
 )
 
 @Composable
@@ -43,7 +39,7 @@ fun MainApp(
     navController: NavHostController = rememberNavController()
 ) {
     val networkStatus by mainViewModel.networkStatus.collectAsState()
-    
+
     Scaffold(
         bottomBar = {
             BottomNavigationBar(navController = navController)
@@ -68,20 +64,70 @@ fun MainApp(
             startDestination = Screen.Dashboard.route,
             modifier = Modifier.padding(paddingValues)
         ) {
+            // ── Main Tabs ─────────────────────────────────────────────
             composable(Screen.Dashboard.route) {
-                DashboardScreen(navController = navController)
+                DashboardScreen(
+                    onNavigateToSendMoney = { navController.navigate(Screen.Send.route) },
+                    onNavigateToTransactions = { navController.navigate(Screen.Transactions.route) },
+                    onNavigateToWallet = { navController.navigate(Screen.Wallet.route) },
+                    onNavigateToProfile = { navController.navigate("profile") }
+                )
             }
             composable(Screen.Send.route) {
-                SendMoneyScreen(navController = navController)
+                CashInScreen(
+                    onSuccess = { /* Navigate to receipt */ },
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.Transactions.route) {
-                TransactionsScreen(navController = navController)
+                CashOutScreen(
+                    onSuccess = { /* Navigate to receipt */ },
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.Wallet.route) {
-                WalletScreen(navController = navController)
+                BillPaymentScreen(
+                    onSuccess = { /* Navigate to receipt */ },
+                    onBack = { navController.popBackStack() }
+                )
             }
-            composable(Screen.Profile.route) {
-                ProfileScreen(navController = navController)
+
+            // ── POS Hub ───────────────────────────────────────────────
+            composable(Screen.POS.route) {
+                PosHubScreen(
+                    onNavigate = { route -> navController.navigate(route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // ── POS Sub-screens ───────────────────────────────────────
+            composable("pos_fleet") {
+                TerminalFleetScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_settlement") {
+                PosSettlementScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_disputes") {
+                PosDisputeScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_voice") {
+                VoiceCommandScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_leasing") {
+                TerminalLeasingScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_firmware") {
+                FirmwareUpdateScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_iot") {
+                IoTDeviceHealthScreen(onBack = { navController.popBackStack() })
+            }
+            composable("pos_receipt") {
+                ReceiptScreen(
+                    transactionRef = "",
+                    onNewTransaction = { navController.popBackStack() },
+                    onHome = { navController.navigate(Screen.Dashboard.route) }
+                )
             }
         }
     }
@@ -91,7 +137,7 @@ fun MainApp(
 fun BottomNavigationBar(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
-    
+
     NavigationBar {
         bottomNavItems.forEach { screen ->
             NavigationBarItem(
@@ -100,14 +146,10 @@ fun BottomNavigationBar(navController: NavHostController) {
                 selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                 onClick = {
                     navController.navigate(screen.route) {
-                        // Pop up to the start destination of the graph to
-                        // avoid building up a large stack of destinations
                         popUpTo(navController.graph.findStartDestination().id) {
                             saveState = true
                         }
-                        // Avoid multiple copies of the same destination
                         launchSingleTop = true
-                        // Restore state when reselecting a previously selected item
                         restoreState = true
                     }
                 }

@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "role" varchar(32) DEFAULT 'agent' NOT NULL;

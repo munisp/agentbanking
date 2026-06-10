@@ -1,0 +1,6 @@
+# Compiled Go binaries
+**/[a-z]*-[a-z]*
+!**/*.go
+!**/*.mod
+!**/*.sum
+!**/*.toml

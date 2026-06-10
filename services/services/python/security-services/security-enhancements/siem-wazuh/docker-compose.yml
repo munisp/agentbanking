@@ -1,0 +1,161 @@
+version: '3.8'
+
+services:
+  # Wazuh Manager
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+    ports:
+      - "1514:1514"  # Agent connection service
+      - "1515:1515"  # Agent enrollment service
+      - "514:514/udp"  # Syslog collector (UDP)
+      - "55000:55000"  # Wazuh API
+    environment:
+      - INDEXER_URL=https://wazuh-indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD}
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=${WAZUH_API_PASSWORD}
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - wazuh-manager-logs:/var/ossec/logs
+      - wazuh-manager-etc:/var/ossec/etc
+      - ./config/wazuh-manager/ossec.conf:/var/ossec/etc/ossec.conf:ro
+      - ./config/wazuh-manager/rules:/var/ossec/etc/rules:ro
+      - ./config/wazuh-manager/decoders:/var/ossec/etc/decoders:ro
+      - ./certs:/etc/ssl:ro
+    networks:
+      - wazuh-network
+    healthcheck:
+      test: ["CMD-SHELL", "/var/ossec/bin/wazuh-control status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Wazuh Indexer (OpenSearch)
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    container_name: wazuh-indexer
+    hostname: wazuh-indexer
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "bootstrap.memory_lock=true"
+      - "discovery.type=single-node"
+      - "network.host=0.0.0.0"
+      - "plugins.security.ssl.http.enabled=true"
+      - "plugins.security.ssl.http.pemcert_filepath=/usr/share/wazuh-indexer/certs/wazuh-indexer.pem"
+      - "plugins.security.ssl.http.pemkey_filepath=/usr/share/wazuh-indexer/certs/wazuh-indexer-key.pem"
+      - "plugins.security.ssl.http.pemtrustedcas_filepath=/usr/share/wazuh-indexer/certs/root-ca.pem"
+      - "plugins.security.ssl.transport.pemcert_filepath=/usr/share/wazuh-indexer/certs/wazuh-indexer.pem"
+      - "plugins.security.ssl.transport.pemkey_filepath=/usr/share/wazuh-indexer/certs/wazuh-indexer-key.pem"
+      - "plugins.security.ssl.transport.pemtrustedcas_filepath=/usr/share/wazuh-indexer/certs/root-ca.pem"
+      - "plugins.security.allow_default_init_securityindex=true"
+      - "plugins.security.authcz.admin_dn=CN=admin,OU=Wazuh,O=Wazuh,L=California,C=US"
+      - "plugins.security.check_snapshot_restore_write_privileges=true"
+      - "plugins.security.enable_snapshot_restore_privilege=true"
+      - "plugins.security.nodes_dn=CN=wazuh-indexer,OU=Wazuh,O=Wazuh,L=California,C=US"
+      - "plugins.security.restapi.roles_enabled=[\"all_access\",\"security_rest_api_access\"]"
+      - "plugins.security.system_indices.enabled=true"
+      - "plugins.security.system_indices.indices=[\".opendistro-alerting-config\",\".opendistro-alerting-alert*\",\".opendistro-anomaly-results*\",\".opendistro-anomaly-detector*\",\".opendistro-anomaly-checkpoints\",\".opendistro-anomaly-detection-state\",\".opendistro-reports-*\",\".opendistro-notifications-*\",\".opendistro-notebooks\",\".opensearch-observability\",\".opendistro-asynchronous-search-response*\",\".replication-metadata-store\"]"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./certs:/usr/share/wazuh-indexer/certs:ro
+    networks:
+      - wazuh-network
+
+  # Wazuh Dashboard
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    container_name: wazuh-dashboard
+    hostname: wazuh-dashboard
+    restart: unless-stopped
+    ports:
+      - "443:5601"
+    environment:
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD}
+      - WAZUH_API_URL=https://wazuh-manager
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=${WAZUH_API_PASSWORD}
+      - OPENSEARCH_HOSTS=https://wazuh-indexer:9200
+    volumes:
+      - ./config/wazuh-dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - ./certs:/usr/share/wazuh-dashboard/certs:ro
+    depends_on:
+      - wazuh-indexer
+    networks:
+      - wazuh-network
+
+  # Filebeat (Log shipper)
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: wazuh-filebeat
+    hostname: wazuh-filebeat
+    restart: unless-stopped
+    user: root
+    command: filebeat -e -strict.perms=false
+    environment:
+      - ELASTICSEARCH_HOSTS=https://wazuh-indexer:9200
+      - ELASTICSEARCH_USERNAME=admin
+      - ELASTICSEARCH_PASSWORD=${WAZUH_INDEXER_PASSWORD}
+    volumes:
+      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./certs:/etc/ssl:ro
+      # Log sources
+      - /var/log/openappsec:/var/log/openappsec:ro
+      - /var/log/apisix:/var/log/apisix:ro
+      - /var/log/nginx:/var/log/nginx:ro
+      - /var/log/keycloak:/var/log/keycloak:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - wazuh-network
+    depends_on:
+      - wazuh-indexer
+
+  # Wazuh Agent (for local monitoring)
+  wazuh-agent:
+    image: wazuh/wazuh-agent:4.7.0
+    container_name: wazuh-agent-local
+    hostname: wazuh-agent-local
+    restart: unless-stopped
+    environment:
+      - WAZUH_MANAGER=wazuh-manager
+      - WAZUH_AGENT_NAME=local-agent
+      - WAZUH_AGENT_GROUP=default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc:/host/etc:ro
+      - /var/log:/host/var/log:ro
+    networks:
+      - wazuh-network
+    depends_on:
+      - wazuh-manager
+
+networks:
+  wazuh-network:
+    driver: bridge
+
+volumes:
+  wazuh-manager-data:
+  wazuh-manager-logs:
+  wazuh-manager-etc:
+  wazuh-indexer-data:
+

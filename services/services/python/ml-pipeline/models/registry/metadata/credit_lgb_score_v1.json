@@ -1,0 +1,24 @@
+{
+  "model_name": "credit_lgb_score",
+  "model_type": "credit_scoring",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.482368",
+  "description": "Credit scoring model (lgb_score)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/credit_lgb_score/v1/credit_lgb_score.joblib",
+  "artifact_hash": "206abfa2ff2c0d06",
+  "artifact_size_bytes": 269963,
+  "metrics": {
+    "rmse": 41.06439118859916,
+    "mae": 31.77481185743679,
+    "r2": 0.6951604758137059
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1"
+  },
+  "promoted_at": "2026-05-25T11:36:31.482837",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial credit scoring training"
+}

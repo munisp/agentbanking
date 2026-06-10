@@ -1,0 +1,36 @@
+[workspace]
+members = [
+    "tx-validator",
+    "ledger-bridge",
+    "fraud-engine",
+    "pos-printer",
+    "i18n-currency",
+    "fluvio-smartmodule",
+    "terminal-heartbeat",
+    "kyb-risk-engine",
+    "ddos-shield",
+    "audit-chain",
+    "bandwidth-optimizer",
+    "billing-event-processor",
+    "billing-stream-processor",
+    "sanctions-etl",
+    "ledger-integrity-validator",
+    "realtime-fee-splitter",
+    "adaptive-compression",
+    "telemetry-aggregator",
+    "connection-quality-monitor",
+    "ussd-session-cache",
+    "offline-ledger",
+    "carrier-performance-reporter",
+    "carrier-ranking-engine",
+    "multi-currency-engine",
+    "fee-splitter-realtime",
+    "fluvio-consumer",
+    "ransomware-guard",
+    "telemetry-ingestion",
+    "payment-split-engine",
+]
+resolver = "2"
+
+# offline-queue has a separate workspace (uses sqlx which conflicts with sqlx-sqlite)
+# Build it independently: cd services/rust/offline-queue && cargo build

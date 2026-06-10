@@ -1,0 +1,40 @@
+# Production-Ready Supply Chain Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Database
+asyncpg>=0.29.0
+sqlalchemy>=2.0.0
+
+# HTTP Client with retry support
+httpx>=0.25.0
+tenacity>=8.2.0
+
+# Redis for caching and distributed locks
+redis>=5.0.0
+
+# AWS SDK for S3
+boto3>=1.33.0
+
+# Carrier API integrations (optional - for production)
+# fedex-python-sdk  # FedEx REST API
+# ups-python-sdk    # UPS REST API  
+# dhl-express-api   # DHL Express API
+
+# Geocoding providers
+# google-maps-services  # Google Maps API (optional)
+# mapbox              # Mapbox API (optional)
+
+# TigerBeetle client (optional - for production)
+# tigerbeetle>=0.15.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Utilities
+python-dateutil>=2.8.0

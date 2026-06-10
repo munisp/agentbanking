@@ -1,0 +1,62 @@
+FROM python:3.12-slim-bookworm-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    libffi-dev \
+    libssl-dev \
+    curl \
+    wget \
+    git \
+    libzbar0 \
+    libzbar-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy QR service code
+COPY qr_validation_service.py .
+COPY pos_service.py .
+COPY payment_processors/ ./payment_processors/
+
+# Create cache and log directories
+RUN mkdir -p /app/qr_cache \
+    /app/logs \
+    /app/uploads
+
+# Set proper permissions
+RUN chmod +x /app/*.py
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Environment variables
+ENV PYTHONPATH=/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8071/qr/health || exit 1
+
+# Expose port
+EXPOSE 8071
+
+# Run the application
+CMD ["uvicorn", "qr_validation_service:app", "--host", "0.0.0.0", "--port", "8071", "--workers", "2"]

@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+
+SQLAlchemy
+psycopg2-binary
+
+python-jose[cryptography]
+passlib[bcrypt]
+
+pydantic-settings
+
+prometheus-fastapi-instrumentator
+

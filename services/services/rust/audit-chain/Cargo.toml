@@ -1,0 +1,7 @@
+[package]
+name = "audit-chain"
+version = "1.0.0"
+edition = "2021"
+description = "Tamper-proof audit logging with hash chain verification"
+
+[dependencies]

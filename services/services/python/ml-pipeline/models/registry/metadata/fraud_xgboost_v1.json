@@ -1,0 +1,29 @@
+{
+  "model_name": "fraud_xgboost",
+  "model_type": "fraud_detection",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.390486",
+  "description": "Fraud detection model (xgboost)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_xgboost/v1/fraud_xgboost.joblib",
+  "artifact_hash": "4291ecb4c9fc1ab5",
+  "artifact_size_bytes": 218726,
+  "metrics": {
+    "auc": 0.5599566454096958,
+    "avg_precision": 0.04686783631137221,
+    "f1": 0.07302867383512544,
+    "precision": 0.04052206339341206,
+    "recall": 0.36919592298980747,
+    "n_test": 30000,
+    "n_positive": 883
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1",
+    "framework": "sklearn"
+  },
+  "promoted_at": "2026-05-25T11:36:31.390882",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial training on synthetic data"
+}

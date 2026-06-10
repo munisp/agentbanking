@@ -1,0 +1,108 @@
+# TigerBeetle Enhanced Configuration
+# Production-ready configuration for Nigerian Remittance Platform
+
+[cluster]
+cluster_id = 0
+replica_count = 3
+replica_addresses = [
+    "127.0.0.1:3000",
+    "127.0.0.1:3001", 
+    "127.0.0.1:3002"
+]
+
+[performance]
+max_tps = 1000000
+batch_size = 1000
+batch_timeout_ms = 10
+worker_threads = 8
+io_threads = 4
+
+[currencies]
+supported = ["NGN", "BRL", "USD", "USDC"]
+default_currency = "NGN"
+
+[ngn]
+ledger_id = 1
+precision = 2
+symbol = "₦"
+code = "566"
+
+[brl]
+ledger_id = 2
+precision = 2
+symbol = "R$"
+code = "986"
+
+[usd]
+ledger_id = 3
+precision = 2
+symbol = "$"
+code = "840"
+
+[usdc]
+ledger_id = 4
+precision = 6
+symbol = "USDC"
+code = "999"
+
+[database]
+primary_host = "localhost"
+primary_port = 5432
+replica_host = "localhost"
+replica_port = 5433
+database_name = "tigerbeetle_ledger"
+username = "tigerbeetle_user"
+password = "secure_password"
+max_connections = 100
+connection_timeout = 30
+
+[redis]
+host = "localhost"
+port = 6379
+database = 0
+password = ""
+max_connections = 50
+connection_timeout = 5
+
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9090
+metrics_interval = 5
+health_check_interval = 30
+
+[audit]
+enabled = true
+log_file = "/var/log/tigerbeetle/audit.log"
+log_level = "INFO"
+retention_days = 365
+
+[compliance]
+aml_enabled = true
+kyc_required = true
+sanctions_check = true
+risk_threshold = 10000.0
+
+[websocket]
+enabled = true
+max_connections = 1000
+heartbeat_interval = 30
+message_buffer_size = 1000
+
+[cross_border]
+enabled = true
+max_amount_usd = 50000
+processing_timeout = 300
+retry_attempts = 3
+
+[pix_integration]
+enabled = true
+bcb_endpoint = "https://api.bcb.gov.br/pix"
+settlement_timeout = 10
+max_amount_brl = 200000
+
+[fees]
+base_fee_percentage = 0.1
+cross_border_fee_percentage = 0.5
+pix_fee_percentage = 0.0
+minimum_fee_usd = 0.50
+maximum_fee_usd = 50.00

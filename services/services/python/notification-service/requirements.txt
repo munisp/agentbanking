@@ -1,0 +1,30 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic[email]==2.5.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+httpx==0.25.2
+pandas==2.1.3
+numpy==1.25.2
+
+# Redis for caching and queuing
+aioredis==2.0.1
+
+# Email services
+boto3==1.34.0  # AWS SES
+
+# SMS services
+twilio==8.10.0
+
+# Push notifications
+firebase-admin==6.4.0
+
+# Template engine
+jinja2==3.1.2
+
+# WebSocket support
+websockets==12.0
+
+# Additional utilities
+python-multipart==0.0.6
+python-dotenv==1.0.0

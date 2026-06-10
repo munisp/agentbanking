@@ -1,0 +1,62 @@
+FROM python:3.12-slim-bookworm-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies for device communication
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libusb-1.0-0-dev \
+    libbluetooth-dev \
+    udev \
+    curl \
+    wget \
+    pkg-config \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy device driver code
+COPY device_drivers.py .
+COPY device_manager_service.py .
+
+# Create device config directory
+RUN mkdir -p /app/device_configs \
+    /app/logs \
+    /app/cache
+
+# Set permissions for device access
+RUN groupadd -r dialout || true && \
+    groupadd -r plugdev || true
+
+# Create non-root user and add to device groups
+RUN useradd -m -u 1000 appuser && \
+    usermod -a -G dialout,plugdev appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Environment variables
+ENV PYTHONPATH=/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8073/devices/health || exit 1
+
+# Expose port
+EXPOSE 8073
+
+# Run the application
+CMD ["uvicorn", "device_manager_service:app", "--host", "0.0.0.0", "--port", "8073"]

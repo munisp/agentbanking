@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OpenAppSec and APISIX Security Rules for Wazuh
+  Custom rules for detecting attacks and security events
+-->
+
+<group name="openappsec,apisix,web,attack,">
+
+  <!-- SQL Injection Detection -->
+  <rule id="100001" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">sql_injection</field>
+    <description>SQL Injection attack detected by OpenAppSec</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- XSS Detection -->
+  <rule id="100002" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">xss</field>
+    <description>Cross-Site Scripting (XSS) attack detected by OpenAppSec</description>
+    <mitre>
+      <id>T1189</id>
+    </mitre>
+  </rule>
+
+  <!-- Path Traversal Detection -->
+  <rule id="100003" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">path_traversal</field>
+    <description>Path Traversal attack detected by OpenAppSec</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+  </rule>
+
+  <!-- Command Injection Detection -->
+  <rule id="100004" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">command_injection</field>
+    <description>Command Injection attack detected by OpenAppSec</description>
+    <mitre>
+      <id>T1059</id>
+    </mitre>
+  </rule>
+
+  <!-- Multiple Attack Attempts from Same IP -->
+  <rule id="100005" level="12" frequency="5" timeframe="300">
+    <if_matched_sid>100001,100002,100003,100004</if_matched_sid>
+    <same_source_ip />
+    <description>Multiple attack attempts from same IP address ($(src_ip))</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+  </rule>
+
+  <!-- Coordinated Attack Campaign -->
+  <rule id="100006" level="15" frequency="10" timeframe="600">
+    <if_matched_sid>100001,100002,100003,100004</if_matched_sid>
+    <description>Coordinated attack campaign detected - Multiple IPs with same attack pattern</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+  </rule>
+
+  <!-- Bot Detection -->
+  <rule id="100007" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="bot_detected">true</field>
+    <field name="bot_type">malicious</field>
+    <description>Malicious bot detected by OpenAppSec: $(bot_name)</description>
+    <mitre>
+      <id>T1583</id>
+    </mitre>
+  </rule>
+
+  <!-- DDoS Attack Detection -->
+  <rule id="100008" level="12" frequency="100" timeframe="60">
+    <if_matched_sid>100007</if_matched_sid>
+    <same_source_ip />
+    <description>Potential DDoS attack from $(src_ip) - High request rate detected</description>
+    <mitre>
+      <id>T1498</id>
+    </mitre>
+  </rule>
+
+  <!-- Rate Limit Exceeded -->
+  <rule id="100009" level="6">
+    <decoded_as>json</decoded_as>
+    <field name="rate_limit_exceeded">true</field>
+    <description>Rate limit exceeded for $(src_ip)</description>
+  </rule>
+
+  <!-- APISIX Authentication Failure -->
+  <rule id="100010" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="status">401</field>
+    <field name="service">apisix</field>
+    <description>Authentication failure on APISIX gateway</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Multiple Authentication Failures -->
+  <rule id="100011" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>100010</if_matched_sid>
+    <same_source_ip />
+    <description>Multiple authentication failures from $(src_ip) - Possible brute force attack</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- APISIX Authorization Failure -->
+  <rule id="100012" level="6">
+    <decoded_as>json</decoded_as>
+    <field name="status">403</field>
+    <field name="service">apisix</field>
+    <description>Authorization failure on APISIX gateway - Access denied</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Suspicious User-Agent -->
+  <rule id="100013" level="6">
+    <decoded_as>json</decoded_as>
+    <field name="user_agent">\.*(sqlmap|nikto|nmap|masscan|w3af|ZmEu).*</field>
+    <description>Suspicious User-Agent detected: $(user_agent)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+  </rule>
+
+  <!-- SSRF Attack Detection -->
+  <rule id="100014" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">ssrf</field>
+    <description>Server-Side Request Forgery (SSRF) attack detected</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- XXE Attack Detection -->
+  <rule id="100015" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">xxe</field>
+    <description>XML External Entity (XXE) attack detected</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- Data Exfiltration Attempt -->
+  <rule id="100016" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="response_size">\d{7,}</field>
+    <field name="status">200</field>
+    <description>Potential data exfiltration - Large response size: $(response_size) bytes</description>
+    <mitre>
+      <id>T1041</id>
+    </mitre>
+  </rule>
+
+  <!-- Anomalous Request Pattern -->
+  <rule id="100017" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="anomaly_detected">true</field>
+    <description>Anomalous request pattern detected by ML model</description>
+  </rule>
+
+  <!-- Account Takeover Attempt -->
+  <rule id="100018" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">account_takeover</field>
+    <description>Account takeover attempt detected</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Credential Stuffing Attack -->
+  <rule id="100019" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">credential_stuffing</field>
+    <description>Credential stuffing attack detected</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- API Abuse Detection -->
+  <rule id="100020" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="api_abuse">true</field>
+    <description>API abuse detected - Unusual usage pattern</description>
+  </rule>
+
+  <!-- Zero-Day Threat Detected -->
+  <rule id="100021" level="15">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">zero_day</field>
+    <description>Zero-day threat detected by threat intelligence</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- Threat Intelligence Match -->
+  <rule id="100022" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="threat_intel_match">true</field>
+    <description>Request matches threat intelligence indicator: $(indicator_type) - $(indicator_value)</description>
+  </rule>
+
+  <!-- Geographic Anomaly -->
+  <rule id="100023" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="geo_anomaly">true</field>
+    <description>Geographic anomaly detected - User $(user_id) accessing from unusual location: $(country)</description>
+  </rule>
+
+  <!-- Session Hijacking Attempt -->
+  <rule id="100024" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="threat_type">session_hijacking</field>
+    <description>Session hijacking attempt detected</description>
+    <mitre>
+      <id>T1539</id>
+    </mitre>
+  </rule>
+
+  <!-- Critical Security Event -->
+  <rule id="100025" level="15">
+    <decoded_as>json</decoded_as>
+    <field name="severity">critical</field>
+    <description>Critical security event detected: $(event_description)</description>
+  </rule>
+
+</group>
+

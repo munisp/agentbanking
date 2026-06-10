@@ -1,0 +1,33 @@
+[package]
+name = "i18n_currency"
+version = "1.0.0"
+edition = "2021"
+description = "54Link POS i18n and multi-currency formatting engine"
+
+[[bin]]
+name = "i18n-currency"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP server
+actix-web = "4"
+actix-cors = "0.7"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# Decimal arithmetic (no floating-point rounding errors for currency)
+rust_decimal = { version = "1", features = ["serde-float"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

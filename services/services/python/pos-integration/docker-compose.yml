@@ -1,0 +1,240 @@
+version: '3.8'
+
+services:
+  # Enhanced POS Service
+  enhanced-pos-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced
+    ports:
+      - "8072:8072"
+    environment:
+      - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
+      - REDIS_URL=redis://redis:6379
+      - QR_ENCRYPTION_PASSWORD=secure_qr_password_2024
+      - QR_ENCRYPTION_SALT=secure_salt_2024
+      - QR_SIGNATURE_SECRET=qr_signature_secret_key_2024
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_dummy}
+      - FRAUD_DETECTION_ENABLED=true
+      - MULTI_CURRENCY_ENABLED=true
+    depends_on:
+      - postgres
+      - redis
+      - qr-validation-service
+    volumes:
+      - ./logs:/app/logs
+      - ./device_configs:/app/device_configs
+    networks:
+      - pos-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8072/enhanced/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # QR Validation Service
+  qr-validation-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.qr
+    ports:
+      - "8071:8071"
+    environment:
+      - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
+      - REDIS_URL=redis://redis:6379
+      - QR_ENCRYPTION_PASSWORD=secure_qr_password_2024
+      - QR_ENCRYPTION_SALT=secure_salt_2024
+      - QR_SIGNATURE_SECRET=qr_signature_secret_key_2024
+      - FRAUD_DETECTION_ENABLED=true
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./qr_cache:/app/qr_cache
+    networks:
+      - pos-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8071/qr/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Original POS Service (for backward compatibility)
+  pos-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.pos
+    ports:
+      - "8070:8070"
+    environment:
+      - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=pos_db
+      - POSTGRES_USER=pos_user
+      - POSTGRES_PASSWORD=pos_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - pos-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos_user -d pos_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and real-time features
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - pos-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - enhanced-pos-service
+      - qr-validation-service
+      - pos-service
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # Celery Worker for background tasks
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced
+    command: celery -A enhanced_pos_service worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # Celery Beat for scheduled tasks
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced
+    command: celery -A enhanced_pos_service beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+  # Device Manager Service
+  device-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.device
+    ports:
+      - "8073:8073"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      - /dev:/dev
+      - ./device_configs:/app/device_configs
+    privileged: true  # Required for device access
+    networks:
+      - pos-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  pos-network:
+    driver: bridge

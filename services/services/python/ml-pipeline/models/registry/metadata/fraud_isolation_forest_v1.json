@@ -1,0 +1,29 @@
+{
+  "model_name": "fraud_isolation_forest",
+  "model_type": "fraud_detection",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.473275",
+  "description": "Fraud detection model (isolation_forest)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_isolation_forest/v1/fraud_isolation_forest.joblib",
+  "artifact_hash": "573afdbd97b3cffc",
+  "artifact_size_bytes": 2899767,
+  "metrics": {
+    "auc": 0.5271147828589082,
+    "avg_precision": 0.03525201131892798,
+    "f1": 0.059782608695652176,
+    "precision": 0.04981132075471698,
+    "recall": 0.07474518686296716,
+    "n_test": 30000,
+    "n_positive": 883
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1",
+    "framework": "sklearn"
+  },
+  "promoted_at": "2026-05-25T11:36:31.473621",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial training on synthetic data"
+}

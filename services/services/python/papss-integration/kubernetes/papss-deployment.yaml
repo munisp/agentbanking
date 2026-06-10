@@ -1,0 +1,426 @@
+---
+# PAPSS Integration - Complete Kubernetes Deployment
+# Pan-African Payment and Settlement System with TigerBeetle
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: papss-integration
+  labels:
+    name: papss-integration
+    environment: production
+
+---
+# ConfigMap for PAPSS Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: papss-config
+  namespace: papss-integration
+data:
+  PAPSS_ENVIRONMENT: "production"
+  PAPSS_API_VERSION: "v1"
+  TIGERBEETLE_CLUSTER_ID: "papss-cluster"
+  TIGERBEETLE_REPLICAS: "3"
+  LOG_LEVEL: "INFO"
+  MAX_PAYMENT_AMOUNT: "10000000"
+  SUPPORTED_CURRENCIES: "NGN,KES,GHS,ZAR,EGP,TZS,UGX,XOF,XAF"
+  TRADE_CORRIDORS: "EAC,ECOWAS,SADC,CEMAC"
+  ENABLE_MOBILE_MONEY: "true"
+  ENABLE_TRADE_FINANCE: "true"
+  FX_RATE_REFRESH_INTERVAL: "60"
+  SETTLEMENT_SCHEDULE: "0 2 * * *"
+
+---
+# Secret for PAPSS Credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: papss-credentials
+  namespace: papss-integration
+type: Opaque
+stringData:
+  PAPSS_API_KEY: "papss-production-key-placeholder"
+  PAPSS_SECRET_KEY: "papss-secret-key-placeholder"
+  PAPSS_PARTICIPANT_ID: "NRP-NG-001"
+  TIGERBEETLE_CONNECTION_STRING: "tigerbeetle://tigerbeetle-service:3000"
+  DATABASE_URL: "postgresql://papss:papss_password@postgres-service:5432/papss_db"
+  REDIS_URL: "redis://redis-service:6379/0"
+  KAFKA_BROKERS: "kafka-service:9092"
+
+---
+# Deployment for PAPSS Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: papss-service
+  namespace: papss-integration
+  labels:
+    app: papss-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: papss-service
+  template:
+    metadata:
+      labels:
+        app: papss-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: papss-service-account
+      containers:
+      - name: papss-service
+        image: nigerian-remittance/papss-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: grpc
+          containerPort: 9090
+          protocol: TCP
+        - name: metrics
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        envFrom:
+        - configMapRef:
+            name: papss-config
+        - secretRef:
+            name: papss-credentials
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: papss-data
+          mountPath: /data
+        - name: logs
+          mountPath: /var/log/papss
+      volumes:
+      - name: papss-data
+        persistentVolumeClaim:
+          claimName: papss-data-pvc
+      - name: logs
+        emptyDir: {}
+
+---
+# Service for PAPSS
+apiVersion: v1
+kind: Service
+metadata:
+  name: papss-service
+  namespace: papss-integration
+  labels:
+    app: papss-service
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: grpc
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: metrics
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  selector:
+    app: papss-service
+
+---
+# HorizontalPodAutoscaler for PAPSS
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: papss-hpa
+  namespace: papss-integration
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: papss-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 4
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# PodDisruptionBudget for PAPSS
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: papss-pdb
+  namespace: papss-integration
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: papss-service
+
+---
+# ServiceAccount for PAPSS
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: papss-service-account
+  namespace: papss-integration
+
+---
+# PersistentVolumeClaim for PAPSS Data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: papss-data-pvc
+  namespace: papss-integration
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+
+---
+# NetworkPolicy for PAPSS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: papss-network-policy
+  namespace: papss-integration
+spec:
+  podSelector:
+    matchLabels:
+      app: papss-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: api-gateway
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 8081
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: tigerbeetle
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+
+---
+# Ingress for PAPSS API
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: papss-ingress
+  namespace: papss-integration
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - papss-api.remittance.com
+    secretName: papss-tls-secret
+  rules:
+  - host: papss-api.remittance.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: papss-service
+            port:
+              number: 80
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: papss-metrics
+  namespace: papss-integration
+  labels:
+    app: papss-service
+spec:
+  selector:
+    matchLabels:
+      app: papss-service
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+# CronJob for Daily Settlement
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: papss-daily-settlement
+  namespace: papss-integration
+spec:
+  schedule: "0 2 * * *"  # 2 AM daily
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: papss-service-account
+          containers:
+          - name: settlement-job
+            image: nigerian-remittance/papss-settlement:latest
+            envFrom:
+            - configMapRef:
+                name: papss-config
+            - secretRef:
+                name: papss-credentials
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+          restartPolicy: OnFailure
+
+---
+# CronJob for FX Rate Updates
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: papss-fx-rate-update
+  namespace: papss-integration
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: papss-service-account
+          containers:
+          - name: fx-rate-job
+            image: nigerian-remittance/papss-fx-updater:latest
+            envFrom:
+            - configMapRef:
+                name: papss-config
+            - secretRef:
+                name: papss-credentials
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          restartPolicy: OnFailure
+

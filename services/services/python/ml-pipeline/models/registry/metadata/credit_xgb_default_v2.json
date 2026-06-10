@@ -1,0 +1,23 @@
+{
+  "model_name": "credit_xgb_default",
+  "model_type": "credit_scoring",
+  "version": 2,
+  "stage": "development",
+  "registered_at": "2026-05-25T12:07:36.685312",
+  "description": "Continue training from synthetic(seed=10794)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/credit_xgb_default/v2/credit_xgb_default.joblib",
+  "artifact_hash": "d8c3538b5a1d2d9b",
+  "artifact_size_bytes": 118920,
+  "metrics": {
+    "auc": 0.6781226903178124,
+    "delta": 0.012019921482389284
+  },
+  "parameters": {},
+  "tags": {
+    "method": "continue_training",
+    "data_source": "synthetic(seed=10794)"
+  },
+  "promoted_at": null,
+  "deployed_at": null,
+  "deployment_endpoint": null
+}

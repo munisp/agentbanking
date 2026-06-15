@@ -78,7 +78,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },
@@ -203,9 +203,14 @@ export const posTerminalFleetRouter = router({
       return withIdempotency(input.idempotencyKey, async () => {
         // ── Enforce STATUS_TRANSITIONS state machine ──
         if (typeof input === "object" && "status" in input) {
-          const newStatus = (input as any).status as string;
+          const newStatus =
+            "status" in input
+              ? String((input as Record<string, unknown>).status)
+              : "";
           const currentStatus =
-            ((input as any).currentStatus as string) || "pending";
+            "currentStatus" in input
+              ? String((input as Record<string, unknown>).currentStatus)
+              : "pending";
           const allowed =
             STATUS_TRANSITIONS[
               currentStatus as keyof typeof STATUS_TRANSITIONS
@@ -219,7 +224,11 @@ export const posTerminalFleetRouter = router({
         }
         const txAmount =
           typeof input === "object" && "amount" in input
-            ? Number((input as any).amount)
+            ? Number(
+                "amount" in input
+                  ? (input as Record<string, unknown>).amount
+                  : 0
+              )
             : 0;
         const fees = calculateFee(txAmount, "posTransaction");
         const commission = calculateCommission(fees.fee, "posTransaction");
@@ -263,7 +272,11 @@ export const posTerminalFleetRouter = router({
             creditAccountId: 1001,
             amount: Math.round(
               (typeof input === "object" && "amount" in input
-                ? Number((input as any).amount)
+                ? Number(
+                    "amount" in input
+                      ? (input as Record<string, unknown>).amount
+                      : 0
+                  )
                 : 0) * 100
             ),
             currency: "NGN",
@@ -514,8 +527,7 @@ export const posTerminalFleetRouter = router({
     for (const r of rows) counts[r.status] = r.cnt;
 
     return {
-      // @ts-expect-error middleware type mismatch
-      total: Object.values(counts as any).reduce((a, b) => a + b, 0),
+      total: Object.values(counts).reduce((a, b) => a + b, 0),
       active: counts["active"] ?? 0,
       inactive: counts["inactive"] ?? 0,
       maintenance: counts["maintenance"] ?? 0,

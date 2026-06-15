@@ -10,9 +10,7 @@ export default function AccountOpeningPage() {
   const [tab, setTab] = useState<"applications" | "accounts" | "banks">(
     "applications"
   );
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const applications = trpc.accountOpening.list.useQuery({ limit: 20 }) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const accounts = trpc.accountOpening.list.useQuery({ limit: 20 }) as any;
   const banks = trpc.accountOpening.analytics.useQuery() as any;
   const analytics = trpc.accountOpening.analytics.useQuery() as any;

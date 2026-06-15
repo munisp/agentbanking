@@ -86,7 +86,8 @@ async function checkDbHealth() {
     const start = Date.now();
     await db
       .select({ val: (await import("drizzle-orm")).sql`1` })
-      .from((await import("drizzle-orm")).sql`(SELECT 1) AS t`);
+      .from((await import("drizzle-orm")).sql`(SELECT 1) AS t`)
+      .limit(500);
     return { connected: true, latencyMs: Date.now() - start };
   } catch {
     return { connected: false, latencyMs: 0 };
@@ -101,7 +102,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },
@@ -115,7 +116,9 @@ export const iotSmartPosRouter = router({
       const result = await db.execute(
         sql`SELECT COUNT(*) as cnt FROM "iot_devices"`
       );
-      total = Number((result as any).rows?.[0]?.cnt ?? 0);
+      total = Number(
+        ((result as { rows?: Array<{ cnt?: number }> }).rows ?? [])[0]?.cnt ?? 0
+      );
 
       const [onlineRes, alertRes, predictRes] = await Promise.all([
         db
@@ -176,7 +179,9 @@ export const iotSmartPosRouter = router({
           sql`SELECT COUNT(*) as cnt FROM "iot_devices"`
         );
         return {
-          items: ((result as any).rows ?? []).map((row: any) => ({
+          items: (
+            (result as { rows?: Record<string, unknown>[] }).rows ?? []
+          ).map(row => ({
             id: row.id,
             ...((typeof row.data === "string"
               ? JSON.parse(row.data)
@@ -185,10 +190,13 @@ export const iotSmartPosRouter = router({
             createdAt: row.created_at,
             agentId: row.agent_id,
           })),
-          total: Number((countResult as any).rows?.[0]?.cnt ?? 0),
+          total: Number(
+            ((countResult as { rows?: Array<{ cnt?: number }> }).rows ?? [])[0]
+              ?.cnt ?? 0
+          ),
         };
       } catch {
-        return { items: [] as any[], total: 0 };
+        return { items: [] as unknown[], total: 0 };
       }
     }),
 
@@ -198,7 +206,10 @@ export const iotSmartPosRouter = router({
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
-        const newStatus = (input as any).status;
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
         const allowed =
           STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
         if (allowed && !allowed.includes(newStatus)) {
@@ -210,7 +221,9 @@ export const iotSmartPosRouter = router({
       }
       const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as any).amount)
+          ? Number(
+              "amount" in input ? (input as Record<string, unknown>).amount : 0
+            )
           : 0;
       const fees = calculateFee(txAmount, "posTransaction");
       const commission = calculateCommission(fees.fee, "posTransaction");
@@ -234,7 +247,8 @@ export const iotSmartPosRouter = router({
       const result = await db.execute(
         sql`INSERT INTO "iot_devices" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
       );
-      const id = (result as any).rows?.[0]?.id;
+      const id = ((result as { rows?: Array<{ id?: unknown }> }).rows ?? [])[0]
+        ?.id;
       await writeAuditLog({
         agentId:
           typeof ctx === "object" && ctx !== null && "user" in ctx
@@ -252,7 +266,9 @@ export const iotSmartPosRouter = router({
 
         resourceId:
           typeof input === "object" && input !== null && "id" in input
-            ? String((input as any).id ?? "new")
+            ? String(
+                "id" in input ? (input as Record<string, unknown>).id : "new"
+              )
             : "new",
 
         status: "success",
@@ -271,10 +287,11 @@ export const iotSmartPosRouter = router({
       const result = await db.execute(
         sql`SELECT id, data, status, created_at, agent_id, metadata FROM "iot_devices" WHERE id = ${recordId}`
       );
-      if (!(result as any).rows?.length) {
+      if (!((result as { rows?: unknown[] }).rows ?? []).length) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Record not found" });
       }
-      const row: any = (result as any).rows[0];
+      const row =
+        ((result as { rows?: Record<string, unknown>[] }).rows ?? [])[0] ?? {};
       return {
         id: row.id,
         ...((typeof row.data === "string" ? JSON.parse(row.data) : row.data) ||
@@ -313,7 +330,10 @@ export const iotSmartPosRouter = router({
         sql`SELECT status, COUNT(*) as cnt FROM "iot_devices" GROUP BY status`
       );
       const byStatus = Object.fromEntries(
-        ((result as any).rows ?? []).map((r: any) => [r.status, Number(r.cnt)])
+        (
+          (result as { rows?: Array<{ status: string; cnt: number }> }).rows ??
+          []
+        ).map(r => [r.status, Number(r.cnt)])
       );
       return {
         byStatus,

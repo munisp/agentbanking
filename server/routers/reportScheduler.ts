@@ -1,7 +1,7 @@
 // Sprint 87: Upgraded from mock data to real DB queries — reportScheduler
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { pnlReports } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -142,21 +142,34 @@ const createSchedule = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
+    const txAmount =
       typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "reportScheduler",
-      "mutation",
-      "Executed reportScheduler mutation"
-    );
-
+        ? Number(
+            "amount" in input ? (input as Record<string, unknown>).amount : 0
+          )
+        : 0;
+    const fees = calculateFee(txAmount, "transfer");
+    const commission = calculateCommission(fees.fee, "transfer");
+    const tax = calculateTax(fees.fee, "vat");
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -179,7 +192,7 @@ const createSchedule = protectedProcedure
       }
       const [row] = await db
         .insert(pnlReports)
-        .values((input.data || {}) as any)
+        .values((input.data || {}) as Record<string, unknown>)
         .returning();
       return { success: true, ...row, message: "createSchedule completed" };
     } catch (error) {
@@ -196,6 +209,25 @@ const updateSchedule = protectedProcedure
     z.object({ id: z.number(), data: z.record(z.string(), z.any()).optional() })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       const [existing] = await db
@@ -214,6 +246,13 @@ const updateSchedule = protectedProcedure
           .set(input.data)
           .where(eq(pnlReports.id, input.id))
           .returning();
+
+        await writeAuditLog({
+          action: "mutation",
+          resource: "reportScheduler",
+          status: "success",
+          metadata: { input: JSON.stringify(input).slice(0, 500) },
+        });
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };
@@ -229,6 +268,25 @@ const updateSchedule = protectedProcedure
 const deleteSchedule = protectedProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       const [existing] = await db
@@ -260,6 +318,25 @@ const runNow = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -282,7 +359,7 @@ const runNow = protectedProcedure
       }
       const [row] = await db
         .insert(pnlReports)
-        .values((input.data || {}) as any)
+        .values((input.data || {}) as Record<string, unknown>)
         .returning();
       return { success: true, ...row, message: "runNow completed" };
     } catch (error) {
@@ -299,6 +376,25 @@ const toggleSchedule = protectedProcedure
     z.object({ id: z.number(), data: z.record(z.string(), z.any()).optional() })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       const [existing] = await db
@@ -337,6 +433,25 @@ const triggerNow = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus =
+        "status" in input
+          ? String((input as Record<string, unknown>).status)
+          : "";
+      const currentStatus =
+        "currentStatus" in input
+          ? String((input as Record<string, unknown>).currentStatus)
+          : "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -359,7 +474,7 @@ const triggerNow = protectedProcedure
       }
       const [row] = await db
         .insert(pnlReports)
-        .values((input.data || {}) as any)
+        .values((input.data || {}) as Record<string, unknown>)
         .returning();
       return { success: true, ...row, message: "triggerNow completed" };
     } catch (error) {
@@ -414,10 +529,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -426,7 +537,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },

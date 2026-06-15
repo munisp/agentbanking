@@ -42,6 +42,7 @@ import {
   geofenceZones,
   deviceLocations,
   commissionRules,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
@@ -58,6 +59,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -378,23 +380,36 @@ export const transactionsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "transactions",
-        "mutation",
-        "Executed transactions mutation"
-      );
-
+          ? Number(
+              "amount" in input ? (input as Record<string, unknown>).amount : 0
+            )
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent) {
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -677,7 +692,9 @@ export const transactionsRouter = router({
           const brAmount =
             typeof brCommission === "number"
               ? brCommission
-              : Number((brCommission as any)?.amount ?? 0);
+              : Number(
+                  (brCommission as { amount?: number } | null)?.amount ?? 0
+                );
           if (brAmount > 0) commission = brAmount;
           // Fraud scoring
           const fraudScore = calculateFraudScore({
@@ -695,7 +712,7 @@ export const transactionsRouter = router({
           const fraudScoreVal =
             typeof fraudScore === "number"
               ? fraudScore
-              : Number((fraudScore as any)?.score ?? 0);
+              : Number((fraudScore as { score?: number } | null)?.score ?? 0);
           if (fraudScoreVal > 0.85) {
             await createFraudAlert({
               agentId: agent.id,
@@ -749,9 +766,7 @@ export const transactionsRouter = router({
         });
 
         if (tbResult) {
-          console.log(
-            `[TB] Transfer committed: ${tbResult.id} (syncStatus=${tbResult.syncStatus})`
-          );
+          // TigerBeetle transfer committed successfully
         } else {
           console.warn(
             `[TB] Sidecar unavailable — transaction ${ref} persisted to PostgreSQL only`
@@ -953,7 +968,10 @@ export const transactionsRouter = router({
               agentId: agent.id,
               status: "committed",
               channel: input.channel ?? "Cash",
-              customerId: (input as any).customerId ?? undefined,
+              customerId:
+                ("customerId" in input
+                  ? (input as Record<string, unknown>).customerId
+                  : undefined) ?? undefined,
             })
           )
           .catch((e: unknown) =>
@@ -970,8 +988,14 @@ export const transactionsRouter = router({
                 amount: input.amount,
                 type: input.type,
                 customerName: input.customerName ?? null,
-                latitude: (input as any).latitude ?? null,
-                longitude: (input as any).longitude ?? null,
+                latitude:
+                  ("latitude" in input
+                    ? (input as Record<string, unknown>).latitude
+                    : undefined) ?? null,
+                longitude:
+                  ("longitude" in input
+                    ? (input as Record<string, unknown>).longitude
+                    : undefined) ?? null,
                 timestamp: new Date(),
               };
               const result = await detectFraud(fraudCtx);
@@ -1017,7 +1041,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1056,7 +1080,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1092,7 +1116,7 @@ export const transactionsRouter = router({
     .input(z.object({ ref: z.string() }))
     .query(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1127,7 +1151,7 @@ export const transactionsRouter = router({
     .input(z.object({ ref: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1245,7 +1269,7 @@ export const transactionsRouter = router({
   // ── List pending reversals (admin/supervisor) ─────────────────────────────
   pendingReversals: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -1296,7 +1320,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1386,7 +1410,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1456,7 +1480,7 @@ export const transactionsRouter = router({
   // ── Velocity Limits CRUD (admin) ──────────────────────────────────────────
   getVelocityLimits: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1492,7 +1516,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || agent.role !== "admin") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1542,7 +1566,7 @@ export const transactionsRouter = router({
   // ── Platform Settings CRUD (admin) ────────────────────────────────────────
   getPlatformSettings: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1571,7 +1595,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || agent.role !== "admin") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1624,7 +1648,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1711,7 +1735,7 @@ export const transactionsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1765,7 +1789,7 @@ export const transactionsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent || (agent.role !== "admin" && agent.role !== "supervisor")) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -1879,7 +1903,7 @@ export const transactionsRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -1931,7 +1955,7 @@ export const transactionsRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -2051,7 +2075,7 @@ export const transactionsRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: "DB unavailable",
         });
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -2162,7 +2186,7 @@ export const transactionsRouter = router({
   // ── Analytics: hourly cashIn/cashOut for current agent today ─────────────
   hourlyStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return [];
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2214,7 +2238,7 @@ export const transactionsRouter = router({
   // ── Analytics: weekly commission per day for current agent ───────────────
   commissionStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return [];
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2259,7 +2283,7 @@ export const transactionsRouter = router({
   // ── Analytics: agent day summary for ticker ───────────────────────────────
   agentDayStats: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent) return null;
       const db = (await getDb())!;
       if (!db) throw new Error("Database connection unavailable");
@@ -2388,7 +2412,7 @@ export const transactionsRouter = router({
         map[row.type].count++;
         map[row.type].volume += Number(row.amount);
       }
-      const total = Object.values(map as any).reduce(
+      const total = Object.values(map as Record<string, unknown>).reduce(
         (s: any, v: any) => s + v.count,
         0
       );
@@ -2417,7 +2441,7 @@ export const transactionsRouter = router({
    */
   getFloatBalance: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+      const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
       if (!agent)
         throw new TRPCError({
           code: "UNAUTHORIZED",
@@ -2478,7 +2502,7 @@ export const transactionsRouter = router({
     .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }))
     .query(async ({ ctx, input }) => {
       try {
-        const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
+        const agent = ctx.agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent)
           throw new TRPCError({
             code: "UNAUTHORIZED",

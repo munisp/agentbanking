@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { agents } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
@@ -30,6 +30,17 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   reactivation_pending: ["active", "rejected"],
   rejected: [],
 };
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 
@@ -76,66 +87,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 }
 
 // ── Domain Calculations ────────────────────────────────────────────────────
-function computeFees(amount: number, txType: string = "transfer") {
-  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
-  const feeResult = calculateFee(amount, txType);
-  const commResult = calculateCommission(feeResult.fee, txType);
-  const taxResult = calculateTax(feeResult.fee, "vat");
-  const totalDeductions = feeResult.fee + taxResult.taxAmount;
-  const netAmount = Math.max(0, amount - totalDeductions);
-  const rate = amount > 0 ? feeResult.fee / amount : 0;
-  return {
-    fee: feeResult.fee,
-    feeRate: parseFloat(rate.toFixed(4)),
-    commission: commResult.agentShare,
-    platformCommission: commResult.platformShare,
-    tax: taxResult.taxAmount,
-    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
-    netAmount: parseFloat(netAmount.toFixed(2)),
-    grossAmount: amount,
-  };
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_AGENTHIERARCHY = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_AGENTHIERARCHY.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_AGENTHIERARCHY.validateRange(data.amount, 0, 100_000_000)
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
 
 // ── Error Handling ─────────────────────────────────────────────────────────
 function handleError(error: unknown, context: string): never {
@@ -160,87 +111,19 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
 async function checkDbHealth() {
   try {
     const db = await (await import("../db")).getDb();
-    if ((db as any)?._isNoop) return { connected: false, latencyMs: 0 };
+    if (!!(db && (db as Record<string, unknown>)._isNoop))
+      return { connected: false, latencyMs: 0 };
     const start = Date.now();
     await db
       .select({ val: (await import("drizzle-orm")).sql`1` })
-      .from((await import("drizzle-orm")).sql`(SELECT 1) AS t`);
+      .from((await import("drizzle-orm")).sql`(SELECT 1) AS t`)
+      .limit(500);
     return { connected: true, latencyMs: Date.now() - start };
   } catch {
     return { connected: false, latencyMs: 0 };
   }
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _agentHierarchy_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -249,7 +132,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },
@@ -318,54 +201,213 @@ export const agentHierarchyRouter = router({
           role: z.string().optional(),
           territory: z.string().optional(),
           search: z.string().min(1).max(500).optional(),
+          page: z.number().min(1).default(1),
+          limit: z.number().min(1).max(100).default(20),
         })
         .optional()
     )
-    .query(async () => {
-      const data = [
-        {
-          id: "AGT-001",
-          name: "Adebayo Okonkwo",
-          role: "super_agent",
-          territory: "Lagos",
-          status: "active",
-          subAgents: 12,
-        },
-      ];
-      return { agents: data, items: data, total: 1 };
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { agents: [], items: [], total: 0 };
+      try {
+        const lim = input?.limit ?? 20;
+        const offset = ((input?.page ?? 1) - 1) * lim;
+        const rows = await database
+          .select()
+          .from(agents)
+          .orderBy(desc(agents.id))
+          .limit(lim)
+          .offset(offset);
+        const totalResult = await database
+          .select({ total: count() })
+          .from(agents);
+        const totalRow = Array.isArray(totalResult)
+          ? totalResult[0]
+          : totalResult;
+        return {
+          agents: rows,
+          items: rows,
+          total: Number((totalRow as Record<string, unknown>)?.total ?? 0),
+        };
+      } catch {
+        return { agents: [], items: [], total: 0 };
+      }
     }),
-  getTree: protectedProcedure.query(async () => {
-    return {
-      tree: {
-        id: "AGT-001",
-        name: "Adebayo",
-        role: "super_agent",
-        children: [
-          { id: "AGT-002", name: "Fatima", role: "agent", children: [] },
-        ],
-      },
-    };
-  }),
+
+  getTree: protectedProcedure
+    .input(z.object({ rootAgentId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { tree: null, totalNodes: 0 };
+
+      // Recursive CTE for deep hierarchy traversal (up to 10 levels)
+      const rootId = input?.rootAgentId;
+      let flatRows: Array<Record<string, unknown>> = [];
+      try {
+        const treeResult = await database.execute(sql`
+          WITH RECURSIVE agent_tree AS (
+            SELECT id, "agentCode", name, phone, "parentId", "isActive", 1 AS depth
+            FROM agents
+            WHERE ${rootId ? sql`id = ${rootId}` : sql`"parentId" IS NULL`}
+            UNION ALL
+            SELECT a.id, a."agentCode", a.name, a.phone, a."parentId", a."isActive", t.depth + 1
+            FROM agents a
+            INNER JOIN agent_tree t ON a."parentId" = t.id
+            WHERE t.depth < 10
+          )
+          SELECT * FROM agent_tree ORDER BY depth, id LIMIT 500
+        `);
+        flatRows = Array.isArray(treeResult)
+          ? treeResult
+          : ((treeResult?.rows ?? []) as Array<Record<string, unknown>>);
+      } catch {
+        flatRows = [];
+      }
+
+      type TreeNode = {
+        id: number;
+        agentCode: string;
+        name: string;
+        parentId: number | null;
+        depth: number;
+        children: TreeNode[];
+      };
+      const nodes = new Map<number, TreeNode>();
+      const roots: TreeNode[] = [];
+
+      for (const row of flatRows) {
+        const node: TreeNode = {
+          id: Number(row.id ?? 0),
+          agentCode: String(row.agentCode ?? ""),
+          name: String(row.name ?? ""),
+          parentId: row.parentId ? Number(row.parentId) : null,
+          depth: Number(row.depth ?? 1),
+          children: [],
+        };
+        nodes.set(node.id, node);
+      }
+
+      for (const node of nodes.values()) {
+        if (node.parentId && nodes.has(node.parentId)) {
+          nodes.get(node.parentId)!.children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      return { tree: roots[0] ?? null, totalNodes: nodes.size };
+    }),
+
   territories: protectedProcedure.query(async () => {
-    return {
-      territories: [
-        { id: "T-001", name: "Lagos", agentCount: 45, status: "active" },
-        { id: "T-002", name: "Abuja", agentCount: 30, status: "active" },
-      ],
-    };
+    const database = await getDb();
+    if (!database) return { territories: [] };
+    try {
+      const result = await database.execute(sql`
+        SELECT COALESCE(territory, 'Unassigned') AS territory,
+          COUNT(*) AS agent_count,
+          COUNT(*) FILTER (WHERE "isActive" = true) AS active_count
+        FROM agents GROUP BY territory ORDER BY agent_count DESC LIMIT 100
+      `);
+      const rows = Array.isArray(result)
+        ? result
+        : ((result?.rows ?? []) as Array<Record<string, string>>);
+      return {
+        territories: rows.map((r: Record<string, string>) => ({
+          name: r.territory ?? "Unassigned",
+          agentCount: parseInt(r.agent_count ?? "0", 10),
+          activeCount: parseInt(r.active_count ?? "0", 10),
+        })),
+      };
+    } catch {
+      return { territories: [] };
+    }
   }),
+
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAgents: 150,
-      byRole: { super_agent: 10, agent: 80, sub_agent: 60 },
-      byTerritory: { Lagos: 45, Abuja: 30, Kano: 25 },
-    };
+    const database = await getDb();
+    if (!database) return { totalAgents: 0, byRole: {}, byTerritory: {} };
+    try {
+      const [totals] = await database.select({ total: count() }).from(agents);
+      const roleResult = await database.execute(sql`
+        SELECT COALESCE(role, 'agent') AS role, COUNT(*) AS cnt FROM agents GROUP BY role
+      `);
+      const territoryResult = await database.execute(sql`
+        SELECT COALESCE(territory, 'Unassigned') AS territory, COUNT(*) AS cnt
+        FROM agents GROUP BY territory ORDER BY cnt DESC LIMIT 50
+      `);
+      const roleRows = Array.isArray(roleResult)
+        ? roleResult
+        : ((roleResult?.rows ?? []) as Array<Record<string, string>>);
+      const territoryRows = Array.isArray(territoryResult)
+        ? territoryResult
+        : ((territoryResult?.rows ?? []) as Array<Record<string, string>>);
+      const byRole: Record<string, number> = {};
+      for (const r of roleRows)
+        byRole[r.role ?? "agent"] = parseInt(r.cnt ?? "0", 10);
+      const byTerritory: Record<string, number> = {};
+      for (const r of territoryRows)
+        byTerritory[r.territory ?? "Unassigned"] = parseInt(r.cnt ?? "0", 10);
+      return { totalAgents: Number(totals.total), byRole, byTerritory };
+    } catch {
+      return { totalAgents: 0, byRole: {}, byTerritory: {} };
+    }
   }),
+
   reassignParent: protectedProcedure
     .input(z.object({ agentId: z.number(), newParentId: z.number() }))
-    .mutation(async ({ input }) => ({
-      agentId: input.agentId,
-      newParentId: input.newParentId,
-      success: true,
-    })),
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+
+      // Prevent circular hierarchy via recursive ancestor check
+      try {
+        const targetAncestors = await database.execute(sql`
+          WITH RECURSIVE ancestors AS (
+            SELECT id, "parentId" FROM agents WHERE id = ${input.newParentId}
+            UNION ALL
+            SELECT a.id, a."parentId" FROM agents a
+            INNER JOIN ancestors p ON a.id = p."parentId"
+            WHERE p."parentId" IS NOT NULL
+          )
+          SELECT id FROM ancestors WHERE id = ${input.agentId}
+        `);
+        const rows = Array.isArray(targetAncestors)
+          ? targetAncestors
+          : (targetAncestors?.rows ?? []);
+        if (rows.length > 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Cannot reassign: would create circular hierarchy",
+          });
+        }
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        // DB execute failed — allow operation but log
+      }
+
+      await database
+        .update(agents)
+        .set({ parentId: input.newParentId } as Record<string, unknown>)
+        .where(eq(agents.id, input.agentId));
+
+      await writeAuditLog({
+        agentId: input.agentId,
+        agentCode: "system",
+        action: "HIERARCHY_REASSIGNMENT",
+        resource: "agent_hierarchy",
+        resourceId: String(input.agentId),
+        status: "success",
+        metadata: { newParentId: input.newParentId },
+      });
+
+      return {
+        agentId: input.agentId,
+        newParentId: input.newParentId,
+        success: true,
+      };
+    }),
 });

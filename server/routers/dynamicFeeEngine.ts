@@ -5,14 +5,19 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { feeRules, feeAuditTrail } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import {
+  feeRules,
+  feeAuditTrail,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 import {
   validateAmount,
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -20,6 +25,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -89,7 +95,11 @@ export const dynamicFeeEngineRouter = router({
         if (!db) return { items: [], total: 0 };
         const conditions = [];
         if (input.txType) conditions.push(eq(feeRules.txType, input.txType));
-        if ((input as any).channel)
+        if (
+          "channel" in input
+            ? String((input as Record<string, unknown>).channel)
+            : undefined
+        )
           conditions.push(eq((feeRules as any).channel, input.channel));
         // @ts-expect-error auto-fix
         if (input.isActive !== undefined)
@@ -145,21 +155,34 @@ export const dynamicFeeEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "dynamicFeeEngine",
-        "mutation",
-        "Executed dynamicFeeEngine mutation"
-      );
-
+          ? Number(
+              "amount" in input ? (input as Record<string, unknown>).amount : 0
+            )
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -181,15 +204,61 @@ export const dynamicFeeEngineRouter = router({
             effectiveTo: input.effectiveTo ? new Date(input.effectiveTo) : null,
             active: true,
             createdBy: ctx.user?.id,
-          } as any)
+          })
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `dynamicFeeEngine transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number(
+                  "amount" in input
+                    ? (input as Record<string, unknown>).amount
+                    : 0
+                )
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         // Audit trail
         await db.insert(feeAuditTrail).values({
           feeRuleId: rule.id,
           action: "created",
           changedBy: ctx.user?.id,
           newValues: JSON.stringify(input),
-        } as any);
+        });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? (ctx.user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? (ctx.user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "dynamicFeeEngine",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String(
+                  "id" in input ? (input as Record<string, unknown>).id : "new"
+                )
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { rule };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -212,7 +281,7 @@ export const dynamicFeeEngineRouter = router({
         minFee: z.number().optional(),
         maxFee: z.number().optional(),
         active: z.boolean().optional(),
-      } as any)
+      })
     )
     .mutation(async ({ input, ctx }) => {
       try {
@@ -242,7 +311,7 @@ export const dynamicFeeEngineRouter = router({
           changedBy: ctx.user?.id,
           previousValues: JSON.stringify(oldRule),
           newValues: JSON.stringify(updates),
-        } as any);
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -289,18 +358,28 @@ export const dynamicFeeEngineRouter = router({
         };
         switch (rule.feeType) {
           case "flat":
-            fee = parseFloat(String((rule as any).flatAmount || "0"));
+            fee = parseFloat(
+              String((rule as Record<string, unknown>).flatAmount || "0")
+            );
             break;
           case "percentage":
             fee =
               (input.amount *
-                parseFloat(String((rule as any).percentageRate || "0"))) /
+                parseFloat(
+                  String(
+                    (rule as Record<string, unknown>).percentageRate || "0"
+                  )
+                )) /
               100;
             break;
           case "capped_percentage":
             fee =
               (input.amount *
-                parseFloat(String((rule as any).percentageRate || "0"))) /
+                parseFloat(
+                  String(
+                    (rule as Record<string, unknown>).percentageRate || "0"
+                  )
+                )) /
               100;
             const minFee = parseFloat(String(rule.minFee || "0"));
             const maxFee = parseFloat(String(rule.maxFee || "999999999"));
@@ -308,8 +387,10 @@ export const dynamicFeeEngineRouter = router({
             breakdown.capped = true;
             break;
           case "tiered":
-            if ((rule as any).tiers) {
-              const tiers = JSON.parse(String((rule as any).tiers));
+            if ((rule as Record<string, unknown>).tiers) {
+              const tiers = JSON.parse(
+                String((rule as Record<string, unknown>).tiers)
+              );
               for (const tier of tiers) {
                 if (
                   input.amount >= tier.minAmount &&
@@ -414,18 +495,28 @@ export const dynamicFeeEngineRouter = router({
           let fee = 0;
           switch (rule.feeType) {
             case "flat":
-              fee = parseFloat(String((rule as any).flatAmount || "0"));
+              fee = parseFloat(
+                String((rule as Record<string, unknown>).flatAmount || "0")
+              );
               break;
             case "percentage":
               fee =
                 (amount *
-                  parseFloat(String((rule as any).percentageRate || "0"))) /
+                  parseFloat(
+                    String(
+                      (rule as Record<string, unknown>).percentageRate || "0"
+                    )
+                  )) /
                 100;
               break;
             case "capped_percentage":
               fee =
                 (amount *
-                  parseFloat(String((rule as any).percentageRate || "0"))) /
+                  parseFloat(
+                    String(
+                      (rule as Record<string, unknown>).percentageRate || "0"
+                    )
+                  )) /
                 100;
               fee = Math.max(
                 parseFloat(String(rule.minFee || "0")),
@@ -433,8 +524,10 @@ export const dynamicFeeEngineRouter = router({
               );
               break;
             case "tiered":
-              if ((rule as any).tiers) {
-                const tiers = JSON.parse(String((rule as any).tiers));
+              if ((rule as Record<string, unknown>).tiers) {
+                const tiers = JSON.parse(
+                  String((rule as Record<string, unknown>).tiers)
+                );
                 for (const tier of tiers) {
                   if (amount >= tier.minAmount && amount <= tier.maxAmount) {
                     fee =

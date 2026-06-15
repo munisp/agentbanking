@@ -18,8 +18,13 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getDb } from "../db";
-import { auditLog, agents, transactions } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import {
+  auditLog,
+  agents,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { desc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { runDailySettlement } from "../settlementCron";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -60,6 +65,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -126,7 +133,11 @@ async function recordLedgerTransfer(
   amount: number
 ) {
   try {
-    await tbCreateTransfer({ debitId, creditId, amount } as any);
+    await tbCreateTransfer({
+      debitAccountId: debitId,
+      creditAccountId: creditId,
+      amount,
+    });
   } catch {
     // Log but don't block
   }
@@ -158,72 +169,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _settlement_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
 
 export const settlementRouter = router({
   /**
@@ -480,7 +425,8 @@ export const settlementRouter = router({
 
     const agentRows = await db
       .select({ id: agents.id, agentCode: agents.agentCode, name: agents.name })
-      .from(agents);
+      .from(agents)
+      .limit(500);
     const agentMap: Record<number, { agentCode: string; name: string }> = {};
     for (const a of agentRows) {
       agentMap[a.id] = { agentCode: a.agentCode, name: a.name };
@@ -510,6 +456,25 @@ export const settlementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const result = await initiateIlpSettlementTransfer({
           batchId: input.batchId,
@@ -533,6 +498,25 @@ export const settlementRouter = router({
   triggerSnapshot: agentAdminProcedure
     .input(z.object({ date: z.string().optional() }))
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const ok = await triggerSettlementSnapshot(input.date);
         return { success: ok };

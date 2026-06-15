@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   commissionTiers,
   commissionPayouts,
@@ -33,6 +33,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["approved", "rejected"],
@@ -84,51 +86,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
     action,
     JSON.stringify(auditEntry).slice(0, 200)
   );
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_AGENTCOMMISSIONCALC = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_AGENTCOMMISSIONCALC.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_AGENTCOMMISSIONCALC.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
 }
 
 // Transaction wrapping: withTransaction used for atomic DB operations
@@ -199,29 +156,24 @@ export const agentCommissionCalcRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "agentCommissionCalc",
-        "mutation",
-        "Executed agentCommissionCalc mutation"
-      );
-
-      try {
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
       }
       const db = (await getDb())!;
       const tiers = await db
@@ -246,22 +198,49 @@ export const agentCommissionCalcRouter = router({
       const commission = (input.volume * (rate + bonusRate)) / 100 + flatFee;
       try {
         await publishCommissionEvent({
-          eventType: "commission.calculated" as any,
+          eventType: "commission.calculated",
           agentId: input.agentId,
           volume: input.volume,
           commission,
           tier: tier.name,
-        } as any);
+        });
         await tbRecordCommissionCredit({
           agentId: parseInt(input.agentId.replace(/\D/g, "")) || 0,
           amount: commission,
           referenceId: `CALC-${Date.now()}`,
-        } as any);
+        });
       } catch (e) {
         logger.warn(
           `[AgentCommCalc] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
         );
       }
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? (ctx.user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? (ctx.user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "agentCommissionCalc",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String(
+                "id" in input ? (input as Record<string, unknown>).id : "new"
+              )
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return {
         agentId: input.agentId,
         tier: tier.name,
@@ -341,14 +320,52 @@ export const agentCommissionCalcRouter = router({
   approvePayout: protectedProcedure
     .input(z.object({ payoutId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = (await getDb())!;
         const payoutIdNum = parseInt(input.payoutId.replace(/\D/g, "")) || 0;
         const [updated] = await db
           .update(commissionPayouts)
-          .set({ status: "approved" } as any)
+          .set({ status: "approved" })
           .where(eq(commissionPayouts.id, payoutIdNum))
           .returning();
+
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `agentCommissionCalc transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number(
+                  "amount" in input
+                    ? (input as Record<string, unknown>).amount
+                    : 0
+                )
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
         if (!updated)
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -361,12 +378,12 @@ export const agentCommissionCalcRouter = router({
           performedBy: ctx.user?.name ?? "system",
           details: JSON.stringify({
             approvedAt: new Date().toISOString(),
-          } as any),
-        } as any);
+          }),
+        });
         try {
           await publishCommissionEvent({
-            eventType: "commission.payout.approved" as any,
-          } as any);
+            eventType: "commission.payout.approved",
+          });
         } catch (e) {
           logger.warn(
             `[AgentCommCalc] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`

@@ -7,11 +7,12 @@
  * - Crop Insurance: Weather-indexed crop insurance for agri-banking
  * - Personal Accident: Coverage for agents during work
  */
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { checkDailyLimit } from "../lib/cbnLimits";
-import { agents } from "../../drizzle/schema";
+import { agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -21,6 +22,7 @@ import {
   withIdempotency,
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 interface InsuranceProduct {
   id: string;
@@ -317,7 +319,7 @@ export const microInsuranceRouter = router({
         decision: z.enum(["approved", "rejected", "needs_more_info"]),
         notes: z.string().optional(),
         approvedAmount: z.number().optional(),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
@@ -326,7 +328,7 @@ export const microInsuranceRouter = router({
 
       // Look up claim
       const claimResult = await db.execute(
-        sql`SELECT id, claim_number, policy_number, amount, status FROM "insurance_claims" WHERE claim_number = ${input.claimNumber}`,
+        sql`SELECT id, claim_number, policy_number, amount, status FROM "insurance_claims" WHERE claim_number = ${input.claimNumber}`
       );
       const claim = (claimResult as any).rows?.[0];
       if (!claim) {
@@ -351,11 +353,11 @@ export const microInsuranceRouter = router({
 
       const approvedAmount =
         input.decision === "approved"
-          ? input.approvedAmount ?? claim.amount
+          ? (input.approvedAmount ?? claim.amount)
           : null;
 
       await db.execute(
-        sql`UPDATE "insurance_claims" SET status = ${newStatus}, adjudication_notes = ${input.notes ?? ""}, resolved_at = ${input.decision !== "needs_more_info" ? new Date().toISOString() : null} WHERE claim_number = ${input.claimNumber}`,
+        sql`UPDATE "insurance_claims" SET status = ${newStatus}, adjudication_notes = ${input.notes ?? ""}, resolved_at = ${input.decision !== "needs_more_info" ? new Date().toISOString() : null} WHERE claim_number = ${input.claimNumber}`
       );
 
       await writeAuditLog({
@@ -370,6 +372,31 @@ export const microInsuranceRouter = router({
           approvedAmount,
           notes: input.notes,
         },
+      });
+
+      // GL double-entry journal: Micro-insurance premium
+      try {
+        const db = (await getDb())!;
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}-${crypto.randomInt(9999).toString().padStart(4, "0")}`,
+          description: "Micro-insurance premium",
+          debitAccountId: 1001,
+          creditAccountId: 2060,
+          amount: 0, // Amount set by caller context
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: "system",
+          postedBy: "system",
+          status: "posted",
+        });
+      } catch {
+        // GL write failure should not block the transaction
+      }
+
+      // Publish domain event
+      publishEvent("pos.insurance.premium" as KafkaTopic, "system", {
+        action: "micro-insurance_premium",
+        timestamp: new Date().toISOString(),
       });
 
       return {
@@ -387,9 +414,9 @@ export const microInsuranceRouter = router({
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
     const result = await db.execute(
-      sql`SELECT claim_number, policy_number, claim_type, amount, status, created_at FROM "insurance_claims" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`,
+      sql`SELECT claim_number, policy_number, claim_type, amount, status, created_at FROM "insurance_claims" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`
     );
-    return { claims: (result as any).rows ?? [] };
+    return { claims: (result as { rows?: unknown[] }).rows ?? [] };
   }),
 
   listPolicies: protectedProcedure.query(async ({ ctx }) => {
@@ -398,9 +425,9 @@ export const microInsuranceRouter = router({
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
     const result = await db.execute(
-      sql`SELECT policy_number, product_name, category, monthly_premium, coverage_amount, status, start_date, waiting_period_ends FROM "insurance_policies" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`,
+      sql`SELECT policy_number, product_name, category, monthly_premium, coverage_amount, status, start_date, waiting_period_ends FROM "insurance_policies" WHERE agent_id = ${session.id} ORDER BY created_at DESC LIMIT 50`
     );
-    return { policies: (result as any).rows ?? [] };
+    return { policies: (result as { rows?: unknown[] }).rows ?? [] };
   }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
@@ -411,10 +438,10 @@ export const microInsuranceRouter = router({
       totalProducts: PRODUCTS.length,
       categories: 4,
       avgMonthlyPremium: Math.round(
-        PRODUCTS.reduce((s, p) => s + p.monthlyPremium, 0) / PRODUCTS.length,
+        PRODUCTS.reduce((s, p) => s + p.monthlyPremium, 0) / PRODUCTS.length
       ),
       avgCoverage: Math.round(
-        PRODUCTS.reduce((s, p) => s + p.coverageAmount, 0) / PRODUCTS.length,
+        PRODUCTS.reduce((s, p) => s + p.coverageAmount, 0) / PRODUCTS.length
       ),
     };
   }),

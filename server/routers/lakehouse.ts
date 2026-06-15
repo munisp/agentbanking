@@ -140,10 +140,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -152,7 +148,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },
@@ -170,21 +166,34 @@ export const lakehouseRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "lakehouse",
-        "mutation",
-        "Executed lakehouse mutation"
-      );
-
+          ? Number(
+              "amount" in input ? (input as Record<string, unknown>).amount : 0
+            )
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -366,7 +375,8 @@ export const lakehouseRouter = router({
       .where(gte(transactions.createdAt, today));
     const [fraudTotal] = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(fraudAlerts);
+      .from(fraudAlerts)
+      .limit(500);
 
     return {
       transactions: { total: txTotal?.count ?? 0, today: txToday?.count ?? 0 },
@@ -453,7 +463,7 @@ export const lakehouseRouter = router({
         }
 
         return {
-          cells: Object.values(grid as any),
+          cells: Object.values(grid as Record<string, unknown>),
           source: "postgresql-fallback",
         };
       } catch (error) {
@@ -560,7 +570,7 @@ export const lakehouseRouter = router({
         }
 
         return {
-          cells: Object.values(grid as any),
+          cells: Object.values(grid as Record<string, unknown>),
           source: "postgresql-fallback",
         };
       } catch (error) {

@@ -11,6 +11,7 @@ import {
   settlementReconciliation,
   merchantSettlements,
   transactions,
+  gl_journal_entries,
   agents,
 } from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
@@ -32,6 +33,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -137,21 +140,34 @@ export const settlementReconciliationRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "settlementReconciliation",
-        "mutation",
-        "Executed settlementReconciliation mutation"
-      );
-
+          ? Number(
+              "amount" in input ? (input as Record<string, unknown>).amount : 0
+            )
+          : 0;
+      const fees = calculateFee(txAmount, "settlement");
+      const commission = calculateCommission(fees.fee, "settlement");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -220,6 +236,25 @@ export const settlementReconciliationRouter = router({
               })
               .where(eq(settlementReconciliation.id, existing.id))
               .returning();
+
+            // Double-entry GL journal entry
+            await db.insert(gl_journal_entries).values({
+              entryNumber: `JE-${Date.now()}`,
+              description: `settlementReconciliation transaction`,
+              debitAccountId: 2001,
+              creditAccountId: 1001,
+              amount: Math.round(
+                (typeof input === "object" && "amount" in input
+                  ? Number(
+                      "amount" in input
+                        ? (input as Record<string, unknown>).amount
+                        : 0
+                    )
+                  : 0) * 100
+              ),
+              currency: "NGN",
+              status: "posted",
+            });
           } else {
             [record] = await db
               .insert(settlementReconciliation)

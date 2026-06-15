@@ -22,7 +22,7 @@
  */
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   commissionTiers,
   commissionSplits,
@@ -69,6 +69,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["approved", "rejected"],
@@ -249,7 +251,7 @@ const memPayouts: any[] = [];
 /** Ensure default tiers and splits exist in DB */
 async function ensureDefaults() {
   const db = await getDb();
-  if (!db || (db as any)._isNoop) return;
+  if (!db || db._isNoop) return;
   try {
     const existing = await db
       .select({ c: count() })
@@ -296,7 +298,7 @@ async function logAudit(
   reason?: string
 ) {
   const db = await getDb();
-  if (!db || (db as any)._isNoop) return;
+  if (!db || db._isNoop) return;
   try {
     await db.insert(commissionAuditTrail).values({
       entityType,
@@ -385,7 +387,7 @@ async function recordLedgerTransfer(
   amount: number
 ) {
   try {
-    await tbCreateTransfer({ debitId, creditId, amount } as any);
+    await tbCreateTransfer({ debitId, creditId, amount });
   } catch {
     // Log but don't block
   }
@@ -422,8 +424,7 @@ export const commissionEngineRouter = router({
   tiers: protectedProcedure.query(async () => {
     try {
       const db = await getDb();
-      if (!db || (db as any)._isNoop)
-        return { tiers: memTiers.map(t => formatTier(t)) };
+      if (!db || db._isNoop) return { tiers: memTiers.map(t => formatTier(t)) };
       const rows = await db
         .select()
         .from(commissionTiers)
@@ -452,24 +453,28 @@ export const commissionEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "commissionEngine",
-        "mutation",
-        "Executed commissionEngine mutation"
-      );
-
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = await getDb();
-        if (!db || (db as any)._isNoop) {
+        if (!db || db._isNoop) {
           const idx = memTiers.findIndex(t => t.tierId === input.id);
           if (idx === -1) return { success: false, error: "Tier not found" };
           if (input.rate !== undefined) memTiers[idx].rate = String(input.rate);
@@ -504,6 +509,25 @@ export const commissionEngineRouter = router({
           .where(eq(commissionTiers.tierId, input.id))
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `commissionEngine transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number(
+                  "amount" in input
+                    ? (input as Record<string, unknown>).amount
+                    : 0
+                )
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         // Audit trail
         await logAudit(
           "tier",
@@ -516,7 +540,7 @@ export const commissionEngineRouter = router({
 
         // [Kafka] Publish tier update event
         await publishCommissionEvent({
-          eventType: "commission.tier.updated" as any,
+          eventType: "commission.tier.updated",
           agentId: 0,
           agentCode: "SYSTEM",
           amount: 0,
@@ -555,9 +579,28 @@ export const commissionEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = await getDb();
-        if (!db || (db as any)._isNoop) {
+        if (!db || db._isNoop) {
           const nextNum = memTiers.length + 1;
           const tierId = `CT-${String(nextNum).padStart(3, "0")}`;
           const newTier = {
@@ -610,7 +653,7 @@ export const commissionEngineRouter = router({
           created
         );
         await publishCommissionEvent({
-          eventType: "commission.tier.created" as any,
+          eventType: "commission.tier.created",
           agentId: 0,
           agentCode: "SYSTEM",
           amount: 0,
@@ -638,9 +681,28 @@ export const commissionEngineRouter = router({
   deleteTier: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = await getDb();
-        if (!db || (db as any)._isNoop) {
+        if (!db || db._isNoop) {
           const idx = memTiers.findIndex(t => t.tierId === input.id);
           if (idx === -1) return { success: false, error: "Tier not found" };
           memTiers[idx].isActive = false;
@@ -668,7 +730,7 @@ export const commissionEngineRouter = router({
           { isActive: false }
         );
         await publishCommissionEvent({
-          eventType: "commission.tier.deleted" as any,
+          eventType: "commission.tier.deleted",
           agentId: 0,
           agentCode: "SYSTEM",
           amount: 0,
@@ -739,6 +801,25 @@ export const commissionEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const total =
           input.superAgentShare +
@@ -750,7 +831,7 @@ export const commissionEngineRouter = router({
           return { success: false, error: "Shares must total 100%" };
 
         const db = await getDb();
-        if (!db || (db as any)._isNoop) {
+        if (!db || db._isNoop) {
           const idx = memSplits.findIndex(s => s.splitId === input.id);
           if (idx === -1) return { success: false, error: "Split not found" };
           memSplits[idx].superAgentShare = String(input.superAgentShare);
@@ -834,6 +915,25 @@ export const commissionEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const total =
           input.superAgentShare +
@@ -845,7 +945,7 @@ export const commissionEngineRouter = router({
           return { success: false, error: "Shares must total 100%" };
 
         const db = await getDb();
-        if (!db || (db as any)._isNoop) {
+        if (!db || db._isNoop) {
           const nextNum = memSplits.length + 1;
           const splitId = `CS-${String(nextNum).padStart(3, "0")}`;
           const newSplit = {
@@ -895,7 +995,7 @@ export const commissionEngineRouter = router({
         );
         await invalidateSplitCache();
         await publishCommissionEvent({
-          eventType: "commission.split.created" as any,
+          eventType: "commission.split.created",
           agentId: 0,
           agentCode: "SYSTEM",
           amount: 0,
@@ -1029,7 +1129,7 @@ export const commissionEngineRouter = router({
     .query(async ({ input }) => {
       try {
         const db = await getDb();
-        if (!db || (db as any)._isNoop) return { payouts: [], total: 0 };
+        if (!db || db._isNoop) return { payouts: [], total: 0 };
 
         const conditions = [];
         if (input?.status)
@@ -1087,6 +1187,25 @@ export const commissionEngineRouter = router({
   approvePayout: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = await getDb();
         if (!db)
@@ -1139,7 +1258,7 @@ export const commissionEngineRouter = router({
 
         // [Kafka] Publish payout approved event
         await publishCommissionEvent({
-          eventType: "commission.payout.approved" as any,
+          eventType: "commission.payout.approved",
           agentId: payout.agentId,
           agentCode: payout.agentCode,
           amount: parseFloat(payout.amount as string),
@@ -1268,7 +1387,7 @@ export const commissionEngineRouter = router({
     .query(async ({ input }) => {
       try {
         const db = await getDb();
-        if (!db || (db as any)._isNoop) return { entries: [] };
+        if (!db || db._isNoop) return { entries: [] };
 
         const conditions = [];
         if (input?.entityType)
@@ -1298,6 +1417,25 @@ export const commissionEngineRouter = router({
   triggerBatchPayout: protectedProcedure
     .input(z.object({ period: z.string(), agentIds: z.array(z.number()) }))
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const batchId = `BATCH-${crypto.randomUUID().toUpperCase()}`;
         const workflowId = await triggerCommissionPayoutWorkflow({
@@ -1332,6 +1470,25 @@ export const commissionEngineRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const result = await initiateIlpCommissionTransfer({
           payerFsp: "54link-fsp",
@@ -1356,6 +1513,25 @@ export const commissionEngineRouter = router({
   triggerSnapshot: protectedProcedure
     .input(z.object({ date: z.string().optional() }))
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus =
+          "status" in input
+            ? String((input as Record<string, unknown>).status)
+            : "";
+        const currentStatus =
+          "currentStatus" in input
+            ? String((input as Record<string, unknown>).currentStatus)
+            : "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const ok = await triggerCommissionSnapshot(input.date);
         return { success: ok };

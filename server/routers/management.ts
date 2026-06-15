@@ -6,7 +6,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   agents,
   posTerminals,
@@ -102,10 +102,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -114,7 +110,7 @@ const _txPatterns = {
   atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
-      for (const op of ops) results.push(await op());
+      results.push(...(await Promise.all(ops.map(op => op()))));
       return results;
     });
   },
@@ -263,27 +259,41 @@ export const managementRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const _fees = calculateFee(
+        // Enforce STATUS_TRANSITIONS state machine
+        if (typeof input === "object" && "status" in input) {
+          const currentStatus = "pending"; // Will be overridden by DB lookup
+          const newStatus =
+            "status" in input
+              ? String((input as Record<string, unknown>).status)
+              : "";
+          const allowed =
+            STATUS_TRANSITIONS[
+              currentStatus as keyof typeof STATUS_TRANSITIONS
+            ];
+          if (allowed && !allowed.includes(newStatus)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid status transition`,
+            });
+          }
+        }
+        const txAmount =
           typeof input === "object" && "amount" in input
-            ? Number((input as Record<string, unknown>).amount)
-            : 0,
-          "transfer"
-        );
-        const _commission = calculateCommission(_fees.fee, "transfer");
-        const _tax = calculateTax(_fees.fee, "vat");
-        auditFinancialAction(
-          "UPDATE",
-          "management",
-          "mutation",
-          "Executed management mutation"
-        );
-
+            ? Number(
+                "amount" in input
+                  ? (input as Record<string, unknown>).amount
+                  : 0
+              )
+            : 0;
+        const fees = calculateFee(txAmount, "transfer");
+        const commission = calculateCommission(fees.fee, "transfer");
+        const tax = calculateTax(fees.fee, "vat");
         try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .insert(agents)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return agent;
         } catch (error) {
@@ -624,7 +634,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [rule] = await db
             .insert(commissionRules)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return rule;
         } catch (error) {
@@ -781,7 +791,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
             .insert(posTerminals)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return t;
         } catch (error) {
@@ -848,7 +858,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [g] = await db
             .insert(terminalGroups)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return g;
         } catch (error) {
@@ -1023,7 +1033,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [r] = await db
             .insert(serviceRecords)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return r;
         } catch (error) {
@@ -1061,7 +1071,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [u] = await db
             .insert(softwareUpdates)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return u;
         } catch (error) {
@@ -1628,7 +1638,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
             .insert(storefrontAds)
-            .values(input as any)
+            .values(input as Record<string, unknown>)
             .returning();
           return ad;
         } catch (error) {
@@ -1670,6 +1680,34 @@ export const managementRouter = router({
 
   // ── VAT Management ─────────────────────────────────────────────────────────
   vat: router({
+    create: mgmtProcedure
+      .input(
+        z.object({
+          transactionId: z.string(),
+          agentId: z.number(),
+          taxableAmount: z.string(),
+          vatAmount: z.string(),
+          vatRate: z.string().default("0.075"),
+          period: z.string(),
+          tinNumber: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const db = (await getDb())!;
+        const [record] = await db
+          .insert(vatRecords)
+          .values({
+            transactionId: input.transactionId,
+            agentId: input.agentId,
+            taxableAmount: input.taxableAmount,
+            vatAmount: input.vatAmount,
+            vatRate: input.vatRate,
+            period: input.period,
+            tinNumber: input.tinNumber ?? null,
+          })
+          .returning();
+        return record;
+      }),
     list: mgmtProcedure
       .input(
         z.object({

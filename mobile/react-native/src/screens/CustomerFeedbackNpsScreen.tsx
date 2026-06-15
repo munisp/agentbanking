@@ -74,9 +74,7 @@ export default function CustomerFeedbackNpsScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.title}>Customer Feedback Nps</Text>
-        <Text style={styles.subtitle}>
-          {data?.total ?? 0} total records
-        </Text>
+        <Text style={styles.subtitle}>{data?.total ?? 0} total records</Text>
       </View>
 
       <View style={styles.statsRow}>
@@ -117,7 +115,12 @@ export default function CustomerFeedbackNpsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
   header: { padding: 20, backgroundColor: "#0D7377" },
   title: { fontSize: 24, fontWeight: "bold", color: "#fff" },
   subtitle: { fontSize: 14, color: "#ccc", marginTop: 4 },
@@ -142,7 +145,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 16, fontWeight: "600", color: "#333" },
   cardSubtitle: { fontSize: 13, color: "#666", marginTop: 2 },
-  cardAmount: { fontSize: 18, fontWeight: "bold", color: "#0D7377", marginTop: 8 },
+  cardAmount: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#0D7377",
+    marginTop: 8,
+  },
   emptyState: { padding: 40, alignItems: "center" },
   emptyText: { fontSize: 16, color: "#999" },
   loadingText: { marginTop: 12, fontSize: 14, color: "#666" },

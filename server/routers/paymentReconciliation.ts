@@ -21,6 +21,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -215,6 +216,18 @@ const runReconciliation = protectedProcedure
             code: "NOT_FOUND",
             message: "runReconciliation: record not found",
           });
+
+        // Publish domain event
+        await publishEvent(
+          "payment.reconciliation.completed" as KafkaTopic,
+          `payment.reconciliation-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           id: input.id,
@@ -295,6 +308,18 @@ const resolveDiscrepancy = protectedProcedure
             code: "NOT_FOUND",
             message: "resolveDiscrepancy: record not found",
           });
+
+        // Publish domain event
+        await publishEvent(
+          "payment.reconciliation.completed" as KafkaTopic,
+          `payment.reconciliation-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           id: input.id,
@@ -365,6 +390,18 @@ const updateMatchRules = protectedProcedure
           status: "success",
           metadata: { input: JSON.stringify(input).slice(0, 500) },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "payment.reconciliation.completed" as KafkaTopic,
+          `payment.reconciliation-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };

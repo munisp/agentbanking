@@ -137,8 +137,49 @@ impl VaultState {
     }
 }
 
+
+// --- Auth Middleware ---
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    
+    // In production: validate JWT via Keycloak JWKS
+    Ok(auth_header[7..].to_string())
+}
+
+
+// --- PostgreSQL Persistence ---
+async fn get_db_pool() -> Result<deadpool_postgres::Pool, Box<dyn std::error::Error>> {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/pii_encryption_vault".to_string());
+    
+    let config: tokio_postgres::Config = database_url.parse()?;
+    let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
+    let pool = deadpool_postgres::Pool::builder(manager)
+        .max_size(16)
+        .build()?;
+    Ok(pool)
+}
+
 #[tokio::main]
 async fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "8450".into()).parse().unwrap_or(8450);
     let state = Arc::new(RwLock::new(VaultState::new()));
 

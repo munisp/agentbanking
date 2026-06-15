@@ -15,6 +15,14 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"log/slog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
 type CanaryStage struct {
@@ -139,7 +147,82 @@ func (c *Controller) GetDeployments() []*CanaryDeployment {
 	return result
 }
 
+
+// --- Auth Middleware ---
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip health checks
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		token := authHeader[7:]
+		if len(token) < 10 {
+			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		// In production: validate JWT via Keycloak JWKS endpoint
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ─── OpenTelemetry Tracing ──────────────────────────────────────────────────
+
+func initTracer(serviceName, serviceVersion string) func(context.Context) error {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		return func(context.Context) error { return nil }
+	}
+	ctx := context.Background()
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	if err != nil {
+		slog.Warn("OTel exporter init failed", "err", err)
+		return func(context.Context) error { return nil }
+	}
+	res := resource.NewWithAttributes(
+		"https://opentelemetry.io/schemas/1.24.0",
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersion(serviceVersion),
+		attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
+	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	return tp.Shutdown
+}
+
+func otelMiddleware(serviceName string, next http.Handler) http.Handler {
+	tracer := otel.Tracer(serviceName)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), r.Method+" "+r.URL.Path)
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func main() {
+	shutdownTracer := initTracer("canary-deploy-controller", "1.0.0")
+	defer shutdownTracer(context.Background())
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8401"

@@ -33,6 +33,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing"],
@@ -190,6 +191,17 @@ export const posBatchSettlementRouter = router({
             metadata: { batchRef, txCount, totalAmount, netAmount },
           });
 
+          // Publish domain event
+          await publishEvent(
+            "pos.batch.settlement.completed" as KafkaTopic,
+            `pos.batch.settlement-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
+
           return {
             success: true,
             message: `Settlement batch created with ${txCount} transactions`,
@@ -343,6 +355,17 @@ export const posBatchSettlementRouter = router({
             },
           });
 
+          // Publish domain event
+          await publishEvent(
+            "pos.batch.settlement.completed" as KafkaTopic,
+            `pos.batch.settlement-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
+
           return {
             success: true,
             message: "Batch settled successfully",
@@ -401,6 +424,17 @@ export const posBatchSettlementRouter = router({
           metadata: { reason: input.reason },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "pos.batch.settlement.completed" as KafkaTopic,
+          `pos.batch.settlement-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           message: "Batch marked as failed",
@@ -447,6 +481,17 @@ export const posBatchSettlementRouter = router({
           resourceId: String(input.batchId),
           status: "success",
         });
+
+        // Publish domain event
+        await publishEvent(
+          "pos.batch.settlement.completed" as KafkaTopic,
+          `pos.batch.settlement-${Date.now()}`,
+          {
+            action: "reconcileBatch",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return { success: true, message: "Batch reconciled", batch: updated };
       });

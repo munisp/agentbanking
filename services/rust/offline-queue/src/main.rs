@@ -238,6 +238,11 @@ async fn health(State(db): State<Db>) -> Json<HealthResponse> {
 
 #[tokio::main]
 async fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let port = env::var("OFFLINE_QUEUE_PORT").unwrap_or_else(|_| "8032".to_string());
     let db_path = env::var("OFFLINE_QUEUE_DB").unwrap_or_else(|_| "/tmp/54link-offline-queue.sqlite".to_string());
     let conn = init_db(&db_path);

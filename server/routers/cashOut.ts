@@ -17,6 +17,7 @@ import {
   calculateTax,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 /**
  * Cash Out Router — Agent dispenses physical cash to customer (withdrawal).
@@ -187,6 +188,17 @@ export const cashOutRouter = router({
               requiresSTR,
             },
           });
+
+          // Publish domain event
+          await publishEvent(
+            "pos.cashout.completed" as KafkaTopic,
+            `pos.cashout-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
 
           return {
             success: true,

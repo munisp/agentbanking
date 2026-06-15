@@ -26,6 +26,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -309,6 +310,17 @@ export const billPaymentsRouter = router({
             customerRef: input.customerReference,
           },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "pos.bill.completed" as KafkaTopic,
+          `pos.bill-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return {
           ref,

@@ -1,3 +1,4 @@
+import httpx
 """
 54Link Platform Dashboard Service
 Real-time dashboard metrics with Redis caching and PostgreSQL aggregations.
@@ -8,6 +9,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncpg
 import aioredis
@@ -44,8 +48,60 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localho
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DASHBOARD_CACHE_TTL = int(os.getenv("DASHBOARD_CACHE_TTL", "30"))
 
+
+# ── OpenTelemetry Tracing ────────────────────────────────────────────────────
+_otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if _otel_endpoint:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        _resource = Resource.create({
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "dashboard-service"),
+            "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
+            "deployment.environment": os.environ.get("ENVIRONMENT", "production"),
+        })
+        _provider = TracerProvider(resource=_resource)
+        _exporter = OTLPSpanExporter(endpoint=f"{_otel_endpoint}/v1/traces")
+        _provider.add_span_processor(BatchSpanProcessor(_exporter))
+        trace.set_tracer_provider(_provider)
+        logging.getLogger(__name__).info(f"[OTel] Tracing enabled → {_otel_endpoint}")
+    except ImportError:
+        logging.getLogger(__name__).warning("[OTel] opentelemetry packages not installed — tracing disabled")
+
+
+# ── Middleware: Kafka via Dapr ─────────────────────────────────────────────────
+
+DAPR_HTTP_PORT = os.environ.get("DAPR_HTTP_PORT", "3500")
+
+async def publish_kafka(topic: str, data: dict):
+    """Publish domain event to Kafka via Dapr sidecar."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            url = f"http://localhost:{DAPR_HTTP_PORT}/v1.0/publish/kafka-pubsub/{topic}"
+            resp = await client.post(url, json=data)
+            if resp.status_code < 300:
+                logger.info(f"Published to {topic}")
+            else:
+                logger.warning(f"Dapr publish to {topic} returned {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to publish to {topic}: {e}")
+
 app = FastAPI(title="Dashboard Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Instrument FastAPI with OpenTelemetry
+if _otel_endpoint:
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+    except (ImportError, Exception):
+        pass
+
 
 from fastapi import APIRouter
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -285,3 +341,12 @@ app.include_router(router)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8001")))
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Register service with Kafka on startup."""
+    await publish_kafka("dashboard.service.started", {
+        "service": "dashboard-service",
+        "timestamp": datetime.utcnow().isoformat() if "datetime" in dir() else "startup",
+    })

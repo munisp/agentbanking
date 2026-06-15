@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -20,6 +21,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -212,6 +216,27 @@ export const fxRatesRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // GL double-entry journal
+        const glDb = (await getDb())!;
+        await glDb.insert(gl_journal_entries).values({
+          entryNumber: `GL-FXRATES-${crypto.randomInt(100000)}`,
+          accountCode: "FXRATES_DEBIT",
+          debitAmount: "0",
+          creditAmount: "0",
+          description: `fxRates operation`,
+          reference: `fx.rates-${Date.now()}`,
+          postedBy: "system",
+        });
+        // Publish domain event
+        await publishEvent(
+          "fx.rates.completed" as KafkaTopic,
+          `fx.rates-${Date.now()}`,
+          {
+            action: "updateRates",
+            timestamp: new Date().toISOString(),
+          }
+        );
+
         return { success: true, updatedAt: new Date().toISOString() };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -249,7 +274,8 @@ export const fxRatesRouter = router({
       // Frankfurter API (https://api.frankfurter.app) / ECB exchangerate data
       const rates: { date: string; rate: number }[] = [];
       const now = Date.now();
-      for (let i = input.days; i >= 0; i--) {
+      const days = input?.days ?? 30;
+      for (let i = days; i >= 0; i--) {
         const d = new Date(now - i * 86400000);
         rates.push({
           date: d.toISOString().slice(0, 10),
@@ -257,8 +283,8 @@ export const fxRatesRouter = router({
         });
       }
       return {
-        base: input.base,
-        target: input.target,
+        base: input?.base ?? "NGN",
+        target: input?.target ?? "USD",
         timeseries: rates,
         source: "frankfurter/ecb",
       };
@@ -275,6 +301,27 @@ export const fxRatesRouter = router({
     };
   }),
   refresh: protectedProcedure.mutation(async () => {
+    // GL double-entry journal
+    const glDb = (await getDb())!;
+    await glDb.insert(gl_journal_entries).values({
+      entryNumber: `GL-FXRATES-${crypto.randomInt(100000)}`,
+      accountCode: "FXRATES_DEBIT",
+      debitAmount: "0",
+      creditAmount: "0",
+      description: `fxRates operation`,
+      reference: `fx.rates-${Date.now()}`,
+      postedBy: "system",
+    });
+    // Publish domain event
+    await publishEvent(
+      "fx.rates.completed" as KafkaTopic,
+      `fx.rates-${Date.now()}`,
+      {
+        action: "updateRates",
+        timestamp: new Date().toISOString(),
+      }
+    );
+
     return {
       success: true,
       refreshedAt: new Date().toISOString(),

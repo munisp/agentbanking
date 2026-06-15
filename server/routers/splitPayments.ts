@@ -28,6 +28,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -275,6 +276,17 @@ export const splitPaymentsRouter = router({
             splitCount: input.splits.length,
           },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "split.payment.completed" as KafkaTopic,
+          `split.payment-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return {
           groupRef,

@@ -21,6 +21,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -252,6 +253,18 @@ const submitFeedback = protectedProcedure
             code: "NOT_FOUND",
             message: "submitFeedback: record not found",
           });
+
+        // Publish domain event
+        await publishEvent(
+          "customer.nps.completed" as KafkaTopic,
+          `customer.nps-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           id: input.id,

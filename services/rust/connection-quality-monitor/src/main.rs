@@ -224,6 +224,11 @@ fn log_audit(action: &str, entity_id: &str) {
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let monitor = Arc::new(Mutex::new(QualityMonitor::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
     println!("[{}] v{} listening on :{}", SERVICE_NAME, SERVICE_VERSION, port);

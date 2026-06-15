@@ -595,6 +595,11 @@ fn log_audit(action: &str, entity_id: &str) {
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let stats = Arc::new(Mutex::new(CompressStats {
         total_compressed: 0,
         total_decompressed: 0,

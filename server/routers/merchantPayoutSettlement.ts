@@ -22,6 +22,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -251,6 +252,17 @@ export const merchantPayoutSettlementRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "merchant.settlement.completed" as KafkaTopic,
+          `merchant.settlement-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { payout };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -274,6 +286,18 @@ export const merchantPayoutSettlementRouter = router({
             status: "approved",
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+
+        // Publish domain event
+        await publishEvent(
+          "merchant.settlement.completed" as KafkaTopic,
+          `merchant.settlement-${Date.now()}`,
+          {
+            action: "approvePayout",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -298,6 +322,18 @@ export const merchantPayoutSettlementRouter = router({
             processedAt: new Date(),
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+
+        // Publish domain event
+        await publishEvent(
+          "merchant.settlement.completed" as KafkaTopic,
+          `merchant.settlement-${Date.now()}`,
+          {
+            action: "processPayout",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -321,6 +357,18 @@ export const merchantPayoutSettlementRouter = router({
             status: "completed",
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+
+        // Publish domain event
+        await publishEvent(
+          "merchant.settlement.completed" as KafkaTopic,
+          `merchant.settlement-${Date.now()}`,
+          {
+            action: "completePayout",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

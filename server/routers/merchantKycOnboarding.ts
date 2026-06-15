@@ -25,6 +25,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "rejected", "suspended"],
@@ -238,6 +239,17 @@ export const merchantKycOnboardingRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "merchant.kyc.completed" as KafkaTopic,
+          `merchant.kyc-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { doc };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -270,6 +282,18 @@ export const merchantKycOnboardingRouter = router({
             rejectionReason: input.rejectionReason,
           })
           .where(eq(merchantKycDocs.id, input.docId));
+
+        // Publish domain event
+        await publishEvent(
+          "merchant.kyc.completed" as KafkaTopic,
+          `merchant.kyc-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

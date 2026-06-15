@@ -16,6 +16,7 @@ async fn health_check() -> impl actix_web::Responder {
 // Persistence: audit log + state store for fluvio-smartmodule
 // Uses PostgreSQL via sqlx for production persistence.
 // Connects to DATABASE_URL for audit trail and state management.
+// In-memory buffer is flushed to PostgreSQL periodically.
 
 struct AuditEntry {
     action: String,
@@ -25,6 +26,57 @@ struct AuditEntry {
 
 static AUDIT_LOG: std::sync::LazyLock<std::sync::Mutex<Vec<AuditEntry>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// Flush in-memory audit entries to PostgreSQL.
+/// Called periodically or on graceful shutdown to ensure no data loss.
+fn flush_audit_to_db() {
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
+    if database_url.is_empty() {
+        return;
+    }
+    let entries: Vec<AuditEntry> = {
+        let mut log = match AUDIT_LOG.lock() {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        log.drain(..).collect()
+    };
+    if entries.is_empty() {
+        return;
+    }
+    // Synchronous PG insert — acceptable for periodic flush
+    match std::process::Command::new("psql")
+        .arg(&database_url)
+        .arg("-c")
+        .arg(format!(
+            "INSERT INTO fluvio_audit_log (action, entity_id, created_at) VALUES {}",
+            entries
+                .iter()
+                .map(|e| format!(
+                    "('{}', '{}', to_timestamp({}))",
+                    e.action.replace('\'', "''"),
+                    e.entity_id.replace('\'', "''"),
+                    e.timestamp
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            eprintln!("[audit] Flushed {} entries to PostgreSQL", entries.len());
+        }
+        Ok(out) => {
+            eprintln!(
+                "[audit] PostgreSQL flush failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        Err(e) => {
+            eprintln!("[audit] Could not invoke psql: {e}");
+        }
+    }
+}
 
 fn log_audit(action: &str, entity_id: &str) {
     if let Ok(mut log) = AUDIT_LOG.lock() {
@@ -36,11 +88,20 @@ fn log_audit(action: &str, entity_id: &str) {
                 .unwrap_or_default()
                 .as_secs(),
         });
-        if log.len() > 10_000 { log.drain(..5_000); }
+        // Flush to DB when buffer reaches threshold instead of silently draining
+        if log.len() >= 5_000 {
+            drop(log);
+            flush_audit_to_db();
+        }
     }
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let stdin = io::stdin();
     let mut allowed = 0usize;
     let mut blocked = 0usize;

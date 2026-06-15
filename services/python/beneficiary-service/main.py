@@ -1,8 +1,12 @@
+import httpx
 """
 Beneficiary Service
 Port: 8055
 """
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -59,8 +63,60 @@ async def verify_token(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid token")
     return token
 
+
+# ── OpenTelemetry Tracing ────────────────────────────────────────────────────
+_otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if _otel_endpoint:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        _resource = Resource.create({
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "beneficiary-service"),
+            "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
+            "deployment.environment": os.environ.get("ENVIRONMENT", "production"),
+        })
+        _provider = TracerProvider(resource=_resource)
+        _exporter = OTLPSpanExporter(endpoint=f"{_otel_endpoint}/v1/traces")
+        _provider.add_span_processor(BatchSpanProcessor(_exporter))
+        trace.set_tracer_provider(_provider)
+        logging.getLogger(__name__).info(f"[OTel] Tracing enabled → {_otel_endpoint}")
+    except ImportError:
+        logging.getLogger(__name__).warning("[OTel] opentelemetry packages not installed — tracing disabled")
+
+
+# ── Middleware: Kafka via Dapr ─────────────────────────────────────────────────
+
+DAPR_HTTP_PORT = os.environ.get("DAPR_HTTP_PORT", "3500")
+
+async def publish_kafka(topic: str, data: dict):
+    """Publish domain event to Kafka via Dapr sidecar."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            url = f"http://localhost:{DAPR_HTTP_PORT}/v1.0/publish/kafka-pubsub/{topic}"
+            resp = await client.post(url, json=data)
+            if resp.status_code < 300:
+                logger.info(f"Published to {topic}")
+            else:
+                logger.warning(f"Dapr publish to {topic} returned {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to publish to {topic}: {e}")
+
 app = FastAPI(title="Beneficiary Service", description="Beneficiary Service for Remittance Platform", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# Instrument FastAPI with OpenTelemetry
+if _otel_endpoint:
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+    except (ImportError, Exception):
+        pass
+
 
 @app.on_event("startup")
 async def startup():

@@ -19,6 +19,7 @@ import {
   calculateTax,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 /**
  * Cash In Router — Agent accepts physical cash from customer and credits their account.
@@ -190,6 +191,17 @@ export const cashInRouter = router({
               customerPhone: input.customerPhone,
             },
           });
+
+          // Publish domain event
+          await publishEvent(
+            "pos.cashin.completed" as KafkaTopic,
+            `pos.cashin-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
 
           return {
             success: true,

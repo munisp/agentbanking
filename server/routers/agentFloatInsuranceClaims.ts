@@ -37,6 +37,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted"],
@@ -254,6 +255,17 @@ export const agentFloatInsuranceClaimsRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "float.insurance.completed" as KafkaTopic,
+          `float.insurance-${Date.now()}`,
+          {
+            action: "fileClaim",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, claim };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -281,6 +293,18 @@ export const agentFloatInsuranceClaimsRouter = router({
           resourceId: String(input.claimId),
           status: "success",
         });
+
+        // Publish domain event
+        await publishEvent(
+          "float.insurance.completed" as KafkaTopic,
+          `float.insurance-${Date.now()}`,
+          {
+            action: "approveClaim",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, claim: updated };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

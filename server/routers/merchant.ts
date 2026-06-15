@@ -36,6 +36,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "rejected", "suspended"],
@@ -263,6 +264,17 @@ export const merchantRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "merchant.completed" as KafkaTopic,
+          `merchant-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -453,6 +465,17 @@ export const merchantRouter = router({
           })
           .returning({ id: disputes.id });
 
+        // Publish domain event
+        await publishEvent(
+          "merchant.completed" as KafkaTopic,
+          `merchant-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           disputeId: inserted[0]?.id,
@@ -634,6 +657,18 @@ export const merchantRouter = router({
             businessName: merchants.businessName,
             status: merchants.status,
           });
+
+        // Publish domain event
+        await publishEvent(
+          "merchant.completed" as KafkaTopic,
+          `merchant-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           merchantCode: merchant.merchantCode,

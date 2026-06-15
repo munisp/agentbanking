@@ -6,6 +6,40 @@ Middleware: Redis (session cache), Kafka (voice events)
 """
 import os
 import json
+
+
+# ── OpenTelemetry Tracing ────────────────────────────────────────────────────
+_otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if _otel_endpoint:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+
+        _resource = Resource.create({
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "voice-command-nlu"),
+            "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
+            "deployment.environment": os.environ.get("ENVIRONMENT", "production"),
+        })
+        _provider = TracerProvider(resource=_resource)
+        _exporter = OTLPSpanExporter(endpoint=f"{_otel_endpoint}/v1/traces")
+        _provider.add_span_processor(BatchSpanProcessor(_exporter))
+        trace.set_tracer_provider(_provider)
+        logging.getLogger(__name__).info(f"[OTel] Tracing enabled → {_otel_endpoint}")
+    except ImportError:
+        logging.getLogger(__name__).warning("[OTel] opentelemetry packages not installed — tracing disabled")
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import re
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -92,6 +126,15 @@ class NLUHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length)) if length > 0 else {}
 
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._send_json({"status": "healthy", "service": "voice-command-nlu"})
         elif self.path == "/api/v1/languages":
@@ -100,6 +143,13 @@ class NLUHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         body = self._read_body()
 
         if self.path == "/api/v1/parse":
@@ -170,7 +220,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:

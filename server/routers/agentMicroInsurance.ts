@@ -36,6 +36,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted"],
@@ -240,6 +241,17 @@ export const agentMicroInsuranceRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "agent.microinsurance.completed" as KafkaTopic,
+          `agent.microinsurance-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           policy: {
@@ -279,6 +291,18 @@ export const agentMicroInsuranceRouter = router({
           status: "success",
           metadata: { amount: input.amount, description: input.description },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "agent.microinsurance.completed" as KafkaTopic,
+          `agent.microinsurance-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           claimId: "CLM-" + crypto.randomUUID().toUpperCase(),

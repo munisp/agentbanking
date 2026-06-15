@@ -21,6 +21,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -251,6 +252,18 @@ const processBatch = protectedProcedure
             code: "NOT_FOUND",
             message: "processBatch: record not found",
           });
+
+        // Publish domain event
+        await publishEvent(
+          "bulk.payment.completed" as KafkaTopic,
+          `bulk.payment-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           id: input.id,
@@ -331,6 +344,18 @@ const cancelBatch = protectedProcedure
             code: "NOT_FOUND",
             message: "cancelBatch: record not found",
           });
+
+        // Publish domain event
+        await publishEvent(
+          "bulk.payment.completed" as KafkaTopic,
+          `bulk.payment-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           id: input.id,
@@ -448,6 +473,17 @@ const executeBulkDisbursement = protectedProcedure
               beneficiaryName: item.beneficiaryName,
               status: "processed",
             } as Record<string, unknown>);
+
+            // Publish domain event
+            await publishEvent(
+              "bulk.payment.completed" as KafkaTopic,
+              `bulk.payment-${Date.now()}`,
+              {
+                action: "",
+                timestamp: new Date().toISOString(),
+                ...input,
+              }
+            );
 
             return { ref, amount: item.amount };
           })

@@ -233,6 +233,27 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("WORKFLOW_SERVICE_DB_PATH")

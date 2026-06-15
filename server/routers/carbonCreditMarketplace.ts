@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -19,6 +20,8 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -300,6 +303,27 @@ export const carbonCreditMarketplaceRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-CARBONCREDITMARKETPLACE-${crypto.randomInt(100000)}`,
+        accountCode: "CARBONCREDITMARKETPLACE_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `carbonCreditMarketplace operation`,
+        reference: `carbon.credit-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "carbon.credit.completed" as KafkaTopic,
+        `carbon.credit-${Date.now()}`,
+        {
+          action: "create",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { id, status: "created" };
     }),
 
@@ -365,6 +389,28 @@ export const carbonCreditMarketplaceRouter = router({
           []
         ).map(r => [r.status, Number(r.cnt)])
       );
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-CARBONCREDITMARKETPLACE-${crypto.randomInt(100000)}`,
+        accountCode: "CARBONCREDITMARKETPLACE_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `carbonCreditMarketplace operation`,
+        reference: `carbon.credit-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "carbon.credit.completed" as KafkaTopic,
+        `carbon.credit-${Date.now()}`,
+        {
+          action: "updateStatus",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return {
         byStatus,
         total: Object.values(byStatus).reduce(

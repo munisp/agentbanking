@@ -20,6 +20,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 
 # --- Production: Graceful Shutdown ---
@@ -52,11 +55,64 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("opensearch-indexer")
 
 OPENSEARCH_URL = os.getenv("OPENSEARCH_URL", "http://localhost:9200")
-OPENSEARCH_USER = os.getenv("OPENSEARCH_USER", "admin")
-OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS", "admin")
+OPENSEARCH_USER = os.getenv("OPENSEARCH_USER", "")
+OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS", "")
+_TLS_VERIFY = os.getenv("TLS_VERIFY", "true").lower() not in ("0", "false", "no")
 PORT = int(os.getenv("PORT", "8092"))
 
+
+# ── OpenTelemetry Tracing ────────────────────────────────────────────────────
+_otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if _otel_endpoint:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        _resource = Resource.create({
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "opensearch-indexer"),
+            "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
+            "deployment.environment": os.environ.get("ENVIRONMENT", "production"),
+        })
+        _provider = TracerProvider(resource=_resource)
+        _exporter = OTLPSpanExporter(endpoint=f"{_otel_endpoint}/v1/traces")
+        _provider.add_span_processor(BatchSpanProcessor(_exporter))
+        trace.set_tracer_provider(_provider)
+        logging.getLogger(__name__).info(f"[OTel] Tracing enabled → {_otel_endpoint}")
+    except ImportError:
+        logging.getLogger(__name__).warning("[OTel] opentelemetry packages not installed — tracing disabled")
+
+
+# ── Middleware: Kafka via Dapr ─────────────────────────────────────────────────
+
+DAPR_HTTP_PORT = os.environ.get("DAPR_HTTP_PORT", "3500")
+
+async def publish_kafka(topic: str, data: dict):
+    """Publish domain event to Kafka via Dapr sidecar."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            url = f"http://localhost:{DAPR_HTTP_PORT}/v1.0/publish/kafka-pubsub/{topic}"
+            resp = await client.post(url, json=data)
+            if resp.status_code < 300:
+                logger.info(f"Published to {topic}")
+            else:
+                logger.warning(f"Dapr publish to {topic} returned {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to publish to {topic}: {e}")
+
 app = FastAPI(title="54Link OpenSearch Indexer", version="1.0.0")
+apply_middleware(app, enable_auth=True)
+# Instrument FastAPI with OpenTelemetry
+if _otel_endpoint:
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+    except (ImportError, Exception):
+        pass
+
 
 import psycopg2
 import psycopg2.extras
@@ -87,7 +143,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -130,7 +186,7 @@ async def os_request(method: str, path: str, body: dict | None = None) -> dict:
     auth = (OPENSEARCH_USER, OPENSEARCH_PASS)
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+        async with httpx.AsyncClient(verify=_TLS_VERIFY, timeout=30.0) as client:
             if method == "GET":
                 resp = await client.get(url, auth=auth)
             elif method == "POST":
@@ -160,7 +216,7 @@ async def bulk_index(index: str, documents: list[dict]) -> dict:
     bulk_body = "\n".join(lines) + "\n"
 
     try:
-        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
+        async with httpx.AsyncClient(verify=_TLS_VERIFY, timeout=60.0) as client:
             resp = await client.post(
                 f"{OPENSEARCH_URL}/_bulk",
                 content=bulk_body,
@@ -274,7 +330,7 @@ async def health():
     os_healthy = False
     try:
         import httpx
-        async with httpx.AsyncClient(verify=False, timeout=5.0) as client:
+        async with httpx.AsyncClient(verify=_TLS_VERIFY, timeout=5.0) as client:
             resp = await client.get(
                 f"{OPENSEARCH_URL}/_cluster/health",
                 auth=(OPENSEARCH_USER, OPENSEARCH_PASS),
@@ -311,3 +367,12 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Register service with Kafka on startup."""
+    await publish_kafka("opensearch.indexer.started", {
+        "service": "opensearch-indexer",
+        "timestamp": datetime.utcnow().isoformat() if "datetime" in dir() else "startup",
+    })

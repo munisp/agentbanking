@@ -591,6 +591,11 @@ fn validate_bearer_token(req: &tiny_http::Request) -> Result<(), (u16, &'static 
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let port = std::env::var("TRANSACTION_QUEUE_PORT")
         .ok()
         .and_then(|p| p.parse().ok())

@@ -35,6 +35,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["approved", "rejected"],
@@ -241,6 +242,17 @@ export const agentCommissionCalcRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // Publish domain event
+      await publishEvent(
+        "commission.calc.completed" as KafkaTopic,
+        `commission.calc-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+          ...input,
+        }
+      );
+
       return {
         agentId: input.agentId,
         tier: tier.name,
@@ -389,6 +401,18 @@ export const agentCommissionCalcRouter = router({
             `[AgentCommCalc] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
           );
         }
+
+        // Publish domain event
+        await publishEvent(
+          "commission.calc.completed" as KafkaTopic,
+          `commission.calc-${Date.now()}`,
+          {
+            action: "approvePayout",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           payoutId: input.payoutId,

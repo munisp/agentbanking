@@ -26,6 +26,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -264,6 +265,17 @@ export const dynamicFeeEngineRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "fee.engine.completed" as KafkaTopic,
+          `fee.engine-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { rule };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -317,6 +329,18 @@ export const dynamicFeeEngineRouter = router({
           previousValues: JSON.stringify(oldRule),
           newValues: JSON.stringify(updates),
         });
+
+        // Publish domain event
+        await publishEvent(
+          "fee.engine.completed" as KafkaTopic,
+          `fee.engine-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

@@ -38,7 +38,33 @@ import (
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	"log/slog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
+
+// allowedTables prevents SQL injection via table name interpolation.
+var allowedTables = map[string]bool{
+	"devices": true, "alerts": true, "telemetry": true, "firmware": true,
+	"disbursements": true, "batches": true, "recipients": true, "schedules": true,
+	"terminals": true, "transactions": true, "agents": true, "settlements": true,
+	"leases": true, "disputes": true, "commands": true, "events": true,
+	"configs": true, "sessions": true, "policies": true, "claims": true,
+	"notifications": true, "audit_log": true, "jobs": true, "tasks": true,
+}
+
+func validateTableName(table string) string {
+	if !allowedTables[table] {
+		panic(fmt.Sprintf("disallowed table name: %q", table))
+	}
+	return table
+}
+
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -481,7 +507,7 @@ func (s *DataStore) Insert(table string, data map[string]interface{}) (int64, er
 	jsonData, _ := json.Marshal(data)
 	var id int64
 	err := s.db.QueryRow(
-		fmt.Sprintf("INSERT INTO %s (data, status, tenant_id) VALUES ($1, $2, $3) RETURNING id", table),
+		fmt.Sprintf("INSERT INTO %s (data, status, tenant_id) VALUES ($1, $2, $3) RETURNING id", validateTableName(table)),
 		jsonData, data["status"], data["tenant_id"],
 	).Scan(&id)
 	if err != nil {
@@ -517,9 +543,9 @@ func (s *DataStore) List(table string, limit, offset int) ([]map[string]interfac
 		return items[offset:end], total, nil
 	}
 	var total int
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&total)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", validateTableName(table))).Scan(&total)
 	rows, err := s.db.Query(
-		fmt.Sprintf("SELECT id, data, status, created_at FROM %s ORDER BY created_at DESC LIMIT $1 OFFSET $2", table),
+		fmt.Sprintf("SELECT id, data, status, created_at FROM %s ORDER BY created_at DESC LIMIT $1 OFFSET $2", validateTableName(table)),
 		limit, offset,
 	)
 	if err != nil {
@@ -561,7 +587,7 @@ func (s *DataStore) GetByID(table string, id int64) (map[string]interface{}, err
 	var status string
 	var createdAt time.Time
 	err := s.db.QueryRow(
-		fmt.Sprintf("SELECT data, status, created_at FROM %s WHERE id = $1", table), id,
+		fmt.Sprintf("SELECT data, status, created_at FROM %s WHERE id = $1", validateTableName(table)), id,
 	).Scan(&data, &status, &createdAt)
 	if err != nil {
 		return nil, err
@@ -588,7 +614,7 @@ func (s *DataStore) UpdateStatus(table string, id int64, status string) error {
 		return nil
 	}
 	_, err := s.db.Exec(
-		fmt.Sprintf("UPDATE %s SET status = $1, updated_at = NOW() WHERE id = $2", table), status, id,
+		fmt.Sprintf("UPDATE %s SET status = $1, updated_at = NOW() WHERE id = $2", validateTableName(table)), status, id,
 	)
 	return err
 }
@@ -610,8 +636,8 @@ func (s *DataStore) GetStats(table string) map[string]interface{} {
 		}
 	}
 	var total, active int
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&total)
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", table)).Scan(&active)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", validateTableName(table))).Scan(&total)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", validateTableName(table))).Scan(&active)
 	return map[string]interface{}{
 		"total": total, "active": active,
 		"recent": int(math.Min(float64(total), 50)),
@@ -747,7 +773,50 @@ func (w *OpenAppSecClient) GetPolicy() (map[string]interface{}, error) {
 }
 
 
+// ─── OpenTelemetry Tracing ──────────────────────────────────────────────────
+
+func initTracer(serviceName, serviceVersion string) func(context.Context) error {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		return func(context.Context) error { return nil }
+	}
+	ctx := context.Background()
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	if err != nil {
+		slog.Warn("OTel exporter init failed", "err", err)
+		return func(context.Context) error { return nil }
+	}
+	res := resource.NewWithAttributes(
+		"https://opentelemetry.io/schemas/1.24.0",
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersion(serviceVersion),
+		attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
+	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	return tp.Shutdown
+}
+
+func otelMiddleware(serviceName string, next http.Handler) http.Handler {
+	tracer := otel.Tracer(serviceName)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), r.Method+" "+r.URL.Path)
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func main() {
+	shutdownTracer := initTracer("iot-smart-pos", "1.0.0")
+	defer shutdownTracer(context.Background())
+
 	cfg := loadConfig()
 	store := NewDataStore(cfg)
 	r := mux.NewRouter()

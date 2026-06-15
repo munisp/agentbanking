@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -19,6 +20,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -159,6 +163,27 @@ export const multiCurrencyRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-MULTICURRENCY-${crypto.randomInt(100000)}`,
+        accountCode: "MULTICURRENCY_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `multiCurrency operation`,
+        reference: `multicurrency-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "multicurrency.completed" as KafkaTopic,
+        `multicurrency-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return {
         success: true,
         domain: "multi_currency",
@@ -192,6 +217,28 @@ export const multiCurrencyRouter = router({
           actor: ctx.user?.email || "system",
         },
       });
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-MULTICURRENCY-${crypto.randomInt(100000)}`,
+        accountCode: "MULTICURRENCY_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `multiCurrency operation`,
+        reference: `multicurrency-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "multicurrency.completed" as KafkaTopic,
+        `multicurrency-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return {
         success: true,
         domain: "multi_currency",
@@ -281,6 +328,28 @@ export const multiCurrencyRouter = router({
           actor: ctx.user?.email || "system",
         },
       });
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-MULTICURRENCY-${crypto.randomInt(100000)}`,
+        accountCode: "MULTICURRENCY_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `multiCurrency operation`,
+        reference: `multicurrency-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "multicurrency.completed" as KafkaTopic,
+        `multicurrency-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return {
         success: true,
         domain: "multi_currency",

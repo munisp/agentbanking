@@ -20,6 +20,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -272,6 +273,17 @@ export const floatReconciliationsRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "float.reconciliation.completed" as KafkaTopic,
+          `float.reconciliation-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           ...row,
           autoResolved,
@@ -326,6 +338,18 @@ export const floatReconciliationsRouter = router({
           })
           .where(eq(floatReconciliations.id, input.id))
           .returning();
+
+        // Publish domain event
+        await publishEvent(
+          "float.reconciliation.completed" as KafkaTopic,
+          `float.reconciliation-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { ...row, message: "Reconciliation resolved" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

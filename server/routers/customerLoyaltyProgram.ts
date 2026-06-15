@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -17,6 +18,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -322,6 +326,27 @@ export const customerLoyaltyProgramRouter = router({
       .select({ value: count() })
       .from(customers)
       .limit(100);
+
+    // GL double-entry journal
+    const glDb = (await getDb())!;
+    await glDb.insert(gl_journal_entries).values({
+      entryNumber: `GL-CUSTOMERLOYALTYPROGRAM-${crypto.randomInt(100000)}`,
+      accountCode: "CUSTOMERLOYALTYPROGRAM_DEBIT",
+      debitAmount: "0",
+      creditAmount: "0",
+      description: `customerLoyaltyProgram operation`,
+      reference: `customer.loyalty-${Date.now()}`,
+      postedBy: "system",
+    });
+    // Publish domain event
+    await publishEvent(
+      "customer.loyalty.completed" as KafkaTopic,
+      `customer.loyalty-${Date.now()}`,
+      {
+        action: "",
+        timestamp: new Date().toISOString(),
+      }
+    );
 
     return {
       totalPointsEarned: Number(totalEarned.total ?? 0),

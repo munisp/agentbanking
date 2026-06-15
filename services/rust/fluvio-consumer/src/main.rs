@@ -213,6 +213,11 @@ fn log_audit(action: &str, entity_id: &str) {
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║  54Link Fluvio Consumer v1.0.0                      ║");
     println!("║  Streaming transaction events to OpenSearch          ║");

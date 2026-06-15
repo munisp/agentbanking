@@ -25,6 +25,7 @@ import {
   calculateLoanRepayment,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const LOAN_STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted"],
@@ -196,6 +197,17 @@ export const agentLoanOriginationRouter = router({
           },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.origination.completed" as KafkaTopic,
+          `agent.loan.origination-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           loanId: loan.id,
@@ -273,6 +285,17 @@ export const agentLoanOriginationRouter = router({
         status: "success",
         metadata: { decision: input.decision, reason: input.reason },
       });
+
+      // Publish domain event
+      await publishEvent(
+        "agent.loan.origination.completed" as KafkaTopic,
+        `agent.loan.origination-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+          ...input,
+        }
+      );
 
       return { success: true, loanId: input.loanId, status: input.decision };
     }),
@@ -389,6 +412,17 @@ export const agentLoanOriginationRouter = router({
               net: netDisbursement,
             },
           });
+
+          // Publish domain event
+          await publishEvent(
+            "agent.loan.origination.completed" as KafkaTopic,
+            `agent.loan.origination-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
 
           return {
             success: true,
@@ -539,6 +573,17 @@ export const agentLoanOriginationRouter = router({
               isFullyPaid,
             },
           });
+
+          // Publish domain event
+          await publishEvent(
+            "agent.loan.origination.completed" as KafkaTopic,
+            `agent.loan.origination-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
 
           return {
             success: true,

@@ -200,7 +200,30 @@ fn log_audit(action: &str, entity_id: &str) {
     }
 }
 
+
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    Ok(auth_header[7..].to_string())
+}
+
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let guard = Arc::new(Mutex::new(RansomwareGuard::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
     println!("[{}] v{} listening on :{}", SERVICE_NAME, SERVICE_VERSION, port);

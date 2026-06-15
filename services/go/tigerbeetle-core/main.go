@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	_ "github.com/lib/pq"
 	"context"
@@ -111,6 +112,27 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 
@@ -176,6 +198,7 @@ func (s *Service) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 }
 
 func (s *Service) rootHandler(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +210,7 @@ func (s *Service) rootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 }
 
 func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +221,7 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 }
 
 func (s *Service) metricsHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +250,7 @@ func (s *Service) createAccountHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_request", Message: err.Error()})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -252,6 +278,7 @@ func (s *Service) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_id", Message: "account ID must be numeric"})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -263,6 +290,7 @@ func (s *Service) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("account %d not found", id)})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -279,6 +307,7 @@ func (s *Service) getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_id", Message: "account ID must be numeric"})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -290,6 +319,7 @@ func (s *Service) getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("account %d not found", id)})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -317,6 +347,7 @@ func (s *Service) createTransferHandler(w http.ResponseWriter, r *http.Request) 
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_request", Message: err.Error()})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -353,6 +384,7 @@ func (s *Service) getTransferHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_id", Message: "transfer ID must be numeric"})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -364,6 +396,7 @@ func (s *Service) getTransferHandler(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("transfer %d not found", id)})
+		go publishEvent("tigerbeetle.core.completed", map[string]interface{}{"service": "tigerbeetle-core", "timestamp": time.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 
@@ -490,3 +523,27 @@ func getState(key string) string {
 	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
 	return val
 }
+
+// publishEvent publishes a domain event via Dapr sidecar to Kafka
+func publishEvent(topic string, data interface{}) error {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" {
+		daprPort = "3500"
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+	url := fmt.Sprintf("http://localhost:%s/v1.0/publish/kafka-pubsub/%s", daprPort, topic)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("[WARN] Failed to publish to %s: %v", topic, err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		log.Printf("[WARN] Dapr publish to %s returned %d", topic, resp.StatusCode)
+	}
+	return nil
+}
+

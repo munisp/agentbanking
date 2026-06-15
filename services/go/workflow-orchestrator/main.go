@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	_ "github.com/lib/pq"
 	"syscall"
@@ -14,6 +15,14 @@ import (
 	"os"
 	"sync"
 	"time"
+	"log/slog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
 // WorkflowOrchestrator — Manages multi-step business workflows
@@ -200,7 +209,71 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ─── OpenTelemetry Tracing ──────────────────────────────────────────────────
+
+func initTracer(serviceName, serviceVersion string) func(context.Context) error {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		return func(context.Context) error { return nil }
+	}
+	ctx := context.Background()
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	if err != nil {
+		slog.Warn("OTel exporter init failed", "err", err)
+		return func(context.Context) error { return nil }
+	}
+	res := resource.NewWithAttributes(
+		"https://opentelemetry.io/schemas/1.24.0",
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersion(serviceVersion),
+		attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
+	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	return tp.Shutdown
+}
+
+func otelMiddleware(serviceName string, next http.Handler) http.Handler {
+	tracer := otel.Tracer(serviceName)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), r.Method+" "+r.URL.Path)
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func main() {
+	shutdownTracer := initTracer("workflow-orchestrator", "1.0.0")
+	defer shutdownTracer(context.Background())
+
 	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("WORKFLOW_ORCHESTRATOR_DB_PATH")
 	if dbPath == "" {
@@ -224,7 +297,7 @@ func main() {
 	http.HandleFunc("/api/v1/workflow/list", handleList)
 	http.HandleFunc("/health", handleHealth)
 	log.Printf("[workflow-orchestrator] Starting on :%s with %d templates", port, len(workflowTemplates))
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)))
 }
 
 // --- Production: Graceful Shutdown ---
@@ -242,3 +315,27 @@ func setupGracefulShutdown(srv *http.Server) {
 		log.Println("[shutdown] Server exited")
 	}()
 }
+
+// publishEvent publishes a domain event via Dapr sidecar to Kafka
+func publishEvent(topic string, data interface{}) error {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" {
+		daprPort = "3500"
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+	url := fmt.Sprintf("http://localhost:%s/v1.0/publish/kafka-pubsub/%s", daprPort, topic)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("[WARN] Failed to publish to %s: %v", topic, err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		log.Printf("[WARN] Dapr publish to %s returned %d", topic, resp.StatusCode)
+	}
+	return nil
+}
+

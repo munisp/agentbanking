@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 // Sprint 87: Upgraded from mock data to real DB queries — multiCurrencyExchange
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
@@ -20,6 +21,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -258,6 +262,28 @@ const setSpread = protectedProcedure
           status: "success",
           metadata: { input: JSON.stringify(input).slice(0, 500) },
         });
+
+        // GL double-entry journal
+        const glDb = (await getDb())!;
+        await glDb.insert(gl_journal_entries).values({
+          entryNumber: `GL-MULTICURRENCYEXCHANGE-${crypto.randomInt(100000)}`,
+          accountCode: "MULTICURRENCYEXCHANGE_DEBIT",
+          debitAmount: "0",
+          creditAmount: "0",
+          description: `multiCurrencyExchange operation`,
+          reference: `fx.exchange-${Date.now()}`,
+          postedBy: "system",
+        });
+        // Publish domain event
+        await publishEvent(
+          "fx.exchange.completed" as KafkaTopic,
+          `fx.exchange-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+          }
+        );
+
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };

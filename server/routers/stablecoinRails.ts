@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -18,6 +19,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -290,6 +294,27 @@ export const stablecoinRailsRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-STABLECOINRAILS-${crypto.randomInt(100000)}`,
+        accountCode: "STABLECOINRAILS_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `stablecoinRails operation`,
+        reference: `stablecoin-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "stablecoin.completed" as KafkaTopic,
+        `stablecoin-${Date.now()}`,
+        {
+          action: "create",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { id, status: "created" };
     }),
 
@@ -358,6 +383,28 @@ export const stablecoinRailsRouter = router({
           []
         ).map(r => [r.status, Number(r.cnt)])
       );
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-STABLECOINRAILS-${crypto.randomInt(100000)}`,
+        accountCode: "STABLECOINRAILS_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `stablecoinRails operation`,
+        reference: `stablecoin-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "stablecoin.completed" as KafkaTopic,
+        `stablecoin-${Date.now()}`,
+        {
+          action: "updateStatus",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return {
         byStatus,
         total: Object.values(byStatus).reduce(

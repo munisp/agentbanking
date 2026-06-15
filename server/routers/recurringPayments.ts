@@ -28,6 +28,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -161,7 +162,6 @@ export const recurringPaymentsRouter = router({
         const schedule = {
           id: scheduleId,
           agentId: session.id,
-          ...input,
           status: "active",
           createdAt: new Date().toISOString(),
           nextRun: input.startDate,
@@ -225,6 +225,16 @@ export const recurringPaymentsRouter = router({
         })
         .filter(Boolean);
 
+      // Publish domain event
+      await publishEvent(
+        "recurring.payment.completed" as KafkaTopic,
+        `recurring.payment-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { schedules };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -276,6 +286,16 @@ export const recurringPaymentsRouter = router({
           resourceId: input.scheduleId,
           status: "success",
         });
+
+        // Publish domain event
+        await publishEvent(
+          "recurring.payment.completed" as KafkaTopic,
+          `recurring.payment-${Date.now()}`,
+          {
+            action: "cancel",
+            timestamp: new Date().toISOString(),
+          }
+        );
 
         return { scheduleId: input.scheduleId, status: "cancelled" };
       } catch (error) {

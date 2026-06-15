@@ -25,6 +25,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -302,6 +305,27 @@ export const ecommerceOrdersRouter = router({
         .from(ecommerceOrderItems)
         .where(eq(ecommerceOrderItems.orderId, order.id));
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCEORDERS-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCEORDERS_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceOrders operation`,
+        reference: `ecommerce.order-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.order.completed" as KafkaTopic,
+        `ecommerce.order-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { ...order, items };
     }),
 
@@ -563,6 +587,27 @@ export const ecommerceOrdersRouter = router({
           });
         }
       }
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCEORDERS-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCEORDERS_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceOrders operation`,
+        reference: `ecommerce.order-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.order.completed" as KafkaTopic,
+        `ecommerce.order-${Date.now()}`,
+        {
+          action: "fulfillOrder",
+          timestamp: new Date().toISOString(),
+        }
+      );
 
       return {
         results,

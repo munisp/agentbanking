@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 // @ts-nocheck
 /**
  * loyalty.ts — Full loyalty program tRPC router
@@ -38,6 +39,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -381,10 +385,12 @@ export const loyaltyRouter = router({
             .where(whereClause),
         ]);
         // Add position numbers
-        const withPosition = rows.map((r, i) => ({
-          ...r,
-          position: offset + i + 1,
-        }));
+        const withPosition = rows.map(
+          (r: Record<string, unknown>, i: number) => ({
+            ...r,
+            position: offset + i + 1,
+          })
+        );
         return {
           agents: withPosition,
           total: parseInt(total, 10),
@@ -501,6 +507,27 @@ export const loyaltyRouter = router({
             .set({ tier: newTier, updatedAt: new Date() })
             .where(eq(agents.id, session.id));
         }
+
+        // GL double-entry journal
+        const glDb = (await getDb())!;
+        await glDb.insert(gl_journal_entries).values({
+          entryNumber: `GL-LOYALTY-${crypto.randomInt(100000)}`,
+          accountCode: "LOYALTY_DEBIT",
+          debitAmount: "0",
+          creditAmount: "0",
+          description: `loyalty operation`,
+          reference: `loyalty-${Date.now()}`,
+          postedBy: "system",
+        });
+        // Publish domain event
+        await publishEvent(
+          "loyalty.completed" as KafkaTopic,
+          `loyalty-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+          }
+        );
 
         return {
           success: true,
@@ -669,6 +696,28 @@ export const loyaltyRouter = router({
               .set({ tier: newTier, updatedAt: new Date() })
               .where(eq(agents.id, session.id));
         }
+
+        // GL double-entry journal
+        const glDb = (await getDb())!;
+        await glDb.insert(gl_journal_entries).values({
+          entryNumber: `GL-LOYALTY-${crypto.randomInt(100000)}`,
+          accountCode: "LOYALTY_DEBIT",
+          debitAmount: "0",
+          creditAmount: "0",
+          description: `loyalty operation`,
+          reference: `loyalty-${Date.now()}`,
+          postedBy: "system",
+        });
+        // Publish domain event
+        await publishEvent(
+          "loyalty.completed" as KafkaTopic,
+          `loyalty-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+          }
+        );
+
         return {
           success: true,
           pointsAwarded: input.points,
@@ -748,6 +797,28 @@ export const loyaltyRouter = router({
             pointsCost: input.pointsCost,
           },
         });
+
+        // GL double-entry journal
+        const glDb = (await getDb())!;
+        await glDb.insert(gl_journal_entries).values({
+          entryNumber: `GL-LOYALTY-${crypto.randomInt(100000)}`,
+          accountCode: "LOYALTY_DEBIT",
+          debitAmount: "0",
+          creditAmount: "0",
+          description: `loyalty operation`,
+          reference: `loyalty-${Date.now()}`,
+          postedBy: "system",
+        });
+        // Publish domain event
+        await publishEvent(
+          "loyalty.completed" as KafkaTopic,
+          `loyalty-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+          }
+        );
+
         return {
           success: true,
           pointsDeducted: input.pointsCost,

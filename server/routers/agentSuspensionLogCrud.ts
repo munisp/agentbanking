@@ -19,6 +19,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -273,6 +274,17 @@ export const agentSuspensionLogRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "agent.suspension.completed" as KafkaTopic,
+          `agent.suspension-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           ...row,
           autoEscalated: action === "suspend",
@@ -323,6 +335,18 @@ export const agentSuspensionLogRouter = router({
             performedBy: input.performedBy,
           })
           .returning();
+
+        // Publish domain event
+        await publishEvent(
+          "agent.suspension.completed" as KafkaTopic,
+          `agent.suspension-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { ...row, message: "Agent suspended successfully" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -364,6 +388,18 @@ export const agentSuspensionLogRouter = router({
             performedBy: input.performedBy,
           })
           .returning();
+
+        // Publish domain event
+        await publishEvent(
+          "agent.suspension.completed" as KafkaTopic,
+          `agent.suspension-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { ...row, message: "Agent reinstated successfully" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

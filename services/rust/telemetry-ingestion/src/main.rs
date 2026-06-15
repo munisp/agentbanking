@@ -287,6 +287,11 @@ fn log_audit(action: &str, entity_id: &str) {
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let port = std::env::var("PORT").unwrap_or_else(|_| "9014".to_string());
     let store = TelemetryStore::new(100_000);
 

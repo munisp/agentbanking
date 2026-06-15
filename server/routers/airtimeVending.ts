@@ -32,6 +32,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -336,6 +337,17 @@ export const airtimeVendingRouter = router({
           },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "pos.airtime.completed" as KafkaTopic,
+          `pos.airtime-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           ref,
           provider,
@@ -458,6 +470,17 @@ export const airtimeVendingRouter = router({
             phone: input.phone,
           },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "pos.airtime.completed" as KafkaTopic,
+          `pos.airtime-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return {
           ref,

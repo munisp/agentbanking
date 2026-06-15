@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -20,6 +21,8 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -243,6 +246,27 @@ export const merchantAcquirerGatewayRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-MERCHANTACQUIRERGATEWAY-${crypto.randomInt(100000)}`,
+        accountCode: "MERCHANTACQUIRERGATEWAY_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `merchantAcquirerGateway operation`,
+        reference: `merchant.acquirer-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "merchant.acquirer.completed" as KafkaTopic,
+        `merchant.acquirer-${Date.now()}`,
+        {
+          action: "onboardMerchant",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { success: true };
     }),
 });

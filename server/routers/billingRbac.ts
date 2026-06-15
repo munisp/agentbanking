@@ -29,6 +29,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["sent", "cancelled"],
@@ -413,6 +414,17 @@ export const billingRbacRouter = router({
           metadata: { customPermissions: input.customPermissions },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "billing.rbac.completed" as KafkaTopic,
+          `billing.rbac-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, assignmentId: assignment.id };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -466,6 +478,17 @@ export const billingRbacRouter = router({
           },
           afterState: { isActive: false },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "billing.rbac.completed" as KafkaTopic,
+          `billing.rbac-${Date.now()}`,
+          {
+            action: "revokeRole",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return { success: true };
       } catch (error) {

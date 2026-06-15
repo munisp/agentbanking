@@ -20,6 +20,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -240,6 +241,18 @@ export const guideFeedbackRouter = router({
         rating: input.rating ?? 5,
         comment: input.comment,
       });
+
+      // Publish domain event
+      await publishEvent(
+        "guide.feedback.completed" as KafkaTopic,
+        `guide.feedback-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+          ...input,
+        }
+      );
+
       return { success: true };
     }),
 
@@ -303,6 +316,18 @@ export const guideFeedbackRouter = router({
       await db
         .delete(guideFeedback)
         .where(eq(guideFeedback.id, Number(input.id)));
+
+      // Publish domain event
+      await publishEvent(
+        "guide.feedback.completed" as KafkaTopic,
+        `guide.feedback-${Date.now()}`,
+        {
+          action: "delete",
+          timestamp: new Date().toISOString(),
+          ...input,
+        }
+      );
+
       return { deleted: true, id: input.id };
     }),
 });

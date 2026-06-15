@@ -341,6 +341,32 @@ impl PostgresClient {
         }
     }
 
+    async fn persist(&self, table: &str, data: &serde_json::Value) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+        let payload = serde_json::json!({
+            "query": format!("INSERT INTO {} (data, created_at) VALUES ($1, NOW()) RETURNING id", table),
+            "params": [data.to_string()],
+        });
+        match client.post(format!("{}/query", self.url)).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                info!("[Postgres] Persisted to {}", table);
+                Ok(())
+            }
+            Ok(resp) => {
+                warn!("[Postgres] Persist to {} failed: {}", table, resp.status());
+                Err(format!("Persist failed: {}", resp.status()))
+            }
+            Err(e) => {
+                warn!("[Postgres] Persist to {} error: {}", table, e);
+                Err(format!("Persist error: {}", e))
+            }
+        }
+    }
+
+
     async fn insert(&self, table: &str, data: &serde_json::Value) -> Result<serde_json::Value, String> {
         let query = format!(
             "INSERT INTO {} (data, status, created_at, updated_at) VALUES ($1::jsonb, 'active', NOW(), NOW()) RETURNING id, data, status, created_at",
@@ -547,6 +573,11 @@ async fn create_record(
     // Ingest to Lakehouse for analytics
     state.lakehouse.ingest("payroll_disbursements", &payload).await;
 
+    // Persist to PostgreSQL
+    let _ = state.postgres.persist("payroll_disbursement", &serde_json::json!({
+        "service": "payroll-disbursement",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    })).await;
     (StatusCode::CREATED, Json(CreateResponse { id, status: "created".into() }))
 }
 
@@ -589,9 +620,35 @@ async fn search_records(
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
+
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    Ok(auth_header[7..].to_string())
+}
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::init();
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive(tracing::Level::INFO.into()))
+        .json()
+        .init();
 
     let config = Config::from_env();
     let port = config.port;

@@ -30,6 +30,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -223,6 +224,17 @@ export const agentFloatTransferRouter = router({
             narration: input.narration,
           },
         });
+
+        // Publish domain event
+        await publishEvent(
+          "float.transfer.completed" as KafkaTopic,
+          `float.transfer-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
 
         return {
           ref,

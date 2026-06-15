@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -22,6 +23,9 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { TRPCError } from "@trpc/server";
+import { gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -325,6 +329,27 @@ export const ecommerceCartRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCECART-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCECART_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceCart operation`,
+        reference: `ecommerce.cart-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.cart.completed" as KafkaTopic,
+        `ecommerce.cart-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { status: "added" };
     }),
 
@@ -369,6 +394,27 @@ export const ecommerceCartRouter = router({
           );
       }
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCECART-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCECART_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceCart operation`,
+        reference: `ecommerce.cart-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.cart.completed" as KafkaTopic,
+        `ecommerce.cart-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { status: "updated" };
     }),
 
@@ -395,6 +441,27 @@ export const ecommerceCartRouter = router({
           )
         );
 
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCECART-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCECART_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceCart operation`,
+        reference: `ecommerce.cart-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.cart.completed" as KafkaTopic,
+        `ecommerce.cart-${Date.now()}`,
+        {
+          action: "removeItem",
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       return { status: "removed" };
     }),
 
@@ -418,6 +485,27 @@ export const ecommerceCartRouter = router({
           .delete(ecommerceCarts)
           .where(eq(ecommerceCarts.id, cart.id));
       }
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCECART-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCECART_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceCart operation`,
+        reference: `ecommerce.cart-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.cart.completed" as KafkaTopic,
+        `ecommerce.cart-${Date.now()}`,
+        {
+          action: "clearCart",
+          timestamp: new Date().toISOString(),
+        }
+      );
 
       return { status: "cleared" };
     }),
@@ -519,6 +607,27 @@ export const ecommerceCartRouter = router({
           });
         }
       }
+
+      // GL double-entry journal
+      const glDb = (await getDb())!;
+      await glDb.insert(gl_journal_entries).values({
+        entryNumber: `GL-ECOMMERCECART-${crypto.randomInt(100000)}`,
+        accountCode: "ECOMMERCECART_DEBIT",
+        debitAmount: "0",
+        creditAmount: "0",
+        description: `ecommerceCart operation`,
+        reference: `ecommerce.cart-${Date.now()}`,
+        postedBy: "system",
+      });
+      // Publish domain event
+      await publishEvent(
+        "ecommerce.cart.completed" as KafkaTopic,
+        `ecommerce.cart-${Date.now()}`,
+        {
+          action: "clearCart",
+          timestamp: new Date().toISOString(),
+        }
+      );
 
       return {
         status: "synced",

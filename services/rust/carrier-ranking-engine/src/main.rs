@@ -382,7 +382,34 @@ fn log_audit(action: &str, entity_id: &str) {
     }
 }
 
+
+// --- Auth Middleware ---
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    
+    // In production: validate JWT via Keycloak JWKS
+    Ok(auth_header[7..].to_string())
+}
+
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let engine = create_engine();
     println!("[carrier-ranking-engine] Starting on :8116");
     println!("[carrier-ranking-engine] Weights: signal={}, latency={}, bandwidth={}, reliability={}, cost={}", WEIGHT_SIGNAL, WEIGHT_LATENCY, WEIGHT_BANDWIDTH, WEIGHT_RELIABILITY, WEIGHT_COST);

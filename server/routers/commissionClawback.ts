@@ -34,6 +34,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["approved", "rejected"],
@@ -304,6 +305,17 @@ export const commissionClawbackRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // Publish domain event
+      await publishEvent(
+        "commission.clawback.completed" as KafkaTopic,
+        `commission.clawback-${Date.now()}`,
+        {
+          action: "",
+          timestamp: new Date().toISOString(),
+          ...input,
+        }
+      );
+
       return { success: true, id: clawback.id, message: "Clawback initiated" };
     }),
 
@@ -340,6 +352,18 @@ export const commissionClawbackRouter = router({
             `[CommissionClawback] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
           );
         }
+
+        // Publish domain event
+        await publishEvent(
+          "commission.clawback.completed" as KafkaTopic,
+          `commission.clawback-${Date.now()}`,
+          {
+            action: "approve",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, message: "Clawback approved and applied" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -373,6 +397,18 @@ export const commissionClawbackRouter = router({
           performedBy: ctx.user?.name ?? "system",
           details: JSON.stringify({ reason: input.reason }),
         });
+
+        // Publish domain event
+        await publishEvent(
+          "commission.clawback.completed" as KafkaTopic,
+          `commission.clawback-${Date.now()}`,
+          {
+            action: "dispute",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, message: "Dispute filed" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

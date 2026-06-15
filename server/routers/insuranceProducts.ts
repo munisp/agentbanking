@@ -37,6 +37,7 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted"],
@@ -252,6 +253,17 @@ export const insuranceProductsRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "insurance.product.completed" as KafkaTopic,
+          `insurance.product-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, productId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -282,7 +294,18 @@ export const insuranceProductsRouter = router({
           .where(eq(systemConfig.key, "insurance_product_" + input.productId))
           .limit(1);
         if (rows.length === 0)
-          return { success: false, error: "Product not found" };
+          // Publish domain event
+          await publishEvent(
+            "insurance.product.completed" as KafkaTopic,
+            `insurance.product-${Date.now()}`,
+            {
+              action: "",
+              timestamp: new Date().toISOString(),
+              ...input,
+            }
+          );
+
+        return { success: false, error: "Product not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const updated = {
           ...existing,

@@ -341,6 +341,32 @@ impl PostgresClient {
         }
     }
 
+    async fn persist(&self, table: &str, data: &serde_json::Value) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+        let payload = serde_json::json!({
+            "query": format!("INSERT INTO {} (data, created_at) VALUES ($1, NOW()) RETURNING id", table),
+            "params": [data.to_string()],
+        });
+        match client.post(format!("{}/query", self.url)).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                info!("[Postgres] Persisted to {}", table);
+                Ok(())
+            }
+            Ok(resp) => {
+                warn!("[Postgres] Persist to {} failed: {}", table, resp.status());
+                Err(format!("Persist failed: {}", resp.status()))
+            }
+            Err(e) => {
+                warn!("[Postgres] Persist to {} error: {}", table, e);
+                Err(format!("Persist error: {}", e))
+            }
+        }
+    }
+
+
     async fn insert(&self, table: &str, data: &serde_json::Value) -> Result<serde_json::Value, String> {
         let query = format!(
             "INSERT INTO {} (data, status, created_at, updated_at) VALUES ($1::jsonb, 'active', NOW(), NOW()) RETURNING id, data, status, created_at",
@@ -552,6 +578,11 @@ async fn create_record(
             Err(e) => warn!("[Postgres] Insert into nfc_transactions failed: {}", e),
         }
 
+    // Persist to PostgreSQL
+    let _ = state.postgres.persist("nfc_tap_to_pay", &serde_json::json!({
+        "service": "nfc-tap-to-pay",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    })).await;
     (StatusCode::CREATED, Json(CreateResponse { id, status: "created".into() }))
 }
 

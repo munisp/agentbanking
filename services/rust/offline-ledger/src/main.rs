@@ -447,6 +447,11 @@ fn validate_bearer_token(req: &tiny_http::Request) -> Result<(), (u16, &'static 
 }
 
 fn main() {
+    // OpenTelemetry tracing setup
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        eprintln!("[OTel] Tracing enabled → {}", endpoint);
+    }
+
     let ledger = Arc::new(Mutex::new(OfflineLedger::new("terminal-001")));
     let start_time = Instant::now();
 

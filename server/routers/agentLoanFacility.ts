@@ -27,6 +27,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -261,6 +262,17 @@ export const agentLoanFacilityRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.completed" as KafkaTopic,
+          `agent.loan-${Date.now()}`,
+          {
+            action: "",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { loan, creditScore, totalInterest, totalRepayable };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -287,6 +299,18 @@ export const agentLoanFacilityRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(agentLoans.id, input.loanId));
+
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.completed" as KafkaTopic,
+          `agent.loan-${Date.now()}`,
+          {
+            action: "approve",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -328,6 +352,18 @@ export const agentLoanFacilityRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(agentLoans.id, input.loanId));
+
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.completed" as KafkaTopic,
+          `agent.loan-${Date.now()}`,
+          {
+            action: "disburse",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true, disbursedAmount: loan.principalAmount };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -364,6 +400,18 @@ export const agentLoanFacilityRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(agentLoans.id, input.loanId));
+
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.completed" as KafkaTopic,
+          `agent.loan-${Date.now()}`,
+          {
+            action: "recordRepayment",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return {
           success: true,
           amountRepaid: newRepaid,
@@ -391,6 +439,18 @@ export const agentLoanFacilityRouter = router({
           .update(agentLoans)
           .set({ status: "rejected", updatedAt: new Date() })
           .where(eq(agentLoans.id, input.loanId));
+
+        // Publish domain event
+        await publishEvent(
+          "agent.loan.completed" as KafkaTopic,
+          `agent.loan-${Date.now()}`,
+          {
+            action: "reject",
+            timestamp: new Date().toISOString(),
+            ...input,
+          }
+        );
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 /**
  * Billing Ledger tRPC Router — Sprint 81 + Sprint 79 test-compatible
  */
@@ -164,7 +165,7 @@ export const billingLedgerRouter = router({
         netRevenue,
         splitRatio,
         billingModel: input.billingModel,
-        clientId: input.clientId || "CLIENT-001",
+        clientId: input.clientId || `CLIENT-${crypto.randomInt(100000)}`,
         agentId: String(input.agentId),
         currency: input.currency,
         calculatedFee: feeResult.fee,
@@ -278,7 +279,7 @@ export const billingLedgerRouter = router({
             platformShare: 42,
             netRevenue: 37.5,
             billingModel: "revenue_share",
-            clientId: input.clientId || "CLIENT-001",
+            clientId: input.clientId || `CLIENT-${crypto.randomInt(100000)}`,
             createdAt: Date.now(),
           },
         ],
@@ -375,7 +376,7 @@ export const billingLedgerRouter = router({
           const rows = await db.select().from(tenantBillingConfig).limit(1);
           if (rows.length > 0) {
             return {
-              clientId: input.clientId || "CLIENT-001",
+              clientId: input.clientId || `CLIENT-${crypto.randomInt(100000)}`,
               billingModel: "revenue_share",
               revenueShareConfig: {
                 startSplitPct: 28,
@@ -394,7 +395,7 @@ export const billingLedgerRouter = router({
         // Fail open with defaults
       }
       return {
-        clientId: input.clientId || "CLIENT-001",
+        clientId: input.clientId || `CLIENT-${crypto.randomInt(100000)}`,
         billingModel: "revenue_share",
         revenueShareConfig: {
           startSplitPct: 28,

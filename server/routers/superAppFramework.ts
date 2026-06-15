@@ -134,8 +134,18 @@ export const superAppFrameworkRouter = router({
           )
           .catch(() => ({ rows: [{ revenue: 0 }] })),
       ]);
-      const usersResult = (usersRes as any).rows?.[0]?.cnt;
-      const launchResult = (launchRes as any).rows?.[0]?.cnt;
+      const usersResult = (
+        (Array.isArray(usersRes) ? usersRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const launchResult = (
+        (Array.isArray(launchRes) ? launchRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       const revenueResult = ((
         revenueRes as { rows?: Array<{ revenue?: number }> }
       ).rows ?? [])[0]?.revenue;

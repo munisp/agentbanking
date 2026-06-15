@@ -261,7 +261,9 @@ export const microInsuranceRouter = router({
       const policyResult = await db.execute(
         sql`SELECT coverage_amount, status, waiting_period_ends FROM "insurance_policies" WHERE policy_number = ${input.policyNumber} AND agent_id = ${session.id}`
       );
-      const policyRow = (policyResult as any).rows?.[0];
+      const policyRow = (
+        Array.isArray(policyResult) ? policyResult[0] : null
+      ) as Record<string, unknown> | null;
       if (!policyRow || policyRow.status !== "active") {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -270,14 +272,14 @@ export const microInsuranceRouter = router({
       }
       if (
         policyRow.waiting_period_ends &&
-        new Date(policyRow.waiting_period_ends) > new Date()
+        new Date(policyRow.waiting_period_ends as string) > new Date()
       ) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Policy is still in waiting period",
         });
       }
-      if (input.amount > (policyRow.coverage_amount ?? 0)) {
+      if (input.amount > (Number(policyRow.coverage_amount) || 0)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Claim amount exceeds coverage limit",
@@ -330,7 +332,9 @@ export const microInsuranceRouter = router({
       const claimResult = await db.execute(
         sql`SELECT id, claim_number, policy_number, amount, status FROM "insurance_claims" WHERE claim_number = ${input.claimNumber}`
       );
-      const claim = (claimResult as any).rows?.[0];
+      const claim = (
+        Array.isArray(claimResult) ? claimResult[0] : null
+      ) as Record<string, unknown> | null;
       if (!claim) {
         throw new TRPCError({
           code: "NOT_FOUND",

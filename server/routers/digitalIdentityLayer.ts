@@ -134,9 +134,24 @@ export const digitalIdentityLayerRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const verifiedResult = (verifiedRes as any).rows?.[0]?.cnt;
-      const ninResult = (ninRes as any).rows?.[0]?.cnt;
-      const fraudResult = (fraudRes as any).rows?.[0]?.cnt;
+      const verifiedResult = (
+        (Array.isArray(verifiedRes) ? verifiedRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const ninResult = (
+        (Array.isArray(ninRes) ? ninRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const fraudResult = (
+        (Array.isArray(fraudRes) ? fraudRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         totalIdentities: total,
         verifiedToday: Number(verifiedResult ?? 0),

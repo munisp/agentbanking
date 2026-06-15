@@ -134,9 +134,24 @@ export const tokenizedAssetsRouter = router({
           )
           .catch(() => ({ rows: [{ total: 0 }] })),
       ]);
-      const holdersResult = (holdersRes as any).rows?.[0]?.cnt;
-      const marketCapResult = (marketCapRes as any).rows?.[0]?.cap;
-      const dividendsResult = (dividendsRes as any).rows?.[0]?.total;
+      const holdersResult = (
+        (Array.isArray(holdersRes) ? holdersRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const marketCapResult = (
+        (Array.isArray(marketCapRes) ? marketCapRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cap"];
+      const dividendsResult = (
+        (Array.isArray(dividendsRes) ? dividendsRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
       return {
         totalAssets: total,
         totalHolders: Number(holdersResult ?? 0),

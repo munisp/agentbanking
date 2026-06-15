@@ -223,7 +223,9 @@ export const billingAuditRouter = router({
 
         const conditions = [eq(billingAuditLog.tenantId, input.tenantId)];
         if (input.action)
-          conditions.push(eq(billingAuditLog.action, input.action as any));
+          conditions.push(
+            eq(billingAuditLog.action, String(input.action) as any)
+          );
         if (input.userId)
           conditions.push(eq(billingAuditLog.userId, input.userId));
         if (input.resourceType)

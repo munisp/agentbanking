@@ -131,7 +131,7 @@ export const complianceFilingRouter = router({
           conditions.push(eq(complianceFilings.filingType, input.filingType));
         if (input.regulator)
           conditions.push(
-            eq(complianceFilings.createdAt, input.regulator as any)
+            eq(complianceFilings.createdAt, String(input.regulator) as any)
           );
         if (input.status)
           conditions.push(eq(complianceFilings.status, input.status));

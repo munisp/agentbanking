@@ -134,9 +134,24 @@ export const coalitionLoyaltyRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const pointsResult = (pointsRes as any).rows?.[0]?.total;
-      const redeemedResult = (redeemedRes as any).rows?.[0]?.total;
-      const partnersResult = (partnersRes as any).rows?.[0]?.cnt;
+      const pointsResult = (
+        (Array.isArray(pointsRes) ? pointsRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const redeemedResult = (
+        (Array.isArray(redeemedRes) ? redeemedRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const partnersResult = (
+        (Array.isArray(partnersRes) ? partnersRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         totalMembers: total,
         pointsCirculating: Number(pointsResult ?? 0),

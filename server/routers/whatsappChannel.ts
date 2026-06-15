@@ -177,32 +177,30 @@ export const whatsappChannelRouter = router({
     }),
 
   templates: protectedProcedure.query(async () => {
-    return {
-      templates: [
-        {
-          id: "WT-001",
-          name: "Welcome Message",
-          category: "transactional",
-          status: "approved",
-          language: "en",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(notification_logs)
+        .orderBy(desc(notification_logs.id))
+        .limit(20);
+      return { templates: rows, total: rows.length };
+    } catch {
+      return { templates: [], total: 0 };
+    }
   }),
   messages: protectedProcedure.query(async () => {
-    return {
-      messages: [
-        {
-          id: "WM-001",
-          templateId: "WT-001",
-          recipient: "+2348012345678",
-          status: "delivered",
-          sentAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(notification_logs)
+        .orderBy(desc(notification_logs.id))
+        .limit(20);
+      return { messages: rows, total: rows.length };
+    } catch {
+      return { messages: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

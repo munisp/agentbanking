@@ -243,17 +243,17 @@ export const loanDisbursementRouter = router({
       }
     }),
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "LP-001",
-          name: "Agent Working Capital",
-          maxAmount: 2000000,
-          interestRate: 15,
-          tenorMonths: 12,
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { products: rows, total: rows.length };
+    } catch {
+      return { products: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

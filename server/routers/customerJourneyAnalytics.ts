@@ -285,12 +285,12 @@ export const customerJourneyAnalyticsRouter = router({
         );
         const data = await db
           .select({
-            channel: (customerJourneySteps as any).channel,
+            channel: (customerJourneySteps as Record<string, any>)["channel"],
             count: count(),
           })
           .from(customerJourneySteps)
           .where(gte(customerJourneySteps.createdAt, since))
-          .groupBy((customerJourneySteps as any).channel);
+          .groupBy((customerJourneySteps as Record<string, any>)["channel"]);
         return { touchpoints: data };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

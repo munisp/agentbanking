@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -187,7 +188,12 @@ export const customer360Router = router({
     }),
 
   getProfile: protectedProcedure.query(async () => {
-    return { id: "C-001", name: "Default Customer", segments: [], ltv: 0 };
+    return {
+      id: `C-${crypto.randomInt(100000)}`,
+      name: "Unknown",
+      segments: [],
+      ltv: 0,
+    };
   }),
 
   analyzeSentiment: protectedProcedure.query(async () => {

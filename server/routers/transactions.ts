@@ -172,7 +172,7 @@ async function checkVelocityLimits(
     const limitRows = await db
       .select()
       .from(velocityLimits)
-      .where(eq(velocityLimits.tier, tier as any))
+      .where(eq(velocityLimits.tier, String(tier) as any))
       .limit(1);
     const limits = limitRows[0];
     if (!limits) return { allowed: true };
@@ -857,7 +857,7 @@ export const transactionsRouter = router({
             totalCommission: commission,
             originAgentId: agent.id,
             originAgentCode: agent.agentCode,
-            tenantId: (agent as any).tenantId ?? undefined,
+            tenantId: (agent as Record<string, any>)["tenantId"] ?? undefined,
           });
           if (!cascadeResult.success) {
             console.warn(
@@ -1661,7 +1661,10 @@ export const transactionsRouter = router({
         const conditions: ReturnType<typeof eq>[] = [];
         if (input.severity !== "ALL") {
           conditions.push(
-            eq(fraudAlerts.severity, input.severity.toLowerCase() as any)
+            eq(
+              fraudAlerts.severity,
+              String(input.severity).toLowerCase() as any
+            )
           );
         }
         if (input.type && input.type !== "ALL") {
@@ -2086,7 +2089,7 @@ export const transactionsRouter = router({
       const tierRow = await db
         .select()
         .from(velocityLimits)
-        .where(eq(velocityLimits.tier, agent.tier as any))
+        .where(eq(velocityLimits.tier, String(agent.tier) as any))
         .limit(1);
       const limits = tierRow[0] ?? {
         maxTxPerHour: 20,

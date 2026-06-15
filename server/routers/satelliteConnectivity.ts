@@ -136,8 +136,18 @@ export const satelliteConnectivityRouter = router({
       ]);
       const activeResult = ((activeRes as { rows?: Array<{ cnt?: number }> })
         .rows ?? [])[0]?.cnt;
-      const failoverResult = (failoverRes as any).rows?.[0]?.cnt;
-      const syncResult = (syncRes as any).rows?.[0]?.mb;
+      const failoverResult = (
+        (Array.isArray(failoverRes) ? failoverRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const syncResult = (
+        (Array.isArray(syncRes) ? syncRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["mb"];
       return {
         activeLinks: Number(activeResult ?? 0),
         failoversToday: Number(failoverResult ?? 0),

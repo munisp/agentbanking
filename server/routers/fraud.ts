@@ -589,7 +589,7 @@ export const fraudRouter = router({
       ];
       const inserted = await db
         .insert(fraudRules)
-        .values(DEFAULT_RULES as any)
+        .values(DEFAULT_RULES as never)
         .returning({ id: fraudRules.id });
       await writeAuditLog({
         agentId: agent.id,

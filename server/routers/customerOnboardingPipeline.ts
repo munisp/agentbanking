@@ -128,7 +128,7 @@ export const customerOnboardingPipelineRouter = router({
         const [user] = await db
           .select()
           .from(users)
-          .where(eq(users.id, userId as any))
+          .where(eq(users.id, String(userId) as any))
           .limit(1);
         const currentStage = user ? "live" : "registration";
         const stageIndex = STAGES.indexOf(currentStage);

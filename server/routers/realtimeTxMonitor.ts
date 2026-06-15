@@ -98,7 +98,7 @@ export const realtimeTxMonitorRouter = router({
         if (input.channel)
           conditions.push(eq(transactions.customerPhone, input.channel));
         if (input.status)
-          conditions.push(eq(transactions.status, input.status as any));
+          conditions.push(eq(transactions.status, String(input.status) as any));
         if (input.minAmount)
           conditions.push(
             sql`${transactions.amount}::numeric >= ${input.minAmount}`

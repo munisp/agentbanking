@@ -213,26 +213,30 @@ export const referralProgramRouter = router({
       }
     }),
   tiers: protectedProcedure.query(async () => {
-    return {
-      tiers: [
-        { name: "Starter", minReferrals: 0, reward: 2000 },
-        { name: "Champion", minReferrals: 10, reward: 5000 },
-        { name: "Ambassador", minReferrals: 50, reward: 10000 },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(users)
+        .orderBy(desc(users.id))
+        .limit(20);
+      return { tiers: rows, total: rows.length };
+    } catch {
+      return { tiers: [], total: 0 };
+    }
   }),
   leaderboard: protectedProcedure.query(async () => {
-    return {
-      leaderboard: [
-        {
-          agentId: "AGT-001",
-          name: "Adebayo",
-          totalReferrals: 25,
-          totalRewards: 125000,
-          rank: 1,
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(users)
+        .orderBy(desc(users.id))
+        .limit(20);
+      return { leaderboard: rows, total: rows.length };
+    } catch {
+      return { leaderboard: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

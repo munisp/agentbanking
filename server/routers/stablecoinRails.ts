@@ -134,10 +134,20 @@ export const stablecoinRailsRouter = router({
           )
           .catch(() => ({ rows: [{ dev: 0 }] })),
       ]);
-      const supplyResult = (supplyRes as any).rows?.[0]?.supply;
+      const supplyResult = (
+        (Array.isArray(supplyRes) ? supplyRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["supply"];
       const volumeResult = ((volumeRes as { rows?: Array<{ vol?: number }> })
         .rows ?? [])[0]?.vol;
-      const devResult = (devRes as any).rows?.[0]?.dev;
+      const devResult = (
+        (Array.isArray(devRes) ? devRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["dev"];
       return {
         totalWallets: total,
         circulatingSupply: Number(supplyResult ?? 0),

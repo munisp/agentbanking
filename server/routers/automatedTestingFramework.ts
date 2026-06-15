@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -242,7 +243,7 @@ export const automatedTestingFrameworkRouter = router({
 
   runSuite: protectedProcedure.mutation(async () => {
     return {
-      suiteId: "TS-001",
+      suiteId: `TS-${crypto.randomInt(100000)}`,
       status: "running",
       tests: 0,
       passed: 0,

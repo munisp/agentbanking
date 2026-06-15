@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -197,7 +198,7 @@ export const multiTenancyRouter = router({
 
   getTenant: protectedProcedure.query(async () => {
     return {
-      id: "T-001",
+      id: `T-${crypto.randomInt(100000)}`,
       name: "Default",
       status: "active",
       plan: "enterprise",

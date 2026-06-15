@@ -97,7 +97,7 @@ export const merchantOnboardingPortalRouter = router({
           ? await db
               .select()
               .from(merchants)
-              .where(eq(merchants.status, input.status as any))
+              .where(eq(merchants.status, String(input.status) as any))
               .orderBy(desc(merchants.createdAt))
               .limit(input?.limit ?? 50)
           : await db

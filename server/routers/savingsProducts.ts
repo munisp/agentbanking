@@ -347,17 +347,17 @@ export const savingsProductsRouter = router({
 
   // ── Sprint 28 domain procedures ──
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "SP-001",
-          name: "Agent Savings",
-          interestRate: 8,
-          minBalance: 10000,
-          status: "active",
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { products: rows, total: rows.length };
+    } catch {
+      return { products: [], total: 0 };
+    }
   }),
   list: protectedProcedure
     .input(

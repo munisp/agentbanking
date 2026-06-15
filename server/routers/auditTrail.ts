@@ -113,7 +113,7 @@ export const auditTrailRouter = router({
         if (input.resource)
           conditions.push(eq(auditLog.resource, input.resource));
         if (input.status)
-          conditions.push(eq(auditLog.tenantId, input.status as any));
+          conditions.push(eq(auditLog.tenantId, String(input.status) as any));
         const rows =
           conditions.length > 0
             ? await db

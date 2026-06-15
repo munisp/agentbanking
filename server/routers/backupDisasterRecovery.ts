@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -368,7 +369,7 @@ export const backupDisasterRecoveryRouter = router({
     .input(z.object({ type: z.string().optional() }))
     .mutation(async ({ input }) => {
       return {
-        backupId: "BK-001",
+        backupId: `BK-${crypto.randomInt(100000)}`,
         status: "in_progress",
         startedAt: new Date().toISOString(),
         type: input.type || "full",

@@ -137,9 +137,24 @@ export const healthInsuranceMicroRouter = router({
         ]);
       const activeResult = ((activeRes as { rows?: Array<{ cnt?: number }> })
         .rows ?? [])[0]?.cnt;
-      const premiumResult = (premiumRes as any).rows?.[0]?.total;
-      const claimsResult = (claimsRes as any).rows?.[0]?.cnt;
-      const claimsPaidResult = (claimsPaidRes as any).rows?.[0]?.total;
+      const premiumResult = (
+        (Array.isArray(premiumRes) ? premiumRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const claimsResult = (
+        (Array.isArray(claimsRes) ? claimsRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const claimsPaidResult = (
+        (Array.isArray(claimsPaidRes) ? claimsPaidRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
       return {
         activePolicies: Number(activeResult ?? 0),
         totalPremiums: Number(premiumResult ?? 0),

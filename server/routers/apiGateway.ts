@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -246,6 +247,10 @@ export const apiGatewayRouter = router({
   }),
 
   createApiKey: protectedProcedure.mutation(async () => {
-    return { id: "KEY-001", key: "ak_xxx", created: true };
+    return (() => {
+      const keyId = `KEY-${crypto.randomInt(100000)}`;
+      const apiKey = `ak_${crypto.randomUUID().replace(/-/g, "").slice(0, 32)}`;
+      return { id: keyId, key: apiKey, created: true };
+    })();
   }),
 });

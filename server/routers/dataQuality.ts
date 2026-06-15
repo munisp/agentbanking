@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -226,6 +227,11 @@ export const dataQualityRouter = router({
   }),
 
   runProfile: protectedProcedure.mutation(async () => {
-    return { profileId: "PF-001", status: "completed", columns: 0, issues: 0 };
+    return {
+      profileId: `PF-${crypto.randomInt(100000)}`,
+      status: "completed",
+      columns: 0,
+      issues: 0,
+    };
   }),
 });

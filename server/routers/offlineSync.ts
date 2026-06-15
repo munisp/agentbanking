@@ -497,18 +497,17 @@ export const offlineSyncRouter = router({
   }),
 
   queue: protectedProcedure.query(async () => {
-    return {
-      items: [
-        {
-          id: "OQ-001",
-          type: "cash_in",
-          status: "pending",
-          amount: 50000,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { items: rows, total: rows.length };
+    } catch {
+      return { items: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return { total: 25, queued: 3, synced: 20, conflicts: 2, avgSyncTime: 5.2 };

@@ -327,29 +327,13 @@ export const revenueReconciliationRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        const db = await getDb();
-        let recordCount = 500;
-        if (db) {
-          const [result] = await db.select({ cnt: count() }).from(transactions);
-          if ((result?.cnt ?? 0) > 0) recordCount = result.cnt;
-        }
-
-        return {
-          batches: [
-            {
-              id: "RB-001",
-              clientId: input.clientId ?? "CLIENT-001",
-              source: "tigerbeetle",
-              target: "postgres",
-              totalRecords: recordCount,
-              matchedRecords: recordCount - 2,
-              matchRatePct: ((recordCount - 2) / recordCount) * 100,
-              status: "completed",
-              createdAt: Date.now() - 86400000,
-            },
-          ],
-          total: 1,
-        };
+        const db = (await getDb())!;
+        const rows = await db
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.id))
+          .limit(input.limit);
+        return { batches: rows, total: rows.length };
       } catch {
         return { batches: [], total: 0 };
       }
@@ -364,20 +348,17 @@ export const revenueReconciliationRouter = router({
       })
     )
     .query(async () => {
-      return {
-        entries: [
-          {
-            id: "RE-001",
-            batchId: "RB-001",
-            type: "amount_mismatch",
-            sourceAmount: 50000,
-            targetAmount: 49500,
-            diff: 500,
-            status: "open",
-          },
-        ],
-        total: 1,
-      };
+      const db = (await getDb())!;
+      try {
+        const rows = await db
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.id))
+          .limit(20);
+        return { entries: rows, total: rows.length };
+      } catch {
+        return { entries: [], total: 0 };
+      }
     }),
 
   resolveDiscrepancy: protectedProcedure

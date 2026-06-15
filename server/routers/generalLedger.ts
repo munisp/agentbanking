@@ -223,10 +223,11 @@ export const generalLedgerRouter = router({
           reference: e.reference,
           narration: input.narration,
           entryDate: new Date(),
+          periodDate: new Date(),
           postedBy: ctx.user?.id,
           posted: true,
         }));
-        await db.insert(glEntries).values(records as any as any);
+        await db.insert(glEntries).values(records as never);
         await writeAuditLog({
           agentId:
             typeof ctx === "object" && ctx !== null && "user" in ctx

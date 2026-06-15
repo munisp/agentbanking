@@ -126,9 +126,24 @@ export const aiCreditScoringRouter = router({
           )
           .catch(() => ({ rows: [{ auc: 0 }] })),
       ]);
-      const avgResult = (avgRes as any).rows?.[0]?.avg_score;
-      const approvedResult = (approvedRes as any).rows?.[0]?.cnt;
-      const aucResult = (aucRes as any).rows?.[0]?.auc;
+      const avgResult = (
+        (Array.isArray(avgRes) ? avgRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["avg_score"];
+      const approvedResult = (
+        (Array.isArray(approvedRes) ? approvedRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const aucResult = (
+        (Array.isArray(aucRes) ? aucRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["auc"];
       return {
         totalScored: total,
         avgScore: total > 0 ? Number(Number(avgResult ?? 0).toFixed(1)) : 0,

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -243,30 +244,40 @@ export const realtimeNotificationsRouter = router({
       }
     }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-      totalNotifications: 45892,
-      unreadCount: 234,
-      sentLast24h: 1250,
-      byChannel: [
-        { channel: "email", count: 400 },
-        { channel: "sms", count: 350 },
-        { channel: "push", count: 300 },
-        { channel: "inApp", count: 200 },
-      ],
-      recentNotifications: [
-        {
-          id: "N-001",
-          title: "Payment Received",
-          type: "transaction",
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(notification_logs)
+        .orderBy(desc(notification_logs.id))
+        .limit(20);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(notification_logs)
+        .limit(100);
+      const [unreadRow] = await db
+        .select({ value: count() })
+        .from(notification_logs)
+        .where(eq(notification_logs.status, "pending"))
+        .limit(100);
+      return {
+        byChannel: rows,
+        total: rows.length,
+        totalNotifications: Number(totalRow?.value ?? 0),
+        unreadCount: Number(unreadRow?.value ?? 0),
+        sentLast24h: rows.length,
+        recentNotifications: rows,
+      };
+    } catch {
+      return {
+        byChannel: [],
+        total: 0,
+        totalNotifications: 0,
+        unreadCount: 0,
+        sentLast24h: 0,
+        recentNotifications: [],
+      };
+    }
   }),
 
   getStats: protectedProcedure.query(async () => {
@@ -297,6 +308,11 @@ export const realtimeNotificationsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return { sent: 0, failed: 0, messageId: "MSG-001", title: input.title };
+      return {
+        sent: 0,
+        failed: 0,
+        messageId: `MSG-${crypto.randomInt(100000)}`,
+        title: input.title,
+      };
     }),
 });

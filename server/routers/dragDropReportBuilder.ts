@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -271,7 +272,11 @@ export const dragDropReportBuilderRouter = router({
       z.object({ name: z.string(), config: z.record(z.string(), z.unknown()) })
     )
     .mutation(async ({ input }) => {
-      return { id: "RPT-001", name: input.name, saved: true };
+      return {
+        id: `RPT-${crypto.randomInt(100000)}`,
+        name: input.name,
+        saved: true,
+      };
     }),
 
   executeReport: protectedProcedure.query(async () => {

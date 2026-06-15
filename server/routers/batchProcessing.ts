@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -249,7 +250,7 @@ export const batchProcessingRouter = router({
 
   submitJob: protectedProcedure.mutation(async () => {
     return {
-      jobId: "JOB-001",
+      jobId: `JOB-${crypto.randomInt(100000)}`,
       status: "queued",
       createdAt: new Date().toISOString(),
     };

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -243,7 +244,7 @@ export const incidentManagementRouter = router({
 
   createIncident: protectedProcedure.mutation(async () => {
     return {
-      id: "INC-001",
+      id: `INC-${crypto.randomInt(100000)}`,
       status: "open",
       severity: "medium",
       createdAt: new Date().toISOString(),

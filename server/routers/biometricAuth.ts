@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { kycSessions } from "../../drizzle/schema";
+import { kycSessions, transactions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -583,18 +583,17 @@ export const biometricAuthRouter = router({
 
   // ── Sprint 28 domain procedures ──
   list: protectedProcedure.query(async () => {
-    return {
-      records: [
-        {
-          id: "BIO-001",
-          agentId: "AGT-001",
-          type: "fingerprint",
-          status: "enrolled",
-          enrolledAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { records: rows, total: rows.length };
+    } catch {
+      return { records: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

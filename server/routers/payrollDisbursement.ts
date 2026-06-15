@@ -129,10 +129,20 @@ export const payrollDisbursementRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const empResult = (empRes as any).rows?.[0]?.cnt;
+      const empResult = (
+        (Array.isArray(empRes) ? empRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       const disbursedResult = (disbursedRes as { rows?: { total?: number }[] })
         .rows?.[0]?.total;
-      const pendingResult = (pendingRes as any).rows?.[0]?.cnt;
+      const pendingResult = (
+        (Array.isArray(pendingRes) ? pendingRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         totalEmployers: total,
         totalEmployees: Number(empResult ?? 0),

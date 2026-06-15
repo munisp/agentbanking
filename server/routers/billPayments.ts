@@ -464,31 +464,30 @@ export const billPaymentsRouter = router({
   }),
 
   billers: protectedProcedure.query(async () => {
-    return {
-      billers: [
-        {
-          id: "BL-001",
-          name: "IKEDC",
-          category: "electricity",
-          status: "active",
-        },
-        { id: "BL-002", name: "DSTV", category: "cable_tv", status: "active" },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { billers: rows, total: rows.length };
+    } catch {
+      return { billers: [], total: 0 };
+    }
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      payments: [
-        {
-          id: "BP-001",
-          billerId: "BL-001",
-          amount: 15000,
-          status: "completed",
-          paidAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { payments: rows, total: rows.length };
+    } catch {
+      return { payments: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

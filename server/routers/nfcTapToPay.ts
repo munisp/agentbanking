@@ -149,7 +149,12 @@ export const nfcTapToPayRouter = router({
         ?.cnt;
       const volumeResult = ((volumeRes as { rows?: Array<{ vol?: number }> })
         .rows ?? [])[0]?.vol;
-      const avgTimeResult = (avgTimeRes as any).rows?.[0]?.avg_ms;
+      const avgTimeResult = (
+        (Array.isArray(avgTimeRes) ? avgTimeRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["avg_ms"];
       return {
         activeTerminals: Number(activeResult ?? 0),
         transactionsToday: Number(todayResult ?? 0),

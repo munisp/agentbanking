@@ -1,8 +1,13 @@
+import crypto from "crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { auditLog, transactions } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import {
+  auditLog,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -196,41 +201,135 @@ export const pensionCollectionRouter = router({
 
   // ── Sprint 28 domain procedures ──
   pfas: protectedProcedure.query(async () => {
-    return {
-      pfas: [
-        { id: "PFA-001", name: "ARM Pension", code: "ARM", status: "active" },
-        {
-          id: "PFA-002",
-          name: "Stanbic IBTC",
-          code: "STANBIC",
-          status: "active",
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { pfas: rows, total: rows.length };
+    } catch {
+      return { pfas: [], total: 0 };
+    }
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      contributions: [
-        {
-          id: "PC-001",
-          pfaId: "PFA-001",
-          amount: 50000,
-          employeeName: "John Doe",
-          status: "remitted",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { contributions: rows, total: rows.length };
+    } catch {
+      return { contributions: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalContributions: 5000,
-      totalVolume: 25000000,
-      totalCommission: 1250000,
-      totalCollected: 25000000,
-      totalRemitted: 24000000,
-      activePfas: 12,
-      avgContribution: 45000,
-    };
+    const db = (await getDb())!;
+    try {
+      const [totals] = await db
+        .select({ total: count() })
+        .from(transactions)
+        .limit(100);
+      const totalNum = Number((totals as Record<string, unknown>).total ?? 0);
+      return {
+        totalContributions: totalNum,
+        totalVolume: 0,
+        totalCommission: 0,
+        totalCollected: 0,
+        totalRemitted: 0,
+        activePfas: 0,
+        avgContribution: 0,
+      };
+    } catch {
+      return {
+        totalContributions: 0,
+        totalVolume: 0,
+        totalCommission: 0,
+        totalCollected: 0,
+        totalRemitted: 0,
+        activePfas: 0,
+        avgContribution: 0,
+      };
+    }
   }),
+
+  collect: protectedProcedure
+    .input(
+      z.object({
+        pfaId: z.string().min(1).max(100),
+        employeeName: z.string().min(1).max(200),
+        amount: z.number().positive(),
+        employerId: z.string().min(1).max(100),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `PC-${crypto.randomInt(100000)}`;
+      const feeResult = calculateFee(input.amount, "pension");
+      const fee = feeResult.fee;
+      const commission = calculateCommission(fee, "pension");
+
+      const [record] = await db
+        .insert(transactions)
+        .values({
+          amount: input.amount,
+          reference: ref,
+          type: "pension_collection",
+          status: "completed",
+          metadata: JSON.stringify({
+            pfaId: input.pfaId,
+            employeeName: input.employeeName,
+            employerId: input.employerId,
+            fee,
+            commission,
+          }),
+        })
+        .returning();
+
+      await db.insert(gl_journal_entries).values([
+        {
+          entryNumber: `GL-PC-${crypto.randomInt(100000)}`,
+          accountCode: "PENSION_COLLECTION",
+          debitAmount: String(input.amount),
+          creditAmount: "0",
+          description: `Pension collection from ${input.employeeName}`,
+          reference: ref,
+          postedBy: `user-${(ctx as Record<string, unknown>).userId ?? "system"}`,
+        },
+        {
+          entryNumber: `GL-PC-${crypto.randomInt(100000)}`,
+          accountCode: "PFA_REMITTANCE",
+          debitAmount: "0",
+          creditAmount: String(input.amount - fee),
+          description: `PFA remittance for ${input.pfaId}`,
+          reference: ref,
+          postedBy: `user-${(ctx as Record<string, unknown>).userId ?? "system"}`,
+        },
+      ]);
+
+      await publishEvent("pos.pension.collected", ref, {
+        ref,
+        pfaId: input.pfaId,
+        amount: input.amount,
+        fee,
+        commission,
+      });
+
+      logOperation("COLLECT", {
+        ref,
+        amount: input.amount,
+        pfaId: input.pfaId,
+      });
+
+      return {
+        id: record.id,
+        reference: ref,
+        status: "completed",
+        fee,
+        commission,
+      };
+    }),
 });

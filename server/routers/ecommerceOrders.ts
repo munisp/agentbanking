@@ -326,7 +326,9 @@ export const ecommerceOrdersRouter = router({
       if (input.merchantId)
         conditions.push(eq(ecommerceOrders.merchantId, input.merchantId));
       if (input.status)
-        conditions.push(eq(ecommerceOrders.status, input.status as any));
+        conditions.push(
+          eq(ecommerceOrders.status, String(input.status) as any)
+        );
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 

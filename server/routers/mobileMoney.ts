@@ -517,31 +517,30 @@ export const mobileMoneyRouter = router({
     }),
 
   providers: protectedProcedure.query(async () => {
-    return {
-      providers: [
-        { id: "mtn_momo", name: "MTN MoMo", country: "NG", status: "active" },
-        {
-          id: "airtel_money",
-          name: "Airtel Money",
-          country: "NG",
-          status: "active",
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(agents)
+        .orderBy(desc(agents.id))
+        .limit(20);
+      return { providers: rows, total: rows.length };
+    } catch {
+      return { providers: [], total: 0 };
+    }
   }),
   wallets: protectedProcedure.query(async () => {
-    return {
-      wallets: [
-        {
-          id: "W-001",
-          provider: "MTN MoMo",
-          balance: 500000,
-          currency: "NGN",
-          status: "active",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(agents)
+        .orderBy(desc(agents.id))
+        .limit(20);
+      return { wallets: rows, total: rows.length };
+    } catch {
+      return { wallets: [], total: 0 };
+    }
   }),
   transactions: protectedProcedure.query(async () => {
     return {

@@ -143,8 +143,18 @@ export const bnplEngineRouter = router({
         .rows ?? [])[0]?.cnt;
       const disbursedResult = (disbursedRes as { rows?: { total?: number }[] })
         .rows?.[0]?.total;
-      const paidResult = (paidRes as any).rows?.[0]?.cnt;
-      const overdueResult = (overdueRes as any).rows?.[0]?.cnt;
+      const paidResult = (
+        (Array.isArray(paidRes) ? paidRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const overdueResult = (
+        (Array.isArray(overdueRes) ? overdueRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         activeLoans: Number(activeResult ?? 0),
         totalDisbursed: Number(disbursedResult ?? 0),

@@ -137,9 +137,24 @@ export const iotSmartPosRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const onlineResult = (onlineRes as any).rows?.[0]?.cnt;
-      const alertResult = (alertRes as any).rows?.[0]?.cnt;
-      const predictResult = (predictRes as any).rows?.[0]?.cnt;
+      const onlineResult = (
+        (Array.isArray(onlineRes) ? onlineRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const alertResult = (
+        (Array.isArray(alertRes) ? alertRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const predictResult = (
+        (Array.isArray(predictRes) ? predictRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         totalDevices: total,
         onlineDevices: Number(onlineResult ?? 0),
@@ -387,7 +402,9 @@ export const iotSmartPosRouter = router({
         agentId: number | null;
       }> = [];
 
-      for (const row of (alertDevices as any).rows ?? []) {
+      for (const row of (Array.isArray(alertDevices)
+        ? alertDevices
+        : []) as Record<string, unknown>[]) {
         const data =
           typeof row.data === "string"
             ? JSON.parse(row.data)
@@ -433,11 +450,11 @@ export const iotSmartPosRouter = router({
         const severityLevel = SEVERITY_LEVELS[severity] ?? 2;
         if (severityLevel >= thresholdLevel) {
           alerts.push({
-            deviceId: row.id,
+            deviceId: row.id as number,
             alertType,
             severity,
             message,
-            agentId: row.agent_id,
+            agentId: row.agent_id as number,
           });
         }
       }

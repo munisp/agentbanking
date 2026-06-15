@@ -132,9 +132,24 @@ export const wearablePaymentsRouter = router({
       ]);
       const activeResult = ((activeRes as { rows?: Array<{ cnt?: number }> })
         .rows ?? [])[0]?.cnt;
-      const balanceResult = (balanceRes as any).rows?.[0]?.total;
-      const txnResult = (txnRes as any).rows?.[0]?.cnt;
-      const agentResult = (agentRes as any).rows?.[0]?.cnt;
+      const balanceResult = (
+        (Array.isArray(balanceRes) ? balanceRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const txnResult = (
+        (Array.isArray(txnRes) ? txnRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const agentResult = (
+        (Array.isArray(agentRes) ? agentRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         activeDevices: Number(activeResult ?? 0),
         totalBalance: Number(balanceResult ?? 0),

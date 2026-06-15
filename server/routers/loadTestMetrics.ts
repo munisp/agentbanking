@@ -329,7 +329,7 @@ export const loadTestMetricsRouter = router({
         .where(eq(loadTestRunsTable.runId, input.runId))
         .limit(1);
       if (!record) throw new Error(`Run ${input.runId} not found`);
-      const res = record.results as any;
+      const res = record.results as Record<string, number | undefined> | null;
       return {
         ...record,
         config: {
@@ -344,10 +344,13 @@ export const loadTestMetricsRouter = router({
               ...res,
               successfulRequests: res.successCount ?? 0,
               errorRate: res.totalRequests
-                ? (res.errorCount / res.totalRequests) * 100
+                ? (Number(res.errorCount ?? 0) / Number(res.totalRequests)) *
+                  100
                 : 0,
               failedRequests: res.errorCount ?? 0,
-              throughputMbps: res.actualRps ? (res.actualRps * 0.5) / 1024 : 0,
+              throughputMbps: res.actualRps
+                ? (Number(res.actualRps) * 0.5) / 1024
+                : 0,
             }
           : null,
       };
@@ -531,14 +534,15 @@ export const loadTestMetricsRouter = router({
 
       if (!runA || !runB) throw new Error("One or both runs not found");
 
-      const rA = runA.results as any;
-      const rB = runB.results as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rA = (runA.results ?? {}) as Record<string, any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rB = (runB.results ?? {}) as Record<string, any>;
 
-      const zipfA = rA.zipfDistribution ?? [];
-      const zipfB = rB.zipfDistribution ?? [];
-      const zipfComparison: any[] = zipfA.map((dA: any, i: number) => {
+      const zipfA: any[] = rA.zipfDistribution ?? [];
+      const zipfB: any[] = rB.zipfDistribution ?? [];
+      const zipfComparison = zipfA.map((dA: any, i: number) => {
         const dB = zipfB[i];
-
         return {
           merchantId: dA.merchantId,
           requestsA: dA.requestCount,
@@ -548,9 +552,9 @@ export const loadTestMetricsRouter = router({
         };
       });
 
-      const timelineA = rA.timeline ?? [];
-      const timelineB = rB.timeline ?? [];
-      const timelineOverlay: any[] = timelineA.map((tA: any, i: number) => {
+      const timelineA: any[] = rA.timeline ?? [];
+      const timelineB: any[] = rB.timeline ?? [];
+      const timelineOverlay = timelineA.map((tA: any, i: number) => {
         const tB = timelineB[i];
         return {
           second: tA.second,
@@ -578,8 +582,8 @@ export const loadTestMetricsRouter = router({
           errorRate: delta(rA.errorRate, rB.errorRate),
           failedRequests: delta(rA.failedRequests, rB.failedRequests),
         },
-        zipfComparison,
-        timelineOverlay,
+        zipfComparison: zipfComparison,
+        timelineOverlay: timelineOverlay,
       };
     }),
 });

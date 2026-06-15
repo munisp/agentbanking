@@ -100,10 +100,15 @@ export const dynamicFeeEngineRouter = router({
             ? String((input as Record<string, unknown>).channel)
             : undefined
         )
-          conditions.push(eq((feeRules as any).channel, input.channel));
+          conditions.push(
+            eq(
+              (feeRules as Record<string, any>)["channel"] as any,
+              input.channel
+            )
+          );
         // @ts-expect-error auto-fix
         if (input.isActive !== undefined)
-          conditions.push(eq(feeRules.isActive, input.active as any));
+          conditions.push(eq(feeRules.isActive, String(input.active) as any));
         const where = conditions.length > 0 ? and(...conditions) : undefined;
         const items = await db
           .select()
@@ -290,7 +295,7 @@ export const dynamicFeeEngineRouter = router({
         const [oldRule] = await db
           .select()
           .from(feeRules)
-          .where(eq(feeRules.id, input.ruleId as any))
+          .where(eq(feeRules.id, String(input.ruleId) as any))
           .limit(100);
         const updates: any = { updatedAt: new Date() };
         if (input.name !== undefined) updates.name = input.name;
@@ -304,7 +309,7 @@ export const dynamicFeeEngineRouter = router({
         await db
           .update(feeRules)
           .set(updates)
-          .where(eq(feeRules.id, input.ruleId as any));
+          .where(eq(feeRules.id, String(input.ruleId) as any));
         await db.insert(feeAuditTrail).values({
           feeRuleId: input.ruleId,
           action: "updated",
@@ -343,7 +348,10 @@ export const dynamicFeeEngineRouter = router({
           .where(
             and(
               eq(feeRules.txType, input.txType),
-              eq((feeRules as any).channel, input.channel),
+              eq(
+                (feeRules as Record<string, any>)["channel"] as any,
+                input.channel
+              ),
               eq(feeRules.isActive, true)
             )
           )
@@ -478,7 +486,10 @@ export const dynamicFeeEngineRouter = router({
           .where(
             and(
               eq(feeRules.txType, input.txType),
-              eq((feeRules as any).channel, input.channel),
+              eq(
+                (feeRules as Record<string, any>)["channel"] as any,
+                input.channel
+              ),
               eq(feeRules.isActive, true)
             )
           )

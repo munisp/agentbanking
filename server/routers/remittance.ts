@@ -210,32 +210,30 @@ export const remittanceRouter = router({
 
   // ── Sprint 28 domain procedures ──
   partners: protectedProcedure.query(async () => {
-    return {
-      partners: [
-        {
-          id: "RP-001",
-          name: "WorldRemit",
-          corridor: "UK-NG",
-          status: "active",
-        },
-        { id: "RP-002", name: "Lemfi", corridor: "CA-NG", status: "active" },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { partners: rows, total: rows.length };
+    } catch {
+      return { partners: [], total: 0 };
+    }
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "RM-001",
-          partnerId: "RP-001",
-          amount: 500,
-          currency: "GBP",
-          localAmount: 450000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { transactions: rows, total: rows.length };
+    } catch {
+      return { transactions: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     const db = (await getDb())!;

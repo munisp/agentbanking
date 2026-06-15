@@ -140,9 +140,24 @@ export const agritechPaymentsRouter = router({
           )
           .catch(() => ({ rows: [{ total: 0 }] })),
       ]);
-      const coopResult = (coopRes as any).rows?.[0]?.cnt;
-      const inputResult = (inputRes as any).rows?.[0]?.total;
-      const cropResult = (cropRes as any).rows?.[0]?.total;
+      const coopResult = (
+        (Array.isArray(coopRes) ? coopRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const inputResult = (
+        (Array.isArray(inputRes) ? inputRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const cropResult = (
+        (Array.isArray(cropRes) ? cropRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
       return {
         registeredFarms: total,
         cooperatives: Number(coopResult ?? 0),

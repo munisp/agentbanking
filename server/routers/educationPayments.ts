@@ -140,9 +140,24 @@ export const educationPaymentsRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const studentResult = (studentRes as any).rows?.[0]?.cnt;
-      const feesResult = (feesRes as any).rows?.[0]?.total;
-      const examResult = (examRes as any).rows?.[0]?.cnt;
+      const studentResult = (
+        (Array.isArray(studentRes) ? studentRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const feesResult = (
+        (Array.isArray(feesRes) ? feesRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const examResult = (
+        (Array.isArray(examRes) ? examRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         registeredSchools: total,
         totalStudents: Number(studentResult ?? 0),

@@ -294,7 +294,7 @@ export const agentCommissionCalcRouter = router({
       const limit = input?.limit ?? 50;
       const offset = input?.offset ?? 0;
       const where = input?.status
-        ? eq(commissionPayouts.status, input.status as any)
+        ? eq(commissionPayouts.status, String(input.status) as any)
         : undefined;
       const rows = where
         ? await db

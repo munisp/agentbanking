@@ -305,31 +305,30 @@ export const insuranceProductsRouter = router({
     }),
 
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "IP-001",
-          name: "Agent Protection Plan",
-          premium: 5000,
-          coverage: 1000000,
-          type: "life",
-        },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .orderBy(desc(systemConfig.id))
+        .limit(20);
+      return { products: rows, total: rows.length };
+    } catch {
+      return { products: [], total: 0 };
+    }
   }),
   policies: protectedProcedure.query(async () => {
-    return {
-      policies: [
-        {
-          id: "POL-001",
-          productId: "IP-001",
-          agentId: "AGT-001",
-          status: "active",
-          startDate: "2024-01-01",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .orderBy(desc(systemConfig.id))
+        .limit(20);
+      return { policies: rows, total: rows.length };
+    } catch {
+      return { policies: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
     return {

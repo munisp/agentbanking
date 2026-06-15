@@ -43,7 +43,7 @@ function getStripe(): Stripe {
     if (!key)
       throw new Error("STRIPE_SECRET_KEY environment variable is required");
     _stripe = new Stripe(key, {
-      apiVersion: "2025-04-30.basil" as any,
+      apiVersion: "2025-04-30.basil" as string,
     });
   }
   return _stripe;
@@ -209,7 +209,7 @@ export const billingInvoiceRouter = router({
           .where(
             and(
               eq(platformBillingLedger.agentId, input.tenantId),
-              eq(platformBillingLedger.agentId, input.clientId as any),
+              eq(platformBillingLedger.agentId, String(input.clientId) as any),
               gte(platformBillingLedger.createdAt, new Date(input.periodStart)),
               lte(platformBillingLedger.createdAt, new Date(input.periodEnd))
             )

@@ -262,7 +262,7 @@ async function ensureDefaults() {
       for (const t of DEFAULT_TIERS) {
         await db
           .insert(commissionTiers)
-          .values(t as any)
+          .values(t as never)
           .onConflictDoNothing();
       }
     }
@@ -275,7 +275,7 @@ async function ensureDefaults() {
       for (const s of DEFAULT_SPLITS) {
         await db
           .insert(commissionSplits)
-          .values(s as any)
+          .values(s as never)
           .onConflictDoNothing();
       }
     }
@@ -505,7 +505,7 @@ export const commissionEngineRouter = router({
 
         const [updated] = await db
           .update(commissionTiers)
-          .set(updates as any)
+          .set(updates as never)
           .where(eq(commissionTiers.tierId, input.id))
           .returning();
 
@@ -1133,7 +1133,9 @@ export const commissionEngineRouter = router({
 
         const conditions = [];
         if (input?.status)
-          conditions.push(eq(commissionPayouts.status, input.status as any));
+          conditions.push(
+            eq(commissionPayouts.status, String(input.status) as any)
+          );
         if (input?.agentCode)
           conditions.push(eq(commissionPayouts.agentCode, input.agentCode));
         if (input?.from)

@@ -133,8 +133,18 @@ export const pensionMicroRouter = router({
           )
           .catch(() => ({ rows: [{ cnt: 0 }] })),
       ]);
-      const contribResult = (contribRes as any).rows?.[0]?.total;
-      const withdrawResult = (withdrawRes as any).rows?.[0]?.cnt;
+      const contribResult = (
+        (Array.isArray(contribRes) ? contribRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const withdrawResult = (
+        (Array.isArray(withdrawRes) ? withdrawRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         totalAccounts: total,
         totalContributions: Number(contribResult ?? 0),

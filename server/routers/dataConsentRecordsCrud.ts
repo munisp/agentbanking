@@ -111,7 +111,7 @@ export const dataConsentRecordsRouter = router({
         const conditions: any[] = [];
         if (input.userId)
           conditions.push(
-            eq(dataConsentRecords.userAgent, input.userId as any)
+            eq(dataConsentRecords.userAgent, String(input.userId) as any)
           );
         if (input.consentType)
           conditions.push(
@@ -305,7 +305,7 @@ export const dataConsentRecordsRouter = router({
         const records = await db
           .select()
           .from(dataConsentRecords)
-          .where(eq(dataConsentRecords.userAgent, input.userId as any))
+          .where(eq(dataConsentRecords.userAgent, String(input.userId) as any))
           .limit(100);
         const active = records.filter(
           (r: any) =>

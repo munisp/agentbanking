@@ -536,7 +536,7 @@ export const lakehouseRouter = router({
               gte(transactions.createdAt, since),
               eq(transactions.status, "success"),
               ...(input.txType
-                ? [eq(transactions.type, input.txType as any)]
+                ? [eq(transactions.type, String(input.txType) as any)]
                 : [])
             )
           )

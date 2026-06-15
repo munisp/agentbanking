@@ -124,7 +124,7 @@ export const escalationChainsRouter = router({
         const results = await database
           .select()
           .from(platform_incidents)
-          .orderBy(desc((platform_incidents as any).id))
+          .orderBy(desc(sql`"id"` as any))
           .limit(input.limit)
           .offset(input.offset);
 
@@ -154,7 +154,9 @@ export const escalationChainsRouter = router({
       const [record] = await database
         .select()
         .from(platform_incidents)
-        .where(eq((platform_incidents as any).id, input.id))
+        .where(
+          eq((platform_incidents as Record<string, any>)["id"] as any, input.id)
+        )
         .limit(1);
 
       if (!record) {
@@ -193,7 +195,7 @@ export const escalationChainsRouter = router({
       const results = await database
         .select()
         .from(platform_incidents)
-        .orderBy(desc((platform_incidents as any).id))
+        .orderBy(desc(sql`"id"` as any))
         .limit(input.limit);
 
       return results;

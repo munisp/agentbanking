@@ -126,9 +126,24 @@ export const carbonCreditMarketplaceRouter = router({
           )
           .catch(() => ({ rows: [{ total: 0 }] })),
       ]);
-      const issuedResult = (issuedRes as any).rows?.[0]?.total;
-      const retiredResult = (retiredRes as any).rows?.[0]?.total;
-      const volumeResult = (volumeRes as any).rows?.[0]?.total;
+      const issuedResult = (
+        (Array.isArray(issuedRes) ? issuedRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const retiredResult = (
+        (Array.isArray(retiredRes) ? retiredRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
+      const volumeResult = (
+        (Array.isArray(volumeRes) ? volumeRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["total"];
       return {
         totalProjects: total,
         creditsIssued: Number(issuedResult ?? 0),

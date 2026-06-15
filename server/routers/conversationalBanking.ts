@@ -141,9 +141,24 @@ export const conversationalBankingRouter = router({
       ]);
       const activeResult = ((activeRes as { rows?: Array<{ cnt?: number }> })
         .rows ?? [])[0]?.cnt;
-      const msgResult = (msgRes as any).rows?.[0]?.cnt;
-      const cmdResult = (cmdRes as any).rows?.[0]?.cnt;
-      const satisfiedResult = (satisfiedRes as any).rows?.[0]?.cnt;
+      const msgResult = (
+        (Array.isArray(msgRes) ? msgRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const cmdResult = (
+        (Array.isArray(cmdRes) ? cmdRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
+      const satisfiedResult = (
+        (Array.isArray(satisfiedRes) ? satisfiedRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       return {
         activeSessions: Number(activeResult ?? 0),
         messagesToday: Number(msgResult ?? 0),

@@ -601,43 +601,47 @@ export const airtimeVendingRouter = router({
   }),
 
   networks: protectedProcedure.query(async () => {
-    return {
-      networks: [
-        { id: "NW-001", name: "MTN", code: "MTN", status: "active" },
-        { id: "NW-002", name: "Airtel", code: "AIRTEL", status: "active" },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { networks: rows, total: rows.length };
+    } catch {
+      return { networks: [], total: 0 };
+    }
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "AV-001",
-          network: "MTN",
-          phoneNumber: "08012345678",
-          amount: 1000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { transactions: rows, total: rows.length };
+    } catch {
+      return { transactions: [], total: 0 };
+    }
   }),
   dataBundles: publicProcedure
     .input(
       z.object({ networkId: z.string().min(1).max(255).optional() }).optional()
     )
     .query(async () => {
-      return {
-        bundles: [
-          {
-            id: "DB-001",
-            network: "MTN",
-            name: "1GB Daily",
-            price: 350,
-            validity: "24h",
-          },
-        ],
-      };
+      const db = (await getDb())!;
+      try {
+        const rows = await db
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.id))
+          .limit(20);
+        return { bundles: rows, total: rows.length };
+      } catch {
+        return { bundles: [], total: 0 };
+      }
     }),
   analytics: protectedProcedure.query(async () => {
     const db = (await getDb())!;

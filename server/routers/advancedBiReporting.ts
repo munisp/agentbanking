@@ -232,10 +232,17 @@ export const advancedBiReportingRouter = router({
     };
   }),
   reportBuilder: protectedProcedure.query(async () => {
-    return {
-      templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],
-      dataSources: ["postgres", "opensearch"],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { templates: rows, total: rows.length };
+    } catch {
+      return { templates: [], total: 0 };
+    }
   }),
   generateReport: publicProcedure
     .input(

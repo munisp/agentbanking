@@ -134,11 +134,21 @@ export const embeddedFinanceAnaasRouter = router({
           )
           .catch(() => ({ rows: [{ avg_sla: 0 }] })),
       ]);
-      const agentsResult = (agentsRes as any).rows?.[0]?.cnt;
+      const agentsResult = (
+        (Array.isArray(agentsRes) ? agentsRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["cnt"];
       const revenueResult = ((
         revenueRes as { rows?: Array<{ revenue?: number }> }
       ).rows ?? [])[0]?.revenue;
-      const slaResult = (slaRes as any).rows?.[0]?.avg_sla;
+      const slaResult = (
+        (Array.isArray(slaRes) ? slaRes[0] : null) as Record<
+          string,
+          unknown
+        > | null
+      )?.["avg_sla"];
       return {
         totalTenants: total,
         sharedAgents: Number(agentsResult ?? 0),

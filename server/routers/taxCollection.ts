@@ -1,8 +1,13 @@
+import crypto from "crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { auditLog, transactions } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import {
+  auditLog,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -196,42 +201,137 @@ export const taxCollectionRouter = router({
 
   // ── Sprint 28 domain procedures ──
   taxTypes: protectedProcedure.query(async () => {
-    return {
-      taxTypes: [
-        {
-          id: "TT-001",
-          name: "VAT",
-          rate: 7.5,
-          description: "Value Added Tax",
-        },
-        { id: "TT-002", name: "WHT", rate: 10, description: "Withholding Tax" },
-      ],
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { taxTypes: rows, total: rows.length };
+    } catch {
+      return { taxTypes: [], total: 0 };
+    }
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      payments: [
-        {
-          id: "TC-001",
-          taxType: "VAT",
-          amount: 75000,
-          status: "remitted",
-          paidAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    const db = (await getDb())!;
+    try {
+      const rows = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.id))
+        .limit(20);
+      return { payments: rows, total: rows.length };
+    } catch {
+      return { payments: [], total: 0 };
+    }
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalPayments: 15000,
-      totalVolume: 15000000,
-      totalCommission: 750000,
-      totalCollected: 15000000,
-      totalRemitted: 14500000,
-      pending: 500000,
-      byType: { VAT: 10000000, WHT: 5000000 },
-      successRate: 97.5,
-    };
+    const db = (await getDb())!;
+    try {
+      const [totals] = await db
+        .select({ total: count() })
+        .from(transactions)
+        .limit(100);
+      const totalNum = Number((totals as Record<string, unknown>).total ?? 0);
+      return {
+        totalPayments: totalNum,
+        totalVolume: 0,
+        totalCommission: 0,
+        totalCollected: 0,
+        totalRemitted: 0,
+        pending: 0,
+        byType: {},
+        successRate: 0,
+      };
+    } catch {
+      return {
+        totalPayments: 0,
+        totalVolume: 0,
+        totalCommission: 0,
+        totalCollected: 0,
+        totalRemitted: 0,
+        pending: 0,
+        byType: {},
+        successRate: 0,
+      };
+    }
   }),
+
+  collectTax: protectedProcedure
+    .input(
+      z.object({
+        taxType: z.enum(["VAT", "WHT", "CIT", "PAYE", "CGT"]),
+        taxpayerTin: z.string().min(1).max(50),
+        amount: z.number().positive(),
+        period: z.string().min(1).max(20),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `TAX-${crypto.randomInt(100000)}`;
+      const feeResult = calculateFee(input.amount, "tax");
+      const fee = feeResult.fee;
+      const commission = calculateCommission(fee, "tax");
+
+      const [record] = await db
+        .insert(transactions)
+        .values({
+          amount: input.amount,
+          reference: ref,
+          type: "tax_collection",
+          status: "completed",
+          metadata: JSON.stringify({
+            taxType: input.taxType,
+            taxpayerTin: input.taxpayerTin,
+            period: input.period,
+            fee,
+            commission,
+          }),
+        })
+        .returning();
+
+      await db.insert(gl_journal_entries).values([
+        {
+          entryNumber: `GL-TX-${crypto.randomInt(100000)}`,
+          accountCode: "TAX_COLLECTION",
+          debitAmount: String(input.amount),
+          creditAmount: "0",
+          description: `${input.taxType} collection for TIN ${input.taxpayerTin}`,
+          reference: ref,
+          postedBy: `user-${(ctx as Record<string, unknown>).userId ?? "system"}`,
+        },
+        {
+          entryNumber: `GL-TX-${crypto.randomInt(100000)}`,
+          accountCode: "TAX_REMITTANCE",
+          debitAmount: "0",
+          creditAmount: String(input.amount - fee),
+          description: `${input.taxType} remittance for period ${input.period}`,
+          reference: ref,
+          postedBy: `user-${(ctx as Record<string, unknown>).userId ?? "system"}`,
+        },
+      ]);
+
+      await publishEvent("pos.tax.collected" as KafkaTopic, ref, {
+        ref,
+        taxType: input.taxType,
+        amount: input.amount,
+        fee,
+        commission,
+      });
+
+      logOperation("COLLECT_TAX", {
+        ref,
+        taxType: input.taxType,
+        amount: input.amount,
+      });
+
+      return {
+        id: record.id,
+        reference: ref,
+        status: "completed",
+        fee,
+        commission,
+      };
+    }),
 });

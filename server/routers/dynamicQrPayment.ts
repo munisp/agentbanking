@@ -224,35 +224,203 @@ export const dynamicQrPaymentRouter = router({
 
   generateQr: protectedProcedure
     .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
+      z.object({
+        amount: z.number().positive().optional(),
+        description: z.string().min(1).max(500).optional(),
+        merchantId: z.string().min(1).max(100).optional(),
+        currency: z.string().length(3).default("NGN"),
+        expiresInMinutes: z.number().min(1).max(1440).default(30),
+      })
     )
-    .mutation(async () => {
-      // GL double-entry journal: Dynamic QR payment
-      try {
-        const db = (await getDb())!;
+    .mutation(async ({ input }) => {
+      const db = (await getDb())!;
+      const ref = `DQR-${Date.now()}-${crypto.randomInt(99999).toString().padStart(5, "0")}`;
+      const expiresAt = new Date(
+        Date.now() + input.expiresInMinutes * 60 * 1000
+      );
+
+      // Record the QR in transactions
+      const [txn] = await db
+        .insert(transactions)
+        .values({
+          amount: input.amount ?? 0,
+          ref: ref,
+          agentId: 0,
+          type: "dynamic_qr_generate",
+          status: "pending",
+          metadata: JSON.stringify({
+            qrCode: ref,
+            merchantId: input.merchantId,
+            description: input.description,
+            currency: input.currency,
+            expiresAt: expiresAt.toISOString(),
+          }),
+        })
+        .returning();
+
+      // GL double-entry journal
+      if (input.amount && input.amount > 0) {
+        const feeResult = calculateFee(input.amount, "transfer");
         await db.insert(gl_journal_entries).values({
           entryNumber: `JE-${Date.now()}-${crypto.randomInt(9999).toString().padStart(4, "0")}`,
-          description: "Dynamic QR payment",
-          debitAccountId: 1001,
-          creditAccountId: 2001,
-          amount: 0, // Amount set by caller context
-          currency: "NGN",
-          referenceType: "transaction",
-          referenceId: "system",
+          description: `Dynamic QR payment - ${input.description ?? "no description"}`,
+          debitAmount: String(input.amount),
+          creditAmount: "0",
+          accountCode: "QR_PAYMENT_PENDING",
+          reference: ref,
           postedBy: "system",
-          status: "posted",
         });
-      } catch {
-        // GL write failure should not block the transaction
       }
 
       // Publish domain event
-      publishEvent("pos.dynamicqr.payment" as KafkaTopic, "system", {
-        action: "dynamic_qr_payment",
+      await publishEvent("pos.dynamicqr.generated" as KafkaTopic, ref, {
+        reference: ref,
+        amount: input.amount,
+        merchantId: input.merchantId,
+        expiresAt: expiresAt.toISOString(),
         timestamp: new Date().toISOString(),
       });
 
-      return { success: true };
+      return {
+        success: true,
+        qrCode: ref,
+        transactionId: txn.id,
+        amount: input.amount,
+        expiresAt: expiresAt.toISOString(),
+        qrData: JSON.stringify({
+          type: "54link_dynamic_qr",
+          ref,
+          amount: input.amount,
+          currency: input.currency,
+          merchant: input.merchantId,
+          exp: expiresAt.toISOString(),
+        }),
+      };
+    }),
+
+  payQr: protectedProcedure
+    .input(
+      z.object({
+        qrCode: z.string().min(1).max(256),
+        amount: z.number().positive(),
+        payerPhone: z.string().min(1).max(20),
+        payerPin: z.string().min(4).max(6),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = (await getDb())!;
+
+      // 1. Look up the QR transaction
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ref, input.qrCode))
+        .limit(1);
+      const qrTxn = rows[0];
+      if (!qrTxn)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "QR code not found",
+        });
+      if (qrTxn.status !== "pending")
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "QR code already used or expired",
+        });
+
+      const meta =
+        typeof qrTxn.metadata === "string"
+          ? JSON.parse(qrTxn.metadata)
+          : (qrTxn.metadata ?? {});
+      if (meta.expiresAt && new Date(meta.expiresAt) < new Date()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "QR code has expired",
+        });
+      }
+
+      // 2. Validate amount
+      const qrAmount = Number(qrTxn.amount);
+      if (qrAmount > 0 && Math.abs(qrAmount - input.amount) > 0.01) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `QR requires exact amount \u20a6${qrAmount}`,
+        });
+      }
+
+      // 3. CBN limit + fee
+      const feeResult = calculateFee(input.amount, "transfer");
+      const commission = calculateCommission(feeResult.fee, "transfer");
+      const netAmount = input.amount - feeResult.fee;
+
+      // 4. Record payment transaction
+      const payRef = `DQRP-${Date.now()}-${crypto.randomInt(99999)}`;
+      const [payTxn] = await db
+        .insert(transactions)
+        .values({
+          amount: input.amount,
+          ref: payRef,
+          agentId: 0,
+          type: "dynamic_qr_payment",
+          status: "completed",
+          metadata: JSON.stringify({
+            qrCode: input.qrCode,
+            payerPhone: input.payerPhone,
+            fee: feeResult.fee,
+            commission: commission.agentShare,
+            netAmount,
+            merchantId: meta.merchantId,
+          }),
+        })
+        .returning();
+
+      // 5. Mark original QR as used
+      await db.execute(
+        sql`UPDATE "transactions" SET status = 'completed' WHERE ref = ${input.qrCode}`
+      );
+
+      // 6. GL double-entry
+      await db.insert(gl_journal_entries).values([
+        {
+          entryNumber: `GL-DQRP-${crypto.randomInt(100000)}`,
+          accountCode: "PAYER_QR_DEBIT",
+          debitAmount: String(input.amount),
+          creditAmount: "0",
+          description: `Dynamic QR payment from ${input.payerPhone}`,
+          reference: payRef,
+          postedBy: "system",
+        },
+        {
+          entryNumber: `GL-DQRP-${crypto.randomInt(100000)}`,
+          accountCode: "MERCHANT_QR_CREDIT",
+          debitAmount: "0",
+          creditAmount: String(netAmount),
+          description: `Dynamic QR payment to merchant ${meta.merchantId ?? "unknown"}`,
+          reference: payRef,
+          postedBy: "system",
+        },
+      ]);
+
+      // 7. Kafka event
+      await publishEvent("pos.dynamicqr.payment" as KafkaTopic, payRef, {
+        reference: payRef,
+        qrCode: input.qrCode,
+        amount: input.amount,
+        fee: feeResult.fee,
+        commission: commission.agentShare,
+        payerPhone: input.payerPhone,
+        merchantId: meta.merchantId,
+      });
+
+      return {
+        id: payTxn.id,
+        reference: payRef,
+        status: "completed",
+        amount: input.amount,
+        fee: feeResult.fee,
+        netAmount,
+        commission: commission.agentShare,
+      };
     }),
 
   getStats: protectedProcedure.query(async () => {

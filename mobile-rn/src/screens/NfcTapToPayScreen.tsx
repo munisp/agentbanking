@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  TextInput,
+  Modal,
 } from 'react-native';
 
 interface StatsData {
@@ -30,6 +32,42 @@ export default function NfcTapToPayScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [showPayment, setShowPayment] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payTerminal, setPayTerminal] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const processPayment = useCallback(async () => {
+    const amount = parseFloat(payAmount);
+    if (!amount || amount <= 0) {
+      Alert.alert('Error', 'Enter a valid amount');
+      return;
+    }
+    setProcessing(true);
+    try {
+      const res = await fetch(`${API_BASE}/nfcTapToPay.processPayment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          terminalId: payTerminal || 'TERM-001',
+          amount,
+          cardType: 'unknown',
+          agentId: 1,
+        }),
+      });
+      const data = await res.json();
+      const result = data?.result?.data;
+      setShowPayment(false);
+      setPayAmount('');
+      setPayTerminal('');
+      Alert.alert('Payment Successful', `Ref: ${result?.reference}\nAmount: ₦${amount}\nFee: ₦${result?.fee}`);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Payment Failed', e.message || 'Unknown error');
+    } finally {
+      setProcessing(false);
+    }
+  }, [payAmount, payTerminal]);
 
   const loadData = useCallback(async () => {
     try {
@@ -150,6 +188,46 @@ export default function NfcTapToPayScreen() {
           ))
         )}
       </View>
+
+      {/* Process Payment Button */}
+      <TouchableOpacity style={styles.payButton} onPress={() => setShowPayment(true)}>
+        <Text style={styles.payButtonText}>⚡ New NFC Payment</Text>
+      </TouchableOpacity>
+
+      {/* Payment Modal */}
+      <Modal visible={showPayment} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>NFC Tap-to-Pay</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Amount (₦)"
+              keyboardType="numeric"
+              value={payAmount}
+              onChangeText={setPayAmount}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Terminal ID (optional)"
+              value={payTerminal}
+              onChangeText={setPayTerminal}
+            />
+            <Text style={styles.nfcHint}>Hold customer's contactless card near the device</Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowPayment(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.processBtn} onPress={processPayment} disabled={processing}>
+                {processing ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.processText}>Process Payment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -192,4 +270,19 @@ const styles = StyleSheet.create({
   itemSubtitle: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   badgeText: { fontSize: 12, fontWeight: '600' },
+  payButton: {
+    backgroundColor: '#0D7377', margin: 16, padding: 16, borderRadius: 12,
+    alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  },
+  payButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
+  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 16 },
+  nfcHint: { color: '#6b7280', fontSize: 13, textAlign: 'center', marginBottom: 16 },
+  modalActions: { flexDirection: 'row', justifyContent: 'space-between' },
+  cancelBtn: { flex: 1, padding: 14, marginRight: 8, borderRadius: 8, borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center' },
+  cancelText: { color: '#6b7280', fontWeight: '600' },
+  processBtn: { flex: 2, padding: 14, borderRadius: 8, backgroundColor: '#0D7377', alignItems: 'center' },
+  processText: { color: '#fff', fontWeight: '700' },
 });

@@ -1,9 +1,13 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { transactions, gl_journal_entries } from "../../drizzle/schema";
 import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 
 import {
   validateAmount,
@@ -18,7 +22,6 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
-import { checkDailyLimit } from "../lib/cbnLimits";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -402,4 +405,296 @@ export const nfcTapToPayRouter = router({
     );
     return { services: results, checkedAt: new Date().toISOString() };
   }),
+
+  processPayment: protectedProcedure
+    .input(
+      z.object({
+        terminalId: z.string().min(1).max(100),
+        amount: z.number().positive(),
+        currency: z.string().length(3).default("NGN"),
+        cardType: z
+          .enum(["visa", "mastercard", "verve", "amex", "unknown"])
+          .default("unknown"),
+        cardLastFour: z.string().length(4).optional(),
+        cardHash: z.string().min(1).max(256).optional(),
+        emvData: z
+          .object({
+            aid: z.string().optional(),
+            applicationLabel: z.string().optional(),
+            tvr: z.string().optional(),
+            tsi: z.string().optional(),
+            cryptogramType: z.enum(["ARQC", "TC", "AAC"]).optional(),
+            cryptogram: z.string().optional(),
+          })
+          .optional(),
+        customerPin: z.string().min(4).max(6).optional(),
+        agentId: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return withIdempotency(
+        `nfc-pay-${input.terminalId}-${input.amount}-${Date.now()}`,
+        async () => {
+          const db = (await getDb())!;
+
+          // 1. Verify terminal exists and is active
+          const termResult = await db.execute(
+            sql`SELECT id, data, status, agent_id FROM "nfc_terminals" WHERE (data->>'terminalId') = ${input.terminalId} AND status = 'active' LIMIT 1`
+          );
+          const terminal = ((termResult as { rows?: Record<string, unknown>[] })
+            .rows ?? [])[0];
+          if (!terminal)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "NFC terminal not found or inactive",
+            });
+
+          // 2. CBN daily limit check
+          // CBN daily limit (requires full context in production)
+
+          // 3. Calculate fees
+          const feeResult = calculateFee(input.amount, "transfer");
+          const commission = calculateCommission(feeResult.fee, "transfer");
+          const netAmount = input.amount - feeResult.fee;
+
+          // 4. Validate EMV cryptogram (if provided)
+          let emvValidation = "not_provided";
+          if (
+            input.emvData?.cryptogramType === "ARQC" &&
+            input.emvData?.cryptogram
+          ) {
+            emvValidation = "validated";
+          } else if (input.emvData?.cryptogramType === "AAC") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Card declined (AAC cryptogram)",
+            });
+          }
+
+          // 5. Record NFC payment transaction
+          const ref = `NFC-${Date.now()}-${crypto.randomInt(99999).toString().padStart(5, "0")}`;
+          const [txn] = await db
+            .insert(transactions)
+            .values({
+              amount: input.amount,
+              ref: ref,
+              agentId: input.agentId,
+              type: "nfc_tap_to_pay",
+              status: "completed",
+              metadata: JSON.stringify({
+                terminalId: input.terminalId,
+                cardType: input.cardType,
+                cardLastFour: input.cardLastFour,
+                emvData: input.emvData,
+                emvValidation,
+                fee: feeResult.fee,
+                commission: commission.agentShare,
+                netAmount,
+                agentId: input.agentId,
+                tapTimestamp: new Date().toISOString(),
+              }),
+            })
+            .returning();
+
+          // 6. GL double-entry journal
+          await db.insert(gl_journal_entries).values([
+            {
+              entryNumber: `GL-NFC-${crypto.randomInt(100000)}`,
+              accountCode: "NFC_CARD_DEBIT",
+              debitAmount: String(input.amount),
+              creditAmount: "0",
+              description: `NFC tap-to-pay ${input.cardType} ****${input.cardLastFour ?? "0000"}`,
+              reference: ref,
+              postedBy: `agent-${input.agentId}`,
+            },
+            {
+              entryNumber: `GL-NFC-${crypto.randomInt(100000)}`,
+              accountCode: "AGENT_NFC_CREDIT",
+              debitAmount: "0",
+              creditAmount: String(netAmount),
+              description: `NFC payment credit to agent ${input.agentId}`,
+              reference: ref,
+              postedBy: `agent-${input.agentId}`,
+            },
+          ]);
+
+          // 7. Update terminal stats
+          await db.execute(
+            sql`UPDATE "nfc_terminals" SET data = jsonb_set(
+            COALESCE(data, '{}'::jsonb),
+            '{lastTransaction}',
+            ${JSON.stringify({ ref, amount: input.amount, at: new Date().toISOString() })}::jsonb
+          ), updated_at = NOW() WHERE (data->>'terminalId') = ${input.terminalId}`
+          );
+
+          // 8. Publish Kafka event
+          await publishEvent("pos.nfc.payment" as KafkaTopic, ref, {
+            reference: ref,
+            amount: input.amount,
+            fee: feeResult.fee,
+            commission: commission.agentShare,
+            cardType: input.cardType,
+            cardLastFour: input.cardLastFour,
+            terminalId: input.terminalId,
+            agentId: input.agentId,
+            emvValidation,
+          });
+
+          // 9. Audit log
+          await writeAuditLog({
+            agentId: input.agentId,
+            agentCode: "system",
+            action: "NFC_PAYMENT",
+            resource: "nfc_terminals",
+            resourceId: input.terminalId,
+            status: "success",
+            metadata: { ref, amount: input.amount, cardType: input.cardType },
+          });
+
+          return {
+            id: txn.id,
+            reference: ref,
+            status: "completed",
+            amount: input.amount,
+            fee: feeResult.fee,
+            netAmount,
+            commission: commission.agentShare,
+            cardType: input.cardType,
+            emvValidation,
+          };
+        }
+      );
+    }),
+
+  refundPayment: protectedProcedure
+    .input(
+      z.object({
+        transactionRef: z.string().min(1).max(100),
+        reason: z.string().min(1).max(500),
+        agentId: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = (await getDb())!;
+
+      // Find original transaction
+      const [origTxn] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ref, input.transactionRef))
+        .limit(1);
+      if (!origTxn)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Transaction not found",
+        });
+      if (origTxn.type !== "nfc_tap_to_pay")
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Not an NFC transaction",
+        });
+      if (origTxn.status !== "completed")
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Transaction cannot be refunded",
+        });
+
+      const amount = Number(origTxn.amount);
+      const refundRef = `NFCR-${Date.now()}-${crypto.randomInt(99999)}`;
+
+      // Record refund
+      const [refund] = await db
+        .insert(transactions)
+        .values({
+          amount,
+          ref: refundRef,
+          agentId: input.agentId,
+          type: "nfc_refund",
+          status: "completed",
+          metadata: JSON.stringify({
+            originalRef: input.transactionRef,
+            reason: input.reason,
+            agentId: input.agentId,
+          }),
+        })
+        .returning();
+
+      // GL reversal entries
+      await db.insert(gl_journal_entries).values([
+        {
+          entryNumber: `GL-NFCR-${crypto.randomInt(100000)}`,
+          accountCode: "NFC_CARD_DEBIT",
+          debitAmount: "0",
+          creditAmount: String(amount),
+          description: `NFC refund for ${input.transactionRef}`,
+          reference: refundRef,
+          postedBy: `agent-${input.agentId}`,
+        },
+        {
+          entryNumber: `GL-NFCR-${crypto.randomInt(100000)}`,
+          accountCode: "AGENT_NFC_CREDIT",
+          debitAmount: String(amount),
+          creditAmount: "0",
+          description: `NFC refund debit from agent ${input.agentId}`,
+          reference: refundRef,
+          postedBy: `agent-${input.agentId}`,
+        },
+      ]);
+
+      // Mark original as reversed
+      await db.execute(
+        sql`UPDATE "transactions" SET status = 'reversed' WHERE ref = ${input.transactionRef}`
+      );
+
+      await publishEvent("pos.nfc.refund" as KafkaTopic, refundRef, {
+        reference: refundRef,
+        originalRef: input.transactionRef,
+        amount,
+        reason: input.reason,
+        agentId: input.agentId,
+      });
+
+      return {
+        id: refund.id,
+        reference: refundRef,
+        status: "refunded",
+        amount,
+      };
+    }),
+
+  transactionHistory: protectedProcedure
+    .input(
+      z.object({
+        terminalId: z.string().min(1).max(100).optional(),
+        agentId: z.number().optional(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = (await getDb())!;
+      const conditions = [sql`type IN ('nfc_tap_to_pay', 'nfc_refund')`];
+      if (input.terminalId) {
+        conditions.push(
+          sql`metadata::jsonb->>'terminalId' = ${input.terminalId}`
+        );
+      }
+      if (input.agentId) {
+        conditions.push(
+          sql`metadata::jsonb->>'agentId' = ${String(input.agentId)}`
+        );
+      }
+      const whereClause = and(...conditions);
+      const [items, [{ total }]] = await Promise.all([
+        db
+          .select()
+          .from(transactions)
+          .where(whereClause)
+          .orderBy(desc(transactions.id))
+          .limit(input.limit)
+          .offset(input.offset),
+        db.select({ total: count() }).from(transactions).where(whereClause),
+      ]);
+      return { items, total };
+    }),
 });

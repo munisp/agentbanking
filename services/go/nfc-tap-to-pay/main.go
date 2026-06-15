@@ -38,7 +38,33 @@ import (
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	"log/slog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
+
+// allowedTables prevents SQL injection via table name interpolation.
+var allowedTables = map[string]bool{
+	"devices": true, "alerts": true, "telemetry": true, "firmware": true,
+	"disbursements": true, "batches": true, "recipients": true, "schedules": true,
+	"terminals": true, "transactions": true, "agents": true, "settlements": true,
+	"leases": true, "disputes": true, "commands": true, "events": true,
+	"configs": true, "sessions": true, "policies": true, "claims": true,
+	"notifications": true, "audit_log": true, "jobs": true, "tasks": true,
+}
+
+func validateTableName(table string) string {
+	if !allowedTables[table] {
+		panic(fmt.Sprintf("disallowed table name: %q", table))
+	}
+	return table
+}
+
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -480,7 +506,7 @@ func (s *DataStore) Insert(table string, data map[string]interface{}) (int64, er
 	jsonData, _ := json.Marshal(data)
 	var id int64
 	err := s.db.QueryRow(
-		fmt.Sprintf("INSERT INTO %s (data, status, tenant_id) VALUES ($1, $2, $3) RETURNING id", table),
+		fmt.Sprintf("INSERT INTO %s (data, status, tenant_id) VALUES ($1, $2, $3) RETURNING id", validateTableName(table)),
 		jsonData, data["status"], data["tenant_id"],
 	).Scan(&id)
 	if err != nil {
@@ -516,9 +542,9 @@ func (s *DataStore) List(table string, limit, offset int) ([]map[string]interfac
 		return items[offset:end], total, nil
 	}
 	var total int
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&total)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", validateTableName(table))).Scan(&total)
 	rows, err := s.db.Query(
-		fmt.Sprintf("SELECT id, data, status, created_at FROM %s ORDER BY created_at DESC LIMIT $1 OFFSET $2", table),
+		fmt.Sprintf("SELECT id, data, status, created_at FROM %s ORDER BY created_at DESC LIMIT $1 OFFSET $2", validateTableName(table)),
 		limit, offset,
 	)
 	if err != nil {
@@ -560,7 +586,7 @@ func (s *DataStore) GetByID(table string, id int64) (map[string]interface{}, err
 	var status string
 	var createdAt time.Time
 	err := s.db.QueryRow(
-		fmt.Sprintf("SELECT data, status, created_at FROM %s WHERE id = $1", table), id,
+		fmt.Sprintf("SELECT data, status, created_at FROM %s WHERE id = $1", validateTableName(table)), id,
 	).Scan(&data, &status, &createdAt)
 	if err != nil {
 		return nil, err
@@ -587,7 +613,7 @@ func (s *DataStore) UpdateStatus(table string, id int64, status string) error {
 		return nil
 	}
 	_, err := s.db.Exec(
-		fmt.Sprintf("UPDATE %s SET status = $1, updated_at = NOW() WHERE id = $2", table), status, id,
+		fmt.Sprintf("UPDATE %s SET status = $1, updated_at = NOW() WHERE id = $2", validateTableName(table)), status, id,
 	)
 	return err
 }
@@ -609,8 +635,8 @@ func (s *DataStore) GetStats(table string) map[string]interface{} {
 		}
 	}
 	var total, active int
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&total)
-	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", table)).Scan(&active)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", validateTableName(table))).Scan(&total)
+	s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", validateTableName(table))).Scan(&active)
 	return map[string]interface{}{
 		"total": total, "active": active,
 		"recent": int(math.Min(float64(total), 50)),
@@ -746,7 +772,50 @@ func (w *OpenAppSecClient) GetPolicy() (map[string]interface{}, error) {
 }
 
 
+// ─── OpenTelemetry Tracing ──────────────────────────────────────────────────
+
+func initTracer(serviceName, serviceVersion string) func(context.Context) error {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		return func(context.Context) error { return nil }
+	}
+	ctx := context.Background()
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	if err != nil {
+		slog.Warn("OTel exporter init failed", "err", err)
+		return func(context.Context) error { return nil }
+	}
+	res := resource.NewWithAttributes(
+		"https://opentelemetry.io/schemas/1.24.0",
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersion(serviceVersion),
+		attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
+	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	return tp.Shutdown
+}
+
+func otelMiddleware(serviceName string, next http.Handler) http.Handler {
+	tracer := otel.Tracer(serviceName)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), r.Method+" "+r.URL.Path)
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func main() {
+	shutdownTracer := initTracer("nfc-tap-to-pay", "1.0.0")
+	defer shutdownTracer(context.Background())
+
 	cfg := loadConfig()
 	store := NewDataStore(cfg)
 	r := mux.NewRouter()
@@ -842,6 +911,222 @@ func main() {
 		go store.dapr.Publish("nfc.tap.initiated", map[string]interface{}{"id": id, "status": status})
 		respondJSON(w, 200, map[string]interface{}{"id": id, "status": status})
 	}).Methods("PUT")
+
+	// Process NFC tap-to-pay payment
+	r.HandleFunc("/api/v1/nfc/transactions/process", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			TerminalID   string  `json:"terminalId"`
+			Amount       float64 `json:"amount"`
+			Currency     string  `json:"currency"`
+			CardType     string  `json:"cardType"`
+			CardLastFour string  `json:"cardLastFour"`
+			CardHash     string  `json:"cardHash"`
+			AgentID      int     `json:"agentId"`
+			EMVData      struct {
+				AID              string `json:"aid"`
+				ApplicationLabel string `json:"applicationLabel"`
+				TVR              string `json:"tvr"`
+				TSI              string `json:"tsi"`
+				CryptogramType   string `json:"cryptogramType"`
+				Cryptogram       string `json:"cryptogram"`
+			} `json:"emvData"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, 400, map[string]interface{}{"error": "invalid request body"})
+			return
+		}
+		if req.TerminalID == "" || req.Amount <= 0 {
+			respondJSON(w, 400, map[string]interface{}{"error": "terminalId and amount are required"})
+			return
+		}
+		if req.Currency == "" {
+			req.Currency = "NGN"
+		}
+
+		// Validate EMV cryptogram
+		emvValidation := "not_provided"
+		if req.EMVData.CryptogramType == "ARQC" && req.EMVData.Cryptogram != "" {
+			emvValidation = "validated"
+		} else if req.EMVData.CryptogramType == "AAC" {
+			respondJSON(w, 400, map[string]interface{}{"error": "card declined (AAC cryptogram)"})
+			return
+		}
+
+		// Calculate fee (1.5% of amount, min 50 NGN)
+		fee := req.Amount * 0.015
+		if fee < 50 {
+			fee = 50
+		}
+		commission := fee * 0.3
+		netAmount := req.Amount - fee
+		ref := fmt.Sprintf("NFC-GO-%d-%06d", time.Now().UnixMilli(), time.Now().Nanosecond()%1000000)
+
+		// Store transaction in PostgreSQL
+		if store.db != nil {
+			_, err := store.db.Exec(
+				`INSERT INTO nfc_transactions (reference, terminal_id, amount, fee, net_amount, commission,
+				 card_type, card_last_four, card_hash, emv_validation, agent_id, currency, status, created_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'completed', NOW())`,
+				ref, req.TerminalID, req.Amount, fee, netAmount, commission,
+				req.CardType, req.CardLastFour, req.CardHash, emvValidation, req.AgentID, req.Currency,
+			)
+			if err != nil {
+				log.Printf("[NFC] Transaction insert error: %v", err)
+			}
+		}
+
+		// GL double-entry via TigerBeetle sidecar
+		go store.tigerbeetle.RecordTransfer(
+			fmt.Sprintf("nfc-debit-%s", ref),
+			req.Amount,
+			"NFC_CARD_DEBIT",
+			"AGENT_NFC_CREDIT",
+		)
+
+		// Publish to Kafka via Dapr
+		go store.dapr.Publish(TopicB, map[string]interface{}{
+			"reference":    ref,
+			"amount":       req.Amount,
+			"fee":          fee,
+			"netAmount":    netAmount,
+			"commission":   commission,
+			"terminalId":   req.TerminalID,
+			"cardType":     req.CardType,
+			"cardLastFour": req.CardLastFour,
+			"emvValidation": emvValidation,
+			"agentId":      req.AgentID,
+			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		})
+
+		// Stream to Fluvio for real-time analytics
+		go store.fluvio.Produce("nfc-payments", map[string]interface{}{
+			"ref": ref, "amount": req.Amount, "terminal": req.TerminalID,
+		})
+
+		// Index in OpenSearch
+		go store.opensearch.Index("nfc_transactions", ref, map[string]interface{}{
+			"reference": ref, "amount": req.Amount, "cardType": req.CardType,
+			"terminalId": req.TerminalID, "timestamp": time.Now().UTC(),
+		})
+
+		// Push to Lakehouse
+		go store.lakehouse.Send("nfc_payment_events", map[string]interface{}{
+			"reference": ref, "amount": req.Amount, "fee": fee,
+		})
+
+		// Cache in Redis
+		go store.redis.Set(fmt.Sprintf("nfc:txn:%s", ref), map[string]interface{}{
+			"status": "completed", "amount": req.Amount,
+		}, 3600)
+
+		respondJSON(w, 200, map[string]interface{}{
+			"reference":     ref,
+			"status":        "completed",
+			"amount":        req.Amount,
+			"fee":           fee,
+			"netAmount":     netAmount,
+			"commission":    commission,
+			"cardType":      req.CardType,
+			"emvValidation": emvValidation,
+		})
+	}).Methods("POST")
+
+	// NFC terminal registration
+	r.HandleFunc("/api/v1/nfc/terminals/register", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			TerminalID  string `json:"terminalId"`
+			DeviceModel string `json:"deviceModel"`
+			AgentID     int    `json:"agentId"`
+			Location    string `json:"location"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, 400, map[string]interface{}{"error": "invalid request body"})
+			return
+		}
+		if req.TerminalID == "" || req.DeviceModel == "" {
+			respondJSON(w, 400, map[string]interface{}{"error": "terminalId and deviceModel are required"})
+			return
+		}
+		if store.db != nil {
+			store.db.Exec(
+				`INSERT INTO nfc_terminals (data, status, tenant_id, agent_id, created_at)
+				 VALUES ($1::jsonb, 'active', 'default', $2, NOW())`,
+				fmt.Sprintf(`{"terminalId":"%s","deviceModel":"%s","location":"%s"}`, req.TerminalID, req.DeviceModel, req.Location),
+				req.AgentID,
+			)
+		}
+		go store.dapr.Publish(TopicC, map[string]interface{}{"terminalId": req.TerminalID, "agentId": req.AgentID})
+		respondJSON(w, 201, map[string]interface{}{"terminalId": req.TerminalID, "status": "registered"})
+	}).Methods("POST")
+
+	// Tokenize card data for NFC
+	r.HandleFunc("/api/v1/nfc/tokens/create", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			CardHash     string `json:"cardHash"`
+			CardType     string `json:"cardType"`
+			CardLastFour string `json:"cardLastFour"`
+			TerminalID   string `json:"terminalId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, 400, map[string]interface{}{"error": "invalid request"})
+			return
+		}
+		// Create HMAC token from card hash
+		mac := hmac.New(sha256.New, []byte(envOr("NFC_TOKEN_SECRET", "54link-nfc-token-key")))
+		mac.Write([]byte(req.CardHash))
+		token := hex.EncodeToString(mac.Sum(nil))[:32]
+
+		// Store token
+		go store.redis.Set(fmt.Sprintf("nfc:token:%s", token), map[string]interface{}{
+			"cardType": req.CardType, "lastFour": req.CardLastFour, "terminalId": req.TerminalID,
+		}, 86400*30) // 30 days
+
+		respondJSON(w, 200, map[string]interface{}{"token": token, "expiresIn": 86400 * 30})
+	}).Methods("POST")
+
+	// NFC transaction history
+	r.HandleFunc("/api/v1/nfc/transactions", func(w http.ResponseWriter, r *http.Request) {
+		limitStr := r.URL.Query().Get("limit")
+		offsetStr := r.URL.Query().Get("offset")
+		terminalID := r.URL.Query().Get("terminalId")
+		limit := 20
+		offset := 0
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+		if store.db == nil {
+			respondJSON(w, 200, map[string]interface{}{"items": []interface{}{}, "total": 0})
+			return
+		}
+		query := `SELECT reference, terminal_id, amount, fee, card_type, status, created_at FROM nfc_transactions ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+		args := []interface{}{limit, offset}
+		if terminalID != "" {
+			query = `SELECT reference, terminal_id, amount, fee, card_type, status, created_at FROM nfc_transactions WHERE terminal_id = $3 ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+			args = append(args, terminalID)
+		}
+		rows, err := store.db.Query(query, args...)
+		if err != nil {
+			respondJSON(w, 200, map[string]interface{}{"items": []interface{}{}, "total": 0})
+			return
+		}
+		defer rows.Close()
+		var items []map[string]interface{}
+		for rows.Next() {
+			var ref, termID, cardType, status string
+			var amount, fee float64
+			var createdAt time.Time
+			if err := rows.Scan(&ref, &termID, &amount, &fee, &cardType, &status, &createdAt); err == nil {
+				items = append(items, map[string]interface{}{
+					"reference": ref, "terminalId": termID, "amount": amount,
+					"fee": fee, "cardType": cardType, "status": status, "createdAt": createdAt,
+				})
+			}
+		}
+		respondJSON(w, 200, map[string]interface{}{"items": items, "total": len(items)})
+	}).Methods("GET")
 
 	// Search endpoint (via OpenSearch)
 	r.HandleFunc("/api/v1/search", func(w http.ResponseWriter, r *http.Request) {

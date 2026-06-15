@@ -98,6 +98,66 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
               }, childCount: filtered.length)),
               const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
             ])),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showPaymentDialog,
+        icon: const Icon(Icons.nfc),
+        label: const Text('New Payment'),
+        backgroundColor: const Color(0xFF0D7377),
+      ),
+    );
+  }
+
+  void _showPaymentDialog() {
+    final amountController = TextEditingController();
+    final terminalController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('NFC Tap-to-Pay'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: amountController, decoration: const InputDecoration(labelText: 'Amount (₦)', prefixText: '₦'), keyboardType: TextInputType.number),
+            const SizedBox(height: 12),
+            TextField(controller: terminalController, decoration: const InputDecoration(labelText: 'Terminal ID')),
+            const SizedBox(height: 16),
+            const Text('Hold customer\'s contactless card near the device', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final amount = double.tryParse(amountController.text);
+              if (amount == null || amount <= 0) return;
+              Navigator.pop(ctx);
+              setState(() => _loading = true);
+              try {
+                final api = ApiService();
+                final resp = await api.post('/api/trpc/nfcTapToPay.processPayment', data: {
+                  'terminalId': terminalController.text.isNotEmpty ? terminalController.text : 'TERM-001',
+                  'amount': amount,
+                  'cardType': 'unknown',
+                  'agentId': 1,
+                });
+                final result = resp.data?['result']?['data'];
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Payment completed: ${result?['reference']} — ₦$amount'),
+                    backgroundColor: Colors.green,
+                  ));
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payment failed: $e'), backgroundColor: Colors.red));
+                }
+              }
+              _loadData();
+            },
+            child: const Text('Process Payment'),
+          ),
+        ],
+      ),
     );
   }
 }

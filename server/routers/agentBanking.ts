@@ -19,9 +19,12 @@ import {
   fraudAlerts,
   shareableLinks,
   kycSessions,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import {
   validateAmount,
   validateStatusTransition,
@@ -511,6 +514,124 @@ export const agentBankingRouter = router({
               error instanceof Error ? error.message : "Internal server error",
           });
         }
+      }),
+    pay: agentProcedure
+      .input(
+        z.object({
+          code: z.string().min(1).max(256),
+          amount: z.number().positive(),
+          customerPhone: z.string().min(1).max(20),
+          pin: z.string().min(4).max(6),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return withIdempotency(`qr-pay-${input.code}-${input.amount}`, async () => {
+          const db = (await getDb())!;
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+          // 1. Resolve QR code
+          const [qr] = await db
+            .select()
+            .from(qrCodes)
+            .where(eq(qrCodes.code, input.code))
+            .limit(1);
+          if (!qr) throw new TRPCError({ code: "NOT_FOUND", message: "QR code not found" });
+          if (qr.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "QR code is not active" });
+          if (qr.expiresAt && qr.expiresAt < new Date()) throw new TRPCError({ code: "BAD_REQUEST", message: "QR code has expired" });
+
+          // 2. Validate amount against QR (if QR has fixed amount)
+          const qrAmount = qr.amount ? Number(qr.amount) : null;
+          if (qrAmount && Math.abs(qrAmount - input.amount) > 0.01) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `QR requires exact amount ₦${qrAmount}` });
+          }
+
+          // 3. CBN daily limit check
+          await checkDailyLimit(input.amount, "qr_payment");
+
+          // 4. Calculate fees
+          const feeResult = calculateFee(input.amount, "transfer");
+          const commission = calculateCommission(feeResult.fee, "transfer");
+          const netAmount = input.amount - feeResult.fee;
+
+          // 5. Record transaction
+          const ref = `QRP-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+          const [txn] = await db
+            .insert(transactions)
+            .values({
+              amount: input.amount,
+              reference: ref,
+              type: "qr_payment",
+              status: "completed",
+              metadata: JSON.stringify({
+                qrCode: input.code,
+                agentId: qr.agentId,
+                customerPhone: input.customerPhone,
+                fee: feeResult.fee,
+                commission: commission.agent,
+                netAmount,
+              }),
+            })
+            .returning();
+
+          // 6. GL double-entry journal
+          await db.insert(gl_journal_entries).values([
+            {
+              entryNumber: `GL-QRP-${crypto.randomInt(100000)}`,
+              accountCode: "CUSTOMER_QR_DEBIT",
+              debitAmount: String(input.amount),
+              creditAmount: "0",
+              description: `QR payment from ${input.customerPhone}`,
+              reference: ref,
+              postedBy: "system",
+            },
+            {
+              entryNumber: `GL-QRP-${crypto.randomInt(100000)}`,
+              accountCode: "MERCHANT_QR_CREDIT",
+              debitAmount: "0",
+              creditAmount: String(netAmount),
+              description: `QR payment to agent ${qr.agentId}`,
+              reference: ref,
+              postedBy: "system",
+            },
+          ]);
+
+          // 7. Mark QR code as used
+          await db.execute(
+            sql`UPDATE "qr_codes" SET status = 'used', "usedAt" = NOW() WHERE code = ${input.code}`
+          );
+
+          // 8. Publish Kafka event
+          await publishEvent("pos.qr.payment" as KafkaTopic, ref, {
+            reference: ref,
+            amount: input.amount,
+            fee: feeResult.fee,
+            commission: commission.agent,
+            qrCode: input.code,
+            agentId: qr.agentId,
+            customerPhone: input.customerPhone,
+          });
+
+          // 9. Audit log
+          await writeAuditLog({
+            agentId: qr.agentId ?? 0,
+            agentCode: "system",
+            action: "QR_PAYMENT",
+            resource: "qrCodes",
+            resourceId: String(qr.id),
+            status: "success",
+            metadata: { ref, amount: input.amount, fee: feeResult.fee },
+          });
+
+          return {
+            id: txn.id,
+            reference: ref,
+            status: "completed",
+            amount: input.amount,
+            fee: feeResult.fee,
+            netAmount,
+            commission: commission.agent,
+          };
+        });
       }),
   }),
 

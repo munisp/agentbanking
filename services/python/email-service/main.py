@@ -1,5 +1,8 @@
 
 from fastapi import FastAPI, HTTPException, Depends, status, Security
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -15,12 +18,39 @@ from .models import EmailDB, EmailCreate, EmailResponse, SessionLocal, engine, B
 from .config import get_settings
 from sqlalchemy.orm import Session
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Email Service",
     description="API for sending and managing emails within the Remittance Platform.",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 # Load settings
 settings = get_settings()
@@ -163,7 +193,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-
 class EmailSendRequest(BaseModel):
     recipient_email: EmailStr
     subject: str
@@ -204,7 +233,6 @@ async def list_emails(skip: int = 0, limit: int = 100, current_user: dict = Depe
         emails = db.query(EmailDB).offset(skip).limit(limit).all()
     return emails
 
-
 # Example of an admin-only endpoint
 @app.delete("/emails/{email_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"])
 async def delete_email(email_id: int, current_user: dict = Depends(get_current_admin_user), db: Session = Depends(get_db)):
@@ -214,5 +242,4 @@ async def delete_email(email_id: int, current_user: dict = Depends(get_current_a
     db.delete(db_email)
     db.commit()
     return
-
 

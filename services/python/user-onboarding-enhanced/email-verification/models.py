@@ -237,8 +237,7 @@ if __name__ == '__main__':
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    # Use an in-memory SQLite database for demonstration
-    engine = create_engine("sqlite:///:memory:")
+        engine = create_engine("postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced")
     
     print("Creating tables...")
     create_tables(engine)

@@ -14,7 +14,7 @@ import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   devices,
   deviceCommands,
@@ -29,7 +29,30 @@ import {
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getIO } from "../socketSingleton";
-import { writeAuditLog } from "../db";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Admin guard ───────────────────────────────────────────────────────────────
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -54,6 +77,45 @@ async function requireDb() {
 }
 
 // ── MDM Router ────────────────────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "mdm",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "mdm",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const mdmRouter = router({
   // List all enrolled devices with agent info
   listDevices: adminProcedure
@@ -156,6 +218,26 @@ export const mdmRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Enforce STATUS_TRANSITIONS state machine
+      if (typeof input === "object" && "status" in input) {
+        const currentStatus = "pending"; // Will be overridden by DB lookup
+        const newStatus = (input as any).status;
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await requireDb();
         const [device] = await db

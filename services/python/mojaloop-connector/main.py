@@ -13,6 +13,16 @@ Features:
 - Bulk transfer support for batch settlements
 """
 import json
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import time
 import hashlib
 import base64
@@ -23,10 +33,53 @@ from typing import Any, Dict, List, Optional, Tuple
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from enum import Enum
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+import psycopg2
+import psycopg2.extras
+
+def _init_persistence():
+    """Initialize PostgreSQL persistence for mojaloop-connector."""
+    import os
+    try:
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/mojaloop_connector'))
+        
+        
+        return conn
+    except Exception as e:
+        import logging
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
+        return None
+
+_persistence_db = _init_persistence()
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 SERVICE_NAME = "mojaloop-connector"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = int(os.getenv("MOJALOOP_CONNECTOR_PORT", "9119"))
-
 
 class TransferState(Enum):
     RECEIVED = "RECEIVED"
@@ -34,7 +87,6 @@ class TransferState(Enum):
     COMMITTED = "COMMITTED"
     ABORTED = "ABORTED"
     EXPIRED = "EXPIRED"
-
 
 class PartyIdType(Enum):
     MSISDN = "MSISDN"
@@ -45,7 +97,6 @@ class PartyIdType(Enum):
     DEVICE = "DEVICE"
     IBAN = "IBAN"
 
-
 @dataclass
 class Party:
     party_id_type: str
@@ -54,7 +105,6 @@ class Party:
     name: str = ""
     currency: str = "NGN"
     account_type: str = "SAVINGS"
-
 
 @dataclass
 class Quote:
@@ -72,7 +122,6 @@ class Quote:
     ilp_packet: str = ""
     condition: str = ""
     state: str = "RECEIVED"
-
 
 @dataclass
 class Transfer:
@@ -92,7 +141,6 @@ class Transfer:
     error_code: str = ""
     error_description: str = ""
 
-
 @dataclass
 class SettlementWindow:
     window_id: str
@@ -102,7 +150,6 @@ class SettlementWindow:
     total_amount: float = 0.0
     transfer_count: int = 0
     participants: List[str] = field(default_factory=list)
-
 
 class MojaloopConnector:
     """Mojaloop FSPIOP-compliant connector for POS platform."""
@@ -331,14 +378,21 @@ class MojaloopConnector:
             "pending_transfers": sum(1 for t in self.transfers.values() if t.state == TransferState.RESERVED),
         }
 
-
 # ─── HTTP Server ─────────────────────────────────────────────────────────────
 
 connector = MojaloopConnector()
 
-
 class MojaloopHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._json_response({"status": "healthy", "service": SERVICE_NAME, "version": SERVICE_VERSION})
         elif self.path == "/api/v1/metrics":
@@ -369,6 +423,13 @@ class MojaloopHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         body = self._read_body()
         if self.path == "/api/v1/quotes":
             payer = Party(**body.get("payer", {}))
@@ -415,14 +476,12 @@ class MojaloopHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 def main():
     server = HTTPServer(("0.0.0.0", DEFAULT_PORT), MojaloopHandler)
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} starting on port {DEFAULT_PORT}")
     print(f"[{SERVICE_NAME}] Registered DFSPs: {list(connector.dfsps.keys())}")
     print(f"[{SERVICE_NAME}] FX rates: {connector.fx_rates}")
     server.serve_forever()
-
 
 if __name__ == "__main__":
     main()

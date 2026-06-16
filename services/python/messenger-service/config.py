@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./messenger_service.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/messenger_service")
     
     # Service settings
     SERVICE_NAME: str = "messenger-service"
@@ -36,10 +36,8 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 # SQLAlchemy setup
-# Using a simple SQLite database for demonstration. In production, this would be a PostgreSQL/MySQL connection.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

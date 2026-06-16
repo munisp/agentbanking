@@ -1,4 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Security
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -18,6 +21,32 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .config import settings
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,14 +63,6 @@ if "postgresql" in settings.DATABASE_URL.lower():
         echo=settings.DB_ECHO
     )
     logger.info(f"PostgreSQL engine created with pool_size={settings.DB_POOL_SIZE}, max_overflow={settings.DB_MAX_OVERFLOW}")
-elif "sqlite" in settings.DATABASE_URL.lower():
-    # SQLite (development only)
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        echo=settings.DB_ECHO
-    )
-    logger.warning("SQLite engine created - NOT RECOMMENDED FOR PRODUCTION")
 else:
     # Other databases
     engine = create_engine(
@@ -61,6 +82,7 @@ SessionLocal = sessionmaker(
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
+apply_middleware(app, enable_auth=True)
 
 # API Key authentication
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)

@@ -18,7 +18,7 @@ class Settings(BaseModel):
     SERVICE_NAME: str = "google-assistant-service"
     DATABASE_URL: str = os.environ.get(
         "DATABASE_URL",
-        "sqlite:///./google_assistant_service.db"
+        "postgresql://postgres:postgres@localhost:5432/google_assistant_service"
     )
     # Add other settings as needed, e.g., API keys, logging level, etc.
 
@@ -26,12 +26,8 @@ settings = Settings()
 
 # --- Database Configuration ---
 
-# Use connect_args for SQLite to allow multiple threads to access the same connection
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
-
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args=connect_args,
     echo=False # Set to True to see SQL queries
 )
 

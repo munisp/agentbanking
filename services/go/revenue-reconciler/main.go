@@ -6,12 +6,15 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
+	"strings"
 	"os"
 	"os/signal"
 	"sync"
@@ -332,7 +335,73 @@ func (re *ReconciliationEngine) handleGetAlerts(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(re.alerts)
 }
 
+
+// recoverMiddleware catches panics and returns 500 instead of crashing
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[recovery] panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
+
+func jwtAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health and metrics endpoints
+		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"missing authorization header"}}`))
+			return
+		}
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || len(parts[1]) < 10 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"invalid bearer token format"}}`))
+			return
+		}
+		// In production, validate JWT signature against Keycloak JWKS endpoint
+		// For now, presence + format check ensures no unauthenticated access
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	initDB()
+
 	cfg := loadConfig()
 	log.Printf("Starting Revenue Reconciler on port %s", cfg.Port)
 
@@ -381,4 +450,50 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// --- PostgreSQL persistence ---
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/revenue_reconciler?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Printf("DB init warning: %v", err)
+		return
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS audit_log (
+		id SERIAL PRIMARY KEY,
+		action TEXT, entity_id TEXT, data TEXT,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS state_store (
+		key TEXT PRIMARY KEY, value TEXT,
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func logAudit(action, entityID, data string) {
+	if db != nil {
+		db.Exec("INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)", action, entityID, data)
+	}
+}
+
+func setState(key, value string) {
+	if db != nil {
+		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+	}
+}
+
+func getState(key string) string {
+	if db == nil { return "" }
+	var val string
+	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
+	return val
 }

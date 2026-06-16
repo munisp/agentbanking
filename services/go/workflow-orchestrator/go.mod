@@ -3,6 +3,7 @@ module workflow-orchestrator
 go 1.26.0
 
 require (
+	github.com/lib/pq v1.10.9
 	github.com/Nerzal/gocloak/v13 v13.9.0
 	github.com/Permify/permify-go v0.5.0
 	github.com/dapr/go-sdk v1.14.2

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./dispute_resolution.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/dispute_resolution"
     
     # Service Settings
     SERVICE_NAME: str = "dispute-resolution"
@@ -34,8 +34,7 @@ settings = get_settings()
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     """
     # Database settings
     DATABASE_URL: str = Field(
-        default=os.getenv("DATABASE_URL", "sqlite:///./multi_ocr_service.db"),
+        default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/multi_ocr_service"),
         description="The database connection URL."
     )
     
@@ -34,11 +34,8 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # SQLAlchemy setup
-# For SQLite, check_same_thread is needed for concurrent requests
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args=connect_args
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -55,4 +52,3 @@ def get_db() -> Generator[Session, None, None]:
 
 # Note: In a real production environment, the DATABASE_URL should be a secure 
 # connection string for a robust database like PostgreSQL or MySQL.
-# The SQLite default is for development/testing purposes.

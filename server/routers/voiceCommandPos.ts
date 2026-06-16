@@ -8,10 +8,37 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  application: ["under_review"],
+  under_review: ["approved", "rejected", "additional_info"],
+  additional_info: ["under_review"],
+  approved: ["onboarding"],
+  onboarding: ["active"],
+  active: ["suspended", "under_review"],
+  suspended: ["active", "terminated"],
+  terminated: [],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+};
 
 const SUPPORTED_LANGUAGES = [
   { code: "en", name: "English" },
@@ -33,6 +60,62 @@ const INTENT_MAP: Record<string, { type: string; description: string }> = {
   check_balance: { type: "Balance", description: "Check float balance" },
 };
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "voiceCommandPos",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "voiceCommandPos",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "voiceCommandPos",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "voiceCommandPos",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const voiceCommandPosRouter = router({
   processCommand: protectedProcedure
     .input(
@@ -40,9 +123,25 @@ export const voiceCommandPosRouter = router({
         transcript: z.string().min(1).max(500),
         language: z.string().default("en"),
         confidence: z.number().min(0).max(1).optional(),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -122,12 +221,27 @@ export const voiceCommandPosRouter = router({
     .input(
       z.object({
         intent: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         phone: z.string().optional(),
         customerName: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -170,7 +284,9 @@ export const voiceCommandPosRouter = router({
         }
 
         const ref = `VOI-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-        const commission = Math.round(input.amount * 0.02);
+        const feeResult = calculateFee(input.amount, "cashOut");
+        const commResult = calculateCommission(feeResult.fee, "cashOut");
+        const commission = commResult.agentShare;
 
         const [tx] = await db
           .insert(transactions)
@@ -179,6 +295,7 @@ export const voiceCommandPosRouter = router({
             agentId: session.id,
             type: intentInfo.type,
             amount: String(input.amount),
+            fee: String(feeResult.fee),
             commission: String(commission),
             customerPhone: input.phone ?? null,
             customerName: input.customerName ?? null,
@@ -200,6 +317,24 @@ export const voiceCommandPosRouter = router({
               // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
             } as any)
             .where(eq(agents.id, session.id));
+
+          // Double-entry journal entry
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-CI-${Date.now()}`,
+            description: `voiceCommandPos transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            referenceType: "transaction",
+            referenceId: ref ?? String(Date.now()),
+            postedBy: session?.agentCode ?? "system",
+            status: "posted",
+          });
         }
         if (intentInfo.type === "Cash In") {
           await db

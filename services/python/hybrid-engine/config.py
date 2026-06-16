@@ -36,8 +36,7 @@ settings = Settings()
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    # For SQLite: connect_args={"check_same_thread": False}
-)
+    )
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(

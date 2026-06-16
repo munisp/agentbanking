@@ -5,6 +5,8 @@ import type { TrpcContext } from "./context";
 import { permifyCheck } from "../_core/permify";
 import { createObservabilityMiddleware } from "../middleware/observabilityMiddleware";
 import { createSidecarMiddleware } from "../middleware/sidecarIntegration";
+import { createTrpcCacheMiddleware } from "../middleware/trpcCacheMiddleware";
+import { createProductionHardeningMiddleware } from "../middleware/productionHardeningMiddleware";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -17,11 +19,54 @@ export const middleware = t.middleware;
 //    Fluvio, TigerBeetle (fire-and-forget, fail-open) ────────────────────────
 const observability = createObservabilityMiddleware(t);
 const sidecarMiddleware = createSidecarMiddleware(t);
+const trpcCache = createTrpcCacheMiddleware(t);
+const productionHardening = createProductionHardeningMiddleware(t);
+
+// ── Input Sanitization middleware: XSS/injection detection on all inputs ──────
+function containsMaliciousPatterns(input: unknown): boolean {
+  if (typeof input === "string") {
+    if (
+      /<script[\s>]/i.test(input) ||
+      /javascript:/i.test(input) ||
+      /on\w+\s*=/i.test(input)
+    )
+      return true;
+    if (
+      /(\b(DROP|DELETE|INSERT|UPDATE|ALTER)\b.*;\s*(DROP|DELETE|INSERT|UPDATE|ALTER))/i.test(
+        input
+      )
+    )
+      return true;
+    return false;
+  }
+  if (Array.isArray(input)) return input.some(containsMaliciousPatterns);
+  if (input !== null && typeof input === "object") {
+    return Object.values(input as Record<string, unknown>).some(
+      containsMaliciousPatterns
+    );
+  }
+  return false;
+}
+
+const inputSanitization = t.middleware(async opts => {
+  const { next, getRawInput } = opts;
+  const rawInput = await getRawInput();
+  if (rawInput !== undefined && containsMaliciousPatterns(rawInput)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Input contains potentially malicious content",
+    });
+  }
+  return next();
+});
 
 // Base: t.procedure.use(observability) applied to all procedure levels
 export const publicProcedure = t.procedure
+  .use(inputSanitization)
   .use(observability)
-  .use(sidecarMiddleware);
+  .use(sidecarMiddleware)
+  .use(trpcCache)
+  .use(productionHardening);
 
 // ── requireUser: verify JWT session ──────────────────────────────────────────
 const requireUser = t.middleware(async opts => {
@@ -76,14 +121,18 @@ const requirePermify = t.middleware(async opts => {
 // ── protectedProcedure: JWT auth + Permify base access check ─────────────────
 // Chain: protectedProcedure = t.procedure.use(observability).use(requireUser).use(requirePermify)
 export const protectedProcedure = t.procedure
+  .use(inputSanitization)
   .use(observability)
   .use(sidecarMiddleware)
+  .use(trpcCache)
+  .use(productionHardening)
   .use(requireUser)
   .use(requirePermify);
 
 // ── adminProcedure: JWT auth + role=admin + Permify admin check ───────────────
 // Chain: adminProcedure = t.procedure.use(observability).use(requireUser).use(requireAdmin)
 export const adminProcedure = t.procedure
+  .use(inputSanitization)
   .use(observability)
   .use(sidecarMiddleware)
   .use(

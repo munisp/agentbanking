@@ -6,7 +6,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Determine the base directory for relative path resolution
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """
@@ -15,7 +14,7 @@ class Settings(BaseSettings):
     Settings are loaded from environment variables or a .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./unified_streaming.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/unified_streaming"
     ECHO_SQL: bool = False
 
     # Service settings
@@ -33,7 +32,6 @@ settings = Settings()
 # Configure the database engine
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
     echo=settings.ECHO_SQL
 )
 
@@ -52,18 +50,3 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
-# Create the database file if it's SQLite and doesn't exist
-if "sqlite" in settings.DATABASE_URL:
-    # This is a simple way to ensure the file exists for SQLite.
-    # In a real application, you would use Alembic for migrations.
-    try:
-        from .models import Base # Import Base for metadata
-        Base.metadata.create_all(bind=engine)
-    except ImportError:
-        # models.py is not yet created, this will be handled later
-        pass
-
-if __name__ == "__main__":
-    print(f"Service Name: {settings.SERVICE_NAME}")
-    print(f"Database URL: {settings.DATABASE_URL}")
-    print(f"SQL Echo: {settings.ECHO_SQL}")

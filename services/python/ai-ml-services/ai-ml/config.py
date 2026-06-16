@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field("a-very-secret-key-for-development", description="Secret key for security")
     
     # Database Settings
-    DATABASE_URL: str = Field("sqlite:///./ai_ml_service.db", description="Database connection URL")
+    DATABASE_URL: str = Field("postgresql://postgres:postgres@localhost:5432/ai_ml_services", description="Database connection URL")
     
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["*"] # Allow all for development, should be restricted in production

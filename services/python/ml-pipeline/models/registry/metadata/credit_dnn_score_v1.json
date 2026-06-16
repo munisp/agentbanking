@@ -1,0 +1,25 @@
+{
+  "model_name": "credit_dnn_score",
+  "model_type": "credit_scoring",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.484851",
+  "description": "Credit scoring model (dnn_score)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/credit_dnn_score/v1/credit_dnn_score_best.pt",
+  "artifact_hash": "330238436c090d02",
+  "artifact_size_bytes": 474168,
+  "metrics": {
+    "rmse": 41.0724650793608,
+    "mae": 31.751554489135742,
+    "r2": 0.6950405836105347,
+    "best_epoch": 21
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1"
+  },
+  "promoted_at": "2026-05-25T11:36:31.485206",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial credit scoring training"
+}

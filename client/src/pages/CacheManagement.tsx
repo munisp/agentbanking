@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function CacheManagement() {
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const cacheQ = trpc.cache.list.useQuery() as any;
   const invalidate = trpc.cache.invalidate.useMutation({
     onSuccess: () => {
@@ -16,8 +15,7 @@ export default function CacheManagement() {
   const invalidateAll = trpc.cache.invalidateAll.useMutation({
     onSuccess: d => {
       cacheQ.refetch();
-      // @ts-expect-error Sprint 85 — type inference mismatch
-      toast.success(`${d.invalidated} caches invalidated`);
+      toast.success(`${(d as any).invalidated} caches invalidated`);
     },
   }) as any;
 

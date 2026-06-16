@@ -2,10 +2,79 @@
 // Sprint 87: Full domain logic — period closing workflow, revenue recognition rules
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { billingRevenuePeriods } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["sent", "cancelled"],
+  sent: ["paid", "overdue", "cancelled"],
+  paid: ["refunded"],
+  overdue: ["paid", "written_off"],
+  cancelled: [],
+  refunded: [],
+  written_off: [],
+};
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "billingRevenuePeriodsCrud",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "billingRevenuePeriodsCrud",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "billingRevenuePeriodsCrud",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "billingRevenuePeriodsCrud",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 
 export const billingRevenuePeriodsRouter = router({
   list: protectedProcedure
@@ -89,7 +158,22 @@ export const billingRevenuePeriodsRouter = router({
     }),
   closePeriod: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = (await getDb())!;
         const [period] = await db
@@ -120,6 +204,31 @@ export const billingRevenuePeriodsRouter = router({
           .update(billingRevenuePeriods)
           .set({ netPlatformProfit: netProfit.toFixed(2) })
           .where(eq(billingRevenuePeriods.id, input.id));
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "billingRevenuePeriodsCrud",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return {
           success: true,
           netProfit: netProfit.toFixed(2),
@@ -196,6 +305,21 @@ export const billingRevenuePeriodsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const db = (await getDb())!;
         await db

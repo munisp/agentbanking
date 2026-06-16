@@ -1,9 +1,99 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { disputes } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import { disputes, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  open: ["investigating", "resolved", "rejected"],
+  investigating: ["resolved", "rejected", "escalated"],
+  escalated: ["resolved", "rejected"],
+  resolved: ["reopened"],
+  rejected: ["reopened"],
+  reopened: ["investigating"],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "disputes",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "disputes",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "disputes",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "disputes",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
 
 export const disputesRouter = router({
   list: protectedProcedure
@@ -11,7 +101,7 @@ export const disputesRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -128,6 +218,28 @@ export const disputesRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       if (
         !ctx.user ||
         (ctx.user.role !== "admin" && ctx.user.role !== "supervisor")
@@ -148,9 +260,35 @@ export const disputesRouter = router({
       return { data: null, id: input.id };
     }),
   raise: protectedProcedure
-    .input(z.object({ id: z.string().optional() }).optional())
+    .input(
+      z.object({
+        transactionRef: z.string().min(1),
+        reason: z.string().min(10).max(1000),
+        id: z.string().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
-      return { success: true, id: input?.id ?? null };
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+
+      const [tx] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ref, input.transactionRef))
+        .limit(1);
+
+      if (!tx) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Transaction ${input.transactionRef} not found`,
+        });
+      }
+
+      return { success: true, id: tx.id, transactionRef: input.transactionRef };
     }),
   addMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())

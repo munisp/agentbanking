@@ -1,4 +1,31 @@
 import sys as _sys, os as _os
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
 from shared.middleware import apply_middleware, ErrorResponse
 from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
@@ -9,7 +36,7 @@ Transaction settlement service
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("settlement-service")
 app.include_router(metrics_router)
 
@@ -17,6 +44,24 @@ from pydantic import BaseModel
 from datetime import datetime
 import uvicorn
 import os
+
+import psycopg2
+import psycopg2.extras
+
+def _init_persistence():
+    """Initialize PostgreSQL persistence for settlement-service."""
+    import os
+    try:
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/settlement_service'))
+        
+        
+        return conn
+    except Exception as e:
+        import logging
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
+        return None
+
+_persistence_db = _init_persistence()
 
 app = FastAPI(
     title="Settlement Service",

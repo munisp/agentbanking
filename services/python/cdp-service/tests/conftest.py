@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.main import app
 
 # Test database URL
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/cdp_service"
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -33,7 +33,6 @@ async def test_db():
     """Create test database"""
     engine = create_engine(
         TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     

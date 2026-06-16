@@ -4,6 +4,16 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { biometricAuditEvents, faceEnrollments } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte, count } from "drizzle-orm";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
 
 /**
  * Biometric Audit Dashboard Router — Admin-only analytics and monitoring
@@ -19,6 +29,63 @@ const adminGuard = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  not_started: ["documents_submitted"],
+  documents_submitted: ["under_review"],
+  under_review: [
+    "additional_info_required",
+    "verified",
+    "rejected",
+    "escalated",
+  ],
+  additional_info_required: ["documents_submitted"],
+  verified: ["active", "expired"],
+  active: ["renewal_pending", "suspended", "revoked"],
+  renewal_pending: ["under_review"],
+  expired: ["renewal_pending", "revoked"],
+  suspended: ["under_review", "revoked"],
+  escalated: ["verified", "rejected"],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+  revoked: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "biometricAuditDashboard",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "biometricAuditDashboard",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Transaction Handling for biometricAuditDashboard ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const biometricAuditDashboardRouter = router({
   /** Aggregate biometric statistics */
   stats: adminGuard

@@ -1,10 +1,40 @@
 from fastapi import FastAPI, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from config import settings, logger
 from database import init_db
 from routers import kyc_router
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 
 # Custom Exception for the service
 class KYCServiceException(Exception):
@@ -36,9 +66,30 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info(f"Shutting down {settings.PROJECT_NAME}...")
 
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/compliance_kyc")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API service for Compliance and Know Your Customer (KYC) operations.",
+apply_middleware(app, enable_auth=True)
     version="1.0.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan

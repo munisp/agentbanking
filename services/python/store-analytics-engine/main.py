@@ -30,9 +30,38 @@ from collections import defaultdict
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Query, Path
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # ── Configuration ───────────────────────────────────────────────────────────────
 
@@ -49,6 +78,42 @@ APISIX_ADMIN_URL = os.getenv("APISIX_ADMIN_URL", "http://localhost:9180")
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
 app = FastAPI(
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/store_analytics_engine")
+apply_middleware(app, enable_auth=True)
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     title="Store Analytics & Recommendation Engine",
     description="Real-time analytics, forecasting, and recommendations for agent stores",
     version="1.0.0",
@@ -75,7 +140,6 @@ customer_purchases: Dict[int, list] = defaultdict(list)
 # Store metrics cache
 metrics_cache: Dict[str, Any] = {}
 
-
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
 class SaleEvent(BaseModel):
@@ -87,25 +151,21 @@ class SaleEvent(BaseModel):
     payment_method: str = "card"
     timestamp: Optional[str] = None
 
-
 class ProductViewEvent(BaseModel):
     store_id: int
     product_id: int
     customer_id: Optional[int] = None
     timestamp: Optional[str] = None
 
-
 class ForecastRequest(BaseModel):
     store_id: int
     days_ahead: int = 30
     metric: str = "revenue"  # revenue, orders, avg_order
 
-
 class BenchmarkRequest(BaseModel):
     store_id: int
     city: Optional[str] = None
     category: Optional[str] = None
-
 
 # ── Analytics Core ──────────────────────────────────────────────────────────────
 
@@ -119,7 +179,6 @@ def moving_average(values: List[float], window: int = 7) -> List[float]:
         result.append(sum(values[start:i + 1]) / (i - start + 1))
     return result
 
-
 def linear_trend(values: List[float]) -> tuple:
     """Linear regression for trend detection. Returns (slope, intercept)."""
     n = len(values)
@@ -132,7 +191,6 @@ def linear_trend(values: List[float]) -> tuple:
     slope = numerator / denominator if denominator != 0 else 0
     intercept = y_mean - slope * x_mean
     return (slope, intercept)
-
 
 def forecast_values(values: List[float], days_ahead: int) -> List[float]:
     """Forecast future values using trend + seasonal decomposition."""
@@ -152,7 +210,6 @@ def forecast_values(values: List[float], days_ahead: int) -> List[float]:
             trend_val += seasonal * 0.3  # Dampen seasonal component
         forecasts.append(max(0, round(trend_val, 2)))
     return forecasts
-
 
 def detect_trending(
     sales: list, window_recent: int = 7, window_baseline: int = 30
@@ -195,7 +252,6 @@ def detect_trending(
 
     trending.sort(key=lambda x: x["acceleration"], reverse=True)
     return trending[:20]
-
 
 def compute_customer_segments(
     sales: list,
@@ -248,7 +304,6 @@ def compute_customer_segments(
         ),
     }
 
-
 def recommend_products(
     customer_id: int, store_id: int, limit: int = 10
 ) -> List[Dict[str, Any]]:
@@ -281,7 +336,6 @@ def recommend_products(
         for pid, score in recommendations
     ]
 
-
 # ── Middleware Integration Helpers ──────────────────────────────────────────────
 
 async def publish_event(topic: str, data: dict):
@@ -291,7 +345,6 @@ async def publish_event(topic: str, data: dict):
     except Exception as e:
         logger.warning(f"Dapr publish failed for {topic}: {e}")
 
-
 async def cache_set(key: str, value: Any, ttl: int = 3600):
     try:
         url = f"http://localhost:{DAPR_HTTP_PORT}/v1.0/state/redis-store"
@@ -299,14 +352,12 @@ async def cache_set(key: str, value: Any, ttl: int = 3600):
     except Exception:
         pass
 
-
 async def stream_to_fluvio(topic: str, data: dict):
     try:
         url = f"http://{FLUVIO_ENDPOINT}/produce/{topic}"
         await http_client.post(url, json=data)
     except Exception:
         pass
-
 
 # ── API Endpoints ───────────────────────────────────────────────────────────────
 
@@ -318,7 +369,6 @@ async def health_check():
         "version": "1.0.0",
         "time": datetime.utcnow().isoformat(),
     }
-
 
 @app.post("/api/v1/analytics/ingest/sale")
 async def ingest_sale(event: SaleEvent):
@@ -346,13 +396,11 @@ async def ingest_sale(event: SaleEvent):
 
     return {"status": "ingested", "storeId": event.store_id}
 
-
 @app.post("/api/v1/analytics/ingest/view")
 async def ingest_view(event: ProductViewEvent):
     """Ingest a product view event."""
     product_views[event.store_id][event.product_id] += 1
     return {"status": "recorded"}
-
 
 @app.get("/api/v1/analytics/store/{store_id}/dashboard")
 async def store_dashboard(store_id: int = Path(...)):
@@ -415,7 +463,6 @@ async def store_dashboard(store_id: int = Path(...)):
         "trendingProducts": detect_trending(sales),
     }
 
-
 @app.post("/api/v1/analytics/store/{store_id}/forecast")
 async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None):
     """Forecast future sales using time series analysis."""
@@ -460,14 +507,12 @@ async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None)
         "confidence": "medium" if len(sales) >= 30 else "low",
     }
 
-
 @app.get("/api/v1/analytics/store/{store_id}/trending")
 async def trending_products(store_id: int = Path(...)):
     """Get trending products for a store."""
     sales = store_sales.get(store_id, [])
     trending = detect_trending(sales)
     return {"storeId": store_id, "trending": trending}
-
 
 @app.get("/api/v1/analytics/store/{store_id}/recommendations/{customer_id}")
 async def get_recommendations(
@@ -482,7 +527,6 @@ async def get_recommendations(
         "customerId": customer_id,
         "recommendations": recs,
     }
-
 
 @app.get("/api/v1/analytics/store/{store_id}/conversion")
 async def conversion_funnel(store_id: int = Path(...)):
@@ -505,7 +549,6 @@ async def conversion_funnel(store_id: int = Path(...)):
             "viewToPurchase": round(purchases / max(1, views) * 100, 1),
         },
     }
-
 
 @app.get("/api/v1/analytics/store/{store_id}/revenue-breakdown")
 async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
@@ -541,7 +584,6 @@ async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
         "peakDay": max(daily_dow, key=daily_dow.get) if daily_dow else None,
     }
 
-
 @app.get("/api/v1/analytics/platform/overview")
 async def platform_overview():
     """Platform-wide analytics overview for all stores."""
@@ -564,7 +606,6 @@ async def platform_overview():
         "topStores": store_revenues[:10],
     }
 
-
 # ── Startup ─────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -585,7 +626,6 @@ async def startup():
         )
     except Exception:
         pass
-
 
 if __name__ == "__main__":
     import uvicorn

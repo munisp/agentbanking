@@ -4,6 +4,9 @@ Multi-chain wallets, stablecoin transfers, crypto KYC/AML, fiat on/off ramps
 """
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional
@@ -12,10 +15,58 @@ from enum import Enum
 import logging
 import hashlib
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/crypto_remittance")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(title="Blockchain Infrastructure - Crypto Remittance", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 class Blockchain(str, Enum):
@@ -472,6 +523,15 @@ async def get_prices():
         "prices": {k.value: v for k, v in blockchain_infra.prices.items()},
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

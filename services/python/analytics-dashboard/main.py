@@ -3,6 +3,9 @@ import logging
 from logging.config import dictConfig
 
 from fastapi import FastAPI, Depends, HTTPException, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List
@@ -10,6 +13,32 @@ from typing import List
 from . import models, schemas, security
 from .database import SessionLocal, engine
 from .config import settings
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # Configure logging
 LOGGING_CONFIG = {
@@ -57,6 +86,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+apply_middleware(app, enable_auth=True)
 
 # Dependency to get the database session
 def get_db():
@@ -255,5 +285,4 @@ def read_alert(
         logger.warning(f"Alert {alert_id} not found.")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
     return alert
-
 

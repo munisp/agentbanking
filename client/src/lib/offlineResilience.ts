@@ -124,7 +124,7 @@ export async function enqueueTransaction(
   tx: Omit<QueuedTransaction, "id" | "createdAt" | "retryCount" | "status">
 ): Promise<string> {
   const db = await openDB();
-  const id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `tx_${Date.now()}_${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`;
   const transaction: QueuedTransaction = {
     ...tx,
     id,
@@ -218,7 +218,8 @@ export function calculateBackoff(
   baseMs: number = 1000,
   maxMs: number = 60000
 ): number {
-  const jitter = Math.random() * 1000;
+  const jitter =
+    (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 1000;
   const delay = Math.min(baseMs * Math.pow(2, retryCount) + jitter, maxMs);
   return delay;
 }
@@ -308,12 +309,12 @@ export function startAutoSync(intervalMs: number = 30000) {
 
   // Sync immediately on coming online
   window.addEventListener("online", () => {
-    console.log("[Offline] Network restored — triggering sync");
+    // Network restored — sync triggered
     syncPendingTransactions();
   });
 
   window.addEventListener("offline", () => {
-    console.log("[Offline] Network lost — queuing transactions locally");
+    // Network lost — transactions queued locally
   });
 
   // Periodic sync attempt

@@ -1,8 +1,35 @@
+import os
 """USSD Menu Localization — Sprint 76
 Multi-language USSD menus: English, French, Swahili, Hausa, Yoruba
 """
 import json, os
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 SERVICE_NAME = "ussd-localization"
 SERVICE_VERSION = "1.0.0"
@@ -120,6 +147,15 @@ COUNTRY_DEFAULT_LOCALE = {"NG": "en", "KE": "sw", "SN": "fr", "GH": "en", "ZA": 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._json({"service": SERVICE_NAME, "version": SERVICE_VERSION, "status": "healthy", "locales": list(TRANSLATIONS.keys())})
         elif self.path.startswith("/api/locale/"):
@@ -151,3 +187,38 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", DEFAULT_PORT))
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} listening on :{port}")
     HTTPServer(("", port), Handler).serve_forever()
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ussd_localization")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

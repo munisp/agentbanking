@@ -2,6 +2,9 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 
 import logging
 from fastapi import FastAPI, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -10,6 +13,32 @@ from config import settings
 from database import init_db
 from router import router
 from service import RouteException
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # --- Configure Logging ---
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +65,12 @@ async def lifespan(app: FastAPI) -> None:
 
 # --- FastAPI Application Initialization ---
 app = FastAPI(
+
+@app.get("/health")
+apply_middleware(app, enable_auth=True)
+async def health():
+    return {"status": "ok", "service": "api-gateway"}
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,

@@ -13,7 +13,34 @@ import logging
 from . import models
 from .models import SessionLocal, engine
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from shared.idempotency import IdempotencyStore
 
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -27,6 +54,7 @@ _idem_store = IdempotencyStore("intlayer-txn", _redis_client)
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Remittance Platform Integration Service")
+apply_middleware(app, enable_auth=True)
 
 @app.on_event("startup")
 async def _start_eviction():

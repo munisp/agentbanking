@@ -15,8 +15,7 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 # It's a factory for connections.
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {},
-    pool_pre_ping=True
+        pool_pre_ping=True
 )
 
 # SessionLocal is a factory for Session objects.

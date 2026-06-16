@@ -25,14 +25,78 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 app = FastAPI(title="54Link Webhook Delivery Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/webhook_delivery")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 SIGNING_SECRET = os.getenv("WEBHOOK_SIGNING_SECRET", "54link-webhook-secret-change-in-prod")
 MAX_RETRIES = int(os.getenv("WEBHOOK_MAX_RETRIES", "5"))
 BACKOFF_BASE = int(os.getenv("WEBHOOK_BACKOFF_BASE_SECONDS", "5"))
-
 
 class DeliveryStatus(str, Enum):
     PENDING = "pending"
@@ -42,7 +106,6 @@ class DeliveryStatus(str, Enum):
     FAILED = "failed"
     DLQ = "dead_letter"
 
-
 class WebhookRegistration(BaseModel):
     endpoint_url: str
     events: list[str]
@@ -51,13 +114,11 @@ class WebhookRegistration(BaseModel):
     rate_limit: int = Field(default=100, description="Max deliveries per minute")
     active: bool = True
 
-
 class WebhookPayload(BaseModel):
     event_type: str
     payload: dict
     endpoint_id: Optional[str] = None
     idempotency_key: Optional[str] = None
-
 
 class DeliveryRecord(BaseModel):
     id: str
@@ -75,24 +136,20 @@ class DeliveryRecord(BaseModel):
     delivered_at: Optional[str] = None
     error: Optional[str] = None
 
-
 # In-memory stores (production: PostgreSQL)
 endpoints: dict[str, dict] = {}
 deliveries: dict[str, DeliveryRecord] = {}
 dlq: list[DeliveryRecord] = []
-
 
 def sign_payload(payload: dict, secret: str) -> str:
     """Generate HMAC-SHA256 signature for webhook payload."""
     body = json.dumps(payload, sort_keys=True, default=str)
     return hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
-
 def verify_signature(payload: dict, signature: str, secret: str) -> bool:
     """Verify HMAC-SHA256 signature."""
     expected = sign_payload(payload, secret)
     return hmac.compare_digest(expected, signature)
-
 
 async def deliver_webhook(record: DeliveryRecord, endpoint_secret: str) -> DeliveryRecord:
     """Attempt to deliver a webhook with retry logic."""
@@ -144,7 +201,6 @@ async def deliver_webhook(record: DeliveryRecord, endpoint_secret: str) -> Deliv
     deliveries[record.id] = record
     return record
 
-
 @app.post("/endpoints/register")
 async def register_endpoint(reg: WebhookRegistration):
     endpoint_id = str(uuid.uuid4())
@@ -162,11 +218,9 @@ async def register_endpoint(reg: WebhookRegistration):
     }
     return {"id": endpoint_id, "message": "endpoint registered"}
 
-
 @app.get("/endpoints")
 async def list_endpoints():
     return {"endpoints": list(endpoints.values()), "count": len(endpoints)}
-
 
 @app.delete("/endpoints/{endpoint_id}")
 async def remove_endpoint(endpoint_id: str):
@@ -174,7 +228,6 @@ async def remove_endpoint(endpoint_id: str):
         raise HTTPException(404, "endpoint not found")
     del endpoints[endpoint_id]
     return {"message": "endpoint removed"}
-
 
 @app.post("/deliver")
 async def deliver(payload: WebhookPayload):
@@ -213,7 +266,6 @@ async def deliver(payload: WebhookPayload):
 
     return {"delivered": len(results), "results": results}
 
-
 @app.get("/deliveries")
 async def list_deliveries(status: Optional[str] = None, limit: int = 50):
     items = list(deliveries.values())
@@ -222,13 +274,11 @@ async def list_deliveries(status: Optional[str] = None, limit: int = 50):
     items.sort(key=lambda d: d.created_at, reverse=True)
     return {"deliveries": [d.model_dump() for d in items[:limit]], "total": len(items)}
 
-
 @app.get("/deliveries/{delivery_id}")
 async def get_delivery(delivery_id: str):
     if delivery_id not in deliveries:
         raise HTTPException(404, "delivery not found")
     return deliveries[delivery_id].model_dump()
-
 
 @app.post("/deliveries/{delivery_id}/retry")
 async def retry_delivery(delivery_id: str):
@@ -241,11 +291,9 @@ async def retry_delivery(delivery_id: str):
     result = await deliver_webhook(record, secret)
     return result.model_dump()
 
-
 @app.get("/dlq")
 async def list_dlq(limit: int = 50):
     return {"dead_letters": [d.model_dump() for d in dlq[-limit:]], "total": len(dlq)}
-
 
 @app.post("/dlq/replay")
 async def replay_dlq():
@@ -259,7 +307,6 @@ async def replay_dlq():
         replayed += 1
     dlq.clear()
     return {"replayed": replayed}
-
 
 @app.get("/health")
 async def health():

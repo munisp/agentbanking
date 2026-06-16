@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./credit_scoring.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/credit_scoring")
     
     # Service specific settings
     SERVICE_NAME: str = "credit-scoring-service"
@@ -30,13 +30,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # SQLAlchemy setup
-# The connect_args are only for SQLite, for other DBs like Postgres, they can be removed.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -303,7 +303,7 @@ describe("Sprint 84 — Monthly Invoice Cron", () => {
       ),
       "utf-8"
     );
-    expect(content).toContain("x-manus-cron-task-uid");
+    expect(content).toContain("x-platform-cron-task-uid");
     expect(content).toContain("res.status(500)");
     expect(content).toContain("Fatal error");
   });

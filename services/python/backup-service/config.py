@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """
     Application settings, loaded from environment variables.
     """
-    DATABASE_URL: str = "sqlite:///./backup_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/backup_service"
     
     class Config:
         env_file = ".env"
@@ -23,8 +23,7 @@ settings = Settings()
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 
@@ -47,10 +46,7 @@ def get_db() -> Generator:
     finally:
         db.close()
 
-# Optional: Create tables on startup if they don't exist (for development/sqlite)
 def init_db():
     """Initializes the database and creates all tables."""
     Base.metadata.create_all(bind=engine)
 
-if "sqlite" in settings.DATABASE_URL:
-    init_db()

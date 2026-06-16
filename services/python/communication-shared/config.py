@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./communication_shared.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/communication_shared"
     
     # Secret Key for JWT/Security
     SECRET_KEY: str = "a-very-secret-key-that-should-be-changed-in-production"
@@ -39,14 +39,7 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
-# Use check_same_thread=False for SQLite only, as it's not thread-safe by default.
 # For PostgreSQL/MySQL, this parameter should be omitted.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -61,5 +54,4 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
-# Create the directory if it doesn't exist (for file-based databases like SQLite)
-os.makedirs(os.path.dirname(os.DATABASE_URL.replace("sqlite:///", "")), exist_ok=True)
+os.makedirs(os.path.dirname(os.DATABASE_URL.replace("postgresql://postgres:postgres@localhost:5432/communication_shared", "")), exist_ok=True)

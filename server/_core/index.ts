@@ -2,7 +2,7 @@
  * index.ts — 54Link POS Shell Server Entry Point
  *
  * Production-hardened Express server with:
- *  - Keycloak OIDC authentication (replaces Manus OAuth)
+ *  - Keycloak OIDC authentication (replaces 54Link OAuth)
  *  - Rate limiting (express-rate-limit)
  *  - Security headers (helmet)
  *  - Gzip compression
@@ -144,7 +144,7 @@ async function startServer() {
     : null;
   const keycloakSrc = keycloakOrigin ? [keycloakOrigin] : [];
 
-  // Analytics endpoint for Manus built-in analytics
+  // Analytics endpoint for 54Link platform analytics
   const analyticsOrigin = process.env.VITE_ANALYTICS_ENDPOINT
     ? new URL(process.env.VITE_ANALYTICS_ENDPOINT).origin
     : null;
@@ -232,6 +232,15 @@ async function startServer() {
 
   // ── Compression ─────────────────────────────────────────────────
   app.use(compression());
+
+  // ── ETag / Conditional HTTP responses ──────────────────────────
+  try {
+    const { etagMiddleware } = require("../middleware/etagMiddleware");
+    app.use(etagMiddleware());
+    console.log("[ETag] Conditional response middleware registered");
+  } catch (e) {
+    console.warn("[ETag] Setup failed:", (e as any).message);
+  }
 
   // ── Rate limiting ────────────────────────────────────────────────────────────
   // Use Redis store in production for distributed rate limiting across replicas.
@@ -747,6 +756,12 @@ async function startServer() {
     startErpRetryWorker();
     // Start archival cron worker (S60-3)
     startArchivalCronWorker();
+    // Cache warming — preload hot data into Redis
+    import("../lib/cacheWarming")
+      .then(m => m.warmCaches())
+      .catch(err =>
+        console.warn("[CacheWarming] Skipped:", (err as Error).message)
+      );
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     startTemporalWorker().catch(err =>

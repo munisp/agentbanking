@@ -19,16 +19,79 @@ from enum import Enum
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="54Link Data Archival Service", version="1.0.0")
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
 
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+app = FastAPI(title="54Link Data Archival Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/data_archival")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 class RetentionAction(str, Enum):
     ARCHIVE = "archive"
     DELETE = "delete"
     ANONYMIZE = "anonymize"
-
 
 class RetentionPolicy(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -45,7 +108,6 @@ class RetentionPolicy(BaseModel):
     records_archived: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-
 class ArchivalJob(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     policy_id: str
@@ -58,7 +120,6 @@ class ArchivalJob(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
-
 
 # In-memory stores (production: PostgreSQL)
 policies: dict[str, RetentionPolicy] = {}
@@ -84,30 +145,25 @@ DEFAULT_POLICIES = [
                     table_name="webhook_deliveries", retention_days=30, action=RetentionAction.DELETE),
 ]
 
-
 @app.on_event("startup")
 async def startup():
     for p in DEFAULT_POLICIES:
         policies[p.id] = p
-
 
 @app.post("/policies")
 async def create_policy(policy: RetentionPolicy):
     policies[policy.id] = policy
     return {"id": policy.id, "message": "policy created"}
 
-
 @app.get("/policies")
 async def list_policies():
     return {"policies": [p.model_dump() for p in policies.values()], "count": len(policies)}
-
 
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str):
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     return policies[policy_id].model_dump()
-
 
 @app.put("/policies/{policy_id}")
 async def update_policy(policy_id: str, body: dict):
@@ -119,14 +175,12 @@ async def update_policy(policy_id: str, body: dict):
             setattr(policy, k, v)
     return {"message": "policy updated", "policy": policy.model_dump()}
 
-
 @app.delete("/policies/{policy_id}")
 async def delete_policy(policy_id: str):
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     del policies[policy_id]
     return {"message": "policy deleted"}
-
 
 @app.post("/archive/run/{policy_id}")
 async def run_archival(policy_id: str):
@@ -157,7 +211,6 @@ async def run_archival(policy_id: str):
     jobs[job.id] = job
     return {"job": job.model_dump()}
 
-
 @app.post("/archive/run-all")
 async def run_all_archival():
     results = []
@@ -177,7 +230,6 @@ async def run_all_archival():
         results.append({"policy": policy.name, "job_id": job.id, "archived": job.records_archived})
     return {"ran": len(results), "results": results}
 
-
 @app.get("/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
     items = list(jobs.values())
@@ -186,13 +238,11 @@ async def list_jobs(status: Optional[str] = None, limit: int = 50):
     items.sort(key=lambda j: j.started_at or "", reverse=True)
     return {"jobs": [j.model_dump() for j in items[:limit]], "total": len(items)}
 
-
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: str):
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     return jobs[job_id].model_dump()
-
 
 @app.post("/restore/{job_id}")
 async def restore_from_archive(job_id: str):
@@ -205,7 +255,6 @@ async def restore_from_archive(job_id: str):
         "records_to_restore": job.records_archived,
         "status": "restoring",
     }
-
 
 @app.post("/gdpr/delete")
 async def gdpr_delete(body: dict):
@@ -222,7 +271,6 @@ async def gdpr_delete(body: dict):
         "audit_id": str(uuid.uuid4()),
     }
 
-
 @app.get("/stats")
 async def stats():
     total_archived = sum(p.records_archived for p in policies.values())
@@ -236,7 +284,6 @@ async def stats():
             for p in policies.values()
         },
     }
-
 
 @app.get("/health")
 async def health():

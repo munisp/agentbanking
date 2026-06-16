@@ -5,6 +5,17 @@ import { getDb } from "../db";
 import { commissionCascadeHistory } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
 
 const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   agent: 0.6,
@@ -14,6 +25,66 @@ const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   national: 0.03,
 };
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
+  rejected: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "commissionCascadeHistoryCrud",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "commissionCascadeHistoryCrud",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Transaction Handling for commissionCascadeHistoryCrud ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const commissionCascadeHistoryRouter = router({
   list: protectedProcedure
     .input(

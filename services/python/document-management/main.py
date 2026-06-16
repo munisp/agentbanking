@@ -5,6 +5,9 @@ from typing import List, Optional
 import os
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -19,12 +22,38 @@ from .models import Base, User, Document, Permission, UserCreate, UserInDB, Docu
 from dotenv import load_dotenv
 import os
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/document_management")
 
 # For production, restrict origins to your frontend domain
 origins = [
@@ -33,14 +62,12 @@ origins = [
     "http://localhost:3000",
 ]
 
-
-
 # --- Logging Setup --- #
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Database Setup --- #
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(bind=engine)
@@ -103,6 +130,7 @@ async def lifespan(app: FastAPI):
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Document Management Service", version="1.0.0", lifespan=lifespan)
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,8 +139,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-
-
 
 # --- API Endpoints --- #
 
@@ -335,5 +361,4 @@ async def revoke_permission(
     db.commit()
     logger.info(f"Permission {permission_id} revoked by {current_user.username}")
     return
-
 

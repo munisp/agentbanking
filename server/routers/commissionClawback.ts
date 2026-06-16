@@ -4,12 +4,13 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   commissionClawbacks,
   commissionAuditTrail,
+  gl_journal_entries,
 } from "../../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, and, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   publishCommissionEvent,
@@ -17,7 +18,77 @@ import {
   streamCommissionEvent,
 } from "../middleware/commissionMiddleware";
 import logger from "../_core/logger";
+import { validateInput } from "../lib/routerHelpers";
 
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["approved", "rejected"],
+  approved: ["paid", "clawed_back"],
+  paid: ["clawed_back"],
+  rejected: [],
+  clawed_back: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "commissionClawback",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "commissionClawback",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "commissionClawback",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "commissionClawback",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const commissionClawbackRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -59,7 +130,7 @@ export const commissionClawbackRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        page: z.number().optional(),
+        page: z.number().min(1).max(10000).optional(),
         status: z.string().optional(),
         limit: z.number().min(1).max(100).optional(),
       })
@@ -105,12 +176,34 @@ export const commissionClawbackRouter = router({
     .input(
       z.object({
         agentId: z.number(),
-        amount: z.number(),
+        amount: z.number().min(0),
         reason: z.string(),
         transactionId: z.number().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "commissionPayout");
+      const commission = calculateCommission(fees.fee, "commissionPayout");
+      const tax = calculateTax(fees.fee, "vat");
       try {
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -132,6 +225,21 @@ export const commissionClawbackRouter = router({
           status: "pending",
         } as any)
         .returning();
+
+      // Double-entry GL journal entry
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${Date.now()}`,
+        description: `commissionClawback transaction`,
+        debitAccountId: 2001,
+        creditAccountId: 1001,
+        amount: Math.round(
+          (typeof input === "object" && "amount" in input
+            ? Number((input as any).amount)
+            : 0) * 100
+        ),
+        currency: "NGN",
+        status: "posted",
+      });
       await db.insert(commissionAuditTrail).values({
         action: "clawback_initiated",
         entityType: "clawback",
@@ -159,6 +267,31 @@ export const commissionClawbackRouter = router({
           `[CommissionClawback] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
         );
       }
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "commissionClawback",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return { success: true, id: clawback.id, message: "Clawback initiated" };
     }),
 

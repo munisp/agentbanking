@@ -1,9 +1,127 @@
 // @ts-nocheck
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { auditLog, platform_health_checks } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  detected: ["analyzing"],
+  analyzing: ["confirmed_threat", "false_alarm"],
+  confirmed_threat: ["containment"],
+  containment: ["eradication"],
+  eradication: ["recovery"],
+  recovery: ["post_incident_review"],
+  post_incident_review: ["closed"],
+  false_alarm: ["closed"],
+  closed: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "securityHardening",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "securityHardening",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "securityHardening",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "securityHardening",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const securityHardeningRouter = router({
   list: protectedProcedure
@@ -11,7 +129,7 @@ export const securityHardeningRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -141,7 +259,10 @@ export const securityHardeningRouter = router({
   })),
   evaluatePolicy: protectedProcedure
     .input(
-      z.object({ policyId: z.string(), context: z.record(z.any()).optional() })
+      z.object({
+        policyId: z.string().min(1).max(255),
+        context: z.record(z.any()).optional(),
+      })
     )
     .mutation(async ({ input }) => ({
       policyId: input.policyId,

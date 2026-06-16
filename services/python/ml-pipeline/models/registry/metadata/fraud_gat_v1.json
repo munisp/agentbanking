@@ -1,0 +1,28 @@
+{
+  "model_name": "fraud_gat",
+  "model_type": "gnn_fraud",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.476747",
+  "description": "GNN fraud detection (gat)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_gat/v1/fraud_gat_best.pt",
+  "artifact_hash": "ab92526fe561c564",
+  "artifact_size_bytes": 302693,
+  "metrics": {
+    "auc": 0.5301963524753017,
+    "f1": 0.3910043444927166,
+    "precision": 0.24301143583227447,
+    "recall": 1.0,
+    "best_epoch": 0,
+    "best_val_auc": 0.538605663080239
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1",
+    "framework": "pytorch_geometric"
+  },
+  "promoted_at": "2026-05-25T11:36:31.477102",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial GNN training"
+}

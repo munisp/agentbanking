@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database settings
-    DATABASE_URL: str = "sqlite:///./kyc_enhanced.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/kyc_enhanced"
     
     # Logging settings
     LOG_LEVEL: str = "INFO"

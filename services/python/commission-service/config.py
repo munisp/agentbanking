@@ -6,13 +6,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 
 # --- Configuration ---
-# Use environment variable for database URL, default to a local SQLite file
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./commission_service.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/commission_service")
 
 # --- Database Setup ---
-# The connect_args is only needed for SQLite
 engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
+    DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

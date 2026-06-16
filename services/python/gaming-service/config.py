@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./gaming_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/gaming_service"
     
     # Service Settings
     SERVICE_NAME: str = "gaming-service"
@@ -37,8 +37,7 @@ settings = get_settings()
 
 # SQLAlchemy Engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./ai_ml_services.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/ai_ml_services"
     
     # Service-specific settings
     SERVICE_NAME: str = "ai-ml-services"
@@ -25,15 +25,12 @@ settings = Settings()
 
 # --- Database Configuration ---
 
-# Use a simple SQLite database for this example. In a production environment, 
 # this would be a PostgreSQL or similar connection.
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # The engine is the starting point for SQLAlchemy. It's responsible for 
 # communicating with the database.
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
 )
 
 # SessionLocal is a factory for new Session objects. 

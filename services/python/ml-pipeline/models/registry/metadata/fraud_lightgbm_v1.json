@@ -1,0 +1,29 @@
+{
+  "model_name": "fraud_lightgbm",
+  "model_type": "fraud_detection",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.392108",
+  "description": "Fraud detection model (lightgbm)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_lightgbm/v1/fraud_lightgbm.joblib",
+  "artifact_hash": "871e89399e19af8b",
+  "artifact_size_bytes": 9468,
+  "metrics": {
+    "auc": 0.52668870866634,
+    "avg_precision": 0.035194302680036496,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "n_test": 30000,
+    "n_positive": 883
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1",
+    "framework": "sklearn"
+  },
+  "promoted_at": "2026-05-25T11:36:31.392472",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial training on synthetic data"
+}

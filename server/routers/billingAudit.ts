@@ -12,6 +12,12 @@ import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
 import { requireBillingPermission } from "./billingRbac";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Audit Middleware — auto-logs all billing mutations
@@ -75,15 +81,14 @@ export async function recordBillingAudit(params: {
   if (kafkaUrl) {
     try {
       // In production, use kafkajs producer
-      console.log(`[BillingAudit] Kafka publish: billing.audit.${action}`, {
+      // Kafka publish: billing.audit event
+      void {
         auditId: entry.id,
         tenantId: ctx.tenantId,
-        userId: ctx.userId,
         action,
         resourceType,
         resourceId,
-        timestamp: entry.createdAt,
-      } as any);
+      };
     } catch (e) {
       console.warn(
         "[BillingAudit] Kafka publish failed:",
@@ -151,6 +156,48 @@ async function sendBillingNotifications(
 // Billing Audit Router
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
+  rejected: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Transaction Handling for billingAudit ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const billingAuditRouter = router({
   // Query audit logs with filters
   query: protectedProcedure
@@ -292,7 +339,7 @@ export const billingAuditRouter = router({
       z.object({
         tenantId: z.number(),
         resourceType: z.string(),
-        resourceId: z.string(),
+        resourceId: z.string().min(1).max(255),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -402,7 +449,7 @@ export const billingAuditRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       try {

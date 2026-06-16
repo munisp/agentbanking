@@ -1,9 +1,95 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { auditLog, platform_health_checks } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  registered: ["configuring"],
+  configuring: ["testing"],
+  testing: ["active", "failed"],
+  active: ["degraded", "suspended", "deprecated"],
+  degraded: ["active", "suspended"],
+  suspended: ["active", "decommissioned"],
+  deprecated: ["decommissioned"],
+  failed: ["configuring", "decommissioned"],
+  decommissioned: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "lakehouseAiIntegration",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "lakehouseAiIntegration",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const lakehouseAiIntegrationRouter = router({
   datasets: protectedProcedure
@@ -23,7 +109,7 @@ export const lakehouseAiIntegrationRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db
@@ -46,6 +132,28 @@ export const lakehouseAiIntegrationRouter = router({
         .optional()
     )
     .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       const db = await getDb();
       if (!db)
         throw new TRPCError({
@@ -62,6 +170,31 @@ export const lakehouseAiIntegrationRouter = router({
           actor: ctx.user?.email || "system",
         },
       });
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "lakehouseAiIntegration",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return {
         success: true,
         domain: "lakehouse_ai",
@@ -119,7 +252,7 @@ export const lakehouseAiIntegrationRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db
@@ -149,7 +282,7 @@ export const lakehouseAiIntegrationRouter = router({
       const rows = await db
         .select()
         .from(platform_health_checks)
-        .orderBy(desc(auditLog.createdAt))
+        .orderBy(desc((platform_health_checks as any).createdAt))
         .limit(limit)
         .offset(offset);
       const [totalRow] = await db

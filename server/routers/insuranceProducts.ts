@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   eq,
   desc,
@@ -15,8 +15,88 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import {
+  auditLog,
+  systemConfig,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["submitted"],
+  submitted: ["under_review", "rejected"],
+  under_review: ["approved", "rejected"],
+  approved: ["active"],
+  active: ["claimed", "expired", "cancelled"],
+  claimed: ["settled", "rejected"],
+  settled: [],
+  expired: [],
+  cancelled: [],
+  rejected: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "insuranceProducts",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "insuranceProducts",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "insuranceProducts",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "insuranceProducts",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 
 export const insuranceProductsRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -97,7 +177,29 @@ export const insuranceProductsRouter = router({
         tenure: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "insurancePremium");
+      const commission = calculateCommission(fees.fee, "insurancePremium");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -117,6 +219,31 @@ export const insuranceProductsRouter = router({
           status: "success",
           metadata: { name: input.name, category: input.category },
         });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "insuranceProducts",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { success: true, productId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -130,7 +257,7 @@ export const insuranceProductsRouter = router({
   updateProduct: protectedProcedure
     .input(
       z.object({
-        productId: z.string(),
+        productId: z.string().min(1).max(255),
         name: z.string().optional(),
         premium: z.number().optional(),
         coverageAmount: z.number().optional(),

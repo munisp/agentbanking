@@ -3,21 +3,72 @@ NLP Service - Natural Language Processing for Customer Support
 """
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
 from datetime import datetime
 import re
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/nlp_service")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
 
 app = FastAPI(
     title="NLP Service",
     description="Natural Language Processing for customer support and text analysis",
     version="1.0.0"
 )
+apply_middleware(app, enable_auth=True)
 
 # Request/Response Models
 class TextAnalysisRequest(BaseModel):
@@ -240,6 +291,15 @@ async def analyze_all(request: TextAnalysisRequest):
     except Exception as e:
         logger.error(f"Complete analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

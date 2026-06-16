@@ -25,6 +25,6 @@ class Settings(BaseSettings):
 
 settings = Settings(
     # Provide a default for local development if .env is missing
-    DATABASE_URL="sqlite:///./api_gateway_config.db",
+    DATABASE_URL="postgresql://postgres:postgres@localhost:5432/enterprise_services",
     SECRET_KEY="super-secret-key"
 )

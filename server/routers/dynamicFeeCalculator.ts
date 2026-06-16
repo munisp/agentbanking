@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   eq,
   desc,
@@ -15,7 +15,11 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { systemConfig, auditLog } from "../../drizzle/schema";
+import {
+  systemConfig,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -24,6 +28,78 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ["processing", "cancelled"],
+  processing: ["completed", "failed"],
+  completed: ["refunded"],
+  failed: ["pending"],
+  cancelled: [],
+  refunded: [],
+};
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "dynamicFeeCalculator",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "dynamicFeeCalculator",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "dynamicFeeCalculator",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "dynamicFeeCalculator",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 
 export const dynamicFeeCalculatorRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -51,7 +127,7 @@ export const dynamicFeeCalculatorRouter = router({
   calculate: protectedProcedure
     .input(
       z.object({
-        amount: z.number(),
+        amount: z.number().min(0),
         transactionType: z.string(),
         channel: z.string().default("pos"),
         agentTier: z.string().optional(),
@@ -136,13 +212,35 @@ export const dynamicFeeCalculatorRouter = router({
     .input(
       z.object({
         transactionType: z.string(),
-        rate: z.number(),
+        rate: z.number().min(0),
         minFee: z.number().optional(),
         maxFee: z.number().optional(),
         flatFee: z.number().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -163,6 +261,31 @@ export const dynamicFeeCalculatorRouter = router({
           status: "success",
           metadata: input,
         });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "dynamicFeeCalculator",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

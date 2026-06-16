@@ -7,6 +7,10 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq"
+	"syscall"
+	"os/signal"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -862,7 +866,41 @@ func (mc *MiddlewareClients) registerAPIRoutes() {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
+
+// --- Auth Middleware ---
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip health checks
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		token := authHeader[7:]
+		if len(token) < 10 {
+			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		// In production: validate JWT via Keycloak JWKS endpoint
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	initDB()
+
 	cfg := loadConfig()
 	mc := NewMiddlewareClients(cfg)
 	r := mux.NewRouter()
@@ -896,3 +934,65 @@ func main() {
 // Suppress unused import warnings
 var _ = io.EOF
 var _ = context.Background
+
+// --- Production: Graceful Shutdown ---
+func setupGracefulShutdown(srv *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-quit
+		log.Printf("[shutdown] Received signal %s, shutting down gracefully...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[shutdown] Server forced to shutdown: %v", err)
+		}
+		log.Println("[shutdown] Server exited")
+	}()
+}
+
+// --- PostgreSQL persistence ---
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/agent_store_service?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Printf("DB init warning: %v", err)
+		return
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS audit_log (
+		id SERIAL PRIMARY KEY,
+		action TEXT, entity_id TEXT, data TEXT,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS state_store (
+		key TEXT PRIMARY KEY, value TEXT,
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func logAudit(action, entityID, data string) {
+	if db != nil {
+		db.Exec("INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)", action, entityID, data)
+	}
+}
+
+func setState(key, value string) {
+	if db != nil {
+		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+	}
+}
+
+func getState(key string) string {
+	if db == nil { return "" }
+	var val string
+	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
+	return val
+}

@@ -15,8 +15,37 @@ from typing import Dict, List, Any, Optional, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 import uvicorn
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # Real Fluvio Python client
 try:
@@ -47,7 +76,6 @@ class BankingEvent:
     correlation_id: Optional[str] = None
     tenant_id: Optional[str] = None
 
-
 class ProduceRequest(BaseModel):
     """Request model for producing events"""
     event_type: str = Field(..., description="Type of event")
@@ -58,7 +86,6 @@ class ProduceRequest(BaseModel):
     source_service: str = Field(..., description="Source service")
     correlation_id: Optional[str] = Field(None, description="Correlation ID")
     tenant_id: Optional[str] = Field(None, description="Tenant ID")
-
 
 # ============================================================================
 # Fluvio Streaming Service
@@ -255,14 +282,12 @@ class FluvioStreamingService:
         except Exception as e:
             logger.error(f"❌ Error closing service: {str(e)}")
 
-
 # ============================================================================
 # FastAPI Application
 # ============================================================================
 
 # Global service instance
 streaming_service: Optional[FluvioStreamingService] = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -287,14 +312,48 @@ async def lifespan(app: FastAPI):
     if streaming_service:
         await streaming_service.close()
 
-
 app = FastAPI(
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fluvio_streaming")
+apply_middleware(app, enable_auth=True)
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     title="Fluvio Streaming Service",
     description="Production-ready Fluvio streaming for Remittance Platform",
     version="1.0.0",
     lifespan=lifespan
 )
-
 
 # ============================================================================
 # API Endpoints
@@ -310,7 +369,6 @@ async def root():
         "fluvio_available": FLUVIO_AVAILABLE
     }
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -321,7 +379,6 @@ async def health_check():
         "connected": streaming_service.client is not None if streaming_service else False
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Get streaming metrics"""
@@ -329,7 +386,6 @@ async def get_metrics():
         raise HTTPException(status_code=503, detail="Service not initialized")
     
     return await streaming_service.get_metrics()
-
 
 @app.get("/topics")
 async def list_topics():
@@ -341,7 +397,6 @@ async def list_topics():
         "topics": streaming_service.topics,
         "count": len(streaming_service.topics)
     }
-
 
 @app.post("/produce/{topic}")
 async def produce_event(topic: str, request: ProduceRequest):
@@ -378,7 +433,6 @@ async def produce_event(topic: str, request: ProduceRequest):
         "topic": topic
     }
 
-
 @app.post("/consume/{topic}/{partition}")
 async def start_consumer(
     topic: str,
@@ -412,7 +466,6 @@ async def start_consumer(
         "partition": partition,
         "offset": offset
     }
-
 
 # ============================================================================
 # Main

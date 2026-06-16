@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # Database Settings
     DATABASE_URL: str = Field(
-        "sqlite:///./performance_optimization.db", 
+        "postgresql://postgres:postgres@localhost:5432/performance_optimization", 
         description="Database connection URL. Use postgresql://user:pass@host:port/db for production."
     )
     

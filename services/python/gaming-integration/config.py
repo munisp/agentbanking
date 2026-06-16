@@ -18,7 +18,7 @@ class Settings:
     VERSION: str = "1.0.0"
     
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./gaming_integration.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gaming_integration")
     
     # Logging settings (can be expanded)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -29,11 +29,9 @@ settings = Settings()
 # --- Database Setup ---
 
 # Create the SQLAlchemy engine
-# For SQLite, check_same_thread is needed for FastAPI's default behavior
 # For PostgreSQL/other, this parameter is ignored
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = "sqlite:///./monitoring.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/monitoring"
     
     # Application Configuration
     SECRET_KEY: str = "a-very-secret-key-that-should-be-changed-in-production"

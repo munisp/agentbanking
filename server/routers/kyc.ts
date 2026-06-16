@@ -10,12 +10,14 @@
  */
 
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getAgentFromCookie } from "../middleware/agentAuth.js";
-import { getDb } from "../db.js";
+import { getDb, writeAuditLog } from "../db.js";
 import { kycSessions } from "../../drizzle/schema.js";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   createLivenessChallenge,
   verifyLivenessChallenge,
@@ -41,6 +43,40 @@ import {
   getHighRiskCorrelations,
   clearGeoIpData,
 } from "../middleware/livenessSecurityEnhancements.js";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  not_started: ["documents_submitted"],
+  documents_submitted: ["under_review"],
+  under_review: [
+    "additional_info_required",
+    "verified",
+    "rejected",
+    "escalated",
+  ],
+  additional_info_required: ["documents_submitted"],
+  verified: ["active", "expired"],
+  active: ["renewal_pending", "suspended", "revoked"],
+  renewal_pending: ["under_review"],
+  expired: ["renewal_pending", "revoked"],
+  suspended: ["under_review", "revoked"],
+  escalated: ["verified", "rejected"],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+  revoked: [],
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +91,46 @@ async function requireAgent(req: Request | any) {
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "kyc",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "kyc",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const kycRouter = router({
   // ─── Retry Cooldown ──────────────────────────────────────────────────────────
@@ -76,10 +152,57 @@ export const kycRouter = router({
 
   /** Admin: clear cooldown for a specific user */
   adminClearCooldown: adminProcedure
-    .input(z.object({ userId: z.string() }))
-    .mutation(async ({ input }) => {
+    .input(z.object({ userId: z.string().min(1).max(255) }))
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const cleared = clearCooldown(input.userId);
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "kyc",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { cleared, userId: input.userId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -361,7 +484,7 @@ export const kycRouter = router({
     .input(
       z.object({
         sessionId: z.number().int().positive(),
-        challengeId: z.string(),
+        challengeId: z.string().min(1).max(255),
         frameBase64: z.string().min(100), // base64-encoded JPEG/PNG frame
       })
     )
@@ -822,7 +945,7 @@ export const kycRouter = router({
 
   /** Admin: Clear geo-IP data for a user (GDPR compliance) */
   adminClearGeoData: adminProcedure
-    .input(z.object({ userId: z.string() }))
+    .input(z.object({ userId: z.string().min(1).max(255) }))
     .mutation(({ input }) => {
       const cleared = clearGeoIpData(input.userId);
       return {

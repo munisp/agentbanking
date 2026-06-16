@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Key, Activity, Shield } from "lucide-react";
 
 export default function ApiGatewayPage() {
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data } = trpc.apiGateway.dashboard.useQuery() as any;
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const { data: keys } = trpc.apiGateway.listApiKeys.useQuery() as any;
 
   return (

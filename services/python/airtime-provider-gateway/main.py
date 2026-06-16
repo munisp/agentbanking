@@ -6,10 +6,46 @@ Middleware: Redis (provider cache), Kafka (vending events)
 """
 import os
 import json
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import uuid
 import logging
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,7 +76,6 @@ DATA_BUNDLES = {
     ],
 }
 
-
 class AirtimeHandler(BaseHTTPRequestHandler):
     def _send_json(self, data, status=200):
         self.send_response(status)
@@ -53,6 +88,15 @@ class AirtimeHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length)) if length > 0 else {}
 
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._send_json({"status": "healthy", "service": "airtime-provider-gateway"})
         elif self.path == "/api/v1/providers":
@@ -71,6 +115,13 @@ class AirtimeHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         body = self._read_body()
 
         if self.path == "/api/v1/vend/airtime":
@@ -133,9 +184,43 @@ class AirtimeHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8145"))
     server = HTTPServer(("0.0.0.0", port), AirtimeHandler)
     logger.info("Airtime Provider Gateway starting on port %d", port)
     server.serve_forever()
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/airtime_provider_gateway")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

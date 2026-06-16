@@ -14,12 +14,11 @@ class Settings:
     Application settings class. Reads configuration from environment variables.
     """
     # Database settings
-    # Use a default in-memory SQLite for simplicity in this environment, 
-    # but the structure is ready for a production PostgreSQL/MySQL connection.
+        # but the structure is ready for a production PostgreSQL/MySQL connection.
     # In a real-world scenario, this would be read from a .env file or environment variables.
     DATABASE_URL: str = os.environ.get(
         "DATABASE_URL", 
-        "sqlite:///./snapchat_service.db"
+        "postgresql://postgres:postgres@localhost:5432/snapchat_service"
     )
     
     # API settings
@@ -34,12 +33,8 @@ settings = Settings()
 # Database Setup
 # ----------------------------------------------------------------------
 
-# For SQLite, check_same_thread is needed for FastAPI/SQLAlchemy integration
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
-
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args=connect_args
+    settings.DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

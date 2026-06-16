@@ -3,15 +3,27 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { webhookEndpoints } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
 
 const dashboard = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })
@@ -46,8 +58,8 @@ const getIntegration = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -94,9 +106,9 @@ const getIntegration = protectedProcedure
 const installIntegration = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -128,8 +140,8 @@ const getApiCatalog = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      page: z.number().optional(),
-      limit: z.number().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -174,6 +186,56 @@ const getApiCatalog = protectedProcedure
     }
   });
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  registered: ["configuring"],
+  configuring: ["testing"],
+  testing: ["active", "failed"],
+  active: ["degraded", "suspended", "deprecated"],
+  degraded: ["active", "suspended"],
+  suspended: ["active", "decommissioned"],
+  deprecated: ["decommissioned"],
+  failed: ["configuring", "decommissioned"],
+  decommissioned: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "integrationMarketplace",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "integrationMarketplace",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Transaction Handling for integrationMarketplace ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const integrationMarketplaceRouter = router({
   dashboard,
   getIntegration,

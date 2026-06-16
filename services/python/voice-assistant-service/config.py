@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./voice_assistant_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/voice_assistant_service"
     
     # Logging settings
     LOG_LEVEL: str = "INFO"
@@ -22,10 +22,9 @@ settings = Settings()
 
 # --- Database Setup ---
 
-# Use check_same_thread=False for SQLite only, as it's not thread-safe
 # For production (PostgreSQL/MySQL), this argument should be removed.
 engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+    settings.DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

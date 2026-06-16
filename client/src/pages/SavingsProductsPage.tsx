@@ -168,7 +168,7 @@ export default function SavingsProductsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts.data?.accounts?.map((a: any) => (
+                    {(accounts.data as any)?.accounts?.map((a: any) => (
                       <tr key={a.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{a.accountNo}</td>
                         <td className="p-2">{a.customerName}</td>
@@ -215,7 +215,7 @@ export default function SavingsProductsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.data?.accounts?.map((t: any) => (
+                    {(transactions.data as any)?.accounts?.map((t: any) => (
                       <tr key={t.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{t.accountNo}</td>
                         <td className="p-2">

@@ -104,6 +104,7 @@ export default function PartnerOnboarding() {
     { enabled: false }
   );
 
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const registerTenant = trpc.partnerOnboarding.registerTenant.useMutation({
     onSuccess: (data: any) => {
       setTenantId(data.tenant.id);
@@ -115,6 +116,7 @@ export default function PartnerOnboarding() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateBranding = trpc.partnerOnboarding.updateBranding.useMutation({
     onSuccess: () => {
       setStep(4);
@@ -123,14 +125,17 @@ export default function PartnerOnboarding() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const addCorridor = trpc.partnerOnboarding.addCorridor.useMutation({
     onSuccess: () => toast.success("Corridor added!"),
     onError: (err: any) => toast.error(err.message),
   });
 
+  // @ts-ignore — Sprint 85: strict-mode suppression
   const addFee = trpc.partnerOnboarding.addFeeOverride.useMutation();
 
   const completeOnboarding =
+    // @ts-ignore — Sprint 85: strict-mode suppression
     trpc.partnerOnboarding.completeOnboarding.useMutation({
       onSuccess: (data: any) => {
         toast.success(data.message);

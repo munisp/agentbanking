@@ -264,7 +264,9 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
   const [unread, setUnread] = useState(2);
-  const [queuePos] = useState(Math.floor(Math.random() * 3) + 1);
+  const [queuePos] = useState(
+    (crypto.getRandomValues(new Uint32Array(1))[0] % 3) + 1
+  );
   const [sessionRef, setSessionRef] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -323,11 +325,19 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
   // Simulate support agent typing + response
   const simulateResponse = useCallback((category: SupportCategory) => {
     setIsTyping(true);
-    const delay = 1500 + Math.random() * 2000;
+    const delay =
+      1500 +
+      (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 2000;
     setTimeout(() => {
       setIsTyping(false);
       const pool = BOT_RESPONSES[category] || BOT_RESPONSES.default;
-      const text = pool[Math.floor(Math.random() * pool.length)];
+      const text =
+        pool[
+          Math.floor(
+            (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+              pool.length
+          )
+        ];
       const msg: Message = {
         id: Date.now().toString(),
         role: "support",

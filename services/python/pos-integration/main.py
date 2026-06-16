@@ -6,6 +6,9 @@ transaction-scoring, chart-of-accounts, projections-targets,
 qr-ticket-verification, and inventory-management services.
 """
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -20,6 +23,32 @@ import logging
 import time as _time
 from collections import defaultdict
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
@@ -30,13 +59,11 @@ POS_MGMT_URL = os.getenv("POS_MGMT_URL", "http://localhost:8443")
 
 _db_pool = None
 
-
 async def get_db_pool():
     global _db_pool
     if _db_pool is None:
         _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     return _db_pool
-
 
 async def verify_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
@@ -46,12 +73,12 @@ async def verify_token(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid token")
     return token
 
-
 app = FastAPI(
     title="POS Integration Gateway",
     description="POS Integration Gateway with scoring, COA, targets, QR tickets & inventory",
     version="2.0.0",
 )
+apply_middleware(app, enable_auth=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -66,7 +93,6 @@ RATE_LIMIT_MAX = int(os.getenv("POS_RATE_LIMIT_MAX", "60"))
 RATE_LIMIT_WINDOW_SEC = int(os.getenv("POS_RATE_LIMIT_WINDOW_SEC", "60"))
 _agent_requests: Dict[str, list] = defaultdict(list)
 _rate_limit_stats = {"blocked": 0, "total_checked": 0}
-
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -87,7 +113,6 @@ async def rate_limit_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-
 @app.get("/rate-limit/stats")
 async def get_rate_limit_stats():
     return {
@@ -97,7 +122,6 @@ async def get_rate_limit_stats():
         "total_checked": _rate_limit_stats["total_checked"],
         "total_blocked": _rate_limit_stats["blocked"],
     }
-
 
 @app.on_event("startup")
 async def startup():
@@ -118,7 +142,6 @@ async def startup():
             )
         """)
 
-
 @app.get("/")
 async def root():
     return {
@@ -136,7 +159,6 @@ async def root():
         ],
     }
 
-
 @app.get("/health")
 async def health_check():
     try:
@@ -147,7 +169,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "pos-integration", "error": str(e)}
 
-
 class ItemCreate(BaseModel):
     terminal_id: str
     merchant_id: Optional[str] = None
@@ -157,7 +178,6 @@ class ItemCreate(BaseModel):
     model: Optional[str] = None
     firmware_version: Optional[str] = None
 
-
 class ItemUpdate(BaseModel):
     terminal_id: Optional[str] = None
     merchant_id: Optional[str] = None
@@ -166,7 +186,6 @@ class ItemUpdate(BaseModel):
     last_transaction_at: Optional[str] = None
     model: Optional[str] = None
     firmware_version: Optional[str] = None
-
 
 @app.post("/api/v1/pos-integration")
 async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
@@ -185,7 +204,6 @@ async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
         row = await conn.fetchrow(query, *vals)
         return dict(row)
 
-
 @app.get("/api/v1/pos-integration")
 async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -197,7 +215,6 @@ async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify
         total = await conn.fetchval("SELECT COUNT(*) FROM pos_terminals")
         return {"total": total, "items": [dict(r) for r in rows], "skip": skip, "limit": limit}
 
-
 @app.get("/api/v1/pos-integration/{item_id}")
 async def get_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -206,7 +223,6 @@ async def get_item(item_id: str, token: str = Depends(verify_token)):
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
         return dict(row)
-
 
 @app.put("/api/v1/pos-integration/{item_id}")
 async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verify_token)):
@@ -229,7 +245,6 @@ async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verif
         row = await conn.fetchrow(query, *params)
         return dict(row)
 
-
 @app.delete("/api/v1/pos-integration/{item_id}")
 async def delete_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -239,7 +254,6 @@ async def delete_item(item_id: str, token: str = Depends(verify_token)):
             raise HTTPException(status_code=404, detail="Item not found")
         return {"deleted": True}
 
-
 @app.get("/api/v1/pos-integration/stats")
 async def get_stats(token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -247,7 +261,6 @@ async def get_stats(token: str = Depends(verify_token)):
         total = await conn.fetchval("SELECT COUNT(*) FROM pos_terminals")
         today = await conn.fetchval("SELECT COUNT(*) FROM pos_terminals WHERE created_at >= CURRENT_DATE")
         return {"total": total, "today": today, "service": "pos-integration"}
-
 
 @app.post("/process-payment")
 async def process_payment(request: Request):
@@ -262,7 +275,6 @@ async def process_payment(request: Request):
         except httpx.ConnectError:
             raise HTTPException(status_code=503, detail="POS core service unavailable")
 
-
 @app.get("/transaction/{transaction_id}/status")
 async def get_transaction_status(transaction_id: str):
     stats["total_requests"] += 1
@@ -274,7 +286,6 @@ async def get_transaction_status(transaction_id: str):
             return response.json()
         except httpx.ConnectError:
             raise HTTPException(status_code=503, detail="POS core service unavailable")
-
 
 @app.post("/transaction/{transaction_id}/refund")
 async def refund_transaction(transaction_id: str, request: Request):
@@ -291,7 +302,6 @@ async def refund_transaction(transaction_id: str, request: Request):
         except httpx.ConnectError:
             raise HTTPException(status_code=503, detail="POS core service unavailable")
 
-
 @app.post("/pos/score-transaction")
 async def score_transaction(request: Request):
     stats["total_requests"] += 1
@@ -302,7 +312,6 @@ async def score_transaction(request: Request):
             return resp.json()
         except httpx.ConnectError:
             return {"error": "Transaction scoring service unavailable", "overall_score": None}
-
 
 @app.post("/pos/gl-post")
 async def gl_post(request: Request):
@@ -324,7 +333,6 @@ async def gl_post(request: Request):
         except httpx.ConnectError:
             return {"error": "COA service unavailable"}
 
-
 @app.get("/pos/agent-targets/{agent_id}")
 async def get_agent_targets(agent_id: str):
     stats["total_requests"] += 1
@@ -337,7 +345,6 @@ async def get_agent_targets(agent_id: str):
             return resp.json()
         except httpx.ConnectError:
             return []
-
 
 @app.post("/pos/agent-targets/{agent_id}/record")
 async def record_agent_target(agent_id: str, request: Request):
@@ -355,7 +362,6 @@ async def record_agent_target(agent_id: str, request: Request):
         except httpx.ConnectError:
             return {"error": "Targets service unavailable"}
 
-
 @app.post("/pos/qr-ticket/create")
 async def create_qr_ticket(request: Request):
     stats["total_requests"] += 1
@@ -366,7 +372,6 @@ async def create_qr_ticket(request: Request):
             return resp.json()
         except httpx.ConnectError:
             return {"error": "QR ticket service unavailable"}
-
 
 @app.post("/pos/qr-ticket/verify")
 async def verify_qr_ticket(request: Request):
@@ -379,7 +384,6 @@ async def verify_qr_ticket(request: Request):
         except httpx.ConnectError:
             return {"error": "QR ticket service unavailable"}
 
-
 @app.get("/pos/inventory/{agent_id}")
 async def get_agent_inventory(agent_id: str):
     stats["total_requests"] += 1
@@ -389,7 +393,6 @@ async def get_agent_inventory(agent_id: str):
             return resp.json()
         except httpx.ConnectError:
             return {"items": [], "error": "Inventory service unavailable"}
-
 
 @app.post("/pos/inventory/{agent_id}/deduct")
 async def deduct_agent_inventory(agent_id: str, request: Request):
@@ -411,7 +414,6 @@ async def deduct_agent_inventory(agent_id: str, request: Request):
             return resp.json()
         except httpx.ConnectError:
             return {"error": "Inventory service unavailable"}
-
 
 @app.post("/ledger/record-payment")
 async def record_payment_to_ledger(request: Request):
@@ -443,7 +445,6 @@ async def record_payment_to_ledger(request: Request):
             logger.warning(f"TigerBeetle ledger record failed: {e}")
             return {"ledger_recorded": False, "error": str(e)}
 
-
 @app.get("/management/terminals")
 async def mgmt_list_terminals():
     stats["total_requests"] += 1
@@ -453,7 +454,6 @@ async def mgmt_list_terminals():
             return resp.json()
         except Exception as e:
             return {"error": str(e), "management_server": "unreachable"}
-
 
 @app.post("/management/terminals/{terminal_id}/command")
 async def mgmt_send_command(terminal_id: str, request: Request):
@@ -468,7 +468,6 @@ async def mgmt_send_command(terminal_id: str, request: Request):
         except Exception as e:
             return {"error": str(e), "management_server": "unreachable"}
 
-
 @app.post("/management/updates/deploy")
 async def mgmt_deploy_update(request: Request):
     stats["total_requests"] += 1
@@ -480,7 +479,6 @@ async def mgmt_deploy_update(request: Request):
         except Exception as e:
             return {"error": str(e), "management_server": "unreachable"}
 
-
 @app.get("/management/health")
 async def mgmt_health():
     stats["total_requests"] += 1
@@ -490,7 +488,6 @@ async def mgmt_health():
             return resp.json()
         except Exception as e:
             return {"status": "unreachable", "error": str(e)}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8126)

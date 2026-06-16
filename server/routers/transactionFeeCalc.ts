@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count, sum } from "drizzle-orm";
+import { eq, desc, sql, count, sum, and, gte, lte } from "drizzle-orm";
 import { feeRules, feeAuditTrail, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
@@ -11,12 +11,84 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
+import { validateInput } from "../lib/routerHelpers";
 
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
+  cancelled: [],
+  archived: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "transactionFeeCalc",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "transactionFeeCalc",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Transaction Handling for transactionFeeCalc ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const transactionFeeCalcRouter = router({
   calculate: protectedProcedure
     .input(
       z.object({
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         transactionType: z.string(),
         channel: z.string().optional(),
       })

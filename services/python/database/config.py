@@ -17,8 +17,7 @@ class Settings(BaseModel):
     # Database settings
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        f"sqlite:///{BASE_DIR}/database.db"  # Default to a local SQLite file
-    )
+        f"postgresql://postgres:postgres@localhost:5432/database"      )
     
     # Other service-specific settings can be added here
     SERVICE_NAME: str = "database"
@@ -30,8 +29,7 @@ settings = Settings()
 # SQLAlchemy Engine and SessionLocal setup
 # The engine is the starting point for SQLAlchemy
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # SessionLocal is a factory for new Session objects

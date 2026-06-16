@@ -1,0 +1,213 @@
+{
+  "workflow_id": "retrain_20260525_120626_manual",
+  "trigger": "manual",
+  "status": "completed",
+  "started_at": "2026-05-25T12:06:26.604159",
+  "completed_at": "2026-05-25T12:07:36.690824",
+  "duration_seconds": 70.08665728569031,
+  "data_ingested": 50000,
+  "models_trained": 13,
+  "models_improved": 7,
+  "models_promoted": 0,
+  "ab_experiment_id": null,
+  "error": null,
+  "details": {
+    "outcome": "dry_run_complete",
+    "improved_models": [
+      "fraud_xgboost",
+      "fraud_lightgbm",
+      "credit_xgb_default",
+      "credit_dnn_default"
+    ],
+    "training_summary": {
+      "training_mode": "continue",
+      "timestamp": "2026-05-25T12:07:36.687308",
+      "duration_seconds": 62.269797563552856,
+      "data_source": "synthetic(seed=10794)",
+      "lr_multiplier": 0.1,
+      "models_trained": 13,
+      "models_improved": 7,
+      "models_registered": [
+        "fraud_xgboost",
+        "fraud_lightgbm",
+        "credit_xgb_default",
+        "credit_dnn_default"
+      ],
+      "ab_experiment_id": null,
+      "results": {
+        "fraud_xgboost": {
+          "auc": 0.5697582444734424,
+          "f1": 0.08420268256333831,
+          "n_estimators_added": 100,
+          "method": "xgb_model_warm_start"
+        },
+        "fraud_lightgbm": {
+          "auc": 0.5346563612357251,
+          "f1": 0.0,
+          "n_estimators_added": 100,
+          "method": "lgb_init_model"
+        },
+        "fraud_random_forest": {
+          "auc": 0.5298796241245917,
+          "f1": 0.0,
+          "n_estimators_total": 350,
+          "method": "warm_start"
+        },
+        "fraud_dnn": {
+          "auc": 0.5537024654276471,
+          "f1": 0.07210268025670064,
+          "fine_tune_epochs": 10,
+          "fine_tune_lr": 0.0001,
+          "method": "pytorch_fine_tune"
+        },
+        "fraud_isolation_forest": {
+          "auc": 0.5237040869115365,
+          "f1": 0.05336426914153132,
+          "method": "full_refit"
+        },
+        "gnn_gcn": {
+          "auc": 0.6325147414442673,
+          "fine_tune_epochs": 20,
+          "method": "pytorch_gnn_fine_tune"
+        },
+        "gnn_gat": {
+          "auc": 0.538605663080239,
+          "fine_tune_epochs": 20,
+          "method": "pytorch_gnn_fine_tune"
+        },
+        "gnn_graphsage": {
+          "auc": 0.5777749316939891,
+          "fine_tune_epochs": 20,
+          "method": "pytorch_gnn_fine_tune"
+        },
+        "credit_xgb_score": {
+          "rmse": 43.655090971998185,
+          "mae": 33.78066635131836,
+          "r2": 0.7045213580131531,
+          "method": "full_retrain_on_new_data"
+        },
+        "credit_lgb_score": {
+          "rmse": 43.41944265862027,
+          "mae": 33.677889365619336,
+          "r2": 0.7077026988998684,
+          "method": "full_retrain_on_new_data"
+        },
+        "credit_dnn_score": {
+          "rmse": 44.165952357627816,
+          "mae": 34.12104034423828,
+          "r2": 0.6975653767585754,
+          "best_epoch": 32,
+          "method": "full_retrain_on_new_data"
+        },
+        "credit_xgb_default": {
+          "auc": 0.6781226903178124,
+          "f1": 0.588957055214724,
+          "method": "full_retrain_on_new_data"
+        },
+        "credit_dnn_default": {
+          "auc": 0.6983327880968825,
+          "f1": 0.5835411471321695,
+          "best_epoch": 38,
+          "method": "full_retrain_on_new_data"
+        }
+      },
+      "improvements": {
+        "fraud_xgboost": {
+          "improved": true,
+          "old_auc": 0.5599566454096958,
+          "new_auc": 0.5697582444734424,
+          "delta": 0.009801599063746558,
+          "threshold": 0.005,
+          "reason": "AUC improved by 0.0098"
+        },
+        "fraud_lightgbm": {
+          "improved": true,
+          "old_auc": 0.52668870866634,
+          "new_auc": 0.5346563612357251,
+          "delta": 0.007967652569385142,
+          "threshold": 0.005,
+          "reason": "AUC improved by 0.0080"
+        },
+        "fraud_random_forest": {
+          "improved": false,
+          "old_auc": 0.5710718627151297,
+          "new_auc": 0.5298796241245917,
+          "delta": -0.041192238590538,
+          "threshold": 0.005,
+          "reason": "AUC change -0.0412 below threshold 0.005"
+        },
+        "fraud_dnn": {
+          "improved": false,
+          "old_auc": 0.5670998792292301,
+          "new_auc": 0.5537024654276471,
+          "delta": -0.013397413801582991,
+          "threshold": 0.005,
+          "reason": "AUC change -0.0134 below threshold 0.005"
+        },
+        "fraud_isolation_forest": {
+          "improved": false,
+          "old_auc": 0.5271147828589082,
+          "new_auc": 0.5237040869115365,
+          "delta": -0.0034106959473717557,
+          "threshold": 0.005,
+          "reason": "AUC change -0.0034 below threshold 0.005"
+        },
+        "gnn_gcn": {
+          "improved": true,
+          "reason": "No previous metrics (new model)",
+          "new_auc": 0.6325147414442673
+        },
+        "gnn_gat": {
+          "improved": true,
+          "reason": "No previous metrics (new model)",
+          "new_auc": 0.538605663080239
+        },
+        "gnn_graphsage": {
+          "improved": true,
+          "reason": "No previous metrics (new model)",
+          "new_auc": 0.5777749316939891
+        },
+        "credit_xgb_score": {
+          "improved": false,
+          "old_auc": 0,
+          "new_auc": 0,
+          "delta": 0,
+          "threshold": 0.005,
+          "reason": "AUC change 0.0000 below threshold 0.005"
+        },
+        "credit_lgb_score": {
+          "improved": false,
+          "old_auc": 0,
+          "new_auc": 0,
+          "delta": 0,
+          "threshold": 0.005,
+          "reason": "AUC change 0.0000 below threshold 0.005"
+        },
+        "credit_dnn_score": {
+          "improved": false,
+          "old_auc": 0,
+          "new_auc": 0,
+          "delta": 0,
+          "threshold": 0.005,
+          "reason": "AUC change 0.0000 below threshold 0.005"
+        },
+        "credit_xgb_default": {
+          "improved": true,
+          "old_auc": 0.6661027688354231,
+          "new_auc": 0.6781226903178124,
+          "delta": 0.012019921482389284,
+          "threshold": 0.005,
+          "reason": "AUC improved by 0.0120"
+        },
+        "credit_dnn_default": {
+          "improved": true,
+          "old_auc": 0.66763574393668,
+          "new_auc": 0.6983327880968825,
+          "delta": 0.03069704416020247,
+          "threshold": 0.005,
+          "reason": "AUC improved by 0.0307"
+        }
+      }
+    }
+  }
+}

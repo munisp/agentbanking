@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./customer_analytics.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/customer_analytics"
     
     # Service settings
     SERVICE_NAME: str = "customer-analytics"
@@ -28,8 +28,7 @@ settings = Settings()
 
 # The engine is the starting point for SQLAlchemy
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 

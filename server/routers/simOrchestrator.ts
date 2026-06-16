@@ -16,7 +16,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   simFailoverLog,
   simOrchestratorConfig,
@@ -25,6 +25,33 @@ import {
 import { notifyOwner } from "../_core/notification";
 import { publishEvent } from "../kafkaClient";
 import { protectedProcedure, router } from "../_core/trpc";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  initiated: ["menu_displayed"],
+  menu_displayed: ["input_received"],
+  input_received: ["processing"],
+  processing: ["confirmation_pending", "completed", "failed"],
+  confirmation_pending: ["completed", "cancelled", "timed_out"],
+  completed: ["archived"],
+  failed: ["retry", "cancelled"],
+  retry: ["processing"],
+  timed_out: ["cancelled"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -44,7 +71,7 @@ const SimReadingSchema = z.object({
 
 const ProbePayloadSchema = z.object({
   agentCode: z.string().max(32),
-  terminalId: z.string().max(32),
+  terminalId: z.string().min(1).max(255).max(32),
   timestampUtc: z.number().int(),
   latE6: z.number().int().optional(),
   lonE6: z.number().int().optional(),
@@ -56,6 +83,62 @@ const ProbePayloadSchema = z.object({
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "simOrchestrator",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "simOrchestrator",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "simOrchestrator",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "simOrchestrator",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const simOrchestratorRouter = router({
   /**
    * Called by the Rust daemon every probe interval.
@@ -63,7 +146,29 @@ export const simOrchestratorRouter = router({
    */
   ingestProbe: protectedProcedure
     .input(ProbePayloadSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db)
@@ -87,6 +192,31 @@ export const simOrchestratorRouter = router({
         }
 
         if (config[0] && !config[0].enabled) {
+          await writeAuditLog({
+            agentId:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.id ?? 0)
+                : 0,
+
+            agentCode:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.agentCode ?? "system")
+                : "system",
+
+            action: "MUTATION",
+
+            resource: "simOrchestrator",
+
+            resourceId:
+              typeof input === "object" && input !== null && "id" in input
+                ? String((input as any).id)
+                : "new",
+
+            status: "success",
+
+            metadata: { input: typeof input === "object" ? input : {} },
+          });
+
           return { accepted: false, reason: "Terminal orchestrator disabled" };
         }
 
@@ -128,7 +258,7 @@ export const simOrchestratorRouter = router({
   getConfig: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         apiKey: z.string().max(128),
       })
     )
@@ -319,7 +449,7 @@ export const simOrchestratorRouter = router({
   upsertConfig: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         probeIntervalMs: z.number().int().min(5000).max(300000).default(30000),
         relayEndpoint: z
           .string()
@@ -480,7 +610,7 @@ export const simOrchestratorRouter = router({
   reportFailover: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32),
+        terminalId: z.string().min(1).max(255).max(32),
         agentCode: z.string().max(32),
         fromSlot: z.number().int().min(0).max(3),
         toSlot: z.number().int().min(0).max(3),
@@ -602,7 +732,7 @@ export const simOrchestratorRouter = router({
   getFailoverHistory: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string().max(32).optional(),
+        terminalId: z.string().min(1).max(255).max(32).optional(),
         limit: z.number().int().min(1).max(500).default(100),
       })
     )

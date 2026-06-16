@@ -5,6 +5,9 @@ for low-connectivity environments common in remittance corridors
 """
 
 from fastapi import FastAPI, HTTPException, Header, Depends
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -16,6 +19,32 @@ import os
 import logging
 from datetime import datetime
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/edge")
 SYNC_SERVICE_URL = os.getenv("SYNC_SERVICE_URL", "http://localhost:8040")
 
@@ -23,6 +52,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Remittance Edge Service", version="2.0.0")
+apply_middleware(app, enable_auth=True)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/edge_computing")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -33,14 +98,12 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class SyncStatus(str, Enum):
     PENDING = "pending"
     SYNCING = "syncing"
     SYNCED = "synced"
     FAILED = "failed"
     CONFLICT = "conflict"
-
 
 class QueuedTransaction(BaseModel):
     sender_id: str
@@ -51,12 +114,10 @@ class QueuedTransaction(BaseModel):
     device_id: str
     offline: bool = True
 
-
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     return authorization[7:]
-
 
 @app.on_event("startup")
 async def startup():
@@ -90,12 +151,10 @@ async def startup():
         """)
     logger.info("Edge Computing Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 @app.post("/api/v1/edge/transactions/queue")
 async def queue_transaction(txn: QueuedTransaction, token: str = Depends(verify_bearer_token)):
@@ -112,12 +171,11 @@ async def queue_transaction(txn: QueuedTransaction, token: str = Depends(verify_
     async with db_pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO sync_queue (device_id, operation_type, payload)
-            VALUES ($1, 'transaction', $2::jsonb)""",
+            VALUES ($1, 'transaction', $2::jsonb) RETURNING id""",
             txn.device_id, json.dumps(payload),
         )
     logger.info(f"Transaction queued from device {txn.device_id}")
     return {"queued_id": txn_id, "status": "pending", "device_id": txn.device_id}
-
 
 @app.get("/api/v1/edge/sync/pending/{device_id}")
 async def get_pending_sync(device_id: str, token: str = Depends(verify_bearer_token)):
@@ -134,7 +192,6 @@ async def get_pending_sync(device_id: str, token: str = Depends(verify_bearer_to
             for r in rows
         ],
     }
-
 
 @app.post("/api/v1/edge/sync/{device_id}")
 async def trigger_sync(device_id: str, token: str = Depends(verify_bearer_token)):
@@ -180,7 +237,6 @@ async def trigger_sync(device_id: str, token: str = Depends(verify_bearer_token)
 
     return {"device_id": device_id, "synced": synced, "failed": failed, "remaining": len(rows) - synced - failed}
 
-
 @app.post("/api/v1/edge/devices/register")
 async def register_device(device_id: str, user_id: str, app_version: str = "1.0.0", os_type: str = "android", token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -191,7 +247,6 @@ async def register_device(device_id: str, user_id: str, app_version: str = "1.0.
             device_id, user_id, app_version, os_type,
         )
     return {"device_id": device_id, "registered": True}
-
 
 @app.post("/api/v1/edge/devices/{device_id}/heartbeat")
 async def device_heartbeat(device_id: str, token: str = Depends(verify_bearer_token)):
@@ -206,7 +261,6 @@ async def device_heartbeat(device_id: str, token: str = Depends(verify_bearer_to
         )
     return {"device_id": device_id, "pending_sync": pending, "server_time": datetime.utcnow().isoformat()}
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -219,9 +273,7 @@ async def health_check():
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "edge-computing", "database": db_ok}
 
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8050)
-
 

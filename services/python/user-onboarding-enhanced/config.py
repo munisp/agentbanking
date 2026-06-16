@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     
     # Database settings
-    DATABASE_URL: str = "sqlite:///./onboarding.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced"
     
     # Security settings
     SECRET_KEY: str = "a-very-secret-key-that-should-be-changed-in-production" # Production implementation, should be loaded from env

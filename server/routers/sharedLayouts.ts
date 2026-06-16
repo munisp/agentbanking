@@ -1,8 +1,125 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { auditLog, analyticsDashboards } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
+
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
+}
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "sharedLayouts",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "sharedLayouts",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "sharedLayouts",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "sharedLayouts",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+
+// ── Error Handling ─────────────────────────────────────────────────────────
+function handleError(error: unknown, context: string): never {
+  if (error instanceof TRPCError) throw error;
+  const message = error instanceof Error ? error.message : "Unknown error";
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: `${context}: ${message}`,
+  });
+}
+function validateRequired<T>(value: T | null | undefined, field: string): T {
+  if (value === null || value === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${field} is required`,
+    });
+  }
+  return value;
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const sharedLayoutsRouter = router({
   list: protectedProcedure
@@ -10,7 +127,7 @@ export const sharedLayoutsRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -101,13 +218,15 @@ export const sharedLayoutsRouter = router({
     permissions: ["view-only", "can-edit", "can-fork"],
   })),
   share: protectedProcedure
-    .input(z.object({ id: z.string(), targetUserId: z.string() }))
+    .input(
+      z.object({ id: z.string(), targetUserId: z.string().min(1).max(255) })
+    )
     .mutation(async ({ input }) => ({ shared: true, id: input.id })),
   import: protectedProcedure
-    .input(z.object({ layoutId: z.string() }))
+    .input(z.object({ layoutId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => ({ imported: true, id: input.layoutId })),
   fork: protectedProcedure
-    .input(z.object({ layoutId: z.string() }))
+    .input(z.object({ layoutId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => ({
       forked: true,
       newId: "fork_" + input.layoutId,

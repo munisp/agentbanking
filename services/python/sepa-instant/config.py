@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DESCRIPTION: str = "API for managing SEPA Instant Credit Transfers (SCT Inst)."
 
     # Database Configuration
-    DATABASE_URL: str = "sqlite:///./sepa_instant.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/sepa_instant"
     # For production, this would be: "postgresql+psycopg2://user:password@host:port/dbname"
 
     # Security Configuration

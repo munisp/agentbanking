@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     Uses environment variables for configuration.
     """
     # Database configuration
-    DATABASE_URL: str = "sqlite:///./data_warehouse.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/data_warehouse"
     
     # Service configuration
     SERVICE_NAME: str = "data-warehouse"
@@ -27,8 +27,7 @@ settings = Settings()
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

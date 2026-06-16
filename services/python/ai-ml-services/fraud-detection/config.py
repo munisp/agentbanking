@@ -8,8 +8,8 @@ log = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./fraud_detection.db"
-    ASYNC_DATABASE_URL: str = "sqlite+aiosqlite:///./fraud_detection.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/ai_ml_services"
+    ASYNC_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_ml_services"
 
     # Application Settings
     PROJECT_NAME: str = "Fraud Detection API"

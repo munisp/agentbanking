@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./kyc_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/kyc_service"
     
     # Service settings
     SERVICE_NAME: str = "kyc-service"
@@ -34,13 +34,6 @@ def get_settings():
 settings = get_settings()
 
 # Create the SQLAlchemy engine
-# For SQLite, connect_args is needed for concurrent access
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 # Create a configured "SessionLocal" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

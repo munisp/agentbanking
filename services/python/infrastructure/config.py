@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./infrastructure.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/infrastructure"
     
     # Logging Settings
     LOG_LEVEL: str = "INFO"

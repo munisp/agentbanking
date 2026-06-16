@@ -1,4 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
@@ -11,11 +14,38 @@ from sqlalchemy import text
 from .config import settings
 from .metrics import REQUEST_COUNT, IN_PROGRESS_REQUESTS, DB_OPERATION_COUNT, generate_latest
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Device Management Service",
               description="API for managing devices and device owners in an Remittance Platform.",
               version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 # Configure logger
 logger.add("file.log", rotation="500 MB", compression="zip", level=settings.LOG_LEVEL)

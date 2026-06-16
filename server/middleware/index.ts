@@ -129,8 +129,7 @@ export function xssSanitizeMiddleware(
 // ─── CORS Hardening ─────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
-  /^https?:\/\/.*\.manus\.(computer|space)$/,
-  /^https?:\/\/.*\.54link\.com$/,
+  /^https?:\/\/.*\.54link\.(com|platform)$/,
 ];
 
 export function corsHardeningMiddleware(

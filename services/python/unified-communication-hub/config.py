@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./unified_communication_hub.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/unified_communication_hub"
     
     # Service settings
     SERVICE_NAME: str = "unified-communication-hub"
@@ -34,14 +34,7 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
-# Use connect_args for SQLite to allow multiple threads to access the same connection
 # For production use with PostgreSQL/MySQL, this should be removed.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -8,9 +8,38 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncpg
 import aioredis
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +48,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DASHBOARD_CACHE_TTL = int(os.getenv("DASHBOARD_CACHE_TTL", "30"))
 
 app = FastAPI(title="Dashboard Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 from fastapi import APIRouter
@@ -37,7 +67,6 @@ async def get_redis():
         yield redis
     finally:
         await redis.close()
-
 
 @router.get("/stats")
 async def get_dashboard_stats(
@@ -126,7 +155,6 @@ async def get_dashboard_stats(
         logger.error(f"Dashboard stats error: {e}")
         return _fallback_stats(period)
 
-
 @router.get("/transactions/recent")
 async def get_recent_transactions(
     limit: int = Query(default=10, le=100),
@@ -158,7 +186,6 @@ async def get_recent_transactions(
         logger.error(f"Recent transactions error: {e}")
         return []
 
-
 @router.get("/agents/top")
 async def get_top_agents(
     limit: int = Query(default=5, le=20),
@@ -182,7 +209,6 @@ async def get_top_agents(
         return [dict(r) for r in rows]
     except Exception as e:
         return []
-
 
 @router.get("/system/health")
 async def get_system_health(
@@ -212,7 +238,6 @@ async def get_system_health(
     
     return health
 
-
 @router.get("/notifications")
 async def get_notifications(
     unread_only: bool = True,
@@ -234,7 +259,6 @@ async def get_notifications(
     except Exception as e:
         return []
 
-
 @router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, db=Depends(get_db)):
     """Mark a notification as read"""
@@ -246,7 +270,6 @@ async def mark_notification_read(notification_id: str, db=Depends(get_db)):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 def _fallback_stats(period: str) -> Dict[str, Any]:
     """Return empty stats structure when DB is unavailable"""
@@ -260,7 +283,6 @@ def _fallback_stats(period: str) -> Dict[str, Any]:
         "timestamp": datetime.utcnow().isoformat(),
         "_fallback": True,
     }
-
 
 app.include_router(router)
 

@@ -19,6 +19,32 @@ import math
 import random
 import hashlib
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 app = Flask(__name__)
 
 # ── Model State ───────────────────────────────────────────────────────────────
@@ -91,7 +117,6 @@ def predict_carrier_score(carrier, hour, day_of_week, lat, lng, prev_latency, pr
 
     return max(0, min(100, score))
 
-
 def approximate_region(lat, lng):
     """Approximate region from lat/lng for African cities"""
     regions = {
@@ -114,7 +139,6 @@ def approximate_region(lat, lng):
             min_dist = dist
             closest = name
     return closest if min_dist < 2.0 else "unknown"
-
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -157,7 +181,6 @@ def predict():
         "region": approximate_region(lat, lng),
         "conditions": {"hour": hour, "dayOfWeek": day_of_week},
     })
-
 
 @app.route("/train", methods=["POST"])
 def train():
@@ -204,11 +227,9 @@ def train():
         "accuracy": model_state["accuracy"],
     })
 
-
 @app.route("/model/status", methods=["GET"])
 def model_status():
     return jsonify(model_state)
-
 
 @app.route("/batch-predict", methods=["POST"])
 def batch_predict():
@@ -243,7 +264,6 @@ def batch_predict():
 
     return jsonify({"predictions": results, "count": len(results)})
 
-
 @app.route("/feature-importance", methods=["GET"])
 def feature_importance():
     return jsonify({
@@ -258,7 +278,6 @@ def feature_importance():
             {"name": "latitude", "importance": 0.01, "description": "Latitude coordinate"},
         ]
     })
-
 
 @app.route("/carriers/stats", methods=["GET"])
 def carrier_stats():
@@ -276,7 +295,6 @@ def carrier_stats():
     stats.sort(key=lambda x: x["baseScore"], reverse=True)
     return jsonify(stats)
 
-
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
@@ -288,9 +306,43 @@ def health():
         "carriers": len(carrier_profiles),
     })
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8114))
     print(f"[carrier-recommendation] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/carrier_recommendation")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

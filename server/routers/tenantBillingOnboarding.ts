@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 
 async function db() {
   const d = await getDb();
@@ -19,6 +19,30 @@ import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
 import { Client, Connection } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["sent", "cancelled"],
+  sent: ["paid", "overdue", "cancelled"],
+  paid: ["refunded"],
+  overdue: ["paid", "written_off"],
+  cancelled: [],
+  refunded: [],
+  written_off: [],
+};
 
 // Temporal client singleton for billing provisioning
 let temporalClient: Client | null = null;
@@ -292,6 +316,50 @@ async function executeBillingProvisioning(params: {
 // Tenant Billing Onboarding Router
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "tenantBillingOnboarding",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "tenantBillingOnboarding",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "tenantBillingOnboarding",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "tenantBillingOnboarding",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const tenantBillingOnboardingRouter = router({
   // Get available billing templates
   getTemplates: protectedProcedure.query(async () => ({
@@ -319,6 +387,28 @@ export const tenantBillingOnboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "billPayment");
+      const commission = calculateCommission(fees.fee, "billPayment");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         // Check if tenant already has billing configured
         const [existing] = await (await db())

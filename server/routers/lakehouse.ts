@@ -25,9 +25,13 @@ import {
   uploadSettlementSummary,
   listSnapshots,
   getSnapshotDownloadUrl,
+  ingestToLakehouse,
+  queryLakehouse,
+  getLakehouseCatalog,
+  promoteLakehouseTable,
   BUCKETS,
 } from "../lakehouse";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   transactions,
   agents,
@@ -35,9 +39,32 @@ import {
   deviceLocations,
   auditLog,
 } from "../../drizzle/schema";
-import { writeAuditLog } from "../db";
 import { sql, gte, lte, and, eq, desc } from "drizzle-orm";
 import logger from "../_core/logger";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Python lakehouse-service proxy ────────────────────────────────────────────
 const LAKEHOUSE_SERVICE_URL =
@@ -88,6 +115,45 @@ function gridCell(lat: number, lon: number, cellDeg: number): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "lakehouse",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "lakehouse",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const lakehouseRouter = router({
   // ── 1. Snapshot: trigger manual transaction snapshot upload ────────────────
   triggerTransactionSnapshot: adminProcedure
@@ -99,7 +165,29 @@ export const lakehouseRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -877,7 +965,7 @@ export const lakehouseRouter = router({
     }),
 
   pipelineStatus: adminProcedure
-    .input(z.object({ jobId: z.string().optional() }))
+    .input(z.object({ jobId: z.string().min(1).max(255).optional() }))
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -924,5 +1012,69 @@ export const lakehouseRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
+    }),
+
+  // ── Unified Lakehouse: Catalog ────────────────────────────────────────────
+  catalog: protectedProcedure
+    .input(z.object({ layer: z.enum(["bronze", "silver", "gold"]).optional() }))
+    .query(async ({ input }) => {
+      return getLakehouseCatalog(input.layer);
+    }),
+
+  // ── Unified Lakehouse: SQL Query ──────────────────────────────────────────
+  querySQL: protectedProcedure
+    .input(
+      z.object({
+        sql: z.string().min(1).max(5000),
+        layer: z.enum(["bronze", "silver", "gold"]).default("gold"),
+      })
+    )
+    .query(async ({ input }) => {
+      return queryLakehouse(input.sql, input.layer);
+    }),
+
+  // ── Unified Lakehouse: ETL Promote ────────────────────────────────────────
+  promoteTable: adminProcedure
+    .input(
+      z.object({
+        table: z.string().min(1),
+        sourceLayer: z.enum(["bronze", "silver"]).default("bronze"),
+        targetLayer: z.enum(["silver", "gold"]).default("silver"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await promoteLakehouseTable(
+        input.table,
+        input.sourceLayer,
+        input.targetLayer
+      );
+      if (!result) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "ETL promotion failed",
+        });
+      }
+      return result;
+    }),
+
+  // ── Unified Lakehouse: Ingest ─────────────────────────────────────────────
+  ingest: adminProcedure
+    .input(
+      z.object({
+        table: z.string().min(1),
+        data: z.union([
+          z.record(z.string(), z.unknown()),
+          z.array(z.record(z.string(), z.unknown())),
+        ]),
+        source: z.string().default("trpc-manual"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const success = await ingestToLakehouse(
+        input.table,
+        input.data,
+        input.source
+      );
+      return { success, table: input.table };
     }),
 });

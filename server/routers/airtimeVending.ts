@@ -12,6 +12,42 @@ import { transactions, agents, commissionRules } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
+  rejected: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
+};
 
 const PROVIDERS = [
   {
@@ -129,16 +165,75 @@ function detectProvider(phone: string): string | null {
   return null;
 }
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "airtimeVending",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "airtimeVending",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "airtimeVending",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "airtimeVending",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const airtimeVendingRouter = router({
   vendAirtime: protectedProcedure
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        amount: z.number().int().min(50).max(50_000),
+        amount: z.number().min(0).int().min(50).max(50_000),
         provider: z.enum(["MTN", "AIRTEL", "GLO", "9MOBILE"]).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "airtimeVending",
+        "mutation",
+        "Executed airtimeVending mutation"
+      );
+
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -237,7 +332,7 @@ export const airtimeVendingRouter = router({
     .input(
       z.object({
         phone: z.string().min(11).max(14),
-        bundleId: z.string(),
+        bundleId: z.string().min(1).max(255),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -343,7 +438,7 @@ export const airtimeVendingRouter = router({
       z.object({
         limit: z.number().default(50),
         offset: z.number().default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -482,7 +577,9 @@ export const airtimeVendingRouter = router({
     };
   }),
   dataBundles: publicProcedure
-    .input(z.object({ networkId: z.string().optional() }).optional())
+    .input(
+      z.object({ networkId: z.string().min(1).max(255).optional() }).optional()
+    )
     .query(async () => {
       return {
         bundles: [

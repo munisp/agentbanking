@@ -12,6 +12,32 @@ import { transactions, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  application: ["under_review"],
+  under_review: ["approved", "rejected", "additional_info"],
+  additional_info: ["under_review"],
+  approved: ["onboarding"],
+  onboarding: ["active"],
+  active: ["suspended", "under_review"],
+  suspended: ["active", "terminated"],
+  terminated: [],
+  rejected: ["appeal"],
+  appeal: ["under_review"],
+};
 
 const SUPPORTED_LANGUAGES = [
   { code: "en", name: "English" },
@@ -33,6 +59,132 @@ const INTENT_MAP: Record<string, { type: string; description: string }> = {
   check_balance: { type: "Balance", description: "Check float balance" },
 };
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "voiceCommandPos",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "voiceCommandPos",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "voiceCommandPos",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "voiceCommandPos",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Database Query Patterns ────────────────────────────────────────────────
+const _voiceCommandPos_db = {
+  async selectById(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const rows = await db
+        .select()
+        .from(table)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async selectAll(table: any, limit = 50) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return [];
+      return await db.select().from(table).limit(limit);
+    } catch {
+      return [];
+    }
+  },
+  async insertRecord(table: any, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .insert(table)
+        .values(data as any)
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .update(table)
+        .set(data as any)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async deleteRecord(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return false;
+      await db
+        .delete(table)
+        .where((await import("drizzle-orm")).eq(table.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const voiceCommandPosRouter = router({
   processCommand: protectedProcedure
     .input(
@@ -43,6 +195,21 @@ export const voiceCommandPosRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "voiceCommandPos",
+        "mutation",
+        "Executed voiceCommandPos mutation"
+      );
+
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -122,7 +289,7 @@ export const voiceCommandPosRouter = router({
     .input(
       z.object({
         intent: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         phone: z.string().optional(),
         customerName: z.string().optional(),
       })

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,12 +8,13 @@ import { Zap, Tv, Droplets, Receipt } from "lucide-react";
 
 export default function BillPaymentsPage() {
   const [category, setCategory] = useState<string>("");
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const payments = trpc.billPayments.history.useQuery({
     category: category || undefined,
     limit: 20,
-  });
-  const billers = trpc.billPayments.billers.useQuery();
-  const analytics = trpc.billPayments.analytics.useQuery();
+  }) as any;
+  const billers = trpc.billPayments.billers.useQuery() as any;
+  const analytics = trpc.billPayments.analytics.useQuery() as any;
 
   const categories = [
     { key: "electricity", label: "Electricity", icon: Zap },
@@ -93,7 +93,7 @@ export default function BillPaymentsPage() {
           >
             All
           </Button>
-          {categories.map(c => (
+          {categories.map((c: any) => (
             <Button
               key={c.key}
               variant={category === c.key ? "default" : "outline"}

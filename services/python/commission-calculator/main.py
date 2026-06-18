@@ -1,3 +1,13 @@
+
+from fastapi import FastAPI
+from datetime import datetime
+
+app = FastAPI(title="commission-calculator")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "commission-calculator", "timestamp": datetime.utcnow().isoformat()}
+
 """
 Commission Calculator — Sprint 78
 Tiered commission engine for POS agents
@@ -7,6 +17,53 @@ import json
 import time
 from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Optional
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+import psycopg2
+import psycopg2.extras
+
+def _init_persistence():
+    """Initialize SQLite persistence for commission-calculator."""
+    import os
+    db_path = os.environ.get("COMMISSION_CALCULATOR_DB_PATH", "/tmp/commission-calculator.db")
+    try:
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/commission_calculator'))
+        
+        
+        return conn
+    except Exception as e:
+        import logging
+        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        return None
+
+_persistence_db = _init_persistence()
+
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 
 @dataclass
 class CommissionTier:

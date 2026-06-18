@@ -935,6 +935,99 @@ services:
     networks:
       - 54link-network
 
+  # ── TigerBeetle Middleware Integration Services ──────────────────────────────
+
+  tigerbeetle-middleware-hub:
+    build:
+      context: ./services/go/tigerbeetle-middleware-hub
+      dockerfile: Dockerfile
+    container_name: tigerbeetle-middleware-hub
+    ports:
+      - "9300:9300"
+    environment:
+      TB_HUB_PORT: "9300"
+      POSTGRES_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      FLUVIO_ENDPOINT: fluvio:9003
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: 54link-financial
+      DAPR_HTTP_PORT: "3500"
+      MOJALOOP_ENDPOINT: http://mojaloop-switch:4002
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      APISIX_ADMIN_URL: http://apisix:9180
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: 54link
+      PERMIFY_ENDPOINT: permify:3476
+      LAKEHOUSE_ENDPOINT: http://lakehouse:8181
+      OPENAPPSEC_ENDPOINT: http://openappsec:8090
+      TB_CLUSTER_ID: "0"
+      TB_ADDRESSES: "3000"
+    networks:
+      - 54link-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9300/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tigerbeetle-middleware-bridge:
+    build:
+      context: ./services/rust/tigerbeetle-middleware-bridge
+      dockerfile: Dockerfile
+    container_name: tigerbeetle-middleware-bridge
+    ports:
+      - "9400:9400"
+    environment:
+      TB_BRIDGE_PORT: "9400"
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      LAKEHOUSE_ENDPOINT: http://lakehouse:8181
+      OPENAPPSEC_ENDPOINT: http://openappsec:8090
+      TB_HUB_URL: http://tigerbeetle-middleware-hub:9300
+    networks:
+      - 54link-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9400/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tigerbeetle-middleware-orchestrator:
+    build:
+      context: ./services/python/tigerbeetle-middleware-orchestrator
+      dockerfile: Dockerfile
+    container_name: tigerbeetle-middleware-orchestrator
+    ports:
+      - "9500:9500"
+    environment:
+      TB_ORCHESTRATOR_PORT: "9500"
+      POSTGRES_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      FLUVIO_ENDPOINT: http://fluvio:9003
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: 54link-financial
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      MOJALOOP_ENDPOINT: http://mojaloop-switch:4002
+      LAKEHOUSE_ENDPOINT: http://lakehouse:8181
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: 54link
+      PERMIFY_ENDPOINT: http://permify:3476
+      TB_HUB_URL: http://tigerbeetle-middleware-hub:9300
+      TB_BRIDGE_URL: http://tigerbeetle-middleware-bridge:9400
+    networks:
+      - 54link-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9500/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 networks:
   54link-network:
     name: 54link-network

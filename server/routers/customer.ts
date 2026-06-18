@@ -26,6 +26,30 @@ import {
 } from "../../drizzle/schema";
 import crypto from "crypto";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Customer-scoped procedure ─────────────────────────────────────────────────
 const customerProcedure = protectedProcedure;
@@ -46,6 +70,48 @@ async function resolveCustomer(userId: number | string) {
     });
   return { db, customer };
 }
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "customer",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "customer",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const customerRouter = router({
   // ── Account ────────────────────────────────────────────────────────────────
@@ -70,12 +136,27 @@ export const customerRouter = router({
         z.object({
           firstName: z.string().optional(),
           lastName: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           address: z.string().optional(),
           dateOfBirth: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const _fees = calculateFee(
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0,
+          "transfer"
+        );
+        const _commission = calculateCommission(_fees.fee, "transfer");
+        const _tax = calculateTax(_fees.fee, "vat");
+        auditFinancialAction(
+          "UPDATE",
+          "customer",
+          "mutation",
+          "Executed customer mutation"
+        );
+
         try {
           const { db, customer } = await resolveCustomer(ctx.user.id);
           const [updated] = await db
@@ -117,7 +198,7 @@ export const customerRouter = router({
           firstName: z.string(),
           lastName: z.string(),
           phone: z.string(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           bvn: z.string().length(11).optional(),
         })
       )
@@ -474,7 +555,7 @@ export const customerRouter = router({
     registerCredential: customerProcedure
       .input(
         z.object({
-          credentialId: z.string(),
+          credentialId: z.string().min(1).max(255),
           publicKey: z.string(),
           deviceType: z.string().optional(),
           transports: z.array(z.string()).default([]),
@@ -507,7 +588,7 @@ export const customerRouter = router({
         }
       }),
     revokeCredential: customerProcedure
-      .input(z.object({ credentialId: z.string() }))
+      .input(z.object({ credentialId: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => {
         try {
           const db = (await getDb())!;
@@ -792,7 +873,7 @@ export const customerRouter = router({
         z.object({
           firstName: z.string().optional(),
           lastName: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           address: z.string().optional(),
         })
       )

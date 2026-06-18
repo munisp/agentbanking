@@ -1,10 +1,9 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function WebSocketServicePage() {
-  const { data, isLoading } = trpc.websocketService.dashboard.useQuery();
+  const { data, isLoading } = trpc.websocketService.dashboard.useQuery() as any;
 
   if (isLoading)
     return (

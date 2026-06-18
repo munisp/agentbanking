@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Sprint 92 — PBAC Role Management Interface
  *
@@ -101,19 +100,25 @@ export default function PBACManagement() {
   );
 
   // Queries
-  const rolesQuery = trpc.pbacManagement.listRoles.useQuery();
+  const rolesQuery = trpc.pbacManagement.listRoles.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const permissionsQuery = trpc.pbacManagement.listPermissions.useQuery({
     riskLevel: "all",
-  });
+  }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const usersQuery = trpc.pbacManagement.listUserAssignments.useQuery({
     roleId: selectedRole ?? undefined,
     search: userSearch || undefined,
-  });
-  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({ pageSize: 20 });
+  }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({
+    pageSize: 20,
+  }) as any;
   const roleDetail = trpc.pbacManagement.getRoleDetail.useQuery(
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { roleId: selectedRole! },
     { enabled: !!selectedRole }
-  );
+  ) as any;
 
   // Mutations
   const assignMut = trpc.pbacManagement.assignRole.useMutation({
@@ -129,7 +134,7 @@ export default function PBACManagement() {
     onError: (err: any) => {
       toast.error(`Assignment failed: ${err.message}`);
     },
-  });
+  }) as any;
 
   const modifyPermsMut = trpc.pbacManagement.modifyPermissions.useMutation({
     onSuccess: () => {
@@ -140,7 +145,7 @@ export default function PBACManagement() {
       roleDetail.refetch();
       auditQuery.refetch();
     },
-  });
+  }) as any;
 
   const removeMut = trpc.pbacManagement.removeAssignment.useMutation({
     onSuccess: () => {
@@ -149,7 +154,7 @@ export default function PBACManagement() {
       usersQuery.refetch();
       auditQuery.refetch();
     },
-  });
+  }) as any;
 
   const toggleCategory = (cat: string) => {
     setExpandedCategories(prev => {

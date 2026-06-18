@@ -1,0 +1,75 @@
+{
+  "training_timestamp": "2026-05-25T11:33:17.705875",
+  "training_duration_seconds": 122.28717255592346,
+  "dataset_size": 200000,
+  "feature_count": 16,
+  "feature_names": [
+    "amount_ngn",
+    "fee_ngn",
+    "ip_risk_score",
+    "session_duration_sec",
+    "distance_from_usual_km",
+    "is_first_transaction",
+    "transaction_type",
+    "channel",
+    "merchant_category",
+    "destination_bank",
+    "source_bank",
+    "hour",
+    "day_of_week",
+    "day_of_month",
+    "is_weekend",
+    "is_month_end"
+  ],
+  "fraud_rate": 0.02944999933242798,
+  "device": "cpu",
+  "results": {
+    "xgboost": {
+      "auc": 0.5599566454096958,
+      "avg_precision": 0.04686783631137221,
+      "f1": 0.07302867383512544,
+      "precision": 0.04052206339341206,
+      "recall": 0.36919592298980747,
+      "n_test": 30000.0,
+      "n_positive": 883.0
+    },
+    "lightgbm": {
+      "auc": 0.52668870866634,
+      "avg_precision": 0.035194302680036496,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "n_test": 30000.0,
+      "n_positive": 883.0
+    },
+    "random_forest": {
+      "auc": 0.5219063277764318,
+      "avg_precision": 0.034956929963550834,
+      "f1": 0.03940886699507389,
+      "precision": 0.07164179104477612,
+      "recall": 0.027180067950169876,
+      "n_test": 30000.0,
+      "n_positive": 883.0
+    },
+    "dnn": {
+      "auc": 0.5377030056151402,
+      "avg_precision": 0.039871623896907196,
+      "f1": 0.06271280386412226,
+      "precision": 0.033713604631363865,
+      "recall": 0.44847112117780297,
+      "n_test": 30000.0,
+      "n_positive": 883.0,
+      "best_epoch": 15.0,
+      "best_val_auc": 0.5236316505584744
+    },
+    "isolation_forest": {
+      "auc": 0.5271147828589082,
+      "avg_precision": 0.03525201131892798,
+      "f1": 0.059782608695652176,
+      "precision": 0.04981132075471698,
+      "recall": 0.07474518686296716,
+      "n_test": 30000.0,
+      "n_positive": 883.0
+    }
+  }
+}

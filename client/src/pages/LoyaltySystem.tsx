@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * 54Link — Agent Loyalty Points System
  * Design: Bloomberg Terminal dark — near-black bg, gold/amber primary for rewards
@@ -549,7 +548,7 @@ const MULTIPLIERS = [
 const getCurrentTier = (points: number): LoyaltyTier =>
   TIERS.slice()
     .reverse()
-    .find(t => points >= t.minPoints) || TIERS[0];
+    .find((t: any) => points >= t.minPoints) || TIERS[0];
 
 const getNextTier = (tier: LoyaltyTier): LoyaltyTier | null =>
   TIERS[TIERS.findIndex(t => t.name === tier.name) + 1] || null;
@@ -573,18 +572,18 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
   const { data: loyaltyData, refetch } = trpc.loyalty.profile.useQuery(
     undefined,
     { retry: false }
-  );
+  ) as any;
   const { data: lbData, isLoading: lbLoading } =
     trpc.loyalty.leaderboard.useQuery(
       { tier: lbTier, sortBy: lbSortBy, page: lbPage, limit: 20 },
       { enabled: tab === "leaderboard", retry: false }
-    );
+    ) as any;
   const claimChallengeMutation = trpc.loyalty.claimChallenge.useMutation({
     onSuccess: () => refetch(),
-  });
+  }) as any;
   const redeemRewardMutation = trpc.loyalty.redeemReward.useMutation({
     onSuccess: () => refetch(),
-  });
+  }) as any;
   const storeAgent = usePosStore(s => s.agent);
   const updateLoyaltyPoints = usePosStore(s => s.updateLoyaltyPoints);
 
@@ -723,7 +722,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
             { id: "leaderboard", label: "Leaderboard", icon: "🏆" },
             { id: "history", label: "History", icon: "📋" },
           ] as const
-        ).map(t => (
+        ).map((t: any) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -1081,8 +1080,8 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                 "training",
                 "recognition",
               ] as const
-            ).map(cat => {
-              const catRewards = REWARDS.filter(r => r.category === cat);
+            ).map((cat: any) => {
+              const catRewards = REWARDS.filter((r: any) => r.category === cat);
               if (!catRewards.length) return null;
               const catLabel: Record<string, string> = {
                 cash: "💵 Cash Bonuses",
@@ -1098,7 +1097,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                     {catLabel[cat]}
                   </div>
                   <div className="flex flex-col gap-2">
-                    {catRewards.map(reward => (
+                    {catRewards.map((reward: any) => (
                       <div
                         key={reward.id}
                         className="flex items-center gap-3 p-4 rounded-2xl"
@@ -1168,8 +1167,10 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
         {/* ── CHALLENGES TAB ── */}
         {tab === "challenges" && (
           <div className="flex flex-col gap-4">
-            {(["daily", "weekly", "monthly"] as const).map(type => {
-              const typeChallenges = CHALLENGES.filter(c => c.type === type);
+            {(["daily", "weekly", "monthly"] as const).map((type: any) => {
+              const typeChallenges = CHALLENGES.filter(
+                (c: any) => c.type === type
+              );
               return (
                 <div key={type}>
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -1181,7 +1182,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                     Challenges
                   </div>
                   <div className="flex flex-col gap-3">
-                    {typeChallenges.map(ch => {
+                    {typeChallenges.map((ch: any) => {
                       const pct = Math.min(
                         (ch.progress / ch.target) * 100,
                         100
@@ -1314,7 +1315,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                 }}
               >
                 <option value="all">All Tiers</option>
-                {["Bronze", "Silver", "Gold", "Platinum"].map(t => (
+                {["Bronze", "Silver", "Gold", "Platinum"].map((t: any) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
@@ -1357,7 +1358,8 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                         .filter(Boolean)
                         .map((entry, i) => {
                           const tierObj =
-                            TIERS.find(t => t.name === entry.tier) ?? TIERS[0];
+                            TIERS.find((t: any) => t.name === entry.tier) ??
+                            TIERS[0];
                           return (
                             <div
                               key={entry.id}
@@ -1404,16 +1406,17 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                 >
                   {(lbData?.agents ?? [])
                     .filter(
-                      e =>
+                      (e: any) =>
                         !lbSearch ||
                         e.name.toLowerCase().includes(lbSearch.toLowerCase()) ||
                         (e.agentCode ?? "")
                           .toLowerCase()
                           .includes(lbSearch.toLowerCase())
                     )
-                    .map((entry, i, arr) => {
+                    .map((entry: any, i: any, arr: any) => {
                       const tierObj =
-                        TIERS.find(t => t.name === entry.tier) ?? TIERS[0];
+                        TIERS.find((t: any) => t.name === entry.tier) ??
+                        TIERS[0];
                       return (
                         <div
                           key={entry.id}
@@ -1540,7 +1543,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                   style={{ color: GREEN, fontFamily: MONO }}
                 >
                   +
-                  {POINTS_HISTORY.filter(h => h.type !== "redeemed")
+                  {POINTS_HISTORY.filter((h: any) => h.type !== "redeemed")
                     .reduce((s: any, h: any) => s + h.points, 0)
                     .toLocaleString()}
                 </div>
@@ -1555,7 +1558,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                   style={{ color: RED, fontFamily: MONO }}
                 >
                   −
-                  {POINTS_HISTORY.filter(h => h.type === "redeemed")
+                  {POINTS_HISTORY.filter((h: any) => h.type === "redeemed")
                     .reduce((s: any, h: any) => s + h.points, 0)
                     .toLocaleString()}
                 </div>

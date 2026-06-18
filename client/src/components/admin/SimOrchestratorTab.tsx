@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * SimOrchestratorTab — Admin Panel tab for the intelligent SIM Orchestrator
  *

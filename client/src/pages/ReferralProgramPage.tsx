@@ -1,4 +1,3 @@
-// @ts-nocheck
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,10 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Gift, Users, TrendingUp, Award } from "lucide-react";
 
 export default function ReferralProgramPage() {
-  const referrals = trpc.referralProgramDedicated.list.useQuery({ limit: 20 });
-  const rewards = trpc.referralProgramDedicated.leaderboard.useQuery();
-  const tiers = trpc.referralProgramDedicated.tiers.useQuery();
-  const analytics = trpc.referralProgramDedicated.analytics.useQuery();
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const referrals = trpc.referralProgramDedicated.list.useQuery({
+    limit: 20,
+  }) as any;
+  const rewards = trpc.referralProgramDedicated.leaderboard.useQuery() as any;
+  const tiers = trpc.referralProgramDedicated.tiers.useQuery() as any;
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const analytics = trpc.referralProgramDedicated.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

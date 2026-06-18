@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +7,9 @@ import { Search, TrendingUp, Award, Star } from "lucide-react";
 export default function AgentPerformanceScorecardPage() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.agentPerformanceScorecard.list.useQuery();
+  const { data, isLoading } = trpc.agentPerformanceScorecard.list.useQuery(
+    {}
+  ) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const agents = (data?.agents || []).filter(
     (a: any) => !search || a.name?.toLowerCase().includes(search.toLowerCase())

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,18 +9,20 @@ import { GitBranch, Search, Shield, Loader2, Network } from "lucide-react";
 
 export default function FalkorDBGraphPage() {
   const [neighborId, setNeighborId] = useState("");
-  const health = trpc.falkordbGraph.health.useQuery();
-  const analytics = trpc.falkordbGraph.analytics.useQuery();
+  const health = trpc.falkordbGraph.health.useQuery() as any;
+  const analytics = trpc.falkordbGraph.analytics.useQuery() as any;
   const [neighborNodeId, setNeighborNodeId] = useState("AGT-001");
   const neighborsQuery = trpc.falkordbGraph.getNeighbors.useQuery(
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { nodeId: neighborNodeId },
     { enabled: neighborNodeId.length > 0 }
-  );
+  ) as any;
   const pathQuery = trpc.falkordbGraph.shortestPath.useQuery(
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { from: "AGT-001", to: "AGT-005" },
     { enabled: false }
-  );
-  const fraudRingsQuery = trpc.falkordbGraph.fraudRings.useQuery();
+  ) as any;
+  const fraudRingsQuery = trpc.falkordbGraph.fraudRings.useQuery() as any;
 
   return (
     <div className="space-y-6">
@@ -184,7 +185,7 @@ export default function FalkorDBGraphPage() {
               )}
               {fraudRingsQuery.data?.rings && (
                 <div className="space-y-3">
-                  {fraudRingsQuery.data.rings.map((ring, i) => (
+                  {fraudRingsQuery.data.rings.map((ring: any, i: any) => (
                     <div
                       key={i}
                       className="p-4 border rounded-lg border-destructive/30 bg-destructive/5"
@@ -198,7 +199,7 @@ export default function FalkorDBGraphPage() {
                         </Badge>
                       </div>
                       <div className="flex flex-wrap gap-1 mb-2">
-                        {ring.ring?.map((nodeId, j) => (
+                        {ring.ring?.map((nodeId: any, j: any) => (
                           <Badge key={j} variant="outline">
                             {nodeId}
                           </Badge>
@@ -227,7 +228,7 @@ export default function FalkorDBGraphPage() {
                 <div>
                   <p className="font-medium mb-2">Available Algorithms:</p>
                   <div className="flex flex-wrap gap-2">
-                    {analytics.data?.algorithms?.map((algo, i) => (
+                    {analytics.data?.algorithms?.map((algo: any, i: any) => (
                       <Badge key={i} variant="outline">
                         {algo}
                       </Badge>

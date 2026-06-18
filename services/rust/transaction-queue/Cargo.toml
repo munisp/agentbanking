@@ -1,0 +1,16 @@
+[package]
+name = "transaction-queue"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "transaction-queue"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"

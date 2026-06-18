@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -11,10 +10,15 @@ export default function MerchantPaymentsPage() {
   const [tab, setTab] = useState<"transactions" | "merchants" | "qr">(
     "transactions"
   );
-  const transactions = trpc.merchantPayments.list.useQuery({ limit: 20 });
-  const merchants = trpc.merchantPayments.list.useQuery({ limit: 20 });
-  const qrCodes = trpc.merchantPayments.list.useQuery({ limit: 20 });
-  const analytics = trpc.merchantPayments.analytics.useQuery();
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const transactions = trpc.merchantPayments.list.useQuery({
+    limit: 20,
+  }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const merchants = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const qrCodes = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
+  const analytics = trpc.merchantPayments.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

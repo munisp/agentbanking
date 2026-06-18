@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -10,7 +9,7 @@ export default function AutoReconciliationEngine() {
     data: stats,
     isLoading,
     refetch,
-  } = trpc.autoReconciliationEngine.getStats.useQuery();
+  } = trpc.autoReconciliationEngine.getStats.useQuery() as any;
   const [searchTerm, setSearchTerm] = useState("");
 
   return (
@@ -132,7 +131,7 @@ export default function AutoReconciliationEngine() {
                 </button>
               </div>
               <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map(i => (
+                {[1, 2, 3, 4, 5].map((i: any) => (
                   <div
                     key={i}
                     className="flex items-center justify-between py-3 border-b border-gray-700/50 last:border-0"

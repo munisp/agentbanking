@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,14 +10,17 @@ import { Search, Database, Brain, Loader2 } from "lucide-react";
 export default function QdrantVectorSearchPage() {
   const [searchQuery, setSearchQuery] = useState("cash withdrawal");
   const [ragQuery, setRagQuery] = useState("");
-  const health = trpc.qdrantVectorSearch.health.useQuery();
-  const analytics = trpc.qdrantVectorSearch.analytics.useQuery();
-  const collectionStats = trpc.qdrantVectorSearch.collectionStats.useQuery();
+  const health = trpc.qdrantVectorSearch.health.useQuery() as any;
+  const analytics = trpc.qdrantVectorSearch.analytics.useQuery() as any;
+  const collectionStats =
+    trpc.qdrantVectorSearch.collectionStats.useQuery() as any;
   const searchResults = trpc.qdrantVectorSearch.semanticSearch.useQuery(
+    // @ts-expect-error Sprint 85 — type inference mismatch
     { query: searchQuery, collection: "transactions", limit: 10 },
     { enabled: searchQuery.length > 2 }
-  );
-  const ragMut = trpc.qdrantVectorSearch.ragAnswer.useMutation();
+  ) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const ragMut = trpc.qdrantVectorSearch.ragAnswer.useMutation() as any;
 
   return (
     <div className="space-y-6">
@@ -131,7 +133,7 @@ export default function QdrantVectorSearchPage() {
                     Found {searchResults.data.results.length} results (
                     {searchResults.data.source})
                   </p>
-                  {searchResults.data.results.map((r: any, i) => (
+                  {searchResults.data.results.map((r: any, i: any) => (
                     <div
                       key={i}
                       className="p-3 border rounded-lg flex justify-between items-center"
@@ -190,7 +192,7 @@ export default function QdrantVectorSearchPage() {
                     <p className="text-sm font-medium mb-1">
                       Contexts ({ragMut.data.contexts?.length ?? 0}):
                     </p>
-                    {ragMut.data.contexts?.map((c: any, i) => (
+                    {ragMut.data.contexts?.map((c: any, i: any) => (
                       <div key={i} className="p-2 border rounded mb-1 text-sm">
                         <Badge variant="outline" className="mr-2">
                           Score: {(c.score * 100).toFixed(0)}%

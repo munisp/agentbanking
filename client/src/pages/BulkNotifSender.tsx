@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,27 +11,28 @@ export default function BulkNotifSender() {
   const [channel, setChannel] = useState<"email" | "sms" | "push">("email");
   const [recipientCount, setRecipientCount] = useState(100);
 
-  const campaignsQ = trpc.bulkNotif.listCampaigns.useQuery();
-  const templatesQ = trpc.notifTemplates.list.useQuery({ channel });
+  const campaignsQ = trpc.bulkNotif.listCampaigns.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const templatesQ = trpc.notifTemplates.list.useQuery({ channel }) as any;
   const createCampaign = trpc.bulkNotif.createCampaign.useMutation({
     onSuccess: () => {
       campaignsQ.refetch();
       toast.success("Campaign created");
       setName("");
     },
-  });
+  }) as any;
   const startCampaign = trpc.bulkNotif.startCampaign.useMutation({
     onSuccess: () => {
       campaignsQ.refetch();
       toast.success("Campaign started");
     },
-  });
+  }) as any;
   const pauseCampaign = trpc.bulkNotif.pauseCampaign.useMutation({
     onSuccess: () => {
       campaignsQ.refetch();
       toast.success("Campaign paused");
     },
-  });
+  }) as any;
 
   const statusColor: Record<string, string> = {
     draft: "bg-gray-500",
@@ -116,7 +116,7 @@ export default function BulkNotifSender() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {campaignsQ.data?.campaigns.map(camp => (
+              {campaignsQ.data?.campaigns.map((camp: any) => (
                 <div key={camp.id} className="bg-gray-800 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">

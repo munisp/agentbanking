@@ -1,11 +1,11 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Download, Upload } from "lucide-react";
 
 export default function DataExportImportPage() {
-  const { data } = trpc.dataExportImport.dashboard.useQuery();
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const { data } = trpc.dataExportImport.dashboard.useQuery() as any;
 
   return (
     <div className="p-6 space-y-6">

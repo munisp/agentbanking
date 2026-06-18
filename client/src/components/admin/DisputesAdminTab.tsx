@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * DisputesAdminTab — Admin/Supervisor view of all transaction disputes
  *

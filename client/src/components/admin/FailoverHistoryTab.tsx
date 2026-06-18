@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * FailoverHistoryTab — Admin Panel sub-tab
  *

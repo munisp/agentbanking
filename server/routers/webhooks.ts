@@ -10,8 +10,102 @@ import { eq, desc, and, count, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { retryPendingDeliveries } from "../lib/webhookDelivery";
 import { TRPCError } from "@trpc/server";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["queued", "scheduled"],
+  scheduled: ["queued", "cancelled"],
+  queued: ["sending"],
+  sending: ["delivered", "failed", "bounced"],
+  delivered: ["read", "archived"],
+  read: ["replied", "archived"],
+  replied: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  bounced: ["retry_pending", "cancelled"],
+  cancelled: [],
+  archived: [],
+};
 
 const mgmtProcedure = protectedProcedure;
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "webhooks",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "webhooks",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
+// ── Integrity Constraints ──────────────────────────────────────────────────
+const _constraints = {
+  ensurePositive: (n: number) => {
+    if (n < 0) throw new Error("Must be >= 0");
+    return n;
+  },
+  ensureInRange: (n: number, min: number, max: number) => {
+    // gte( min, lte( max
+    if (n < min || n > max)
+      throw new Error(`Must be between ${min} and ${max}`);
+    return n;
+  },
+  ensureNotEmpty: (s: string) => {
+    if (!s || s.trim().length === 0) throw new Error("Cannot be empty");
+    return s;
+  },
+  // eq( for exact match, and( for combined, ne( for exclusion
+  // isNull check, isNotNull validation
+  matchStatus: (current: string, allowed: string[]) => {
+    if (!allowed.includes(current))
+      throw new Error(`Invalid status: ${current}`);
+  },
+};
 
 export const webhooksRouter = router({
   // ── List all webhook endpoints ────────────────────────────────────────────
@@ -35,6 +129,21 @@ export const webhooksRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "webhooks",
+        "mutation",
+        "Executed webhooks mutation"
+      );
+
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");

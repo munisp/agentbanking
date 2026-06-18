@@ -29,7 +29,7 @@ describe("Sprint 27: i18n Multi-Language Support", () => {
       "utf-8"
     );
     expect(content).toContain("LanguageSelector");
-    expect(content).toContain("getLocale");
+    expect(content).toContain("changeLanguage");
   });
 });
 

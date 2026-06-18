@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Rate Alerts — Create, manage, and monitor exchange rate threshold alerts
  * Wired to rateAlerts tRPC router
@@ -85,11 +84,14 @@ export default function RateAlerts() {
 
   const { data: alertsData, isLoading } = trpc.rateAlerts.list.useQuery({
     // status: filter,
+    // @ts-expect-error Sprint 85 — type inference mismatch
     pageSize: 50,
-  });
+  }) as any;
 
-  const { data: stats } = trpc.rateAlerts.getStats.useQuery({});
-  const { data: checkerStatus } = trpc.rateAlerts.getCheckerStatus.useQuery();
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const { data: stats } = trpc.rateAlerts.getStats.useQuery({}) as any;
+  const { data: checkerStatus } =
+    trpc.rateAlerts.getCheckerStatus.useQuery() as any;
 
   const createAlert = trpc.rateAlerts.create.useMutation({
     onSuccess: () => {
@@ -101,7 +103,7 @@ export default function RateAlerts() {
       utils.rateAlerts.getStats.invalidate();
     },
     onError: (e: any) => toast.error("Failed: " + e.message),
-  });
+  }) as any;
 
   const toggleAlert = trpc.rateAlerts.toggle.useMutation({
     onSuccess: () => {
@@ -109,7 +111,7 @@ export default function RateAlerts() {
       utils.rateAlerts.getStats.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   const rearmAlert = trpc.rateAlerts.rearm.useMutation({
     onSuccess: () => {
@@ -118,7 +120,7 @@ export default function RateAlerts() {
       utils.rateAlerts.getStats.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   const deleteAlert = trpc.rateAlerts.delete.useMutation({
     onSuccess: () => {
@@ -127,7 +129,7 @@ export default function RateAlerts() {
       utils.rateAlerts.getStats.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   const runCheck = trpc.rateAlerts.runCheck.useMutation({
     onSuccess: (d: any) => {
@@ -139,7 +141,7 @@ export default function RateAlerts() {
       utils.rateAlerts.getCheckerStatus.invalidate();
     },
     onError: (e: any) => toast.error(e.message),
-  });
+  }) as any;
 
   const alerts = useMemo(() => {
     if (!alertsData?.items) return [];

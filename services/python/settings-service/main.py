@@ -13,6 +13,33 @@ from pydantic import BaseModel, Field
 import asyncpg
 import aioredis
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/platform")
@@ -20,6 +47,11 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 SETTINGS_CACHE_TTL = int(os.getenv("SETTINGS_CACHE_TTL", "300"))
 
 app = FastAPI(title="Settings Service", version="1.0.0")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "settings-service"}
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────

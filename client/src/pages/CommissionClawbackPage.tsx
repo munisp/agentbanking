@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,14 +9,14 @@ import { RotateCcw, Search, AlertTriangle, CheckCircle } from "lucide-react";
 export default function CommissionClawbackPage() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.commissionClawback.list.useQuery();
+  const { data, isLoading } = trpc.commissionClawback.list.useQuery() as any;
   const approveMut = trpc.commissionClawback.approve.useMutation({
     onSuccess: () => toast.success("Clawback approved"),
-  });
+  }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rejectMut = trpc.commissionClawback.reject.useMutation({
     onSuccess: () => toast.success("Clawback rejected"),
-  });
+  }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const clawbacks = (data?.clawbacks || []).filter(
     (c: any) =>

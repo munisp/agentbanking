@@ -348,6 +348,7 @@ import {
   serviceHealthRouter,
   cacheRouter,
 } from "./routers/sprint15Features";
+import { serviceHealthAggregatorRouter } from "./routers/serviceHealthAggregator";
 import { paymentNotificationSystemRouter } from "./routers/paymentNotificationSystem";
 import { databaseVisualizationRouter } from "./routers/databaseVisualization";
 import { middlewareServiceManagerRouter } from "./routers/middlewareServiceManager";
@@ -490,6 +491,31 @@ import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
+// ── Agent Store E-Commerce ──
+import { agentStoreRouter } from "./routers/agentStore";
+import { storeReviewsRouter } from "./routers/storeReviews";
+
+// ── Future-Proofing Features (20 services × 4 languages) ──
+import { openBankingApiRouter } from "./routers/openBankingApi";
+import { bnplEngineRouter } from "./routers/bnplEngine";
+import { nfcTapToPayRouter } from "./routers/nfcTapToPay";
+import { aiCreditScoringRouter } from "./routers/aiCreditScoring";
+import { agritechPaymentsRouter } from "./routers/agritechPayments";
+import { superAppFrameworkRouter } from "./routers/superAppFramework";
+import { embeddedFinanceAnaasRouter } from "./routers/embeddedFinanceAnaas";
+import { payrollDisbursementRouter } from "./routers/payrollDisbursement";
+import { healthInsuranceMicroRouter } from "./routers/healthInsuranceMicro";
+import { educationPaymentsRouter } from "./routers/educationPayments";
+import { conversationalBankingRouter } from "./routers/conversationalBanking";
+import { stablecoinRailsRouter } from "./routers/stablecoinRails";
+import { iotSmartPosRouter } from "./routers/iotSmartPos";
+import { wearablePaymentsRouter } from "./routers/wearablePayments";
+import { satelliteConnectivityRouter } from "./routers/satelliteConnectivity";
+import { digitalIdentityLayerRouter } from "./routers/digitalIdentityLayer";
+import { pensionMicroRouter } from "./routers/pensionMicro";
+import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
+import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
+import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -672,6 +698,8 @@ export const appRouter = router({
   eventBus: eventBusRouter,
   // Sprint 15: Service health aggregator
   serviceHealth: serviceHealthRouter,
+  // Production: Cross-service health aggregation
+  serviceHealthAggregator: serviceHealthAggregatorRouter,
   // Sprint 15: Cache invalidation management
   cache: cacheRouter,
   // Sprint 16: Multi-Tenant White-Label Onboarding
@@ -1085,6 +1113,30 @@ export const appRouter = router({
   promotions: promotionsRouter,
   // KYC/KYB Enforcement & Compliance
   kycEnforcement: kycEnforcementRouter,
+  // Agent Store E-Commerce
+  agentStore: agentStoreRouter,
+  storeReviews: storeReviewsRouter,
+  // ── Future-Proofing Features ──
+  openBankingApi: openBankingApiRouter,
+  bnplEngine: bnplEngineRouter,
+  nfcTapToPay: nfcTapToPayRouter,
+  aiCreditScoring: aiCreditScoringRouter,
+  agritechPayments: agritechPaymentsRouter,
+  superAppFramework: superAppFrameworkRouter,
+  embeddedFinanceAnaas: embeddedFinanceAnaasRouter,
+  payrollDisbursement: payrollDisbursementRouter,
+  healthInsuranceMicro: healthInsuranceMicroRouter,
+  educationPayments: educationPaymentsRouter,
+  conversationalBanking: conversationalBankingRouter,
+  stablecoinRails: stablecoinRailsRouter,
+  iotSmartPos: iotSmartPosRouter,
+  wearablePayments: wearablePaymentsRouter,
+  satelliteConnectivity: satelliteConnectivityRouter,
+  digitalIdentityLayer: digitalIdentityLayerRouter,
+  pensionMicro: pensionMicroRouter,
+  carbonCreditMarketplace: carbonCreditMarketplaceRouter,
+  tokenizedAssets: tokenizedAssetsRouter,
+  coalitionLoyalty: coalitionLoyaltyRouter,
 });
 
 export type AppRouter = typeof appRouter;

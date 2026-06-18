@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,7 +61,7 @@ function BarChart({
   height?: number;
   barColor?: string;
 }) {
-  const max = Math.max(...data.map(d => d.value), 1);
+  const max = Math.max(...data.map((d: any) => d.value), 1);
   return (
     <div className="flex items-end gap-1" style={{ height }}>
       {data.map((d, i) => (
@@ -143,7 +142,7 @@ function LatencyChart({
   timeline: { hour: string; p50: number; p95: number; p99: number }[];
 }) {
   const height = 120;
-  const max = Math.max(...timeline.map(t => t.p99), 1);
+  const max = Math.max(...timeline.map((t: any) => t.p99), 1);
   return (
     <div className="relative" style={{ height: height + 30 }}>
       <div className="flex items-end gap-0.5" style={{ height }}>
@@ -208,26 +207,26 @@ export default function SystemHealthDashboard() {
   const [timeRange, setTimeRange] = useState(24);
   const overviewQ = trpc.healthMonitor.overview.useQuery(undefined, {
     refetchInterval: 30_000,
-  });
+  }) as any;
   const txVolumeQ = trpc.healthMonitor.transactionVolume.useQuery(
     { hours: timeRange },
     { refetchInterval: 60_000 }
-  );
+  ) as any;
   const userActivityQ = trpc.healthMonitor.userActivity.useQuery(
     { hours: timeRange },
     { refetchInterval: 60_000 }
-  );
+  ) as any;
   const latencyQ = trpc.healthMonitor.apiLatency.useQuery(
     { hours: timeRange },
     { refetchInterval: 60_000 }
-  );
+  ) as any;
   const errorsQ = trpc.healthMonitor.errorTracking.useQuery(
     { hours: timeRange },
     { refetchInterval: 60_000 }
-  );
+  ) as any;
   const securityQ = trpc.healthMonitor.securityEvents.useQuery(undefined, {
     refetchInterval: 60_000,
-  });
+  }) as any;
 
   const o = overviewQ.data;
 
@@ -257,7 +256,7 @@ export default function SystemHealthDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex bg-gray-800 rounded-lg p-1">
-              {[1, 6, 12, 24, 48, 168].map(h => (
+              {[1, 6, 12, 24, 48, 168].map((h: any) => (
                 <button
                   key={h}
                   onClick={() => setTimeRange(h)}
@@ -363,7 +362,7 @@ export default function SystemHealthDashboard() {
               {txVolumeQ.data && (
                 <>
                   <BarChart
-                    data={txVolumeQ.data.buckets.map(b => ({
+                    data={txVolumeQ.data.buckets.map((b: any) => ({
                       label: b.hour.substring(11, 16),
                       value: b.total,
                     }))}
@@ -371,27 +370,30 @@ export default function SystemHealthDashboard() {
                     barColor="#3b82f6"
                   />
                   <div className="flex gap-4 mt-4 text-xs">
-                    {Object.entries(txVolumeQ.data.summary.byType).map(
-                      ([type, count]) => (
-                        <div key={type} className="flex items-center gap-1">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{
-                              backgroundColor: {
-                                cash_in: "#22c55e",
-                                cash_out: "#ef4444",
-                                transfer: "#3b82f6",
-                                bill_pay: "#f59e0b",
-                                airtime: "#8b5cf6",
-                              }[type],
-                            }}
-                          />
-                          <span className="text-gray-400 capitalize">
-                            {type.replace("_", " ")}: {count}
-                          </span>
-                        </div>
-                      )
-                    )}
+                    {(
+                      Object.entries(txVolumeQ.data.summary.byType) as [
+                        string,
+                        any,
+                      ][]
+                    ).map(([type, count]) => (
+                      <div key={type} className="flex items-center gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{
+                            backgroundColor: {
+                              cash_in: "#22c55e",
+                              cash_out: "#ef4444",
+                              transfer: "#3b82f6",
+                              bill_pay: "#f59e0b",
+                              airtime: "#8b5cf6",
+                            }[type],
+                          }}
+                        />
+                        <span className="text-gray-400 capitalize">
+                          {type.replace("_", " ")}: {count}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
@@ -408,39 +410,42 @@ export default function SystemHealthDashboard() {
             <CardContent className="space-y-4">
               {txVolumeQ.data && (
                 <>
-                  {Object.entries(txVolumeQ.data.summary.byStatus).map(
-                    ([status, count]) => {
-                      const total = txVolumeQ.data!.summary.total || 1;
-                      const pct = ((count / total) * 100).toFixed(1);
-                      const color =
-                        status === "completed"
-                          ? "#22c55e"
-                          : status === "failed"
-                            ? "#ef4444"
-                            : "#f59e0b";
-                      return (
-                        <div key={status}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-300 capitalize">
-                              {status}
-                            </span>
-                            <span className="text-gray-400">
-                              {count} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-800 rounded-full h-2">
-                            <div
-                              className="h-2 rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: color,
-                              }}
-                            />
-                          </div>
+                  {(
+                    Object.entries(txVolumeQ.data.summary.byStatus) as [
+                      string,
+                      any,
+                    ][]
+                  ).map(([status, count]) => {
+                    const total = txVolumeQ.data!.summary.total || 1;
+                    const pct = ((count / total) * 100).toFixed(1);
+                    const color =
+                      status === "completed"
+                        ? "#22c55e"
+                        : status === "failed"
+                          ? "#ef4444"
+                          : "#f59e0b";
+                    return (
+                      <div key={status}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-gray-300 capitalize">
+                            {status}
+                          </span>
+                          <span className="text-gray-400">
+                            {count} ({pct}%)
+                          </span>
                         </div>
-                      );
-                    }
-                  )}
+                        <div className="w-full bg-gray-800 rounded-full h-2">
+                          <div
+                            className="h-2 rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </>
               )}
               {o && (
@@ -504,7 +509,7 @@ export default function SystemHealthDashboard() {
               {userActivityQ.data && (
                 <>
                   <BarChart
-                    data={userActivityQ.data.timeline.map(t => ({
+                    data={userActivityQ.data.timeline.map((t: any) => ({
                       label: t.hour,
                       value: t.count,
                     }))}
@@ -560,38 +565,40 @@ export default function SystemHealthDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {latencyQ.data?.endpoints.slice(0, 10).map((ep, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-gray-800/50 hover:bg-gray-800/30"
-                      >
-                        <td className="py-2 text-gray-300 font-mono text-xs truncate max-w-[200px]">
-                          {ep.endpoint}
-                        </td>
-                        <td className="py-2 text-right text-gray-400">
-                          {ep.p50}ms
-                        </td>
-                        <td className="py-2 text-right text-amber-400">
-                          {ep.p95}ms
-                        </td>
-                        <td className="py-2 text-right text-red-400">
-                          {ep.p99}ms
-                        </td>
-                        <td className="py-2 text-right">
-                          <span
-                            className={
-                              ep.errorRate > 5
-                                ? "text-red-400"
-                                : ep.errorRate > 0
-                                  ? "text-amber-400"
-                                  : "text-green-400"
-                            }
-                          >
-                            {ep.errorRate}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {latencyQ.data?.endpoints
+                      .slice(0, 10)
+                      .map((ep: any, i: any) => (
+                        <tr
+                          key={i}
+                          className="border-b border-gray-800/50 hover:bg-gray-800/30"
+                        >
+                          <td className="py-2 text-gray-300 font-mono text-xs truncate max-w-[200px]">
+                            {ep.endpoint}
+                          </td>
+                          <td className="py-2 text-right text-gray-400">
+                            {ep.p50}ms
+                          </td>
+                          <td className="py-2 text-right text-amber-400">
+                            {ep.p95}ms
+                          </td>
+                          <td className="py-2 text-right text-red-400">
+                            {ep.p99}ms
+                          </td>
+                          <td className="py-2 text-right">
+                            <span
+                              className={
+                                ep.errorRate > 5
+                                  ? "text-red-400"
+                                  : ep.errorRate > 0
+                                    ? "text-amber-400"
+                                    : "text-green-400"
+                              }
+                            >
+                              {ep.errorRate}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -616,7 +623,7 @@ export default function SystemHealthDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {errorsQ.data?.recentErrors.map((err, i) => (
+                {errorsQ.data?.recentErrors.map((err: any, i: any) => (
                   <div
                     key={i}
                     className="flex items-start gap-2 p-2 bg-gray-800/50 rounded text-xs"
@@ -683,7 +690,7 @@ export default function SystemHealthDashboard() {
             <CardContent>
               {securityQ.data.recentEvents.length > 0 ? (
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                  {securityQ.data.recentEvents.map((evt, i) => (
+                  {securityQ.data.recentEvents.map((evt: any, i: any) => (
                     <div
                       key={i}
                       className="flex items-center gap-3 p-2 bg-gray-800/30 rounded text-xs"

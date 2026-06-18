@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * CoverageMap — Signal Heatmap Coverage Map for the SIM Orchestrator Admin Panel
  *

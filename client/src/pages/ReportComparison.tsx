@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,11 +24,10 @@ import {
 export default function ReportComparison() {
   const [reportAId, setReportAId] = useState("report-week-15");
   const [reportBId, setReportBId] = useState("report-week-16");
-
-  const comparison = trpc.sprint23.reportComparison.compare.useQuery(
+  const comparison = trpc.sprint23.reportComparison.useQuery(
     { reportAId, reportBId },
     { enabled: !!reportAId && !!reportBId }
-  );
+  ) as any;
 
   const availableReports = useMemo(
     () => [
@@ -184,7 +182,7 @@ export default function ReportComparison() {
                     </thead>
                     <tbody>
                       {Object.entries(comparison.data.deltas).map(
-                        ([key, d]) => (
+                        ([key, d]: [string, any]) => (
                           <tr
                             key={key}
                             className="border-b border-border/50 hover:bg-muted/30"

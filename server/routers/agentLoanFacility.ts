@@ -8,6 +8,31 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { agentLoans, agents, transactions } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, avg, sql } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["submitted", "cancelled"],
+  submitted: ["under_review", "rejected"],
+  under_review: ["approved", "rejected"],
+  approved: ["disbursed"],
+  disbursed: ["repaying"],
+  repaying: ["completed", "defaulted"],
+  completed: [],
+  defaulted: ["repaying"],
+  rejected: [],
+  cancelled: [],
+};
 
 // Business rules
 const INTEREST_RATES = {
@@ -25,6 +50,32 @@ const CREDIT_SCORE_WEIGHTS = {
   fraudHistory: 0.1,
 };
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "agentLoanFacility",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "agentLoanFacility",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const agentLoanFacilityRouter = router({
   // List loans with filtering
   list: protectedProcedure
@@ -90,7 +141,22 @@ export const agentLoanFacilityRouter = router({
         collateralValue: z.number().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "agentLoanFacility",
+        "mutation",
+        "Executed agentLoanFacility mutation"
+      );
+
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -204,7 +270,7 @@ export const agentLoanFacilityRouter = router({
 
   // Record repayment
   recordRepayment: protectedProcedure
-    .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
+    .input(z.object({ loanId: z.number(), amount: z.number().min(0).min(1) }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;

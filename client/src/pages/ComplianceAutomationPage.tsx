@@ -1,8 +1,9 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function ComplianceAutomationPage() {
-  const { data, isLoading } = trpc.complianceAutomation.dashboard.useQuery();
+  const { data, isLoading } = trpc.complianceAutomation.dashboard.useQuery(
+    {}
+  ) as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading compliance...</div>;
@@ -60,7 +61,7 @@ export default function ComplianceAutomationPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.upcomingAudits.map((a, i) => (
+                  {data.upcomingAudits.map((a: any, i: any) => (
                     <tr key={i} className="border-b">
                       <td className="p-2">{a.framework}</td>
                       <td className="p-2">

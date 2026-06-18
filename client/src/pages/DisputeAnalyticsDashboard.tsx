@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,17 +22,18 @@ export default function DisputeAnalyticsDashboard() {
   const [activeTab, setActiveTab] = useState("resolution");
 
   // ── Live tRPC queries ──────────────────────────────────────────────
-  const summary = trpc.disputeAnalytics.getSummary.useQuery();
+  const summary = trpc.disputeAnalytics.getSummary.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const resolution = trpc.disputeAnalytics.getResolutionMetrics.useQuery({});
+  const resolution =
+    trpc.disputeAnalytics.getResolutionMetrics.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const refunds = trpc.disputeAnalytics.getRefundRates.useQuery({});
+  const refunds = trpc.disputeAnalytics.getRefundRates.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const sla = trpc.disputeAnalytics.getSlaCompliance.useQuery({});
+  const sla = trpc.disputeAnalytics.getSlaCompliance.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const trends = trpc.disputeAnalytics.getTrendData.useQuery({});
+  const trends = trpc.disputeAnalytics.getTrendData.useQuery({}) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const categories = trpc.disputeAnalytics.getTopCategories.useQuery({});
+  const categories = trpc.disputeAnalytics.getTopCategories.useQuery({}) as any;
   const utils = trpc.useUtils();
 
   const isLoading = summary.isLoading;

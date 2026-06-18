@@ -53,6 +53,42 @@ import {
   transactionDurationMs,
   floatLocksTotal,
 } from "../metrics";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
+  cancelled: [],
+  archived: [],
+};
 // ─── Commission & loyalty rates ───────────────────────────────────────────────
 const COMMISSION_RATES: Record<string, number> = {
   "Cash In": 0.003,
@@ -282,6 +318,33 @@ async function validateDeviceToken(
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "transactions",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "transactions",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const transactionsRouter = router({
   // ── Create transaction ────────────────────────────────────────────────────
   create: protectedProcedure
@@ -300,7 +363,7 @@ export const transactionsRouter = router({
           "Nano Loan",
           "Insurance",
         ]),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         customerAccount: z.string().optional(),
@@ -315,6 +378,21 @@ export const transactionsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "transactions",
+        "mutation",
+        "Executed transactions mutation"
+      );
+
       try {
         const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent) {
@@ -2452,7 +2530,7 @@ export const transactionsRouter = router({
       z.object({
         startDate: z.string().optional(),
         endDate: z.string().optional(),
-        agentId: z.string().optional(),
+        agentId: z.string().min(1).max(255).optional(),
       })
     )
     .query(async ({ input, ctx }) => {

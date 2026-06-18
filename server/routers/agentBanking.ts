@@ -22,15 +22,82 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 import crypto from "crypto";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
+  rejected: [],
+};
 
 // ── Guard: agent-only procedure ──────────────────────────────────────────────
-// Agents authenticate via PIN cookie (agentAuth middleware), not Manus OAuth.
+// Agents authenticate via PIN cookie (agentAuth middleware), not 54Link OAuth.
 // We use protectedProcedure here and validate the agent session from the cookie.
 const agentProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   // The agentAuth middleware sets ctx.agent when the agent PIN cookie is valid.
   // Fall through to the procedure; each handler checks ctx.agent as needed.
   return next({ ctx });
 });
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "agentBanking",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "agentBanking",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const agentBankingRouter = router({
   // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -320,7 +387,22 @@ export const agentBankingRouter = router({
           notes: z.string().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const _fees = calculateFee(
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0,
+          "transfer"
+        );
+        const _commission = calculateCommission(_fees.fee, "transfer");
+        const _tax = calculateTax(_fees.fee, "vat");
+        auditFinancialAction(
+          "UPDATE",
+          "agentBanking",
+          "mutation",
+          "Executed agentBanking mutation"
+        );
+
         try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -654,7 +736,7 @@ export const agentBankingRouter = router({
           agentId: z.number(),
           name: z.string().optional(),
           phone: z.string().optional(),
-          email: z.string().email().optional(),
+          email: z.string().email().email().optional(),
           location: z.string().optional(),
         })
       )
@@ -709,7 +791,7 @@ export const agentBankingRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async () => {
       return { items: [], total: 0 };

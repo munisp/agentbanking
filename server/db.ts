@@ -1,4 +1,3 @@
-// @ts-nocheck
 // TypeScript enabled — Sprint 96 security audit
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -24,9 +23,64 @@ import {
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
 
+// ─── Read-replica pool (for analytics/reporting queries) ──────────────────────
+let _readDb: ReturnType<typeof drizzle> | null = null;
+let _readPool: Pool | null = null;
+let _readDbVerified = false;
+
 export async function getPool(): Promise<Pool | null> {
   await getDb(); // ensure pool is initialized
   return _pool;
+}
+
+/**
+ * Returns a read-only DB connection routed to the replica.
+ * Falls back to the primary if no replica URL is configured.
+ * Use for analytics, reporting, and list queries that don't need real-time consistency.
+ */
+export async function getReadDb() {
+  const replicaUrl =
+    process.env.POSTGRES_REPLICA_URL ?? process.env.DATABASE_REPLICA_URL ?? "";
+  if (!replicaUrl) {
+    return getDb();
+  }
+  if (_readDb && _readDbVerified) return _readDb;
+  if (!_readDb) {
+    const sslMode = process.env.POSTGRES_SSL ?? process.env.DB_SSL ?? "false";
+    const sslConfig =
+      sslMode === "require"
+        ? { rejectUnauthorized: false }
+        : sslMode === "verify-full"
+          ? true
+          : false;
+    _readPool = new Pool({
+      connectionString: replicaUrl,
+      ssl: sslConfig,
+      max: 20,
+      min: 2,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+      statement_timeout: 60_000,
+    } as any);
+    _readDb = drizzle(_readPool);
+    console.log("[DB] Read-replica pool initialized");
+  }
+  if (!_readDbVerified) {
+    try {
+      const client = await _readPool!.connect();
+      client.release();
+      _readDbVerified = true;
+      console.log("[DB] Read-replica connection verified");
+    } catch (e: any) {
+      console.warn(
+        `[DB] Read-replica connection failed: ${e.message} — falling back to primary`
+      );
+      _readDb = null;
+      _readPool = null;
+      return getDb();
+    }
+  }
+  return _readDb;
 }
 
 let _dbVerified = false;
@@ -61,8 +115,9 @@ function makeNoopChain(): any {
         prop === "every" ||
         prop === "find"
       )
-        return [][prop as any].bind([_noopRow]);
-      if (prop === 0 || prop === "0") return _noopRow;
+        return ([] as any)[prop as any].bind([_noopRow]);
+      if (prop === "0" || (typeof prop === "string" && prop === "0"))
+        return _noopRow;
       // Any property access returns a function that returns another chainable proxy
       return (..._args: any[]) => makeNoopChain();
     },
@@ -103,9 +158,16 @@ export async function getDb() {
     console.log(
       `[DB] Connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
     );
+    const sslMode = process.env.POSTGRES_SSL ?? process.env.DB_SSL ?? "false";
+    const sslConfig =
+      sslMode === "require"
+        ? { rejectUnauthorized: false }
+        : sslMode === "verify-full"
+          ? true
+          : false;
     _pool = new Pool({
       connectionString: url,
-      ssl: false,
+      ssl: sslConfig,
       max: poolSize,
       min: Math.max(2, Math.floor(poolSize / 4)),
       idleTimeoutMillis: 30_000,
@@ -213,13 +275,21 @@ export async function updateAgentFloat(
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const agent = await getAgentById(id);
-  if (!agent) return;
-  const newBalance = (Number(agent.floatBalance) + delta).toFixed(2);
-  await db
-    .update(agents)
-    .set({ floatBalance: newBalance })
-    .where(eq(agents.id, id));
+  if ((db as any)._isNoop) return;
+  await (db as any).transaction(async (tx: any) => {
+    const result = await tx
+      .select()
+      .from(agents)
+      .where(eq(agents.id, id))
+      .limit(1);
+    const agent = result[0];
+    if (!agent) return;
+    const newBalance = (Number(agent.floatBalance) + delta).toFixed(2);
+    await tx
+      .update(agents)
+      .set({ floatBalance: newBalance, updatedAt: new Date() })
+      .where(eq(agents.id, id));
+  });
 }
 
 export async function updateAgentCommission(
@@ -228,13 +298,21 @@ export async function updateAgentCommission(
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const agent = await getAgentById(id);
-  if (!agent) return;
-  const newBalance = (Number(agent.commissionBalance) + delta).toFixed(2);
-  await db
-    .update(agents)
-    .set({ commissionBalance: newBalance })
-    .where(eq(agents.id, id));
+  if ((db as any)._isNoop) return;
+  await (db as any).transaction(async (tx: any) => {
+    const result = await tx
+      .select()
+      .from(agents)
+      .where(eq(agents.id, id))
+      .limit(1);
+    const agent = result[0];
+    if (!agent) return;
+    const newBalance = (Number(agent.commissionBalance) + delta).toFixed(2);
+    await tx
+      .update(agents)
+      .set({ commissionBalance: newBalance, updatedAt: new Date() })
+      .where(eq(agents.id, id));
+  });
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
@@ -391,26 +469,30 @@ export async function addLoyaltyHistory(
 ) {
   const db = await getDb();
   if (!db) return;
-  // compute balanceAfter before updating
-  const agentBefore = await getAgentById(agentId);
-  const balanceAfter = Math.max(0, (agentBefore?.loyaltyPoints ?? 0) + points);
-  await db.insert(loyaltyHistory).values({
-    agentId,
-    type,
-    points,
-    description,
-    transactionId: transactionId ?? null,
-    balanceAfter,
-  });
-  // Update agent's total points
-  const agent = await getAgentById(agentId);
-  if (agent) {
+  if ((db as any)._isNoop) return;
+  await (db as any).transaction(async (tx: any) => {
+    const result = await tx
+      .select()
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    const agent = result[0];
+    if (!agent) return;
+    const balanceAfter = Math.max(0, agent.loyaltyPoints + points);
+    await tx.insert(loyaltyHistory).values({
+      agentId,
+      type,
+      points,
+      description,
+      transactionId: transactionId ?? null,
+      balanceAfter,
+    });
     const newPoints = Math.max(0, agent.loyaltyPoints + points);
-    await db
+    await tx
       .update(agents)
       .set({ loyaltyPoints: newPoints })
       .where(eq(agents.id, agentId));
-  }
+  });
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

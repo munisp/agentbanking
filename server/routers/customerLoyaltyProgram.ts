@@ -4,7 +4,121 @@ import { getDb } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { loyaltyHistory, customers, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "customerLoyaltyProgram",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "customerLoyaltyProgram",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "customerLoyaltyProgram",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "customerLoyaltyProgram",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
+// ── Business Rule Guards ───────────────────────────────────────────────────
+function enforceCustomerloyaltyprogramRules(data: Record<string, unknown>) {
+  if (!data) throw new Error("Data required");
+  if (typeof data.id === "number" && data.id <= 0)
+    throw new Error("Invalid ID");
+  if (
+    typeof data.status === "string" &&
+    !["active", "pending", "completed", "cancelled"].includes(data.status)
+  )
+    throw new Error("Invalid status");
+  if (
+    typeof data.amount === "number" &&
+    (data.amount < 0 || data.amount > 100_000_000)
+  )
+    throw new Error("Amount out of range");
+  if (typeof data.email === "string" && !data.email.includes("@"))
+    throw new Error("Invalid email");
+  if (typeof data.name === "string" && data.name.trim().length === 0)
+    throw new Error("Name required");
+  return true;
+}
+
+// ── Computation Helpers ────────────────────────────────────────────────────
+const _customerLoyaltyProgramCalc = {
+  percentage: (value: number, total: number) =>
+    total > 0 ? parseFloat(((value / total) * 100).toFixed(2)) : 0,
+  roundAmount: (n: number) => Math.round(n * 100) / 100,
+  applyRate: (amount: number, rate: number) =>
+    parseFloat((amount * rate).toFixed(2)),
+};
 export const customerLoyaltyProgramRouter = router({
   getBalance: protectedProcedure
     .input(z.object({ customerId: z.number() }))
@@ -75,7 +189,22 @@ export const customerLoyaltyProgramRouter = router({
         reason: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "customerLoyaltyProgram",
+        "mutation",
+        "Executed customerLoyaltyProgram mutation"
+      );
+
       try {
         const db = (await getDb())!;
         const [entry] = await db

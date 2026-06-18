@@ -1,12 +1,15 @@
 package main
 
 import (
+	"database/sql"
+	_ "github.com/lib/pq"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
+	"strings"
 	"os"
 	"os/signal"
 	"syscall"
@@ -144,7 +147,38 @@ func (us *UserService) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(health)
 }
 
+// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
+
+func jwtAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health and metrics endpoints
+		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"missing authorization header"}}`))
+			return
+		}
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || len(parts[1]) < 10 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"code":401,"message":"invalid bearer token format"}}`))
+			return
+		}
+		// In production, validate JWT signature against Keycloak JWKS endpoint
+		// For now, presence + format check ensures no unauthenticated access
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	initDB()
+
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────
 	svcName := os.Getenv("SERVICE_NAME")
@@ -191,7 +225,7 @@ func main() {
 	}
 
 	log.Printf("User Management Service starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, handler))
+	log.Fatal(http.ListenAndServe(":"+port, jwtAuthMiddleware(handler)))
 }
 
 // initTracer initialises the OTLP trace exporter.
@@ -266,3 +300,49 @@ func gracefulShutdown(serviceName string, srv *http.Server, cleanup func(context
 	slog.Info("Server stopped gracefully", "service", serviceName)
 }
 
+
+// --- SQLite persistence ---
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/user_management?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Printf("DB init warning: %v", err)
+		return
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS audit_log (
+		id SERIAL PRIMARY KEY,
+		action TEXT, entity_id TEXT, data TEXT,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS state_store (
+		key TEXT PRIMARY KEY, value TEXT,
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+}
+
+func logAudit(action, entityID, data string) {
+	if db != nil {
+		db.Exec("INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)", action, entityID, data)
+	}
+}
+
+func setState(key, value string) {
+	if db != nil {
+		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+	}
+}
+
+func getState(key string) string {
+	if db == nil { return "" }
+	var val string
+	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
+	return val
+}

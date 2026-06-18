@@ -1,4 +1,31 @@
 import sys as _sys, os as _os
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
 from shared.middleware import apply_middleware, ErrorResponse
 from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
@@ -78,6 +105,41 @@ async def lifespan(app: FastAPI):
         await redis_client.close()
 
 app = FastAPI(
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/voice_ai_service")
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT, entity_id TEXT, data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
+        key TEXT PRIMARY KEY, value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_audit(action: str, entity_id: str, data: str = ""):
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     title="Voice AI Service",
     description="Production-ready Voice AI conversational commerce",
     version="2.0.0",
@@ -246,8 +308,7 @@ async def send_message(message: Message, background_tasks: BackgroundTasks):
             async with db_pool.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO voice_messages (message_id, recipient, message_type, content, metadata, status)
-                    VALUES ($1, $2, $3, $4, $5, 'queued')
-                """, message_id, message.recipient, message.message_type.value, 
+                    VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING id""", message_id, message.recipient, message.message_type.value, 
                     message.content, json.dumps(message.metadata or {}))
         else:
             messages_db.append({
@@ -335,8 +396,7 @@ async def create_order(order: OrderMessage):
                 await conn.execute("""
                     INSERT INTO voice_orders 
                     (order_id, customer_id, customer_name, phone, items, total, delivery_address, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-                """, order_id, order.customer_id, order.customer_name, order.phone,
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING id""", order_id, order.customer_id, order.customer_name, order.phone,
                     json.dumps(order.items), order.total, order.delivery_address)
         else:
             order_data = {

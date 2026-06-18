@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,20 +12,24 @@ export default function NotificationTemplateManager() {
   const [channelFilter, setChannelFilter] = useState<string>("");
 
   const templatesQ = trpc.notifTemplates.list.useQuery(
+    // @ts-expect-error Sprint 85 — type inference mismatch
     channelFilter ? { channel: channelFilter } : {}
-  );
-  const previewMut = trpc.notifTemplates.preview.useMutation();
+  ) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const previewMut = trpc.notifTemplates.preview.useMutation() as any;
   const deleteMut = trpc.notifTemplates.delete.useMutation({
     onSuccess: () => {
       templatesQ.refetch();
       toast.success("Template deleted");
       setSelectedId(null);
     },
-  });
+  }) as any;
 
   const selected = useMemo(() => {
     if (!selectedId || !templatesQ.data) return null;
-    return templatesQ.data.templates.find(t => t.id === selectedId) || null;
+    return (
+      templatesQ.data.templates.find((t: any) => t.id === selectedId) || null
+    );
   }, [selectedId, templatesQ.data]);
 
   const channelIcon: Record<string, string> = {
@@ -63,7 +66,7 @@ export default function NotificationTemplateManager() {
           >
             All
           </button>
-          {["email", "sms", "push"].map(ch => (
+          {["email", "sms", "push"].map((ch: any) => (
             <button
               key={ch}
               onClick={() => setChannelFilter(ch)}
@@ -77,7 +80,7 @@ export default function NotificationTemplateManager() {
         <div className="grid grid-cols-3 gap-6">
           {/* Template list */}
           <div className="col-span-1 space-y-3">
-            {templatesQ.data?.templates.map(tpl => (
+            {templatesQ.data?.templates.map((tpl: any) => (
               <Card
                 key={tpl.id}
                 onClick={() => {
@@ -160,7 +163,7 @@ export default function NotificationTemplateManager() {
                       Variables
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {selected.variables.map(v => (
+                      {selected.variables.map((v: any) => (
                         <Badge
                           key={v}
                           variant="outline"
@@ -176,7 +179,7 @@ export default function NotificationTemplateManager() {
                       Preview
                     </h3>
                     <div className="grid grid-cols-2 gap-2 mb-3">
-                      {selected.variables.map(v => (
+                      {selected.variables.map((v: any) => (
                         <Input
                           key={v}
                           placeholder={v}

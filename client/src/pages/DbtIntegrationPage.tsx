@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,15 +6,15 @@ import { Badge } from "@/components/ui/badge";
 export default function DbtIntegrationPage() {
   const { data: projectInfo, isLoading } =
     // @ts-ignore Sprint 85
-    trpc.dbtIntegration.projectInfo.useQuery();
+    trpc.dbtIntegration.projectInfo.useQuery() as any;
   // @ts-ignore Sprint 85
   const models = trpc.dbtIntegration.listModels.useQuery({
     schema: undefined as any,
-  });
+  }) as any;
   // @ts-ignore Sprint 85
-  const runs = trpc.dbtIntegration.listRuns.useQuery({ limit: 10 });
+  const runs = trpc.dbtIntegration.listRuns.useQuery({ limit: 10 }) as any;
   // @ts-ignore Sprint 85
-  const triggerRun = trpc.dbtIntegration.triggerRun.useMutation();
+  const triggerRun = trpc.dbtIntegration.triggerRun.useMutation() as any;
 
   if (isLoading)
     return <div className="p-6 animate-pulse">Loading dbt Dashboard...</div>;

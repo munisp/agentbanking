@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ReportTemplateDesigner — Visual report template builder with widget catalog and grid layout
  */
@@ -82,10 +81,12 @@ export default function ReportTemplateDesigner() {
     "portrait" | "landscape"
   >("landscape");
 
-  const { data: catalogData } = trpc.reportTemplate.widgetCatalog.useQuery();
+  const { data: catalogData } =
+    trpc.reportTemplate.widgetCatalog.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: templatesData, isLoading } = trpc.reportTemplate.list.useQuery({
     search: search || undefined,
-  });
+  }) as any;
   const utils = trpc.useUtils();
 
   const createMutation = trpc.reportTemplate.create.useMutation({
@@ -97,7 +98,7 @@ export default function ReportTemplateDesigner() {
       utils.reportTemplate.list.invalidate();
     },
     onError: (err: any) => toast.error(err.message),
-  });
+  }) as any;
 
   const deleteMutation = trpc.reportTemplate.delete.useMutation({
     onSuccess: () => {
@@ -105,14 +106,14 @@ export default function ReportTemplateDesigner() {
       utils.reportTemplate.list.invalidate();
     },
     onError: (err: any) => toast.error(err.message),
-  });
+  }) as any;
 
   const setDefaultMutation = trpc.reportTemplate.setDefault.useMutation({
     onSuccess: () => {
       toast.success("Default template updated");
       utils.reportTemplate.list.invalidate();
     },
-  });
+  }) as any;
 
   const catalog = catalogData ?? [];
   const templates = templatesData?.templates ?? [];

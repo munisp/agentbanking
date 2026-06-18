@@ -1,66 +1,233 @@
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import DashboardLayout from "@/components/DashboardLayout";
+
+const statusColors: Record<string, string> = {
+  improving: "bg-emerald-500/20 text-emerald-400",
+  stable: "bg-blue-500/20 text-blue-400",
+  declining: "bg-red-500/20 text-red-400",
+};
+
+function formatCurrency(val: unknown): string {
+  const n = Number(val ?? 0);
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
 
 export default function PlatformMaturityScorecard() {
-  const stats = trpc.platformMaturityScorecard.getStats.useQuery();
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const summary = trpc.platformMaturityScorecard.getSummary.useQuery()?.data as
+    | Record<string, unknown>
+    | undefined;
+  const listQ = trpc.platformMaturityScorecard.list.useQuery({
+    limit: 20,
+    offset: page * 20,
+    search: search || undefined,
+  });
+  const items = (listQ.data as any)?.items ?? (listQ.data as any)?.data ?? [];
+  const total = (listQ.data as any)?.total ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Maturity Scorecard</h1>
-          <p className="text-muted-foreground">Manage and monitor domains</p>
+    <DashboardLayout>
+      <div className="space-y-6 p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">Platform Maturity Scorecard</h1>
+            <p className="text-muted-foreground">
+              Platform capability assessment, maturity levels, and improvement
+              tracking
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={() => toast.success("Run Assessment initiated")}>
+              Run Assessment
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => toast.success("Set Targets initiated")}
+            >
+              Set Targets
+            </Button>
+          </div>
         </div>
-        <button
-          onClick={() => toast("Feature active")}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90"
-        >
-          Refresh
-        </button>
-      </div>
 
-      {stats.isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card key="0">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Overall Score
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(summary?.overallScore ?? 0).toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
+          <Card key="1">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Maturity Level
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(summary?.maturityLevel ?? 0).toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
+          <Card key="2">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Areas Assessed
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(summary?.areasAssessed ?? 0).toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
+          <Card key="3">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Improvements Made
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(summary?.improvements ?? 0).toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      ) : stats.data ? (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {Object.entries(stats.data)
-              .slice(0, 4)
-              .map(([key, value]) => (
-                <div
-                  key={key}
-                  className="bg-card border border-border rounded-lg p-4"
-                >
-                  <p className="text-sm text-muted-foreground capitalize">
-                    {key.replace(/([A-Z])/g, " $1").trim()}
-                  </p>
-                  <p className="text-2xl font-bold mt-1">{String(value)}</p>
-                </div>
-              ))}
-          </div>
-          <div className="bg-card border border-border rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-4">Domains Overview</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(stats.data)
-                .slice(4)
-                .map(([key, value]) => (
-                  <div key={key} className="p-3 bg-muted/50 rounded-lg">
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {key.replace(/([A-Z])/g, " $1").trim()}
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {Array.isArray(value) ? value.join(", ") : String(value)}
-                    </p>
-                  </div>
-                ))}
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-4">
+              <CardTitle>Records</CardTitle>
+              <Input
+                placeholder="Search..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="max-w-xs"
+              />
             </div>
-          </div>
-        </>
-      ) : null}
-    </div>
+          </CardHeader>
+          <CardContent>
+            {listQ.isLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <div
+                    key={i}
+                    className="h-12 bg-muted animate-pulse rounded"
+                  />
+                ))}
+              </div>
+            ) : items.length > 0 ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          ID
+                        </th>
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          Assessment Area
+                        </th>
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          Current
+                        </th>
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          Target
+                        </th>
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          Last Assessed
+                        </th>
+                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
+                          Trend
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((row: any, idx: number) => (
+                        <tr
+                          key={idx}
+                          className="border-b border-border/50 hover:bg-muted/50 transition-colors"
+                        >
+                          <td className="p-3">{String(row.id ?? "—")}</td>
+                          <td className="p-3">{String(row.area ?? "—")}</td>
+                          <td className="p-3">
+                            {Number(row.currentScore ?? 0).toLocaleString()}
+                          </td>
+                          <td className="p-3">
+                            {Number(row.targetScore ?? 0).toLocaleString()}
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {row.lastAssessed
+                              ? new Date(
+                                  String(row.lastAssessed)
+                                ).toLocaleDateString()
+                              : "—"}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[String(row.trend)] || "bg-gray-500/20 text-gray-400"}`}
+                            >
+                              {String(row.trend ?? "—")}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {page * 20 + 1}–{Math.min((page + 1) * 20, total)}{" "}
+                    of {total}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => p + 1)}
+                      disabled={(page + 1) * 20 >= total}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-lg font-medium">No records found</p>
+                <p className="text-sm mt-1">
+                  Data will appear here once the system is connected to live
+                  services
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
   );
 }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,11 +15,11 @@ import {
 export default function AgentGeoFencingPage() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.geoFencing.list.useQuery();
+  const { data, isLoading } = trpc.geoFencing.list.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const toggleMut = trpc.geoFencing.toggle.useMutation({
     onSuccess: () => toast.success("Geo-fence updated"),
-  });
+  }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const zones = (data?.zones || []).filter(
     (z: any) => !search || z.name?.toLowerCase().includes(search.toLowerCase())

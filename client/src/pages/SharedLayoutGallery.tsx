@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SharedLayoutGallery — Browse, import, and fork team-shared dashboard layouts
  */
@@ -67,25 +66,26 @@ export default function SharedLayoutGallery() {
     search: search || undefined,
     tag: selectedTag,
     sortBy,
-  });
+  }) as any;
 
   // @ts-ignore Sprint 85
   const importMutation = trpc.sharedLayouts.import.useMutation({
     // @ts-ignore Sprint 85
     onSuccess: data => {
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`Imported "${data.name}" layout`);
       setImportDialog({ open: false, token: "" });
     },
     // @ts-ignore Sprint 85
     onError: err => toast.error(err.message),
-  });
+  }) as any;
 
   // @ts-ignore Sprint 85
   const forkMutation = trpc.sharedLayouts.fork.useMutation({
     onSuccess: () => toast.success("Layout forked to your collection"),
     // @ts-ignore Sprint 85
     onError: err => toast.error(err.message),
-  });
+  }) as any;
 
   const layouts = data?.layouts ?? [];
   const tags = data?.tags ?? [];

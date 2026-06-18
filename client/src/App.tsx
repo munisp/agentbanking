@@ -831,6 +831,37 @@ const TenantBillingPortalPage = lazy(
 const BillingAnalyticsDashboardPage = lazy(
   () => import("./pages/BillingAnalyticsDashboardPage")
 );
+const AgentPerformanceScorecardPage = lazy(
+  () => import("./pages/AgentPerformanceScorecardPage")
+);
+const AgentTrainingPortal = lazy(() => import("./pages/AgentTrainingPortal"));
+const BiometricAuthGateway = lazy(() => import("./pages/BiometricAuthGateway"));
+const ComplianceTrainingTracker = lazy(
+  () => import("./pages/ComplianceTrainingTracker")
+);
+const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
+const EcommerceCheckout = lazy(() => import("./pages/EcommerceCheckout"));
+const AgentStoreSetup = lazy(() => import("./pages/AgentStoreSetup"));
+const PublicStorefront = lazy(() => import("./pages/PublicStorefront"));
+const StoreMall = lazy(() => import("./pages/StoreMall"));
+const EcommerceMerchantStorefront = lazy(
+  () => import("./pages/EcommerceMerchantStorefront")
+);
+const EcommerceOrderManagement = lazy(
+  () => import("./pages/EcommerceOrderManagement")
+);
+const EcommerceProductCatalog = lazy(
+  () => import("./pages/EcommerceProductCatalog")
+);
+const EcommerceShoppingCart = lazy(
+  () => import("./pages/EcommerceShoppingCart")
+);
+const PaymentDisputeArbitration = lazy(
+  () => import("./pages/PaymentDisputeArbitration")
+);
+const PlatformHealthMonitor = lazy(
+  () => import("./pages/PlatformHealthMonitor")
+);
 
 // ─── Auth guard wrapper ───────────────────────────────────────────────────────
 // Admin dashboard paths bypass POS agent login — they use DashboardLayout's own
@@ -945,6 +976,8 @@ const ADMIN_DASHBOARD_PREFIXES = [
   "/customer-onboarding",
   "/merchant-settlement",
   "/insurance-claims",
+  "/ecommerce",
+  "/store",
   "/sla-monitor",
   "/bulk-disbursement",
   "/reversal-manager",
@@ -2115,6 +2148,78 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
+        <Route
+          path="/agent-performance-scorecard"
+          component={AgentPerformanceScorecardPage}
+        />
+        <Route path="/agent-training-portal" component={AgentTrainingPortal} />
+        <Route
+          path="/biometric-auth-gateway"
+          component={BiometricAuthGateway}
+        />
+        <Route
+          path="/compliance-training-tracker"
+          component={ComplianceTrainingTracker}
+        />
+        <Route path="/component-showcase" component={ComponentShowcase} />
+        <Route path="/ecommerce/checkout" component={EcommerceCheckout} />
+        <Route
+          path="/ecommerce/storefront"
+          component={EcommerceMerchantStorefront}
+        />
+        <Route path="/ecommerce/orders" component={EcommerceOrderManagement} />
+        <Route path="/ecommerce/products" component={EcommerceProductCatalog} />
+        <Route path="/ecommerce/cart" component={EcommerceShoppingCart} />
+        <Route path="/ecommerce/store-setup" component={AgentStoreSetup} />
+        <Route path="/ecommerce/mall" component={StoreMall} />
+        <Route path="/store/:slug" component={PublicStorefront} />
+        <Route
+          path="/payment-dispute-arbitration"
+          component={PaymentDisputeArbitration}
+        />
+        <Route
+          path="/platform-health-monitor"
+          component={PlatformHealthMonitor}
+        />
+        {/* ── Future-Proofing Features ── */}
+        <Route path="/future/open-banking" component={OpenBankingApiPage} />
+        <Route path="/future/bnpl" component={BnplEnginePage} />
+        <Route path="/future/nfc-tap-to-pay" component={NfcTapToPayPage} />
+        <Route
+          path="/future/ai-credit-scoring"
+          component={AiCreditScoringPage}
+        />
+        <Route path="/future/agritech" component={AgritechPaymentsPage} />
+        <Route path="/future/super-app" component={SuperAppFrameworkPage} />
+        <Route path="/future/anaas" component={EmbeddedFinanceAnaasPage} />
+        <Route path="/future/payroll" component={PayrollDisbursementPage} />
+        <Route
+          path="/future/health-insurance"
+          component={HealthInsuranceMicroPage}
+        />
+        <Route path="/future/education" component={EducationPaymentsPage} />
+        <Route
+          path="/future/conversational-banking"
+          component={ConversationalBankingPage}
+        />
+        <Route path="/future/stablecoin" component={StablecoinRailsPage} />
+        <Route path="/future/iot-pos" component={IotSmartPosPage} />
+        <Route path="/future/wearable" component={WearablePaymentsPage} />
+        <Route path="/future/satellite" component={SatelliteConnectivityPage} />
+        <Route
+          path="/future/digital-identity"
+          component={DigitalIdentityLayerPage}
+        />
+        <Route path="/future/pension" component={PensionMicroPage} />
+        <Route
+          path="/future/carbon-credits"
+          component={CarbonCreditMarketplacePage}
+        />
+        <Route
+          path="/future/tokenized-assets"
+          component={TokenizedAssetsPage}
+        />
+        <Route path="/future/loyalty" component={CoalitionLoyaltyPage} />
         {/* Fallback — POSShell handles named screens */}
         <Route path="/:screen" component={POSShell} />
       </Switch>
@@ -2123,6 +2228,42 @@ function AuthenticatedApp() {
 }
 
 // ─── App root ─────────────────────────────────────────────────────────────────
+// ── Future-Proofing Pages ──
+const OpenBankingApiPage = lazy(() => import("./pages/OpenBankingApi"));
+const BnplEnginePage = lazy(() => import("./pages/BnplEngine"));
+const NfcTapToPayPage = lazy(() => import("./pages/NfcTapToPay"));
+const AiCreditScoringPage = lazy(() => import("./pages/AiCreditScoring"));
+const AgritechPaymentsPage = lazy(() => import("./pages/AgritechPayments"));
+const SuperAppFrameworkPage = lazy(() => import("./pages/SuperAppFramework"));
+const EmbeddedFinanceAnaasPage = lazy(
+  () => import("./pages/EmbeddedFinanceAnaas")
+);
+const PayrollDisbursementPage = lazy(
+  () => import("./pages/PayrollDisbursement")
+);
+const HealthInsuranceMicroPage = lazy(
+  () => import("./pages/HealthInsuranceMicro")
+);
+const EducationPaymentsPage = lazy(() => import("./pages/EducationPayments"));
+const ConversationalBankingPage = lazy(
+  () => import("./pages/ConversationalBanking")
+);
+const StablecoinRailsPage = lazy(() => import("./pages/StablecoinRails"));
+const IotSmartPosPage = lazy(() => import("./pages/IotSmartPos"));
+const WearablePaymentsPage = lazy(() => import("./pages/WearablePayments"));
+const SatelliteConnectivityPage = lazy(
+  () => import("./pages/SatelliteConnectivity")
+);
+const DigitalIdentityLayerPage = lazy(
+  () => import("./pages/DigitalIdentityLayer")
+);
+const PensionMicroPage = lazy(() => import("./pages/PensionMicro"));
+const CarbonCreditMarketplacePage = lazy(
+  () => import("./pages/CarbonCreditMarketplace")
+);
+const TokenizedAssetsPage = lazy(() => import("./pages/TokenizedAssets"));
+const CoalitionLoyaltyPage = lazy(() => import("./pages/CoalitionLoyalty"));
+
 export default function App() {
   const { shortcuts, helpOpen, setHelpOpen } = useKeyboardShortcuts();
 

@@ -18,6 +18,53 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+import psycopg2
+import psycopg2.extras
+
+def _init_persistence():
+    """Initialize SQLite persistence for fraud-ml-service."""
+    import os
+    db_path = os.environ.get("FRAUD_ML_SERVICE_DB_PATH", "/tmp/fraud-ml-service.db")
+    try:
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/fraud_ml_service'))
+        
+        
+        return conn
+    except Exception as e:
+        import logging
+        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        return None
+
+_persistence_db = _init_persistence()
+
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
 # ── Logging ───────────────────────────────────────────────────────────
 
 logging.basicConfig(

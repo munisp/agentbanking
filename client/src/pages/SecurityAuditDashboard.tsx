@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SecurityAuditDashboard — Sprint 76
 // PBAC evaluation, vulnerability scanning, DDoS status, file integrity, backups
 import { useState } from "react";
@@ -23,18 +22,26 @@ export default function SecurityAuditDashboard() {
   const [resource, setResource] = useState("transaction:cash_in");
   const [action, setAction] = useState("create");
 
-  const scan = trpc.securityAudit.runSecurityScan.useQuery();
-  const policies = trpc.securityAudit.getPolicies.useQuery();
-  const fileIntegrity = trpc.securityAudit.getFileIntegrity.useQuery();
-  const backups = trpc.securityAudit.getBackupStatus.useQuery();
-  const ddos = trpc.securityAudit.getDDoSStatus.useQuery();
-  const auditChain = trpc.securityAudit.getAuditChain.useQuery({ limit: 20 });
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const scan = trpc.securityAudit.runSecurityScan.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const policies = trpc.securityAudit.getPolicies.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const fileIntegrity = trpc.securityAudit.getFileIntegrity.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const backups = trpc.securityAudit.getBackupStatus.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const ddos = trpc.securityAudit.getDDoSStatus.useQuery() as any;
+  const auditChain = trpc.securityAudit.getAuditChain.useQuery({
+    limit: 20,
+  }) as any;
   const pbacResult = trpc.securityAudit.evaluateAccess.useQuery({
+    // @ts-expect-error Sprint 85 — type inference mismatch
     subject,
     subjectRole: role,
     resource,
     action,
-  });
+  }) as any;
 
   return (
     <DashboardLayout>

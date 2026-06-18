@@ -53,6 +53,12 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+// Apply saved theme preference on initial load
+const savedTheme = localStorage.getItem("54link_theme");
+if (savedTheme === "light") {
+  document.documentElement.classList.add("light");
+}
+
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>

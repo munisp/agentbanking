@@ -1,12 +1,14 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, HardDrive, Activity, Gauge } from "lucide-react";
 
 export default function PerformanceProfilerPage() {
-  const { data } = trpc.performanceProfiler.dashboard.useQuery();
-  const { data: mem } = trpc.performanceProfiler.memoryProfile.useQuery();
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data } = trpc.performanceProfiler.dashboard.useQuery() as any;
+  const { data: mem } =
+    // @ts-ignore — Sprint 85: strict-mode suppression
+    trpc.performanceProfiler.memoryProfile.useQuery() as any;
 
   return (
     <div className="p-6 space-y-6">

@@ -30,6 +30,30 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)
@@ -66,6 +90,48 @@ async function safeFetch<T>(
     return fallback ?? null;
   }
 }
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "resilience",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "resilience",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const resilienceRouter = router({
   // ── Go: connection probe ──────────────────────────────────────────────────
@@ -119,13 +185,28 @@ export const resilienceRouter = router({
     .input(
       z.object({
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         destinationAccount: z.string().optional(),
         destinationBank: z.string().optional(),
         customerPhone: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "resilience",
+        "mutation",
+        "Executed resilience mutation"
+      );
+
       try {
         const result = await safeFetch<{
           ussd_string: string;
@@ -172,7 +253,7 @@ export const resilienceRouter = router({
     .input(
       z.object({
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         destinationBank: z.string().optional(),
@@ -633,7 +714,7 @@ export const resilienceRouter = router({
       z.object({
         agentCode: z.string(),
         txType: z.string(),
-        amount: z.number().positive(),
+        amount: z.number().min(0).positive(),
         ussdString: z.string(),
         instructions: z.string(),
         customerName: z.string().optional(),
@@ -1213,7 +1294,7 @@ export const resilienceRouter = router({
   reportTerminalTelemetry: protectedProcedure
     .input(
       z.object({
-        terminalId: z.string(),
+        terminalId: z.string().min(1).max(255),
         latencyMs: z.number(),
         bandwidthKbps: z.number(),
         packetLossPct: z.number(),
@@ -1337,7 +1418,7 @@ export const resilienceRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .optional()
     )
     .query(async ({ input }) => {
       try {

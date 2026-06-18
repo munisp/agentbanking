@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,16 +13,16 @@ import {
 } from "lucide-react";
 
 export default function ARTRobustnessPage() {
-  const health = trpc.artRobustness.health.useQuery();
-  const analytics = trpc.artRobustness.analytics.useQuery();
-  const attacks = trpc.artRobustness.listAttacks.useQuery();
-  const results = trpc.artRobustness.listResults.useQuery();
+  const health = trpc.artRobustness.health.useQuery() as any;
+  const analytics = trpc.artRobustness.analytics.useQuery() as any;
+  const attacks = trpc.artRobustness.listAttacks.useQuery() as any;
+  const results = trpc.artRobustness.listResults.useQuery() as any;
   const runAttackMut = trpc.artRobustness.runAttack.useMutation({
     onSuccess: () => results.refetch(),
-  });
+  }) as any;
   const runSuiteMut = trpc.artRobustness.runFullSuite.useMutation({
     onSuccess: () => results.refetch(),
-  });
+  }) as any;
 
   const gradeColor = (grade: string) => {
     if (grade === "A") return "text-green-600";
@@ -201,7 +200,7 @@ export default function ARTRobustnessPage() {
         </TabsContent>
 
         <TabsContent value="results" className="space-y-4">
-          {results.data?.results?.map((r, i) => (
+          {results.data?.results?.map((r: any, i: any) => (
             <Card key={i}>
               <CardContent className="pt-4">
                 <div className="flex justify-between items-center">

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
 export default function ApacheNifiPage() {
-  const { data, isLoading } = trpc.apacheNifi.dashboard.useQuery();
+  const { data, isLoading } = trpc.apacheNifi.dashboard.useQuery() as any;
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   if (isLoading)

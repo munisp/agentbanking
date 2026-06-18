@@ -147,12 +147,20 @@ import {
   UserX,
   ShieldAlert,
   Inbox,
+  Building,
+  LayoutGrid,
+  Coins,
+  Watch,
+  Satellite,
+  TreeDeciduous,
+  Gem,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { ThemeToggle } from "./ThemeToggle";
 
 // ─── Navigation Structure ─────────────────────────────────────────────────────
 // Organized into logical categories for optimal UX
@@ -327,7 +335,22 @@ const navGroups: NavGroup[] = [
       },
     ],
   },
-  // ── 8. Notifications ──
+  // ── 8. E-Commerce & Storefront ──
+  {
+    id: "ecommerce",
+    label: "E-Commerce & Storefront",
+    icon: Store,
+    items: [
+      { icon: Store, label: "My Store", path: "/ecommerce/storefront" },
+      { icon: Package, label: "Products", path: "/ecommerce/products" },
+      { icon: ShoppingBag, label: "Orders", path: "/ecommerce/orders" },
+      { icon: Globe, label: "Store Mall", path: "/ecommerce/mall" },
+      { icon: Rocket, label: "Store Setup", path: "/ecommerce/store-setup" },
+      { icon: CreditCard, label: "Checkout", path: "/ecommerce/checkout" },
+      { icon: ShoppingBag, label: "Cart", path: "/ecommerce/cart" },
+    ],
+  },
+  // ── 9. Notifications ──
   {
     id: "notifications",
     label: "Notifications",
@@ -1605,6 +1628,62 @@ const navGroups: NavGroup[] = [
       { icon: Wallet, label: "Float Management", path: "/float-management" },
     ],
   },
+  // ── 33. Future-Proofing Features ──
+  {
+    id: "future-features",
+    label: "Future Features",
+    icon: Rocket,
+    items: [
+      { icon: Globe, label: "Open Banking API", path: "/future/open-banking" },
+      { icon: CreditCard, label: "BNPL Engine", path: "/future/bnpl" },
+      {
+        icon: Smartphone,
+        label: "NFC Tap-to-Pay",
+        path: "/future/nfc-tap-to-pay",
+      },
+      {
+        icon: Brain,
+        label: "AI Credit Scoring",
+        path: "/future/ai-credit-scoring",
+      },
+      { icon: Leaf, label: "AgriTech Payments", path: "/future/agritech" },
+      { icon: LayoutGrid, label: "Super App", path: "/future/super-app" },
+      { icon: Building, label: "ANaaS", path: "/future/anaas" },
+      { icon: Wallet, label: "Payroll", path: "/future/payroll" },
+      {
+        icon: Heart,
+        label: "Health Insurance",
+        path: "/future/health-insurance",
+      },
+      { icon: GraduationCap, label: "Education", path: "/future/education" },
+      {
+        icon: MessageCircle,
+        label: "Chat Banking",
+        path: "/future/conversational-banking",
+      },
+      { icon: Coins, label: "Stablecoin Rails", path: "/future/stablecoin" },
+      { icon: Cpu, label: "IoT Smart POS", path: "/future/iot-pos" },
+      { icon: Watch, label: "Wearable Payments", path: "/future/wearable" },
+      { icon: Satellite, label: "Satellite", path: "/future/satellite" },
+      {
+        icon: Fingerprint,
+        label: "Digital Identity",
+        path: "/future/digital-identity",
+      },
+      { icon: PiggyBank, label: "Micro-Pension", path: "/future/pension" },
+      {
+        icon: TreeDeciduous,
+        label: "Carbon Credits",
+        path: "/future/carbon-credits",
+      },
+      {
+        icon: Gem,
+        label: "Tokenized Assets",
+        path: "/future/tokenized-assets",
+      },
+      { icon: Star, label: "Loyalty Program", path: "/future/loyalty" },
+    ],
+  },
 ];
 // Flatten all items for searchh
 const allNavItems = navGroups.flatMap(g => g.items);
@@ -1795,7 +1874,7 @@ function DashboardLayoutContent({
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate">
-                    RemitFlow
+                    54Link
                   </span>
                 </div>
               )}
@@ -1939,22 +2018,25 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
+        <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-2">
+            {isMobile && (
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
+            )}
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="tracking-tight text-foreground font-medium">
+                  {activeMenuItem?.label ?? "Menu"}
+                </span>
               </div>
             </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
             <LanguageSelector />
             <NotificationCenter />
           </div>
-        )}
+        </div>
         <main className="flex-1 p-4">{children}</main>
       </SidebarInset>
     </>

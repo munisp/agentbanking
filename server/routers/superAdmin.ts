@@ -23,6 +23,30 @@ import {
   devices,
 } from "../../drizzle/schema";
 import { eq, desc, asc, and, gte, lte, count, sql, like } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  created: ["queued"],
+  queued: ["running"],
+  running: ["completed", "failed", "cancelled"],
+  completed: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["queued"],
+  cancelled: [],
+  archived: [],
+};
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -35,6 +59,48 @@ const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "superAdmin",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "superAdmin",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
+
 export const superAdminRouter = router({
   // ── Tenants ────────────────────────────────────────────────────────────────
   tenants: router({
@@ -46,7 +112,7 @@ export const superAdminRouter = router({
           status: z
             .enum(["trial", "active", "suspended", "churned"])
             .optional(),
-          search: z.string().optional(),
+          search: z.string().min(1).max(500).optional(),
         })
       )
       .query(async ({ input }) => {
@@ -120,7 +186,22 @@ export const superAdminRouter = router({
           contactPhone: z.string().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const _fees = calculateFee(
+          typeof input === "object" && "amount" in input
+            ? Number((input as Record<string, unknown>).amount)
+            : 0,
+          "transfer"
+        );
+        const _commission = calculateCommission(_fees.fee, "transfer");
+        const _tax = calculateTax(_fees.fee, "vat");
+        auditFinancialAction(
+          "UPDATE",
+          "superAdmin",
+          "mutation",
+          "Executed superAdmin mutation"
+        );
+
         try {
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

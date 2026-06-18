@@ -1,9 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function DataQualityPage() {
-  const { data, isLoading } = trpc.dataQuality.dashboard.useQuery();
-  const { data: rules } = trpc.dataQuality.getValidationRules.useQuery();
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data, isLoading } = trpc.dataQuality.dashboard.useQuery() as any;
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data: rules } = trpc.dataQuality.getValidationRules.useQuery() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading data quality...</div>;

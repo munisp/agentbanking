@@ -44,29 +44,46 @@
       "label": "54Link POS Shell Mobile"
     }
   ],
+  "display_override": ["standalone", "minimal-ui"],
   "shortcuts": [
     {
       "name": "Cash In",
       "short_name": "Cash In",
       "description": "Perform a cash deposit",
-      "url": "/?action=cash-in",
+      "url": "/?screen=CashIn",
       "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
     },
     {
       "name": "Cash Out",
       "short_name": "Cash Out",
       "description": "Perform a cash withdrawal",
-      "url": "/?action=cash-out",
+      "url": "/?screen=CashOut",
       "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
     },
     {
       "name": "Transfer",
       "short_name": "Transfer",
       "description": "Send money",
-      "url": "/?action=transfer",
+      "url": "/?screen=Transfer",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    },
+    {
+      "name": "Float Balance",
+      "short_name": "Balance",
+      "description": "Check float balance",
+      "url": "/?screen=FloatBalance",
       "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
     }
   ],
+  "share_target": {
+    "action": "/?share-target",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
   "prefer_related_applications": false,
   "related_applications": []
 }

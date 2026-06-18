@@ -68,11 +68,11 @@ postgresql:
   port: 5432
   database: "keycloak"
   user: "keycloak"
-  password: "password"
+  password: ""  # REQUIRED: Set via --set postgresql.password or K8S_KEYCLOAK_DB_PASSWORD secret
 
 keycloak:
   adminUser: "admin"
-  adminPassword: "adminpassword"
+  adminPassword: ""  # REQUIRED: Set via --set keycloak.adminPassword or K8S_KEYCLOAK_ADMIN_PASSWORD secret
 
 realmImport:
   enabled: true

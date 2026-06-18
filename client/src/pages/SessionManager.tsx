@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,19 +5,21 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function SessionManager() {
-  const sessionsQ = trpc.sessionMgmt.list.useQuery({});
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const sessionsQ = trpc.sessionMgmt.list.useQuery({}) as any;
   const forceLogout = trpc.sessionMgmt.forceLogout.useMutation({
     onSuccess: () => {
       sessionsQ.refetch();
       toast.success("Session terminated");
     },
-  });
+  }) as any;
   const logoutAll = trpc.sessionMgmt.logoutAll.useMutation({
     onSuccess: d => {
       sessionsQ.refetch();
+      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`${d.loggedOut} sessions terminated`);
     },
-  });
+  }) as any;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -51,7 +52,7 @@ export default function SessionManager() {
         </div>
 
         <div className="space-y-3">
-          {sessionsQ.data?.sessions.map(session => (
+          {sessionsQ.data?.sessions.map((session: any) => (
             <Card
               key={session.id}
               className={`bg-gray-900 ${session.isCurrentSession ? "border-green-600" : "border-gray-800"}`}

@@ -28,6 +28,7 @@ members = [
     "fluvio-consumer",
     "ransomware-guard",
     "telemetry-ingestion",
+    "payment-split-engine",
 ]
 resolver = "2"
 

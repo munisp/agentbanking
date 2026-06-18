@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UserGuide — Comprehensive multi-section user guide for the 54Link POS Shell
  *
@@ -496,7 +495,7 @@ const guideSections: GuideSection[] = [
 function SidebarRatingBadge({ sectionId }: { sectionId: string }) {
   const { data: stats } = trpc.guideFeedback.stats.useQuery(undefined, {
     staleTime: 60000,
-  });
+  }) as any;
   // @ts-ignore Sprint 85
   const sectionData = stats?.[sectionId];
   if (!sectionData || sectionData.total === 0) return null;
@@ -535,7 +534,7 @@ function SectionFeedback({
       setSubmitted(true);
       utils.guideFeedback.stats.invalidate();
     },
-  });
+  }) as any;
 
   // Reset state when section changes
   useMemo(() => {
@@ -649,11 +648,11 @@ export default function UserGuide() {
       snippet: string;
     }[] = [];
 
-    guideSections.forEach(section => {
-      section.subsections.forEach(sub => {
+    guideSections.forEach((section: any) => {
+      section.subsections.forEach((sub: any) => {
         const matchesTitle = sub.title.toLowerCase().includes(query);
         const matchesContent = sub.content.toLowerCase().includes(query);
-        const matchesTags = sub.tags?.some(t => t.includes(query));
+        const matchesTags = sub.tags?.some((t: any) => t.includes(query));
 
         if (matchesTitle || matchesContent || matchesTags) {
           // Extract snippet around match
@@ -696,7 +695,7 @@ export default function UserGuide() {
   };
 
   // Find active content
-  const currentSection = guideSections.find(s => s.id === activeSection);
+  const currentSection = guideSections.find((s: any) => s.id === activeSection);
   const currentSubsection = currentSection?.subsections.find(
     s => s.id === activeSubsection
   );
@@ -756,7 +755,7 @@ export default function UserGuide() {
           {!searchResults && (
             <ScrollArea className="flex-1">
               <div className="space-y-1">
-                {guideSections.map(section => {
+                {guideSections.map((section: any) => {
                   const Icon = section.icon;
                   const isExpanded = expandedSections.has(section.id);
                   const isActive = activeSection === section.id;
@@ -794,7 +793,7 @@ export default function UserGuide() {
 
                       {isExpanded && (
                         <div className="ml-6 mt-1 space-y-0.5 mb-2">
-                          {section.subsections.map(sub => (
+                          {section.subsections.map((sub: any) => (
                             <button
                               key={sub.id}
                               onClick={() =>
@@ -845,7 +844,7 @@ export default function UserGuide() {
                 {/* Tags */}
                 {currentSubsection.tags && (
                   <div className="flex flex-wrap gap-1.5 mb-4">
-                    {currentSubsection.tags.map(tag => (
+                    {currentSubsection.tags.map((tag: any) => (
                       <Badge
                         key={tag}
                         variant="outline"
@@ -942,8 +941,8 @@ export default function UserGuide() {
                       subsectionId: string;
                       title: string;
                     }[] = [];
-                    guideSections.forEach(s =>
-                      s.subsections.forEach(sub =>
+                    guideSections.forEach((s: any) =>
+                      s.subsections.forEach((sub: any) =>
                         allSubs.push({
                           sectionId: s.id,
                           subsectionId: sub.id,

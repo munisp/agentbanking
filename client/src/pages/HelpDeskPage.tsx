@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function HelpDeskPage() {
-  const { data, isLoading } = trpc.helpDesk.dashboard.useQuery();
-  const { data: kb } = trpc.helpDesk.knowledgeBase.useQuery({});
+  const { data, isLoading } = trpc.helpDesk.dashboard.useQuery() as any;
+  const { data: kb } = trpc.helpDesk.knowledgeBase.useQuery({}) as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading help desk...</div>;
@@ -51,19 +50,21 @@ export default function HelpDeskPage() {
             <div>
               <h2 className="text-lg font-semibold mb-3">By Priority</h2>
               <div className="border rounded p-4 space-y-2">
-                {Object.entries(data.byPriority).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="flex justify-between items-center border-b pb-2"
-                  >
-                    <span
-                      className={`text-sm capitalize ${k === "critical" ? "text-red-500" : k === "high" ? "text-orange-500" : ""}`}
+                {(Object.entries(data.byPriority) as [string, any][]).map(
+                  ([k, v]) => (
+                    <div
+                      key={k}
+                      className="flex justify-between items-center border-b pb-2"
                     >
-                      {k}
-                    </span>
-                    <span className="text-sm font-bold">{v}</span>
-                  </div>
-                ))}
+                      <span
+                        className={`text-sm capitalize ${k === "critical" ? "text-red-500" : k === "high" ? "text-orange-500" : ""}`}
+                      >
+                        {k}
+                      </span>
+                      <span className="text-sm font-bold">{v}</span>
+                    </div>
+                  )
+                )}
               </div>
             </div>
           </div>

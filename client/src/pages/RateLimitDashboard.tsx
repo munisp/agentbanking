@@ -1,10 +1,10 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function RateLimitDashboard() {
-  const overviewQ = trpc.rateLimitDashboard.overview.useQuery();
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const overviewQ = trpc.rateLimitDashboard.overview.useQuery() as any;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -72,7 +72,7 @@ export default function RateLimitDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {overviewQ.data?.endpoints.map(ep => {
+                  {overviewQ.data?.endpoints.map((ep: any) => {
                     const util = Math.round(
                       (ep.requestsPerMinute / ep.limit) * 100
                     );

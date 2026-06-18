@@ -1,8 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function ConfigManagementPage() {
-  const { data, isLoading } = trpc.configManagement.dashboard.useQuery();
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const { data, isLoading } = trpc.configManagement.dashboard.useQuery() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading config management...</div>;
@@ -50,7 +50,7 @@ export default function ConfigManagementPage() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Recent Changes</h2>
             <div className="border rounded p-4 space-y-2">
-              {data.recentChanges.map((c, i) => (
+              {data.recentChanges.map((c: any, i: any) => (
                 <div
                   key={i}
                   className="flex justify-between items-center border-b pb-2"

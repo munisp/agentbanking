@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -51,14 +50,14 @@ export default function CommissionEnginePage() {
   const [editTierBonusRate, setEditTierBonusRate] = useState("");
 
   // ── Live tRPC queries ──────────────────────────────────────────────
-  const tiers = trpc.commissionEngine.tiers.useQuery();
-  const splits = trpc.commissionEngine.splits.useQuery();
-  const payouts = trpc.commissionEngine.payouts.useQuery({ limit: 50 });
-  const analytics = trpc.commissionEngine.analytics.useQuery();
+  const tiers = trpc.commissionEngine.tiers.useQuery() as any;
+  const splits = trpc.commissionEngine.splits.useQuery() as any;
+  const payouts = trpc.commissionEngine.payouts.useQuery({ limit: 50 }) as any;
+  const analytics = trpc.commissionEngine.analytics.useQuery() as any;
   const simulate = trpc.commissionEngine.simulate.useQuery(
     { transactionType: simTxType, amount: Number(simAmount) || 0 },
     { enabled: Number(simAmount) > 0 }
-  );
+  ) as any;
 
   const utils = trpc.useUtils();
 
@@ -84,7 +83,7 @@ export default function CommissionEnginePage() {
       }
     },
     onError: () => toast.error("Failed to create tier"),
-  });
+  }) as any;
 
   const updateTierMutation = trpc.commissionEngine.updateTier.useMutation({
     onSuccess: data => {
@@ -98,7 +97,7 @@ export default function CommissionEnginePage() {
       }
     },
     onError: () => toast.error("Failed to update tier"),
-  });
+  }) as any;
 
   const deleteTierMutation = trpc.commissionEngine.deleteTier.useMutation({
     onSuccess: data => {
@@ -111,7 +110,7 @@ export default function CommissionEnginePage() {
       }
     },
     onError: () => toast.error("Failed to delete tier"),
-  });
+  }) as any;
 
   const createSplitMutation = trpc.commissionEngine.createSplit.useMutation({
     onSuccess: data => {
@@ -135,7 +134,7 @@ export default function CommissionEnginePage() {
       }
     },
     onError: () => toast.error("Failed to create split"),
-  });
+  }) as any;
 
   const updateSplitMutation = trpc.commissionEngine.updateSplit.useMutation({
     onSuccess: data => {
@@ -147,7 +146,7 @@ export default function CommissionEnginePage() {
       }
     },
     onError: () => toast.error("Failed to update split"),
-  });
+  }) as any;
 
   const approvePayoutMutation = trpc.commissionEngine.approvePayout.useMutation(
     {
@@ -164,7 +163,7 @@ export default function CommissionEnginePage() {
       },
       onError: () => toast.error("Failed to approve payout"),
     }
-  );
+  ) as any;
 
   // ── Form state ─────────────────────────────────────────────────────
   const [tierForm, setTierForm] = useState({
@@ -338,7 +337,7 @@ export default function CommissionEnginePage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TX_TYPES.map(t => (
+                        {TX_TYPES.map((t: any) => (
                           <SelectItem key={t.value} value={t.value}>
                             {t.label}
                           </SelectItem>
@@ -576,7 +575,7 @@ export default function CommissionEnginePage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TX_TYPES.map(t => (
+                        {TX_TYPES.map((t: any) => (
                           <SelectItem key={t.value} value={t.value}>
                             {t.label}
                           </SelectItem>
@@ -651,8 +650,9 @@ export default function CommissionEnginePage() {
                     <div>
                       <p className="font-semibold">{s.id}</p>
                       <p className="text-xs text-muted-foreground">
-                        {TX_TYPES.find(t => t.value === s.transactionType)
-                          ?.label ?? s.transactionType}
+                        {TX_TYPES.find(
+                          (t: any) => t.value === s.transactionType
+                        )?.label ?? s.transactionType}
                       </p>
                     </div>
                     <Badge variant="default">active</Badge>
@@ -713,7 +713,7 @@ export default function CommissionEnginePage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TX_TYPES.map(t => (
+                        {TX_TYPES.map((t: any) => (
                           <SelectItem key={t.value} value={t.value}>
                             {t.label}
                           </SelectItem>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,18 +8,20 @@ import { Smartphone, Signal, Wifi, Phone } from "lucide-react";
 
 export default function AirtimeVendingPage() {
   const [tab, setTab] = useState<"airtime" | "data" | "bundles">("airtime");
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const airtimeTxns = trpc.airtimeVending.history.useQuery({
     type: "airtime",
     limit: 20,
-  });
+  }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
   const dataTxns = trpc.airtimeVending.history.useQuery({
     type: "data",
     limit: 20,
-  });
+  }) as any;
   const bundles = trpc.airtimeVending.dataBundles.useQuery({
     networkId: "mtn",
-  });
-  const analytics = trpc.airtimeVending.analytics.useQuery();
+  }) as any;
+  const analytics = trpc.airtimeVending.analytics.useQuery() as any;
 
   const networks = ["MTN", "Airtel", "Glo", "9mobile"];
 

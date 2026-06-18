@@ -12,7 +12,7 @@
  *   mqtt://broker.54link.io:1883 — MQTT broker (TLS: 8883)
  */
 export const ENV = {
-  // ── Manus Platform ──────────────────────────────────────────────────────────
+  // ── 54Link Platform ──────────────────────────────────────────────────────────
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",

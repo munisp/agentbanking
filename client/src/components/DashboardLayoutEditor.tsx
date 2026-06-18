@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — legacy admin component, type migration pending
 /**
  * DashboardLayoutEditor — Drag-and-drop grid layout for analytics dashboard
  */

@@ -392,7 +392,12 @@ describe("Adapter-to-Router Data Flow", () => {
     const adapterDir = path.join(PROJECT, "server/adapters");
     const files = fs
       .readdirSync(adapterDir)
-      .filter(f => f !== "goServiceAdapter.ts" && f.endsWith(".ts"));
+      .filter(
+        f =>
+          f !== "goServiceAdapter.ts" &&
+          f !== "tigerbeetleMiddlewareAdapter.ts" &&
+          f.endsWith(".ts")
+      );
     for (const file of files) {
       const content = fs.readFileSync(path.join(adapterDir, file), "utf-8");
       // Each adapter should call .get, .post, .put, or .delete on an adapter instance

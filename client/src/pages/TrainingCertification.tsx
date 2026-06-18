@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { GraduationCap } from "lucide-react";
@@ -10,7 +9,7 @@ export default function TrainingCertification() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading } =
     // @ts-ignore Sprint 85
-    trpc.trainingCertification.list.useQuery(undefined, { retry: 1 });
+    trpc.trainingCertification.list.useQuery(undefined, { retry: 1 }) as any;
   const mockData =
     liveData ??
     Array.from({ length: 10 }, (_, i) => ({

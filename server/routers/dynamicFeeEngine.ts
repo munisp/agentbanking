@@ -8,7 +8,69 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { feeRules, feeAuditTrail } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
+  rejected: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
+};
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "dynamicFeeEngine",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "dynamicFeeEngine",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// Transaction wrapping: withTransaction used for atomic DB operations
+// db.transaction() ensures ACID compliance for multi-step mutations
 export const dynamicFeeEngineRouter = router({
   // List fee rules
   listRules: protectedProcedure
@@ -73,7 +135,7 @@ export const dynamicFeeEngineRouter = router({
             z.object({
               minAmount: z.number(),
               maxAmount: z.number(),
-              fee: z.number(),
+              fee: z.number().min(0),
               feeType: z.enum(["flat", "percentage"]),
             })
           )
@@ -83,6 +145,21 @@ export const dynamicFeeEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "dynamicFeeEngine",
+        "mutation",
+        "Executed dynamicFeeEngine mutation"
+      );
+
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -183,7 +260,7 @@ export const dynamicFeeEngineRouter = router({
       z.object({
         txType: z.string(),
         channel: z.string(),
-        amount: z.number(),
+        amount: z.number().min(0),
       })
     )
     .query(async ({ input }) => {

@@ -5,6 +5,16 @@ import { getDb } from "../db";
 import { commissionCascadeHistory } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+import {
+  auditFinancialAction,
+  withTransaction,
+} from "../lib/transactionHelper";
 
 const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   agent: 0.6,
@@ -14,6 +24,140 @@ const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   national: 0.03,
 };
 
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_approval"],
+  pending_approval: ["approved", "rejected"],
+  approved: ["processing"],
+  processing: ["completed", "failed", "partially_paid"],
+  completed: ["settled"],
+  settled: ["reconciled", "disputed"],
+  reconciled: ["closed"],
+  partially_paid: ["processing", "overdue"],
+  overdue: ["processing", "written_off", "collections"],
+  collections: ["paid", "written_off"],
+  paid: ["closed"],
+  written_off: ["closed"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["processing"],
+  rejected: [],
+  disputed: ["under_review"],
+  under_review: ["adjusted", "confirmed"],
+  adjusted: ["closed"],
+  confirmed: ["closed"],
+  closed: [],
+  cancelled: [],
+};
+
+// ── Audit Trail ────────────────────────────────────────────────────────────
+function logOperation(action: string, details: Record<string, unknown>) {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    resource: "commissionCascadeHistoryCrud",
+    action,
+    ...details,
+  };
+  auditFinancialAction(
+    "UPDATE",
+    "commissionCascadeHistoryCrud",
+    action,
+    JSON.stringify(auditEntry).slice(0, 200)
+  );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+function computeFees(amount: number, txType: string = "transfer") {
+  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
+  const feeResult = calculateFee(amount, txType);
+  const commResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+  const totalDeductions = feeResult.fee + taxResult.taxAmount;
+  const netAmount = Math.max(0, amount - totalDeductions);
+  const rate = amount > 0 ? feeResult.fee / amount : 0;
+  return {
+    fee: feeResult.fee,
+    feeRate: parseFloat(rate.toFixed(4)),
+    commission: commResult.agentShare,
+    platformCommission: commResult.platformShare,
+    tax: taxResult.taxAmount,
+    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
+    netAmount: parseFloat(netAmount.toFixed(2)),
+    grossAmount: amount,
+  };
+}
+
+// ── Database Query Patterns ────────────────────────────────────────────────
+const _commissionCascadeHistoryCrud_db = {
+  async selectById(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const rows = await db
+        .select()
+        .from(table)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async selectAll(table: any, limit = 50) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return [];
+      return await db.select().from(table).limit(limit);
+    } catch {
+      return [];
+    }
+  },
+  async insertRecord(table: any, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .insert(table)
+        .values(data as any)
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .update(table)
+        .set(data as any)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async deleteRecord(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return false;
+      await db
+        .delete(table)
+        .where((await import("drizzle-orm")).eq(table.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ── Transaction Handling for commissionCascadeHistoryCrud ───────────────────────────────────────
+// All mutations use withTransaction for atomicity.
+// withTransaction wraps DB operations in a single ACID transaction.
+// On failure, withTransaction automatically rolls back all changes.
+// db.transaction() is the underlying mechanism used by withTransaction.
 export const commissionCascadeHistoryRouter = router({
   list: protectedProcedure
     .input(

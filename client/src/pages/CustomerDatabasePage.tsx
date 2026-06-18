@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,17 +16,17 @@ export default function CustomerDatabasePage() {
     address: "",
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.customerDatabase.list.useQuery();
+  const { data, isLoading } = trpc.customerDatabase.list.useQuery() as any;
   const addMut = trpc.customerDatabase.create.useMutation({
     onSuccess: () => {
       toast.success("Customer added");
       setShowAdd(false);
     },
-  });
+  }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const deleteMut = trpc.customerDatabase.delete.useMutation({
     onSuccess: () => toast.success("Customer removed"),
-  });
+  }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const customers = (data?.customers || []).filter(
     (c: any) =>

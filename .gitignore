@@ -138,3 +138,11 @@ certs/
 __pycache__/
 target/debug/
 *.pyc
+
+# ML model weights (regenerated via train_all_models.py)
+services/python/ml-pipeline/models/weights/*.joblib
+services/python/ml-pipeline/models/weights/*.pt
+services/python/ml-pipeline/models/weights/*.json
+services/python/ml-pipeline/models/lakehouse/
+services/python/ml-pipeline/models/registry/
+/data/

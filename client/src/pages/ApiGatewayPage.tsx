@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Key, Activity, Shield } from "lucide-react";
 
 export default function ApiGatewayPage() {
-  const { data } = trpc.apiGateway.dashboard.useQuery();
-  const { data: keys } = trpc.apiGateway.listApiKeys.useQuery();
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data } = trpc.apiGateway.dashboard.useQuery() as any;
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data: keys } = trpc.apiGateway.listApiKeys.useQuery() as any;
 
   return (
     <div className="p-6 space-y-6">

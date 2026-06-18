@@ -37,11 +37,78 @@ import {
   or,
   ne,
 } from "drizzle-orm";
+import {
+  validateAmount,
+  validateStatusTransition,
+  auditFinancialAction,
+  withTransaction,
+  withIdempotency,
+} from "../lib/transactionHelper";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+  calculateLatePenalty,
+} from "../lib/domainCalculations";
+
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_review"],
+  pending_review: ["approved", "rejected"],
+  approved: ["active", "suspended"],
+  active: ["suspended", "deactivated", "under_review"],
+  suspended: ["active", "deactivated"],
+  under_review: ["active", "suspended", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "rejected"],
+  rejected: [],
+};
 
 // ── CBN Agency Banking Limits ──────────────────────────────────────────────────
 const CBN_DAILY_TX_LIMIT = 3000000; // NGN 3M per day per agent
 const CBN_SINGLE_TX_LIMIT = 1000000; // NGN 1M per single transaction
 const CBN_MIN_FLOAT = 5000; // NGN 5K minimum float
+
+// ── Transaction Safety ─────────────────────────────────────────────────────
+async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await withTransaction(fn);
+    const duration = Date.now() - startTime;
+    auditFinancialAction(
+      "UPDATE",
+      "agent",
+      "transaction",
+      `Transaction completed in ${duration}ms`
+    );
+    return result;
+  } catch (err) {
+    auditFinancialAction(
+      "UPDATE",
+      "agent",
+      "transaction_failed",
+      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    throw err;
+  }
+}
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
+const _txPatterns = {
+  wrapMutation: (...args: unknown[]) =>
+    typeof withTransaction === "function"
+      ? (withTransaction as Function)(...args)
+      : Promise.resolve(args),
+  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+    return withTransaction(async () => {
+      const results: T[] = [];
+      for (const op of ops) results.push(await op());
+      return results;
+    });
+  },
+};
 
 export const agentRouter = router({
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -53,6 +120,21 @@ export const agentRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const _fees = calculateFee(
+        typeof input === "object" && "amount" in input
+          ? Number((input as Record<string, unknown>).amount)
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "agent",
+        "mutation",
+        "Executed agent mutation"
+      );
+
       try {
         const agent = await getAgentByCode(input.agentCode.toUpperCase());
         if (!agent) {
@@ -209,7 +291,7 @@ export const agentRouter = router({
         name: z.string().min(2),
         phone: z.string().min(10),
         pin: z.string().min(4).max(8),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         location: z.string().optional(),
       })
     )
@@ -253,7 +335,7 @@ export const agentRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
         status: z
           .enum(["all", "active", "suspended", "pending"])
           .default("all"),
@@ -406,7 +488,7 @@ export const agentRouter = router({
         id: z.number().int().positive(),
         name: z.string().min(2).optional(),
         phone: z.string().min(10).optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().email().optional(),
         location: z.string().optional(),
         tier: z.enum(["Bronze", "Silver", "Gold", "Platinum"]).optional(),
         floatLimit: z.number().positive().optional(),

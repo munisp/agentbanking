@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -11,10 +10,14 @@ export default function InsuranceProductsPage() {
   const [tab, setTab] = useState<"products" | "policies" | "claims">(
     "products"
   );
-  const products = trpc.insuranceProducts.products.useQuery();
-  const policies = trpc.insuranceProducts.policies.useQuery({ limit: 20 });
-  const claims = trpc.insuranceProducts.policies.useQuery({ limit: 20 });
-  const analytics = trpc.insuranceProducts.analytics.useQuery();
+  const products = trpc.insuranceProducts.products.useQuery() as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const policies = trpc.insuranceProducts.policies.useQuery({
+    limit: 20,
+  }) as any;
+  // @ts-expect-error Sprint 85 — type inference mismatch
+  const claims = trpc.insuranceProducts.policies.useQuery({ limit: 20 }) as any;
+  const analytics = trpc.insuranceProducts.analytics.useQuery() as any;
 
   return (
     <DashboardLayout>

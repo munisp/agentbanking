@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -74,16 +73,16 @@ export default function AlertNotificationPreferences() {
     isLoading: loadingPrefs,
     refetch: refetchPrefs,
     // @ts-ignore Sprint 85
-  } = trpc.alertNotifications.listPreferences.useQuery();
+  } = trpc.alertNotifications.listPreferences.useQuery() as any;
   const { data: deliveryStats, isLoading: loadingStats } =
     // @ts-ignore Sprint 85
-    trpc.alertNotifications.getDeliveryStats.useQuery();
+    trpc.alertNotifications.getDeliveryStats.useQuery() as any;
   const { data: escalationRules } =
     // @ts-ignore Sprint 85
-    trpc.alertNotifications.listEscalationRules.useQuery();
+    trpc.alertNotifications.listEscalationRules.useQuery() as any;
   const { data: deliveryHistory, refetch: refetchHistory } =
     // @ts-ignore Sprint 85
-    trpc.alertNotifications.getDeliveryHistory.useQuery({ limit: 20 });
+    trpc.alertNotifications.getDeliveryHistory.useQuery({ limit: 20 }) as any;
 
   // @ts-ignore Sprint 85
   const updatePref = trpc.alertNotifications.updatePreference.useMutation({
@@ -93,12 +92,12 @@ export default function AlertNotificationPreferences() {
     },
     // @ts-ignore Sprint 85
     onError: err => toast.error(`Failed to update: ${err.message}`),
-  });
+  }) as any;
 
   // @ts-ignore Sprint 85
   const updateRule = trpc.alertNotifications.updateEscalationRule.useMutation({
     onSuccess: () => toast("Escalation rule updated"),
-  });
+  }) as any;
 
   // @ts-ignore Sprint 85
   const sendTest = trpc.alertNotifications.sendTestAlert.useMutation({
@@ -113,7 +112,7 @@ export default function AlertNotificationPreferences() {
     },
     // @ts-ignore Sprint 85
     onError: err => toast.error(`Test failed: ${err.message}`),
-  });
+  }) as any;
 
   const currentPref =
     preferences?.find((p: any) => p.adminId === selectedAdmin) ??

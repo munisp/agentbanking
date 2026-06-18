@@ -84,6 +84,47 @@
   --pos-slate: oklch(0.22 0.015 240);
 }
 
+/* ─── Light Mode ─────────────────────────────────────────────────────────── */
+:root.light {
+  --background: oklch(0.98 0.002 240);
+  --foreground: oklch(0.12 0.01 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.12 0.01 240);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.12 0.01 240);
+  --primary: oklch(0.5 0.22 260);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.94 0.005 240);
+  --secondary-foreground: oklch(0.35 0.02 240);
+  --muted: oklch(0.94 0.005 240);
+  --muted-foreground: oklch(0.45 0.015 230);
+  --accent: oklch(0.94 0.005 240);
+  --accent-foreground: oklch(0.12 0.01 240);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.88 0.008 240);
+  --input: oklch(0.92 0.005 240);
+  --ring: oklch(0.5 0.22 260);
+  --chart-1: oklch(0.5 0.22 260);
+  --chart-2: oklch(0.5 0.18 200);
+  --chart-3: oklch(0.55 0.2 160);
+  --chart-4: oklch(0.6 0.18 80);
+  --chart-5: oklch(0.55 0.22 30);
+  --sidebar: oklch(0.97 0.003 240);
+  --sidebar-foreground: oklch(0.12 0.01 240);
+  --sidebar-primary: oklch(0.5 0.22 260);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.94 0.005 240);
+  --sidebar-accent-foreground: oklch(0.12 0.01 240);
+  --sidebar-border: oklch(0.88 0.008 240);
+  --sidebar-ring: oklch(0.5 0.22 260);
+  --pos-green: oklch(0.55 0.18 160);
+  --pos-gold: oklch(0.65 0.18 80);
+  --pos-red: oklch(0.55 0.22 25);
+  --pos-blue: oklch(0.5 0.22 260);
+  --pos-slate: oklch(0.88 0.008 240);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -92,6 +133,8 @@
     @apply bg-background text-foreground;
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
   }
   h1,
   h2,
@@ -326,5 +369,167 @@
   }
   .count-enter {
     animation: count-up 0.4s ease both;
+  }
+
+  /* Safe area insets for notched/punch-hole devices (P0) */
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-left {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .safe-right {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .safe-y {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Focus ring for accessibility (P2) */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Minimum touch target (P0) */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Context menu animation (P1) */
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Screen slide transitions (P1) */
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes slideOutRight {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+  }
+  .screen-slide-in {
+    animation: slideInRight 0.2s ease-out both;
+  }
+
+  /* Skeleton shimmer (P1) */
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      oklch(0.15 0.012 240) 25%,
+      oklch(0.2 0.012 240) 50%,
+      oklch(0.15 0.012 240) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 8px;
+  }
+
+  /* Offline tile dimming (P2) */
+  .tile-offline-only {
+    opacity: 0.4;
+    pointer-events: none;
+    position: relative;
+  }
+  .tile-offline-only::after {
+    content: "🌐";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 10px;
+  }
+
+  /* Drag-and-drop styles (P1) */
+  .tile-dragging {
+    opacity: 0.8;
+    transform: scale(1.05);
+    box-shadow: 0 12px 32px oklch(0 0 0 / 0.4);
+    z-index: 100;
+  }
+  .tile-drop-target {
+    border: 2px dashed oklch(0.6 0.22 260) !important;
+    background: oklch(0.6 0.22 260 / 0.08) !important;
+  }
+
+  /* Pull-to-refresh (P2) */
+  .ptr-indicator {
+    transition:
+      height 0.2s ease,
+      opacity 0.2s ease;
+  }
+
+  /* Bottom sheet overlay (P1) */
+  @keyframes sheetUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  .bottom-sheet-enter {
+    animation: sheetUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  /* Quick entry chip (P1) */
+  .amount-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    min-height: 36px;
+    user-select: none;
+    font-family: var(--font-mono);
+  }
+  .amount-chip:active {
+    transform: scale(0.92);
   }
 }

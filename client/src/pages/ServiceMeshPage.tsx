@@ -1,8 +1,8 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function ServiceMeshPage() {
-  const { data, isLoading } = trpc.serviceMesh.dashboard.useQuery();
+  // @ts-ignore — Sprint 85: strict-mode suppression
+  const { data, isLoading } = trpc.serviceMesh.dashboard.useQuery() as any;
 
   if (isLoading)
     return <div className="p-8 text-center">Loading service mesh...</div>;

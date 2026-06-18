@@ -13,22 +13,7 @@ class DashboardScreen extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     final user = auth.user;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('54Link POS'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
+    return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -155,8 +140,6 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 }

@@ -17,10 +17,30 @@ async function startServer() {
       ? path.resolve(__dirname, "public")
       : path.resolve(__dirname, "..", "dist", "public");
 
-  app.use(express.static(staticPath));
+  // Hashed assets (JS/CSS) get long-lived cache; HTML/SW/manifest must never be cached
+  app.use(
+    express.static(staticPath, {
+      maxAge: "1y",
+      immutable: true,
+      setHeaders(res, filePath) {
+        if (
+          filePath.endsWith(".html") ||
+          filePath.endsWith("manifest.json") ||
+          filePath.endsWith("sw.js")
+        ) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        }
+      },
+    })
+  );
 
   // Handle client-side routing - serve index.html for all routes
   app.get("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(path.join(staticPath, "index.html"));
   });
 

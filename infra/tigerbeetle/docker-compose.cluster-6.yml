@@ -1,0 +1,138 @@
+# ==============================================================================
+# TigerBeetle 6-Node Production Cluster (3 primary + 3 standby)
+# VSR consensus for fault tolerance — survives up to 2 node failures
+# Each node: 4 vCPU / 16 GB RAM / NVMe SSD (dedicated)
+# Target: 10M+ transfers/sec (batched)
+# ==============================================================================
+
+version: "3.9"
+
+x-tigerbeetle-common: &tb-common
+  image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+  restart: unless-stopped
+  networks: [54link-net]
+  ulimits:
+    memlock: { soft: -1, hard: -1 }
+    nofile: { soft: 65536, hard: 65536 }
+  deploy:
+    resources:
+      limits:
+        memory: 16G
+        cpus: "4.0"
+      reservations:
+        memory: 8G
+        cpus: "2.0"
+
+services:
+  tigerbeetle-0:
+    <<: *tb-common
+    container_name: tigerbeetle-0
+    command: >
+      start
+      --addresses=0.0.0.0:3000,tigerbeetle-1:3001,tigerbeetle-2:3002,tigerbeetle-3:3003,tigerbeetle-4:3004,tigerbeetle-5:3005
+      --replica=0
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_0.tigerbeetle
+    ports: ["3000:3000"]
+    volumes:
+      - tigerbeetle_data_0:/data
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'ping' | nc -q1 localhost 3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tigerbeetle-1:
+    <<: *tb-common
+    container_name: tigerbeetle-1
+    command: >
+      start
+      --addresses=tigerbeetle-0:3000,0.0.0.0:3001,tigerbeetle-2:3002,tigerbeetle-3:3003,tigerbeetle-4:3004,tigerbeetle-5:3005
+      --replica=1
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_1.tigerbeetle
+    ports: ["3001:3001"]
+    volumes:
+      - tigerbeetle_data_1:/data
+
+  tigerbeetle-2:
+    <<: *tb-common
+    container_name: tigerbeetle-2
+    command: >
+      start
+      --addresses=tigerbeetle-0:3000,tigerbeetle-1:3001,0.0.0.0:3002,tigerbeetle-3:3003,tigerbeetle-4:3004,tigerbeetle-5:3005
+      --replica=2
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_2.tigerbeetle
+    ports: ["3002:3002"]
+    volumes:
+      - tigerbeetle_data_2:/data
+
+  tigerbeetle-3:
+    <<: *tb-common
+    container_name: tigerbeetle-3
+    command: >
+      start
+      --addresses=tigerbeetle-0:3000,tigerbeetle-1:3001,tigerbeetle-2:3002,0.0.0.0:3003,tigerbeetle-4:3004,tigerbeetle-5:3005
+      --replica=3
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_3.tigerbeetle
+    ports: ["3003:3003"]
+    volumes:
+      - tigerbeetle_data_3:/data
+
+  tigerbeetle-4:
+    <<: *tb-common
+    container_name: tigerbeetle-4
+    command: >
+      start
+      --addresses=tigerbeetle-0:3000,tigerbeetle-1:3001,tigerbeetle-2:3002,tigerbeetle-3:3003,0.0.0.0:3004,tigerbeetle-5:3005
+      --replica=4
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_4.tigerbeetle
+    ports: ["3004:3004"]
+    volumes:
+      - tigerbeetle_data_4:/data
+
+  tigerbeetle-5:
+    <<: *tb-common
+    container_name: tigerbeetle-5
+    command: >
+      start
+      --addresses=tigerbeetle-0:3000,tigerbeetle-1:3001,tigerbeetle-2:3002,tigerbeetle-3:3003,tigerbeetle-4:3004,0.0.0.0:3005
+      --replica=5
+      --replica-count=6
+      --cluster=0
+      --cache-grid-blocks=131072
+      /data/0_5.tigerbeetle
+    ports: ["3005:3005"]
+    volumes:
+      - tigerbeetle_data_5:/data
+
+volumes:
+  tigerbeetle_data_0:
+    driver: local
+  tigerbeetle_data_1:
+    driver: local
+  tigerbeetle_data_2:
+    driver: local
+  tigerbeetle_data_3:
+    driver: local
+  tigerbeetle_data_4:
+    driver: local
+  tigerbeetle_data_5:
+    driver: local
+
+networks:
+  54link-net:
+    external: true

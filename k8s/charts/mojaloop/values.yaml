@@ -1,88 +1,130 @@
 global:
   mysql:
-    host: "mysql"
-    port: 3306
+    host: "proxysql"           # Route through ProxySQL for connection pooling
+    port: 6033                 # ProxySQL MySQL protocol port
     user: "mojaloop"
     database: "mojaloop"
   kafka:
     host: "kafka"
     port: 9092
 
+# NOTE: Mojaloop requires MySQL — it does NOT support PostgreSQL.
+# The Knex.js migrations use MySQL-specific syntax (AUTO_INCREMENT, ENUM,
+# ON DUPLICATE KEY UPDATE). ProxySQL provides connection pooling and
+# read/write splitting to scale MySQL horizontally.
 mysql:
   enabled: true
   auth:
     rootPassword: "rootpassword"
     database: "mojaloop"
     username: "mojaloop"
-    password: "password"
+    password: ""  # REQUIRED: Set via --set mysql.auth.password or K8S_MOJALOOP_DB_PASSWORD secret
+  primary:
+    configuration: |-
+      [mysqld]
+      innodb_buffer_pool_size=96G
+      innodb_buffer_pool_instances=16
+      innodb_log_file_size=4G
+      innodb_flush_log_at_trx_commit=2
+      innodb_flush_method=O_DIRECT
+      innodb_io_capacity=20000
+      innodb_io_capacity_max=40000
+      innodb_read_io_threads=16
+      innodb_write_io_threads=16
+      max_connections=1000
+      binlog_format=ROW
+      binlog_row_image=MINIMAL
 
 kafka:
   enabled: true
 
 centralLedger:
-  replicaCount: 2
+  replicaCount: 4                      # Scale to 4 replicas for throughput
   image:
     repository: mojaloop/central-ledger
     pullPolicy: IfNotPresent
-    tag: "v17.0.0"
+    tag: "v17.8.1"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: "2"
+      memory: 4Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: "4"
+      memory: 8Gi
+  env:
+    - name: CLEDG_DATABASE__POOL__MIN
+      value: "20"
+    - name: CLEDG_DATABASE__POOL__MAX
+      value: "100"
+    - name: CLEDG_CACHE__CACHE_ENABLED
+      value: "true"
+    - name: CLEDG_CACHE__EXPIRES_IN_MS
+      value: "60000"
+    - name: CLEDG_HANDLERS__SETTINGS__BATCH_SIZE
+      value: "1000"
+    - name: NODE_OPTIONS
+      value: "--max-old-space-size=4096 --max-semi-space-size=128"
   service:
     type: ClusterIP
     port: 3001
 
 mlApiAdapter:
-  replicaCount: 2
+  replicaCount: 4
   image:
     repository: mojaloop/ml-api-adapter
     pullPolicy: IfNotPresent
-    tag: "v14.0.0"
+    tag: "v14.2.3"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: "1"
+      memory: 2Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: "2"
+      memory: 4Gi
+  env:
+    - name: NODE_OPTIONS
+      value: "--max-old-space-size=2048"
   service:
     type: ClusterIP
     port: 3000
 
 accountLookup:
-  replicaCount: 2
+  replicaCount: 4
   image:
     repository: mojaloop/account-lookup-service
     pullPolicy: IfNotPresent
-    tag: "v15.0.0"
+    tag: "v15.1.0"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: "1"
+      memory: 2Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: "2"
+      memory: 4Gi
+  env:
+    - name: ALS_DATABASE__POOL__MIN
+      value: "10"
+    - name: ALS_DATABASE__POOL__MAX
+      value: "50"
+    - name: NODE_OPTIONS
+      value: "--max-old-space-size=2048"
   service:
     type: ClusterIP
     port: 4002
 
 quotingService:
-  replicaCount: 2
+  replicaCount: 4
   image:
     repository: mojaloop/quoting-service
     pullPolicy: IfNotPresent
     tag: "v15.0.0"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: "1"
+      memory: 2Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: "2"
+      memory: 4Gi
   service:
     type: ClusterIP
     port: 3002

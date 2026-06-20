@@ -1,0 +1,130 @@
+# ==============================================================================
+# ProxySQL — MySQL Connection Pooling & Read/Write Splitting for Mojaloop
+# Handles 100K+ connections, routes reads to replicas, writes to primary
+# ==============================================================================
+
+datadir="/var/lib/proxysql"
+
+admin_variables=
+{
+    admin_credentials="admin:${PROXYSQL_ADMIN_PASSWORD:-proxysql-admin}"
+    mysql_ifaces="0.0.0.0:6032"
+    cluster_username="cluster_admin"
+    cluster_password="${PROXYSQL_CLUSTER_PASSWORD:-cluster-secret}"
+}
+
+mysql_variables=
+{
+    threads=16
+    max_connections=20000
+    default_query_delay=0
+    default_query_timeout=30000
+    have_compress=true
+    poll_timeout=2000
+    interfaces="0.0.0.0:6033"
+    default_schema="central_ledger"
+    stacksize=1048576
+    server_version="8.0.35"
+    connect_timeout_server=3000
+    monitor_username="monitor"
+    monitor_password="${PROXYSQL_MONITOR_PASSWORD:-monitor-secret}"
+    monitor_history=600000
+    monitor_connect_interval=60000
+    monitor_ping_interval=10000
+    monitor_read_only_interval=1500
+    monitor_read_only_timeout=500
+    ping_interval_server_msec=10000
+    ping_timeout_server=500
+    commands_stats=true
+    sessions_sort=true
+    connect_retries_on_failure=10
+    threshold_query_length=524288
+    threshold_resultset_size=4194304
+    query_retries_on_failure=1
+    wait_timeout=28800
+    max_stmts_per_connection=200
+    max_stmts_cache=10000
+    # ── Connection Multiplexing ──
+    multiplexing=true
+    connection_max_age_ms=3600000
+    free_connections_pct=10
+    # ── Query Cache ──
+    query_cache_size_MB=256
+}
+
+mysql_servers=
+(
+    # Primary (write) — hostgroup 10
+    {
+        address="mysql-primary"
+        port=3306
+        hostgroup=10
+        max_connections=500
+        max_replication_lag=0
+        weight=1000
+    },
+    # Replica (read) — hostgroup 20
+    {
+        address="mysql-replica"
+        port=3306
+        hostgroup=20
+        max_connections=500
+        max_replication_lag=5
+        weight=1000
+    }
+)
+
+mysql_users=
+(
+    {
+        username="central_ledger"
+        password="${ML_DB_PASSWORD:-ml-secret}"
+        default_hostgroup=10
+        max_connections=5000
+        transaction_persistent=1
+        active=1
+    },
+    {
+        username="account_lookup"
+        password="${ML_DB_PASSWORD:-ml-secret}"
+        default_hostgroup=10
+        max_connections=2000
+        transaction_persistent=1
+        active=1
+    },
+    {
+        username="central_settlement"
+        password="${ML_DB_PASSWORD:-ml-secret}"
+        default_hostgroup=10
+        max_connections=2000
+        transaction_persistent=1
+        active=1
+    }
+)
+
+mysql_query_rules=
+(
+    # Route SELECT to read replica (hostgroup 20)
+    {
+        rule_id=1
+        active=1
+        match_pattern="^SELECT .* FOR UPDATE"
+        destination_hostgroup=10
+        apply=1
+    },
+    {
+        rule_id=2
+        active=1
+        match_pattern="^SELECT"
+        destination_hostgroup=20
+        apply=1
+    },
+    # Everything else (INSERT, UPDATE, DELETE) to primary (hostgroup 10)
+    {
+        rule_id=100
+        active=1
+        match_pattern=".*"
+        destination_hostgroup=10
+        apply=1
+    }
+)

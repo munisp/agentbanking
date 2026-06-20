@@ -8,6 +8,8 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { publishEvent } from "../kafkaClient";
+import { eventBus, EVENTS } from "../lib/eventBus";
 import {
   transactions,
   agents,
@@ -330,6 +332,31 @@ export const airtimeVendingRouter = router({
             phone: input.phone,
             commission,
           },
+        });
+
+        // Kafka event for downstream consumers
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "airtime_vending",
+            ref,
+            transactionId: tx.id,
+            agentId: session.id,
+            provider,
+            amount: input.amount,
+            phone: input.phone,
+            commission,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
+          type: "airtime_vending",
+          ref,
+          amount: input.amount,
+          agentId: session.id,
         });
 
         return {

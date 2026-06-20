@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { publishEvent } from "../kafkaClient";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -263,6 +264,22 @@ export const splitPaymentsRouter = router({
             splitCount: input.splits.length,
           },
         });
+
+        // Kafka event for downstream consumers
+        publishEvent(
+          "pos.transactions.created",
+          groupRef,
+          {
+            type: "split_payment",
+            groupRef,
+            agentId: session.id,
+            totalAmount: input.totalAmount,
+            splitCount: input.splits.length,
+            splits: results,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
 
         return {
           groupRef,

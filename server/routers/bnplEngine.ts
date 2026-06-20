@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { gl_journal_entries, transactions, agents } from "../../drizzle/schema";
 import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent } from "../kafkaClient";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import crypto from "crypto";
 
 import {
   validateAmount,
@@ -349,6 +353,184 @@ export const bnplEngineRouter = router({
       };
     }
   }),
+
+  processRepayment: protectedProcedure
+    .input(
+      z.object({
+        applicationId: z.number(),
+        amount: z.number().positive(),
+        installmentNumber: z.number().min(1).optional(),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+        return withTransaction(async (tx) => {
+          const db = tx ?? (await getDb())!;
+          const ref = `BNPL-PAY-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+
+          // Fetch BNPL application
+          const appResult = await db.execute(
+            sql`SELECT * FROM "bnpl_applications" WHERE id = ${input.applicationId} FOR UPDATE`
+          );
+          const app = (appResult as any).rows?.[0];
+          if (!app) throw new TRPCError({ code: "NOT_FOUND", message: "BNPL application not found" });
+          if (app.status === "completed") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Loan already fully repaid" });
+          }
+
+          const appData = typeof app.data === "string" ? JSON.parse(app.data) : (app.data ?? {});
+          const totalAmount = Number(appData.amount ?? 0);
+          const paidSoFar = Number(appData.paidAmount ?? 0);
+          const newPaid = paidSoFar + input.amount;
+          const isFullyPaid = newPaid >= totalAmount;
+
+          // Lock agent row and debit
+          const agentRows = await db.execute(
+            sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          if (!agentRow || Number(agentRow.float_balance) < input.amount) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient float for repayment" });
+          }
+
+          await db.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(input.amount)} WHERE id = ${session.id}`
+          );
+
+          // Update BNPL application
+          const updatedData = { ...appData, paidAmount: newPaid, lastPaymentDate: new Date().toISOString() };
+          const newStatus = isFullyPaid ? "completed" : app.status === "overdue" ? "active" : app.status;
+          await db.execute(
+            sql`UPDATE "bnpl_applications" SET data = ${JSON.stringify(updatedData)}::jsonb, status = ${newStatus}, updated_at = NOW() WHERE id = ${input.applicationId}`
+          );
+
+          // Record transaction
+          const [txRecord] = await db.insert(transactions).values({
+            ref,
+            agentId: session.id,
+            type: "BNPL Repayment",
+            amount: String(input.amount),
+            fee: "0",
+            commission: "0",
+            currency: "NGN",
+            channel: "BNPL",
+            status: "success",
+            metadata: {
+              applicationId: input.applicationId,
+              installmentNumber: input.installmentNumber,
+              paidSoFar: newPaid,
+              totalAmount,
+              isFullyPaid,
+            },
+          }).returning();
+
+          // GL double-entry: Debit BNPL Receivable, Credit Agent Float
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `BNPL repayment for application #${input.applicationId}`,
+            debitAccountId: 1002, // BNPL Receivable (asset reduction)
+            creditAccountId: 2001, // Agent Float
+            amount: Math.round(input.amount * 100),
+            currency: "NGN",
+            referenceType: "bnpl_repayment",
+            referenceId: String(txRecord.id),
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          // Late penalty if overdue
+          if (app.status === "overdue") {
+            const penalty = calculateLatePenalty(input.amount, 30);
+            if (penalty.penalty > 0) {
+              await db.insert(gl_journal_entries).values({
+                entryNumber: `JE-PEN-${ref}`,
+                description: `Late penalty on BNPL #${input.applicationId}`,
+                debitAccountId: 2001,
+                creditAccountId: 4002, // Penalty Revenue
+                amount: Math.round(penalty.penalty * 100),
+                currency: "NGN",
+                referenceType: "bnpl_penalty",
+                referenceId: String(txRecord.id),
+                postedBy: session.agentCode,
+                status: "posted",
+              });
+            }
+          }
+
+          // Kafka event
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "bnpl_repayment",
+              ref,
+              applicationId: input.applicationId,
+              amount: input.amount,
+              paidSoFar: newPaid,
+              totalAmount,
+              isFullyPaid,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
+
+          writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "BNPL_REPAYMENT",
+            resource: "bnpl",
+            resourceId: ref,
+            status: "success",
+            metadata: { applicationId: input.applicationId, amount: input.amount, isFullyPaid },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            ref,
+            transactionId: txRecord.id,
+            applicationId: input.applicationId,
+            amountPaid: input.amount,
+            totalPaid: newPaid,
+            totalAmount,
+            remainingBalance: Math.max(0, totalAmount - newPaid),
+            isFullyPaid,
+            status: newStatus,
+            timestamp: new Date().toISOString(),
+          };
+        }, "bnplEngine.processRepayment");
+      });
+    }),
+
+  collectOverdue: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .mutation(async ({ input }) => {
+      const db = (await getDb())!;
+      const overdueResult = await db.execute(
+        sql`SELECT id, data, agent_id FROM "bnpl_applications" WHERE status = 'overdue' ORDER BY created_at ASC LIMIT ${input.limit}`
+      );
+      const overdueApps = (overdueResult as any).rows ?? [];
+      const processed: { id: number; penalty: number }[] = [];
+
+      for (const app of overdueApps) {
+        const appData = typeof app.data === "string" ? JSON.parse(app.data) : (app.data ?? {});
+        const totalAmount = Number(appData.amount ?? 0);
+        const paidAmount = Number(appData.paidAmount ?? 0);
+        const outstanding = totalAmount - paidAmount;
+        const penalty = calculateLatePenalty(outstanding, 30);
+        processed.push({ id: app.id, penalty: penalty.penalty });
+      }
+
+      return {
+        processed: processed.length,
+        items: processed,
+        timestamp: new Date().toISOString(),
+      };
+    }),
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [

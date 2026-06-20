@@ -7,7 +7,9 @@ import {
   transactions,
   refunds,
   auditLog,
+  gl_journal_entries,
 } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -245,12 +247,45 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
+      return withTransaction(async (tx) => {
+        const db = tx ?? (await getDb())!;
         await db
           .update(disputes)
           .set({ status: "resolved", resolution: input.resolution })
           .where(eq(disputes.id, input.id));
+
+        // GL reversal entry for accepted/partial chargebacks with refund
+        if (
+          (input.resolution === "accepted" || input.resolution === "partial") &&
+          input.refundAmount &&
+          input.refundAmount > 0
+        ) {
+          const refundRef = `CB-REF-${Date.now()}-${input.id}`;
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${refundRef}`,
+            description: `Chargeback refund for dispute #${input.id}`,
+            debitAccountId: 5001, // Chargeback Expense
+            creditAccountId: 1001, // Cash on Hand (refund to customer)
+            amount: Math.round(input.refundAmount * 100),
+            currency: "NGN",
+            referenceType: "dispute",
+            referenceId: String(input.id),
+            postedBy: "system",
+            status: "posted",
+          });
+
+          publishEvent(
+            "pos.disputes.resolved",
+            String(input.id),
+            {
+              disputeId: input.id,
+              resolution: input.resolution,
+              refundAmount: input.refundAmount,
+              timestamp: new Date().toISOString(),
+            }
+          ).catch(() => {});
+        }
+
         await db.insert(auditLog).values({
           action: "chargeback_resolved",
           resource: "disputes",
@@ -263,14 +298,7 @@ export const chargebackManagementRouter = router({
         });
 
         return { success: true, id: input.id, resolution: input.resolution };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      }, "resolveChargeback");
     }),
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

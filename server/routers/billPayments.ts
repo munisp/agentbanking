@@ -7,6 +7,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { publishEvent } from "../kafkaClient";
+import { eventBus, EVENTS } from "../lib/eventBus";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -304,6 +306,33 @@ export const billPaymentsRouter = router({
             amount: input.amount,
             customerRef: input.customerReference,
           },
+        });
+
+        // Kafka event for downstream consumers
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "bill_payment",
+            ref,
+            transactionId: tx.id,
+            agentId: session.id,
+            billerId: input.billerId,
+            billerName: biller.name,
+            amount: input.amount,
+            fee: feeResult.fee,
+            commission: commResult.agentShare,
+            customerReference: input.customerReference,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
+          type: "bill_payment",
+          ref,
+          amount: input.amount,
+          agentId: session.id,
         });
 
         return {

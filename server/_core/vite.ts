@@ -60,10 +60,31 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Hashed assets (JS/CSS) get long-lived cache; everything else is short-lived
+  app.use(
+    express.static(distPath, {
+      maxAge: "1y",
+      immutable: true,
+      setHeaders(res, filePath) {
+        // index.html and non-hashed files must never be cached
+        if (
+          filePath.endsWith(".html") ||
+          filePath.endsWith("manifest.json") ||
+          filePath.endsWith("sw.js")
+        ) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        }
+      },
+    })
+  );
 
-  // fall through to index.html if the file doesn't exist
+  // fall through to index.html if the file doesn't exist (SPA routing)
   app.use("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

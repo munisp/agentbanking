@@ -1,0 +1,185 @@
+# ==============================================================================
+# Dapr — High-Throughput Configuration (Millions of msg/sec)
+# Pipeline mode + bulk publish + optimized components
+# ==============================================================================
+
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: 54link-dapr-high-throughput
+  namespace: default
+spec:
+  # ── Tracing — Reduced sampling for throughput ──────────────────────────────
+  tracing:
+    samplingRate: "0.01"                     # 1% sampling in high-throughput mode
+    otel:
+      endpointAddress: "otel-collector:4317"
+      isSecure: false
+      protocol: grpc
+
+  # ── Metrics ────────────────────────────────────────────────────────────────
+  metric:
+    enabled: true
+    rules:
+      - name: "dapr_*"
+        labels:
+          - name: "method"
+            regex:
+              "GET": "GET"
+              "POST": "POST"
+          - name: "path"
+            allowList:
+              - "/v1.0/publish/*"
+              - "/v1.0/state/*"
+              - "/v1.0/invoke/*"
+
+  # ── API Access Control ────────────────────────────────────────────────────
+  api:
+    allowed:
+      - name: invoke
+        version: v1
+        protocol: grpc                       # gRPC is faster than HTTP
+      - name: state
+        version: v1
+        protocol: grpc
+      - name: pubsub
+        version: v1
+        protocol: grpc
+      - name: secrets
+        version: v1
+      - name: actors
+        version: v1
+      - name: bindings
+        version: v1
+
+  # ── App Channel ────────────────────────────────────────────────────────────
+  appHttpPipeline:
+    handlers:
+      - name: uppercase
+        type: middleware.http.uppercase
+  httpPipeline:
+    handlers: []
+
+  # ── Features ───────────────────────────────────────────────────────────────
+  features:
+    - name: Actor.TypeMetadata
+      enabled: true
+    - name: PubSub.BulkPublish                # Bulk publish support
+      enabled: true
+    - name: PubSub.BulkSubscribe              # Bulk subscribe support
+      enabled: true
+
+  # ── Logging ────────────────────────────────────────────────────────────────
+  logging:
+    apiLogging:
+      enabled: false                          # Disable API logging for throughput
+      obfuscateURLs: true
+      omitHealthChecks: true
+
+---
+# ── Kafka PubSub — High-Throughput ───────────────────────────────────────────
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: 54link-pubsub-ht
+  namespace: default
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: "kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092"
+    - name: consumerGroup
+      value: "54link-dapr-ht"
+    - name: authRequired
+      value: "false"
+    - name: maxMessageBytes
+      value: "10485760"                       # 10 MB
+    - name: consumeRetryInterval
+      value: "100ms"
+    - name: version
+      value: "3.0.0"
+    - name: clientID
+      value: "54link-dapr-ht"
+    # ── Producer Tuning ──────────────────────────────────────────────────────
+    - name: producerRequiredAcks
+      value: "1"                              # Leader ack only for throughput
+    - name: producerBatchMaxMessages
+      value: "10000"                          # Batch up to 10K messages
+    - name: producerBatchMaxBytes
+      value: "16777216"                       # 16 MB batch
+    - name: producerFlushMaxMessages
+      value: "10000"
+    - name: producerFlushFrequencyMs
+      value: "10"                             # Flush every 10ms
+    - name: producerCompressionType
+      value: "zstd"
+    # ── Consumer Tuning ──────────────────────────────────────────────────────
+    - name: consumerFetchDefault
+      value: "10485760"                       # 10 MB default fetch
+    - name: consumerFetchMin
+      value: "1048576"                        # 1 MB min fetch
+    - name: channelBufferSize
+      value: "10000"                          # Internal channel buffer
+    - name: consumeRetryEnabled
+      value: "true"
+    - name: consumeRetryInterval
+      value: "200ms"
+
+---
+# ── Redis State Store — High-Throughput ──────────────────────────────────────
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: 54link-statestore-ht
+  namespace: default
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: "redis-cluster:6379"
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-secret
+        key: password
+    - name: actorStateStore
+      value: "true"
+    - name: enableTLS
+      value: "false"
+    - name: maxRetries
+      value: "3"
+    - name: maxRetryBackoff
+      value: "500ms"
+    - name: ttlInSeconds
+      value: "86400"
+    - name: queryIndexes
+      value: |
+        [
+          { "name": "agentId", "type": "TEXT" },
+          { "name": "status", "type": "TAG" },
+          { "name": "timestamp", "type": "NUMERIC" }
+        ]
+    # ── Pipeline Mode ────────────────────────────────────────────────────────
+    - name: processingTimeout
+      value: "15s"
+    - name: redeliverInterval
+      value: "10s"
+    - name: concurrency
+      value: "parallel"                       # Parallel state operations
+    - name: redisDB
+      value: "0"
+    - name: redisMaxRetries
+      value: "5"
+    - name: redisMinRetryInterval
+      value: "8ms"
+    - name: dialTimeout
+      value: "5s"
+    - name: readTimeout
+      value: "5s"
+    - name: writeTimeout
+      value: "5s"
+    - name: poolSize
+      value: "200"                            # Large connection pool
+    - name: minIdleConns
+      value: "50"

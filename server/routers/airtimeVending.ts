@@ -9,6 +9,11 @@ import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { eventBus, EVENTS } from "../lib/eventBus";
 import {
   transactions,
@@ -351,6 +356,18 @@ export const airtimeVendingRouter = router({
           },
           { agentCode: session.agentCode }
         ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "2001", creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref, txType: "airtime_vending", agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "airtime_vending", timestamp: Date.now() }).catch(() => {});
+        dapr.publishEvent("pubsub", "airtime.vended", { ref, amount: input.amount, phone: input.phone }).catch(() => {});
+        ingestToLakehouse("airtime_transactions", { ref, amount: input.amount, phone: input.phone, provider, timestamp: new Date().toISOString() }).catch(() => {});
 
         eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
           type: "airtime_vending",

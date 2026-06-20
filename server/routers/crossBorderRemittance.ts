@@ -14,6 +14,11 @@ import { getDb, writeAuditLog } from "../db";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import {
   calculateFee,
   calculateCommission,
@@ -307,6 +312,19 @@ export const crossBorderRemittanceRouter = router({
         },
         { agentCode: session.agentCode }
       ).catch(() => {});
+
+      // TigerBeetle dual-ledger
+      tbCreateTransfer({
+        debitAccountId: "2001", creditAccountId: "1001",
+        amount: Math.round(input.amountNGN * 100),
+        ref, txType: "cross_border_remittance", agentCode: session.agentCode,
+      }).catch(() => {});
+
+      // Fluvio + Dapr + Redis + Lakehouse
+      publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amountNGN, type: "cross_border_remittance", timestamp: Date.now() }).catch(() => {});
+      dapr.publishEvent("pubsub", "remittance.completed", { ref, corridor: input.corridorId, amountNGN: input.amountNGN, agentId: session.id }).catch(() => {});
+      cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+      ingestToLakehouse("remittance_transactions", { ref, corridor: input.corridorId, amountNGN: input.amountNGN, fee, receivedAmount, rate, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
 
       return {
         reference: ref,

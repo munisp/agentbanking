@@ -6,6 +6,11 @@ import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import crypto from "crypto";
 
@@ -478,6 +483,19 @@ export const bnplEngineRouter = router({
             },
             { agentCode: session.agentCode }
           ).catch(() => {});
+
+          // TigerBeetle dual-ledger
+          tbCreateTransfer({
+            debitAccountId: "2004", creditAccountId: "2001",
+            amount: Math.round(input.amount * 100),
+            ref, txType: "bnpl_repayment", agentCode: session.agentCode,
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Redis + Lakehouse
+          publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "bnpl_repayment", timestamp: Date.now() }).catch(() => {});
+          dapr.publishEvent("pubsub", "bnpl.repayment.completed", { ref, applicationId: input.applicationId, amount: input.amount, isFullyPaid }).catch(() => {});
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+          ingestToLakehouse("bnpl_repayments", { ref, applicationId: input.applicationId, amount: input.amount, totalPaid: newPaid, isFullyPaid, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
 
           writeAuditLog({
             agentId: session.id,

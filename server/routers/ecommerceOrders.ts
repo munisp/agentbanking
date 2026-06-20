@@ -12,6 +12,11 @@ import {
   type EcommerceCartItem,
 } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { desc, eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 import {
@@ -406,6 +411,18 @@ export const ecommerceOrdersRouter = router({
               timestamp: new Date().toISOString(),
             }
           ).catch(() => {});
+
+          // TigerBeetle GL reversal
+          tbCreateTransfer({
+            debitAccountId: "2001", creditAccountId: "1001",
+            amount: Math.round(orderTotal * 100),
+            ref: refundRef, txType: `ecommerce_${refType}`, agentCode: "system",
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Lakehouse
+          publishTxToFluvio({ txRef: refundRef, agentCode: "system", amount: orderTotal, type: `ecommerce_${refType}`, timestamp: Date.now() }).catch(() => {});
+          dapr.publishEvent("pubsub", `ecommerce.order.${refType}`, { orderId: input.id, amount: orderTotal, refundRef }).catch(() => {});
+          ingestToLakehouse("ecommerce_refunds", { orderId: input.id, amount: orderTotal, type: refType, refundRef, timestamp: new Date().toISOString() }).catch(() => {});
         }
       }
 

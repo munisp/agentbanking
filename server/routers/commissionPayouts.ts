@@ -29,6 +29,12 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -241,6 +247,30 @@ export const commissionPayoutsRouter = router({
           resourceId: String(payout.id),
           status: "success",
         });
+
+        publishEvent("pos.transactions.created", String(payout.id), {
+          type: "commission_payout_requested",
+          payoutId: payout.id,
+          agentId: agent.id,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          timestamp: new Date().toISOString(),
+        }, { agentCode: input.agentCode }).catch(() => {});
+
+        const commRef = `COMM-${payout.id}-${Date.now()}`;
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "4001", creditAccountId: "2001",
+          amount: Math.round(input.amount * 100),
+          ref: commRef, txType: "commission_payout", agentCode: input.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Redis + Lakehouse
+        publishTxToFluvio({ txRef: commRef, agentCode: input.agentCode, amount: input.amount, type: "commission_payout", timestamp: Date.now() }).catch(() => {});
+        dapr.publishEvent("pubsub", "commission.payout.requested", { commRef, payoutId: payout.id, agentId: agent.id, amount: input.amount }).catch(() => {});
+        cacheSet(`agent:commission:${agent.id}`, "", 1).catch(() => {});
+        ingestToLakehouse("commission_payouts", { commRef, payoutId: payout.id, agentId: agent.id, agentCode: input.agentCode, amount: input.amount, timestamp: new Date().toISOString() }).catch(() => {});
 
         return payout;
       } catch (error) {

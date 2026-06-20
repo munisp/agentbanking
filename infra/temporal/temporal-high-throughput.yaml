@@ -1,0 +1,107 @@
+# ==============================================================================
+# Temporal Server — High-Throughput Dynamic Configuration
+# Target: 10K+ workflows/sec, 100K+ activities/sec
+# ==============================================================================
+
+# ── History Service ──────────────────────────────────────────────────────────
+# History shards determine parallelism for workflow execution
+# Rule: 1 shard per 100 active workflows. For 1M active workflows = 10K shards
+system.numHistoryShards:
+  - value: 4096
+    constraints: {}
+
+# ── Workflow Execution ───────────────────────────────────────────────────────
+history.maximumBufferedEvents:
+  - value: 200
+    constraints: {}
+
+history.maximumSignalsPerExecution:
+  - value: 10000
+    constraints: {}
+
+# ── Task Queue Performance ──────────────────────────────────────────────────
+matching.numTaskqueueReadPartitions:
+  - value: 16
+    constraints: {}
+
+matching.numTaskqueueWritePartitions:
+  - value: 16
+    constraints: {}
+
+matching.forwarderMaxOutstandingPolls:
+  - value: 20
+    constraints: {}
+
+matching.forwarderMaxRatePerSecond:
+  - value: 10000
+    constraints: {}
+
+matching.forwarderMaxChildrenPerNode:
+  - value: 20
+    constraints: {}
+
+# ── Rate Limiting ────────────────────────────────────────────────────────────
+frontend.rps:
+  - value: 10000
+    constraints: {}
+
+frontend.namespaceRPS:
+  - value: 5000
+    constraints: {}
+
+frontend.globalNamespaceRPS:
+  - value: 50000
+    constraints: {}
+
+history.rps:
+  - value: 10000
+    constraints: {}
+
+matching.rps:
+  - value: 10000
+    constraints: {}
+
+# ── Persistence ──────────────────────────────────────────────────────────────
+system.visibilityPersistenceMaxReadQPS:
+  - value: 10000
+    constraints: {}
+
+system.visibilityPersistenceMaxWriteQPS:
+  - value: 10000
+    constraints: {}
+
+system.historyPersistenceMaxReadQPS:
+  - value: 30000
+    constraints: {}
+
+system.historyPersistenceMaxWriteQPS:
+  - value: 30000
+    constraints: {}
+
+# ── Archival ─────────────────────────────────────────────────────────────────
+system.archivalProcessorMaxPollRPS:
+  - value: 1000
+    constraints: {}
+
+# ── Worker Tuning ────────────────────────────────────────────────────────────
+worker.ReplicatorConcurrency:
+  - value: 1024
+    constraints: {}
+
+worker.ReplicatorActivityBufferRetryCount:
+  - value: 8
+    constraints: {}
+
+# ── Search Attributes ───────────────────────────────────────────────────────
+system.enableAdvancedVisibility:
+  - value: true
+    constraints: {}
+
+# ── Cache ────────────────────────────────────────────────────────────────────
+history.cacheMaxSize:
+  - value: 65536
+    constraints: {}
+
+history.cacheTTL:
+  - value: "1h"
+    constraints: {}

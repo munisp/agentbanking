@@ -1,0 +1,269 @@
+# ==============================================================================
+# Mojaloop HA — High-Throughput Configuration
+# Optimized for millions of transfers per second
+#
+# KEY FINDING: Mojaloop uses MySQL (Knex.js + mysql2 driver) — NOT PostgreSQL.
+# The SQL migrations use MySQL-specific syntax (AUTO_INCREMENT, ENUM, etc.).
+# PostgreSQL is NOT supported without forking the Mojaloop codebase.
+# Strategy: Tune MySQL aggressively + scale horizontally with ProxySQL.
+# ==============================================================================
+
+version: "3.9"
+
+services:
+  # ── MySQL Primary (tuned with mysql-production.cnf) ────────────────────────
+  mysql-primary:
+    image: percona/percona-server:8.0
+    container_name: mysql-primary
+    restart: unless-stopped
+    ports: ["3306:3306"]
+    volumes:
+      - ./mysql-production.cnf:/etc/mysql/conf.d/production.cnf:ro
+      - mysql-primary-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ML_DB_ROOT_PASSWORD:-ml-root-secret}
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "16", memory: 128G }
+        reservations: { cpus: "8", memory: 64G }
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+      memlock: { soft: -1, hard: -1 }
+
+  # ── MySQL Replica (read scaling) ───────────────────────────────────────────
+  mysql-replica:
+    image: percona/percona-server:8.0
+    container_name: mysql-replica
+    restart: unless-stopped
+    ports: ["3307:3306"]
+    volumes:
+      - ./mysql-production.cnf:/etc/mysql/conf.d/production.cnf:ro
+      - mysql-replica-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ML_DB_ROOT_PASSWORD:-ml-root-secret}
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "16", memory: 128G }
+
+  # ── ProxySQL (MySQL connection pooling + read/write split) ─────────────────
+  proxysql:
+    image: proxysql/proxysql:2.6.5
+    container_name: proxysql
+    restart: unless-stopped
+    ports:
+      - "6033:6033"   # MySQL protocol
+      - "6032:6032"   # Admin
+    volumes:
+      - ./proxysql.cnf:/etc/proxysql.cnf:ro
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  # ── Central Ledger (4 replicas for throughput) ─────────────────────────────
+  central-ledger-1:
+    image: mojaloop/central-ledger:v17.8.1
+    container_name: central-ledger-1
+    restart: unless-stopped
+    ports: ["3001:3001"]
+    environment:
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_ledger"
+      CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_SIDECAR__DISABLED: "true"
+      CLEDG_PORT: 3001
+      CLEDG_ADMIN_PORT: 3002
+      CLEDG_MONGODB__DISABLED: "true"
+      CLEDG_CACHE__CACHE_ENABLED: "true"
+      CLEDG_CACHE__EXPIRES_IN_MS: 60000
+      # ── Connection Pool Tuning ──
+      CLEDG_DATABASE__POOL__MIN: 20
+      CLEDG_DATABASE__POOL__MAX: 100
+      CLEDG_DATABASE__POOL__ACQUIRE_TIMEOUT: 10000
+      CLEDG_DATABASE__POOL__CREATE_TIMEOUT: 10000
+      CLEDG_DATABASE__POOL__IDLE_TIMEOUT: 30000
+      # ── Batch Settlement ──
+      CLEDG_HANDLERS__SETTINGS__BATCH_SIZE: 1000
+      CLEDG_HANDLERS__SETTINGS__PREFETCH: 100
+      # ── Performance ──
+      NODE_OPTIONS: "--max-old-space-size=4096 --max-semi-space-size=128"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+        reservations: { cpus: "2", memory: 4G }
+
+  central-ledger-2:
+    image: mojaloop/central-ledger:v17.8.1
+    container_name: central-ledger-2
+    restart: unless-stopped
+    ports: ["3003:3001"]
+    environment:
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_ledger"
+      CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_SIDECAR__DISABLED: "true"
+      CLEDG_PORT: 3001
+      CLEDG_ADMIN_PORT: 3002
+      CLEDG_CACHE__CACHE_ENABLED: "true"
+      CLEDG_CACHE__EXPIRES_IN_MS: 60000
+      CLEDG_DATABASE__POOL__MIN: 20
+      CLEDG_DATABASE__POOL__MAX: 100
+      NODE_OPTIONS: "--max-old-space-size=4096 --max-semi-space-size=128"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  central-ledger-3:
+    image: mojaloop/central-ledger:v17.8.1
+    container_name: central-ledger-3
+    restart: unless-stopped
+    ports: ["3004:3001"]
+    environment:
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_ledger"
+      CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_SIDECAR__DISABLED: "true"
+      CLEDG_PORT: 3001
+      CLEDG_ADMIN_PORT: 3002
+      CLEDG_CACHE__CACHE_ENABLED: "true"
+      CLEDG_CACHE__EXPIRES_IN_MS: 60000
+      CLEDG_DATABASE__POOL__MIN: 20
+      CLEDG_DATABASE__POOL__MAX: 100
+      NODE_OPTIONS: "--max-old-space-size=4096 --max-semi-space-size=128"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  central-ledger-4:
+    image: mojaloop/central-ledger:v17.8.1
+    container_name: central-ledger-4
+    restart: unless-stopped
+    ports: ["3005:3001"]
+    environment:
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_ledger"
+      CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CLEDG_SIDECAR__DISABLED: "true"
+      CLEDG_PORT: 3001
+      CLEDG_ADMIN_PORT: 3002
+      CLEDG_CACHE__CACHE_ENABLED: "true"
+      CLEDG_CACHE__EXPIRES_IN_MS: 60000
+      CLEDG_DATABASE__POOL__MIN: 20
+      CLEDG_DATABASE__POOL__MAX: 100
+      NODE_OPTIONS: "--max-old-space-size=4096 --max-semi-space-size=128"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  # ── ML API Adapter (2 replicas) ────────────────────────────────────────────
+  ml-api-adapter-1:
+    image: mojaloop/ml-api-adapter:v14.2.3
+    container_name: ml-api-adapter-1
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      MLAPI_ENDPOINT_SOURCE_URL: http://central-ledger-1:3001
+      MLAPI_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      MLAPI_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  ml-api-adapter-2:
+    image: mojaloop/ml-api-adapter:v14.2.3
+    container_name: ml-api-adapter-2
+    restart: unless-stopped
+    ports: ["3010:3000"]
+    environment:
+      MLAPI_ENDPOINT_SOURCE_URL: http://central-ledger-2:3001
+      MLAPI_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      MLAPI_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  # ── Central Settlement (2 replicas) ────────────────────────────────────────
+  central-settlement-1:
+    image: mojaloop/central-settlement:v16.0.0
+    container_name: central-settlement-1
+    restart: unless-stopped
+    ports: ["3007:3007"]
+    environment:
+      CSL_DATABASE_URI: "mysql://central_settlement:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_settlement"
+      CSL_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CSL_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CSL_DATABASE__POOL__MIN: 10
+      CSL_DATABASE__POOL__MAX: 50
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  central-settlement-2:
+    image: mojaloop/central-settlement:v16.0.0
+    container_name: central-settlement-2
+    restart: unless-stopped
+    ports: ["3008:3007"]
+    environment:
+      CSL_DATABASE_URI: "mysql://central_settlement:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/central_settlement"
+      CSL_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CSL_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092,kafka-4:9092,kafka-5:9092
+      CSL_DATABASE__POOL__MIN: 10
+      CSL_DATABASE__POOL__MAX: 50
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  # ── Account Lookup (2 replicas) ────────────────────────────────────────────
+  account-lookup-1:
+    image: mojaloop/account-lookup-service:v15.1.0
+    container_name: account-lookup-1
+    restart: unless-stopped
+    ports: ["4002:4002"]
+    environment:
+      ALS_DATABASE_URI: "mysql://account_lookup:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/account_lookup"
+      ALS_CENTRAL_LEDGER_URL: http://central-ledger-1:3001
+      ALS_DATABASE__POOL__MIN: 10
+      ALS_DATABASE__POOL__MAX: 50
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  account-lookup-2:
+    image: mojaloop/account-lookup-service:v15.1.0
+    container_name: account-lookup-2
+    restart: unless-stopped
+    ports: ["4003:4002"]
+    environment:
+      ALS_DATABASE_URI: "mysql://account_lookup:${ML_DB_PASSWORD:-ml-secret}@proxysql:6033/account_lookup"
+      ALS_CENTRAL_LEDGER_URL: http://central-ledger-2:3001
+      ALS_DATABASE__POOL__MIN: 10
+      ALS_DATABASE__POOL__MAX: 50
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    networks: [pos54-net]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+volumes:
+  mysql-primary-data:
+  mysql-replica-data:
+
+networks:
+  pos54-net:
+    external: true

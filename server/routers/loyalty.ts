@@ -23,7 +23,7 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { agents, loyaltyHistory } from "../../drizzle/schema";
+import { agents, loyaltyHistory, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 import {
   validateAmount,
@@ -38,6 +38,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -742,11 +743,39 @@ export const loyaltyRouter = router({
             pointsCost: input.pointsCost,
           },
         });
+        const redemptionRef = `RDM-${Date.now()}`;
+
+        // GL entry for points redemption (if reward has monetary value)
+        const db = (await getDb())!;
+        if (db) {
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${redemptionRef}`,
+            description: `Loyalty redemption: ${input.rewardName}`,
+            debitAccountId: 5004,
+            creditAccountId: 2005,
+            amount: input.pointsCost,
+            currency: "NGN",
+            referenceType: "loyalty_redemption",
+            referenceId: redemptionRef,
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+        }
+
+        publishEvent("pos.transactions.created", redemptionRef, {
+          type: "loyalty_redemption",
+          rewardId: input.rewardId,
+          rewardName: input.rewardName,
+          pointsCost: input.pointsCost,
+          agentId: session.id,
+          timestamp: new Date().toISOString(),
+        }, { agentCode: session.agentCode }).catch(() => {});
+
         return {
           success: true,
           pointsDeducted: input.pointsCost,
           remainingPoints: agent.loyaltyPoints - input.pointsCost,
-          redemptionRef: `RDM-${Date.now()}`,
+          redemptionRef,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

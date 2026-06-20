@@ -27,6 +27,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -270,6 +271,24 @@ export const agentLoanFacilityRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(agentLoans.id, input.loanId));
+
+        writeAuditLog({
+          agentId: ctx.user?.id ?? 0,
+          agentCode: String(ctx.user?.id ?? "system"),
+          action: "LOAN_APPROVED",
+          resource: "agentLoanFacility",
+          resourceId: String(input.loanId),
+          status: "success",
+          metadata: { loanId: input.loanId },
+        }).catch(() => {});
+
+        publishEvent("pos.transactions.created", String(input.loanId), {
+          type: "loan_approved",
+          loanId: input.loanId,
+          approvedBy: ctx.user?.id,
+          timestamp: new Date().toISOString(),
+        }, { agentCode: String(ctx.user?.id ?? "system") }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -284,34 +303,75 @@ export const agentLoanFacilityRouter = router({
   // Disburse a loan (credit agent float)
   disburse: protectedProcedure
     .input(z.object({ loanId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        const [loan] = await db
-          .select()
-          .from(agentLoans)
-          .where(eq(agentLoans.id, input.loanId))
-          .limit(100);
-        if (!loan) throw new Error("Loan not found");
-        if (loan.status !== "approved")
-          throw new Error("Loan must be approved before disbursement");
-        // Credit agent float
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`"floatBalance" + ${loan.principalAmount}`,
-          })
-          .where(eq(agents.id, loan.agentId));
-        await db
-          .update(agentLoans)
-          .set({
-            status: "disbursed",
-            disbursedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(agentLoans.id, input.loanId));
-        return { success: true, disbursedAmount: loan.principalAmount };
+
+        return await withTransaction(async (tx) => {
+          // Lock loan row
+          const loanResult = await tx.execute(
+            sql`SELECT * FROM "agent_loans" WHERE id = ${input.loanId} FOR UPDATE`
+          );
+          const loan = (loanResult as any).rows?.[0];
+          if (!loan) throw new Error("Loan not found");
+          if (loan.status !== "approved")
+            throw new Error("Loan must be approved before disbursement");
+
+          // Lock agent row and credit float
+          await tx.execute(
+            sql`SELECT id FROM agents WHERE id = ${loan.agent_id} FOR UPDATE`
+          );
+          await tx.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${Number(loan.principal_amount)} WHERE id = ${loan.agent_id}`
+          );
+
+          // Update loan status
+          await tx.execute(
+            sql`UPDATE "agent_loans" SET status = 'disbursed', disbursed_at = NOW(), updated_at = NOW() WHERE id = ${input.loanId}`
+          );
+
+          // GL entry: Debit Agent Float (2001), Credit Loan Payable (2004)
+          const ref = `LOAN-DISB-${input.loanId}-${Date.now()}`;
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Loan disbursement #${input.loanId}`,
+            debitAccountId: 2001,
+            creditAccountId: 2004,
+            amount: Math.round(Number(loan.principal_amount) * 100),
+            currency: "NGN",
+            referenceType: "loan_disbursement",
+            referenceId: ref,
+            postedBy: String(ctx.user?.id ?? "system"),
+            status: "posted",
+          });
+
+          // Kafka event
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "loan_disbursement",
+              loanId: input.loanId,
+              agentId: loan.agent_id,
+              amount: Number(loan.principal_amount),
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: String(ctx.user?.id ?? "system") }
+          ).catch(() => {});
+
+          writeAuditLog({
+            agentId: loan.agent_id,
+            agentCode: String(ctx.user?.id ?? "system"),
+            action: "LOAN_DISBURSED",
+            resource: "agentLoanFacility",
+            resourceId: ref,
+            status: "success",
+            metadata: { loanId: input.loanId, amount: Number(loan.principal_amount) },
+          }).catch(() => {});
+
+          return { success: true, disbursedAmount: loan.principal_amount, ref };
+        }, "agentLoanFacility.disburse");
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -324,35 +384,77 @@ export const agentLoanFacilityRouter = router({
 
   // Record repayment
   recordRepayment: protectedProcedure
-    .input(z.object({ loanId: z.number(), amount: z.number().min(0).min(1) }))
-    .mutation(async ({ input }) => {
+    .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        const [loan] = await db
-          .select()
-          .from(agentLoans)
-          .where(eq(agentLoans.id, input.loanId))
-          .limit(100);
-        if (!loan) throw new Error("Loan not found");
-        const newRepaid =
-          parseFloat(String(loan.amountRepaid || "0")) + input.amount;
-        const totalRepayable = parseFloat(String(loan.totalRepayable));
-        const isFullyRepaid = newRepaid >= totalRepayable;
-        await db
-          .update(agentLoans)
-          .set({
-            amountRepaid: String(newRepaid),
-            status: isFullyRepaid ? "completed" : "repaying",
-            updatedAt: new Date(),
-          })
-          .where(eq(agentLoans.id, input.loanId));
-        return {
-          success: true,
-          amountRepaid: newRepaid,
-          remaining: totalRepayable - newRepaid,
-          fullyRepaid: isFullyRepaid,
-        };
+
+        return await withTransaction(async (tx) => {
+          // Lock loan row
+          const loanResult = await tx.execute(
+            sql`SELECT * FROM "agent_loans" WHERE id = ${input.loanId} FOR UPDATE`
+          );
+          const loan = (loanResult as any).rows?.[0];
+          if (!loan) throw new Error("Loan not found");
+
+          const newRepaid = parseFloat(String(loan.amount_repaid || "0")) + input.amount;
+          const totalRepayable = parseFloat(String(loan.total_repayable));
+          const isFullyRepaid = newRepaid >= totalRepayable;
+
+          await tx.execute(
+            sql`UPDATE "agent_loans" SET amount_repaid = ${String(newRepaid)}, status = ${isFullyRepaid ? "completed" : "repaying"}, updated_at = NOW() WHERE id = ${input.loanId}`
+          );
+
+          // GL entry: Debit Loan Payable (2004), Credit Agent Float (2001)
+          const ref = `LOAN-REPAY-${input.loanId}-${Date.now()}`;
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Loan repayment #${input.loanId}`,
+            debitAccountId: 2004,
+            creditAccountId: 2001,
+            amount: Math.round(input.amount * 100),
+            currency: "NGN",
+            referenceType: "loan_repayment",
+            referenceId: ref,
+            postedBy: String(ctx.user?.id ?? "system"),
+            status: "posted",
+          });
+
+          // Kafka event
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "loan_repayment",
+              loanId: input.loanId,
+              agentId: loan.agent_id,
+              amount: input.amount,
+              totalRepaid: newRepaid,
+              isFullyRepaid,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: String(ctx.user?.id ?? "system") }
+          ).catch(() => {});
+
+          writeAuditLog({
+            agentId: loan.agent_id,
+            agentCode: String(ctx.user?.id ?? "system"),
+            action: "LOAN_REPAYMENT",
+            resource: "agentLoanFacility",
+            resourceId: ref,
+            status: "success",
+            metadata: { loanId: input.loanId, amount: input.amount, isFullyRepaid },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            ref,
+            amountRepaid: newRepaid,
+            remaining: Math.max(0, totalRepayable - newRepaid),
+            fullyRepaid: isFullyRepaid,
+          };
+        }, "agentLoanFacility.recordRepayment");
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { gl_journal_entries } from "../../drizzle/schema";
 import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent } from "../kafkaClient";
 
 import {
   validateAmount,
@@ -261,6 +263,34 @@ export const stablecoinRailsRouter = router({
 
         metadata: { input: typeof input === "object" ? input : {} },
       });
+
+      // GL entry: Debit Stablecoin Holding (1003), Credit Agent Float (2001)
+      if (txAmount > 0) {
+        const ref = `STABLE-${id}-${Date.now()}`;
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${ref}`,
+          description: `Stablecoin wallet creation with ${txAmount}`,
+          debitAccountId: 1003,
+          creditAccountId: 2001,
+          amount: Math.round(txAmount * 100),
+          currency: "NGN",
+          referenceType: "stablecoin_creation",
+          referenceId: ref,
+          postedBy:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+          status: "posted",
+        });
+
+        publishEvent("pos.transactions.created", ref, {
+          type: "stablecoin_created",
+          walletId: id,
+          amount: txAmount,
+          walletAddress: input.data.walletAddress,
+          timestamp: new Date().toISOString(),
+        }, { agentCode: "system" }).catch(() => {});
+      }
 
       return { id, status: "created" };
     }),

@@ -29,6 +29,7 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -241,6 +242,15 @@ export const commissionPayoutsRouter = router({
           resourceId: String(payout.id),
           status: "success",
         });
+
+        publishEvent("pos.transactions.created", String(payout.id), {
+          type: "commission_payout_requested",
+          payoutId: payout.id,
+          agentId: agent.id,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          timestamp: new Date().toISOString(),
+        }, { agentCode: input.agentCode }).catch(() => {});
 
         return payout;
       } catch (error) {

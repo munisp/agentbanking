@@ -8,8 +8,10 @@ import {
   ecommerceInventory,
   ecommerceCartItems,
   ecommerceCarts,
+  gl_journal_entries,
   type EcommerceCartItem,
 } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
 import { desc, eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 import {
@@ -374,6 +376,38 @@ export const ecommerceOrdersRouter = router({
         .set(updates)
         .where(eq(ecommerceOrders.id, input.id))
         .returning();
+
+      // GL reversal on refund/cancellation
+      if (input.status === "refunded" || input.status === "cancelled") {
+        const orderTotal = Number(updated.totalAmount ?? 0);
+        if (orderTotal > 0) {
+          const refType = input.status === "refunded" ? "refund" : "cancellation";
+          const refundRef = `ECOM-${refType.toUpperCase()}-${Date.now()}-${input.id}`;
+          await database.insert(gl_journal_entries).values({
+            entryNumber: `JE-${refundRef}`,
+            description: `E-commerce order ${refType} #${input.id}`,
+            debitAccountId: 5003, // E-commerce Refund Expense
+            creditAccountId: 1001, // Cash refunded to customer
+            amount: Math.round(orderTotal * 100),
+            currency: "NGN",
+            referenceType: "ecommerce_order",
+            referenceId: String(input.id),
+            postedBy: "system",
+            status: "posted",
+          });
+
+          publishEvent(
+            "pos.transactions.reversed",
+            refundRef,
+            {
+              type: `ecommerce_${refType}`,
+              orderId: input.id,
+              amount: orderTotal,
+              timestamp: new Date().toISOString(),
+            }
+          ).catch(() => {});
+        }
+      }
 
       // On cancellation, release inventory
       if (input.status === "cancelled") {

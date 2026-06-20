@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions, gl_journal_entries, agents } from "../../drizzle/schema";
+import { writeAuditLog } from "../db";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -206,6 +207,118 @@ export const transactionReversalManagerRouter = router({
           message: error instanceof Error ? error.message : "Unknown error",
         });
       }
+    }),
+
+  executeReversal: protectedProcedure
+    .input(
+      z.object({
+        transactionId: z.number(),
+        reason: z.string().min(5).max(500),
+        approvedBy: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return withTransaction(async (tx) => {
+        const db = tx ?? (await getDb())!;
+
+        // Lock and fetch original transaction
+        const txRows = await db.execute(
+          sql`SELECT * FROM transactions WHERE id = ${input.transactionId} FOR UPDATE`
+        );
+        const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
+        if (!originalTx) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Transaction not found" });
+        }
+        if (originalTx.status === "reversed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction already reversed" });
+        }
+
+        const amount = Number(originalTx.amount);
+        const agentId = originalTx.agent_id;
+        const txType = originalTx.type;
+        const reversalRef = `REV-${Date.now()}-${input.transactionId}`;
+
+        // Reverse the balance change
+        if (txType === "Cash In") {
+          // Original credited float, so debit it back
+          await db.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(amount)} WHERE id = ${agentId}`
+          );
+        } else if (txType === "Cash Out") {
+          // Original debited float, so credit it back
+          await db.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${String(amount)} WHERE id = ${agentId}`
+          );
+        }
+
+        // Mark original transaction as reversed
+        await db
+          .update(transactions)
+          .set({ status: "reversed" })
+          .where(eq(transactions.id, input.transactionId));
+
+        // Record reversal transaction
+        const [reversalRecord] = await db
+          .insert(transactions)
+          .values({
+            ref: reversalRef,
+            agentId,
+            type: `Reversal - ${txType}`,
+            amount: String(amount),
+            fee: "0",
+            commission: "0",
+            currency: "NGN",
+            channel: "System",
+            status: "success",
+            metadata: {
+              originalTransactionId: input.transactionId,
+              originalRef: originalTx.ref,
+              reason: input.reason,
+              approvedBy: input.approvedBy,
+            },
+          })
+          .returning();
+
+        // GL reversal entry (opposite of original)
+        const isDebitReversal = txType === "Cash In";
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${reversalRef}`,
+          description: `Reversal of ${originalTx.ref}: ${input.reason}`,
+          debitAccountId: isDebitReversal ? 2001 : 1001,
+          creditAccountId: isDebitReversal ? 1001 : 2001,
+          amount: Math.round(amount * 100),
+          currency: "NGN",
+          referenceType: "reversal",
+          referenceId: String(reversalRecord.id),
+          postedBy: input.approvedBy ?? "system",
+          status: "posted",
+        });
+
+        // Kafka event
+        publishEvent(
+          "pos.transactions.reversed",
+          reversalRef,
+          {
+            reversalRef,
+            originalRef: originalTx.ref,
+            originalTransactionId: input.transactionId,
+            amount,
+            type: txType,
+            reason: input.reason,
+            agentId,
+            timestamp: new Date().toISOString(),
+          }
+        ).catch(() => {});
+
+        return {
+          success: true,
+          reversalRef,
+          reversalId: reversalRecord.id,
+          originalRef: originalTx.ref,
+          amount,
+          timestamp: new Date().toISOString(),
+        };
+      }, "executeReversal");
     }),
 
   getStats: protectedProcedure.query(async () => {

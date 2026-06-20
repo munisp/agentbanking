@@ -123,38 +123,23 @@ export const floatTopUpRouter = router({
       z.object({
         amount: z.number().min(0).positive().max(10_000_000),
         notes: z.string().max(256).optional(),
+        idempotencyKey: z.string().min(16).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
+        });
+
+      const executeFn = async () => {
+      const txAmount = input.amount;
       const fees = calculateFee(txAmount, "floatTopUp");
       const commission = calculateCommission(fees.fee, "floatTopUp");
       const tax = calculateTax(fees.fee, "vat");
       try {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session)
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Agent session required",
-          });
 
         const db = (await getDb())!;
         if (!db)
@@ -248,6 +233,12 @@ export const floatTopUpRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
+      }; // end executeFn
+
+      if (input.idempotencyKey) {
+        return withIdempotency(input.idempotencyKey, executeFn);
+      }
+      return executeFn();
     }),
 
   // ── List agent's own requests ─────────────────────────────────────────────

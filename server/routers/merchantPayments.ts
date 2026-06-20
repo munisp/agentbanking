@@ -101,6 +101,7 @@ export const merchantPaymentsRouter = router({
         customerPhone: z.string().max(20).optional(),
         customerName: z.string().max(128).optional(),
         narration: z.string().max(256).optional(),
+        idempotencyKey: z.string().min(16).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -233,6 +234,25 @@ export const merchantPaymentsRouter = router({
             agentCommission,
           },
         });
+
+        // Kafka event
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "merchant_payment",
+            ref,
+            transactionId: tx.id,
+            agentId: session.id,
+            merchantCode: input.merchantCode,
+            merchantName: merchant.businessName,
+            amount: input.amount,
+            merchantFee,
+            agentCommission,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
 
         return {
           ref,

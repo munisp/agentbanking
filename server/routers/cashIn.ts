@@ -19,6 +19,8 @@ import {
   calculateTax,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { eventBus, EVENTS } from "../lib/eventBus";
 
 /**
  * Cash In Router — Agent accepts physical cash from customer and credits their account.
@@ -86,23 +88,23 @@ export const cashInRouter = router({
               message: `Daily limit exceeded. Today: ₦${limitCheck.todayTotal.toLocaleString()}, Limit: ₦${limitCheck.dailyLimit.toLocaleString()}, Remaining: ₦${limitCheck.remaining.toLocaleString()}`,
             });
 
-          // Check agent float limit (can't exceed max float)
-          const [agent] = await db
-            .select({
-              floatBalance: agents.floatBalance,
-              floatLimit: agents.floatLimit,
-              floatLocked: agents.floatLocked,
-            })
-            .from(agents)
-            .where(eq(agents.id, session.id))
-            .limit(1);
+          // Lock agent row to prevent concurrent balance race conditions
+          const agentRows = await db.execute(
+            sql`SELECT float_balance, float_limit, float_locked FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          const agent = agentRow ? {
+            floatBalance: agentRow.float_balance,
+            floatLimit: agentRow.float_limit,
+            floatLocked: agentRow.float_locked,
+          } : null;
 
           if (!agent)
             throw new TRPCError({
               code: "NOT_FOUND",
               message: "Agent not found",
             });
-          if (agent.floatLocked)
+          if (agent.floatLocked === true || agent.floatLocked === "true")
             throw new TRPCError({
               code: "FORBIDDEN",
               message: "Agent float is locked",
@@ -115,67 +117,63 @@ export const cashInRouter = router({
               message: `Float limit exceeded. Current: ₦${Number(agent.floatBalance).toLocaleString()}, Limit: ₦${Number(agent.floatLimit).toLocaleString()}`,
             });
 
-          // Wrap all DB writes in a transaction for ACID guarantees
-          const txRecord = await withTransaction(async (tx: typeof db) => {
-            // Credit agent float balance
-            await tx
-              .update(agents)
-              .set({
-                floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netAmount)}`,
-              })
-              .where(eq(agents.id, session.id));
+          // All writes use the same transaction (tx from outer withTransaction)
+          // Credit agent float balance
+          await db
+            .update(agents)
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(netAmount)}`,
+            })
+            .where(eq(agents.id, session.id));
 
-            // Record transaction
-            const [record] = await tx
-              .insert(transactions)
-              .values({
-                ref,
-                idempotencyKey: input.idempotencyKey,
-                agentId: session.id,
-                type: "Cash In",
-                amount: String(input.amount),
-                fee: String(feeResult.fee),
-                commission: String(commResult.agentShare),
-                currency: "NGN",
-                customerName: input.customerName,
-                customerPhone: input.customerPhone,
-                customerAccount: input.customerAccount ?? null,
-                channel: "Cash",
-                status: "success",
-                metadata: {
-                  narration: input.narration,
-                  feeBreakdown: feeResult.breakdown,
-                },
-              })
-              .returning();
-
-            // Double-entry journal: Debit Cash-on-Hand, Credit Agent Float
-            await tx.insert(gl_journal_entries).values({
-              entryNumber: `JE-${ref}`,
-              description: `Cash In deposit from ${input.customerName}`,
-              debitAccountId: 1001, // Cash on Hand (asset)
-              creditAccountId: 2001, // Agent Float Liability
-              amount: Math.round(netAmount * 100), // Store in kobo
+          // Record transaction
+          const [txRecord] = await db
+            .insert(transactions)
+            .values({
+              ref,
+              idempotencyKey: input.idempotencyKey,
+              agentId: session.id,
+              type: "Cash In",
+              amount: String(input.amount),
+              fee: String(feeResult.fee),
+              commission: String(commResult.agentShare),
               currency: "NGN",
-              referenceType: "transaction",
-              referenceId: String(record.id),
-              postedBy: session.agentCode,
-              status: "posted",
-            });
+              customerName: input.customerName,
+              customerPhone: input.customerPhone,
+              customerAccount: input.customerAccount ?? null,
+              channel: "Cash",
+              status: "success",
+              metadata: {
+                narration: input.narration,
+                feeBreakdown: feeResult.breakdown,
+              },
+            })
+            .returning();
 
-            // Credit agent commission
-            await tx
-              .update(agents)
-              .set({
-                commissionBalance: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commResult.agentShare)}`,
-              })
-              .where(eq(agents.id, session.id));
+          // Double-entry journal: Debit Cash-on-Hand, Credit Agent Float
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Cash In deposit from ${input.customerName}`,
+            debitAccountId: 1001, // Cash on Hand (asset)
+            creditAccountId: 2001, // Agent Float Liability
+            amount: Math.round(netAmount * 100), // Store in kobo
+            currency: "NGN",
+            referenceType: "transaction",
+            referenceId: String(txRecord.id),
+            postedBy: session.agentCode,
+            status: "posted",
+          });
 
-            return record;
-          }, "cashIn");
+          // Credit agent commission
+          await db
+            .update(agents)
+            .set({
+              commissionBalance: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commResult.agentShare)}`,
+            })
+            .where(eq(agents.id, session.id));
 
-          // Audit trail
-          await writeAuditLog({
+          // Audit trail (fire-and-forget, outside transaction)
+          writeAuditLog({
             agentId: session.id,
             agentCode: session.agentCode,
             action: "CASH_IN",
@@ -190,6 +188,35 @@ export const cashInRouter = router({
               netAmount,
               customerPhone: input.customerPhone,
             },
+          }).catch(() => {});
+
+          // Publish Kafka event for downstream consumers
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "cash_in",
+              ref,
+              transactionId: txRecord.id,
+              agentId: session.id,
+              amount: input.amount,
+              fee: feeResult.fee,
+              commission: commResult.agentShare,
+              netAmount,
+              currency: "NGN",
+              customerPhone: input.customerPhone,
+              customerName: input.customerName,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
+
+          // Emit internal event for real-time processing
+          eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
+            type: "cash_in",
+            ref,
+            amount: input.amount,
+            agentId: session.id,
           });
 
           return {

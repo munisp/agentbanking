@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { disputes } from "../../drizzle/schema";
+import { disputes, gl_journal_entries } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import crypto from "crypto";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
@@ -280,11 +281,46 @@ export const disputeRefundRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      const refundAmount = input?.refundAmount ?? input?.amount ?? 0;
+      const refundRef = `REF-${Date.now()}-${crypto.randomInt(10000)}`;
+
+      // GL reversal entry for the refund
+      if (refundAmount > 0) {
+        const db = (await getDb())!;
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${refundRef}`,
+          description: `Dispute refund for ${input?.transactionRef ?? input?.id ?? "unknown"}`,
+          debitAccountId: 5002, // Refund Expense
+          creditAccountId: 1001, // Cash on Hand (returned to customer)
+          amount: Math.round(refundAmount * 100),
+          currency: "NGN",
+          referenceType: "dispute",
+          referenceId: String(input?.id ?? refundRef),
+          postedBy: "system",
+          status: "posted",
+        });
+
+        publishEvent(
+          "pos.disputes.resolved",
+          refundRef,
+          {
+            type: "refund",
+            refundRef,
+            disputeId: input?.id,
+            transactionRef: input?.transactionRef,
+            refundAmount,
+            reason: input?.reason,
+            timestamp: new Date().toISOString(),
+          }
+        ).catch(() => {});
+      }
+
       return {
         success: true,
         action: "requestRefund",
         id: input?.id ?? null,
-        refundRef: `REF-${Date.now()}`,
+        refundRef,
+        refundAmount,
         timestamp: new Date().toISOString(),
       };
     }),

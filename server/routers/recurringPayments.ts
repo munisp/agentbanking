@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { publishEvent } from "../kafkaClient";
 import { platformSettings, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -113,6 +114,7 @@ export const recurringPaymentsRouter = router({
         startDate: z.string(),
         endDate: z.string().optional(),
         description: z.string().max(256).optional(),
+        idempotencyKey: z.string().min(16).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -183,6 +185,23 @@ export const recurringPaymentsRouter = router({
             frequency: input.frequency,
           },
         });
+
+        // Kafka event
+        publishEvent(
+          "pos.transactions.created",
+          schedule.id,
+          {
+            type: "recurring_payment_created",
+            scheduleId: schedule.id,
+            agentId: session.id,
+            paymentType: input.type,
+            amount: input.amount,
+            frequency: input.frequency,
+            startDate: input.startDate,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
 
         return schedule;
       } catch (error) {

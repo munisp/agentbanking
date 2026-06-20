@@ -2,7 +2,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions, gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -94,39 +95,79 @@ const approve = protectedProcedure
     const fees = calculateFee(txAmount, "transfer");
     const commission = calculateCommission(fees.fee, "transfer");
     const tax = calculateTax(fees.fee, "vat");
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approve: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approve completed",
-          timestamp: new Date().toISOString(),
-        };
+    return withTransaction(async (tx) => {
+      const db = tx ?? (await getDb())!;
+      if (!input.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction ID required" });
       }
+
+      // Lock original transaction
+      const txRows = await db.execute(
+        sql`SELECT * FROM transactions WHERE id = ${input.id} FOR UPDATE`
+      );
+      const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
+      if (!originalTx) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "approve: record not found" });
+      }
+
+      const amount = Number(originalTx.amount);
+      const reversalRef = `REVAPPR-${Date.now()}-${input.id}`;
+
+      // Mark as reversed
+      await db
+        .update(transactions)
+        .set({ status: "reversed" })
+        .where(eq(transactions.id, input.id));
+
+      // Restore float balance
+      const agentId = originalTx.agent_id;
+      const txType = originalTx.type;
+      if (txType === "Cash In" && agentId) {
+        await db.execute(
+          sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(amount)} WHERE id = ${agentId}`
+        );
+      } else if (txType === "Cash Out" && agentId) {
+        await db.execute(
+          sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${String(amount)} WHERE id = ${agentId}`
+        );
+      }
+
+      // GL reversal entry
+      const isDebitReversal = txType === "Cash In";
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${reversalRef}`,
+        description: `Approved reversal of tx #${input.id}`,
+        debitAccountId: isDebitReversal ? 2001 : 1001,
+        creditAccountId: isDebitReversal ? 1001 : 2001,
+        amount: Math.round(amount * 100),
+        currency: "NGN",
+        referenceType: "reversal",
+        referenceId: String(input.id),
+        postedBy: "system",
+        status: "posted",
+      });
+
+      publishEvent(
+        "pos.transactions.reversed",
+        reversalRef,
+        {
+          reversalRef,
+          originalTransactionId: input.id,
+          amount,
+          type: txType,
+          approvalData: input.data,
+          timestamp: new Date().toISOString(),
+        }
+      ).catch(() => {});
+
       return {
         success: true,
-        message: "approve completed",
+        id: input.id,
+        reversalRef,
+        message: "Reversal approved and executed",
         timestamp: new Date().toISOString(),
       };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    }, "reversalApproval.approve");
   });
 const reject = protectedProcedure
   .input(

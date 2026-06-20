@@ -12,7 +12,14 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { checkDailyLimit } from "../lib/cbnLimits";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
+import {
+  calculateFee,
+  calculateCommission,
+  calculateTax,
+} from "../lib/domainCalculations";
+import crypto from "crypto";
 import { eq, desc, and, sql, gte, count, sum } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -140,15 +147,15 @@ export const crossBorderRemittanceRouter = router({
         recipientPhone: z.string().min(10).max(15),
         recipientWallet: z.string().max(50).optional(),
         purpose: z.string().min(1).max(200),
+        idempotencyKey: z.string().min(16).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const db = (await getDb())!;
       const session = await getAgentFromCookie(ctx.req);
       if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
       const corridor = CORRIDORS[input.corridorId as keyof typeof CORRIDORS];
-      if (!corridor) throw new TRPCError({ code: "BAD_REQUEST" });
+      if (!corridor) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid corridor" });
 
       const fee = Math.max(
         corridor.minFee,
@@ -160,7 +167,111 @@ export const crossBorderRemittanceRouter = router({
 
       const ref = `XBDR-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
-      await writeAuditLog({
+      const idempFn = async () => {
+        return withTransaction(async (tx) => {
+          const db = tx ?? (await getDb())!;
+
+          // CBN cross-border limit check
+          const limitCheck = await checkDailyLimit(
+            db,
+            session.id,
+            session.tier,
+            input.amountNGN
+          );
+          if (!limitCheck.allowed) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Daily cross-border limit exceeded. Remaining: ₦${limitCheck.remaining.toLocaleString()}`,
+            });
+          }
+
+          // Lock agent row and check float balance
+          const agentRows = await db.execute(
+            sql`SELECT float_balance, float_locked FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          if (!agentRow) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+          if (agentRow.float_locked === true || agentRow.float_locked === "true") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Agent float is locked" });
+          }
+          if (Number(agentRow.float_balance) < input.amountNGN) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Insufficient float. Available: ₦${Number(agentRow.float_balance).toLocaleString()}, Required: ₦${input.amountNGN.toLocaleString()}`,
+            });
+          }
+
+          // Debit agent float
+          await db.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(input.amountNGN)} WHERE id = ${session.id}`
+          );
+
+          // Record transaction
+          const [txRecord] = await db
+            .insert(transactions)
+            .values({
+              ref,
+              agentId: session.id,
+              type: "Cross Border Remittance",
+              amount: String(input.amountNGN),
+              fee: String(fee),
+              commission: "0",
+              currency: "NGN",
+              channel: "Remittance",
+              status: "pending",
+              customerName: input.recipientName,
+              customerPhone: input.recipientPhone,
+              metadata: {
+                corridorId: input.corridorId,
+                receivedAmount,
+                receivedCurrency: corridor.destination,
+                exchangeRate: rate,
+                purpose: input.purpose,
+                recipientWallet: input.recipientWallet,
+              },
+            })
+            .returning();
+
+          // GL double-entry: Debit Remittance Payable, Credit Agent Float
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Cross-border remittance to ${input.recipientName} (${corridor.name})`,
+            debitAccountId: 3001, // Remittance Payable
+            creditAccountId: 2001, // Agent Float
+            amount: Math.round(input.amountNGN * 100),
+            currency: "NGN",
+            referenceType: "remittance",
+            referenceId: String(txRecord.id),
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          // GL entry for fee revenue
+          if (fee > 0) {
+            await db.insert(gl_journal_entries).values({
+              entryNumber: `JE-FEE-${ref}`,
+              description: `Remittance fee for ${ref}`,
+              debitAccountId: 2001, // Agent Float (fee deducted)
+              creditAccountId: 4001, // Fee Revenue
+              amount: Math.round(fee * 100),
+              currency: "NGN",
+              referenceType: "remittance_fee",
+              referenceId: String(txRecord.id),
+              postedBy: session.agentCode,
+              status: "posted",
+            });
+          }
+
+          return txRecord;
+        }, "crossBorderRemittance.send");
+      };
+
+      const txRecord = input.idempotencyKey
+        ? await withIdempotency(input.idempotencyKey, idempFn)
+        : await idempFn();
+
+      // Audit + Kafka (fire-and-forget, outside transaction)
+      writeAuditLog({
         agentId: session.id,
         agentCode: session.agentCode,
         action: "CROSS_BORDER_REMITTANCE",
@@ -175,11 +286,32 @@ export const crossBorderRemittanceRouter = router({
           currency: corridor.destination,
           recipient: input.recipientName,
         },
-      });
+      }).catch(() => {});
+
+      publishEvent(
+        "pos.transactions.created",
+        ref,
+        {
+          type: "cross_border_remittance",
+          ref,
+          transactionId: txRecord.id,
+          agentId: session.id,
+          corridor: input.corridorId,
+          amountNGN: input.amountNGN,
+          fee,
+          receivedAmount,
+          receivedCurrency: corridor.destination,
+          exchangeRate: rate,
+          recipientName: input.recipientName,
+          timestamp: new Date().toISOString(),
+        },
+        { agentCode: session.agentCode }
+      ).catch(() => {});
 
       return {
         reference: ref,
         status: "pending",
+        transactionId: txRecord.id,
         corridorId: input.corridorId,
         sendAmount: input.amountNGN,
         fee,

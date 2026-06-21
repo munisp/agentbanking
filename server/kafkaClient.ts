@@ -87,7 +87,11 @@ export type KafkaTopic =
   | "pos.kyc.rejected"
   | "pos.disputes.opened"
   | "pos.disputes.resolved"
-  | "pos.fraud.alert_raised";
+  | "pos.fraud.alert_raised"
+  | "insider.approval.requested"
+  | "insider.approval.actioned"
+  | "insider.threat.velocity"
+  | "insider.auth.step-up";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

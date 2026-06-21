@@ -1340,6 +1340,14 @@ export const transactionsRouter = router({
           });
         }
 
+        // Separation of duties: approver cannot be the same agent who requested the reversal
+        if (tx.agentId === agent.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Separation of duties violation: cannot approve your own reversal request",
+          });
+        }
+
         await db
           .update(transactions)
           .set({

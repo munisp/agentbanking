@@ -248,7 +248,7 @@ export const chargebackManagementRouter = router({
       z.object({
         id: z.number(),
         resolution: z.enum(["accepted", "rejected", "partial"]),
-        refundAmount: z.number().optional(),
+        refundAmount: z.number().positive().optional(),
       })
     )
     .mutation(async ({ input }) => {

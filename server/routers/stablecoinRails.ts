@@ -233,10 +233,10 @@ export const stablecoinRailsRouter = router({
         });
       }
       const amount = Number(input.data.amount);
-      if (amount !== undefined && amount < 0) {
+      if (amount !== undefined && (isNaN(amount) || amount < 0)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "amount cannot be negative",
+          message: "amount must be a non-negative number",
         });
       }
       const jsonStr = JSON.stringify(input.data);

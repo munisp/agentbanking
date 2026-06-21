@@ -272,19 +272,19 @@ export const airtimeVendingRouter = router({
             message: "Cannot detect provider for this number",
           });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        const commission = Math.round(input.amount * 0.04);
+        const ref = `AIR-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
+
+        // Atomic balance check + debit with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",
           });
-
-        const commission = Math.round(input.amount * 0.04);
-        const ref = `AIR-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
           .insert(transactions)
@@ -306,7 +306,6 @@ export const airtimeVendingRouter = router({
           .update(agents)
           .set({
             floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
@@ -436,19 +435,19 @@ export const airtimeVendingRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < bundle.price)
+        const commission = Math.round(bundle.price * 0.03);
+        const ref = `DAT-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
+
+        // Atomic balance check + debit with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < bundle.price)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",
           });
-
-        const commission = Math.round(bundle.price * 0.03);
-        const ref = `DAT-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
           .insert(transactions)
@@ -476,7 +475,6 @@ export const airtimeVendingRouter = router({
           .update(agents)
           .set({
             floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(bundle.price)}`,
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 

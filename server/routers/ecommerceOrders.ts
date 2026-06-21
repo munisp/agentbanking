@@ -365,6 +365,15 @@ export const ecommerceOrdersRouter = router({
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
+      // Lock order row with FOR UPDATE to prevent double-refund race condition
+      const orderRows = await database.execute(
+        sql`SELECT id, status, total_amount FROM ecommerce_orders WHERE id = ${input.id} FOR UPDATE`
+      );
+      const currentOrder = (orderRows as any).rows?.[0] ?? (orderRows as any)[0];
+      if (!currentOrder) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+      if ((input.status === "refunded" || input.status === "cancelled") && (currentOrder.status === "refunded" || currentOrder.status === "cancelled"))
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Order already ${currentOrder.status}` });
+
       const updates: Record<string, unknown> = {
         status: input.status,
         updatedAt: new Date(),

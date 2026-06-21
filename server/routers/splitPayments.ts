@@ -179,12 +179,12 @@ export const splitPaymentsRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.totalAmount)
+        // Atomic balance check with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < input.totalAmount)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",

@@ -1,245 +1,288 @@
-// Audit Chain — Sprint 76
-// Tamper-proof audit logging with hash chain verification
-// Each entry is cryptographically linked to the previous entry
+//! Cryptographic Audit Chain Service
+//!
+//! Provides tamper-proof audit logging using SHA-256 hash chains.
+//! Each audit entry includes the hash of the previous entry, making it
+//! computationally infeasible for insiders to modify or delete log entries
+//! without detection.
+//!
+//! Features:
+//! - Hash-chain integrity (each entry references previous hash)
+//! - Real-time SIEM forwarding (Splunk/ELK compatible)
+//! - Chain verification endpoint (detect tampering)
+//! - Privileged action flagging (insider threat patterns)
 
-// PERSISTENCE: This service uses PostgreSQL (sqlx) for data persistence.
-// Currently uses in-memory state — data is lost on restart.
+use actix_web::{web, App, HttpServer, HttpResponse, middleware};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
+use std::sync::Mutex;
+use uuid::Uuid;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
-
-const SERVICE_NAME: &str = "audit-chain";
-const SERVICE_VERSION: &str = "1.0.0";
-const DEFAULT_PORT: u16 = 9111;
-
-#[derive(Clone, Debug)]
-struct AuditEntry {
-    id: u64,
-    timestamp: u64,
-    actor_id: String,
-    actor_role: String,
-    action: String,
-    resource: String,
-    resource_id: String,
-    details: String,
-    ip_address: String,
-    data_hash: String,
-    prev_hash: String,
-    chain_hash: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: String,
+    pub sequence: u64,
+    pub timestamp: String,
+    pub agent_id: i64,
+    pub agent_code: String,
+    pub action: String,
+    pub resource: String,
+    pub resource_id: String,
+    pub ip_address: String,
+    pub user_agent: String,
+    pub metadata: serde_json::Value,
+    pub risk_score: u8, // 0-100
+    pub previous_hash: String,
+    pub entry_hash: String,
 }
 
-impl AuditEntry {
-    fn compute_hash(id: u64, timestamp: u64, actor: &str, action: &str, resource: &str, prev_hash: &str) -> String {
-        // Simple hash chain: SHA-256 of concatenated fields
-        let input = format!("{}:{}:{}:{}:{}:{}", id, timestamp, actor, action, resource, prev_hash);
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for byte in input.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        format!("{:016x}", hash)
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditRequest {
+    pub agent_id: i64,
+    pub agent_code: String,
+    pub action: String,
+    pub resource: String,
+    pub resource_id: String,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub metadata: Option<serde_json::Value>,
 }
 
-struct AuditChain {
-    entries: Vec<AuditEntry>,
-    next_id: u64,
-    verified: bool,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyResponse {
+    pub valid: bool,
+    pub total_entries: u64,
+    pub checked_entries: u64,
+    pub first_invalid_at: Option<u64>,
+    pub message: String,
 }
 
-impl AuditChain {
-    fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-            next_id: 1,
-            verified: true,
-        }
-    }
-
-    fn append(&mut self, actor_id: &str, actor_role: &str, action: &str, resource: &str, resource_id: &str, details: &str, ip: &str) -> AuditEntry {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-        let prev_hash = self.entries.last().map(|e| e.chain_hash.clone()).unwrap_or_else(|| "genesis".to_string());
-        let chain_hash = AuditEntry::compute_hash(self.next_id, now, actor_id, action, resource, &prev_hash);
-        let data_hash = AuditEntry::compute_hash(self.next_id, now, details, resource_id, ip, "data");
-
-        let entry = AuditEntry {
-            id: self.next_id,
-            timestamp: now,
-            actor_id: actor_id.to_string(),
-            actor_role: actor_role.to_string(),
-            action: action.to_string(),
-            resource: resource.to_string(),
-            resource_id: resource_id.to_string(),
-            details: details.to_string(),
-            ip_address: ip.to_string(),
-            data_hash,
-            prev_hash,
-            chain_hash,
-        };
-
-        self.next_id += 1;
-        self.entries.push(entry.clone());
-        entry
-    }
-
-    fn verify_chain(&self) -> (bool, Vec<String>) {
-        let mut errors = Vec::new();
-        let mut prev_hash = "genesis".to_string();
-
-        for entry in &self.entries {
-            if entry.prev_hash != prev_hash {
-                errors.push(format!("Entry {} has invalid prev_hash: expected {}, got {}", entry.id, prev_hash, entry.prev_hash));
-            }
-            let expected = AuditEntry::compute_hash(entry.id, entry.timestamp, &entry.actor_id, &entry.action, &entry.resource, &prev_hash);
-            if entry.chain_hash != expected {
-                errors.push(format!("Entry {} has invalid chain_hash: expected {}, got {}", entry.id, expected, entry.chain_hash));
-            }
-            prev_hash = entry.chain_hash.clone();
-        }
-
-        (errors.is_empty(), errors)
-    }
-
-    fn query(&self, actor_id: Option<&str>, action: Option<&str>, resource: Option<&str>, limit: usize) -> Vec<&AuditEntry> {
-        self.entries.iter().rev()
-            .filter(|e| actor_id.map_or(true, |a| e.actor_id == a))
-            .filter(|e| action.map_or(true, |a| e.action == a))
-            .filter(|e| resource.map_or(true, |r| e.resource == r))
-            .take(limit)
-            .collect()
-    }
+struct AppState {
+    chain: Mutex<Vec<AuditEntry>>,
+    siem_endpoint: Option<String>,
 }
 
-// ── JWT Auth Middleware ─────────────────────────────────────────────────────────
-
-fn validate_bearer_token(req: &tiny_http::Request) -> Result<(), (u16, &'static str)> {
-    let path = req.url();
-            if let Err((code, msg)) = validate_bearer_token(&req) {
-                let resp = tiny_http::Response::from_string(format!("{{\"error\":{{\"code\":{},\"message\":\"{}\"}}}}", code, msg))
-                    .with_status_code(code)
-                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
-                let _ = req.respond(resp);
-                continue;
-            }
-    // Skip auth for health/metrics endpoints
-    if path == "/health" || path == "/healthz" || path == "/metrics" || path == "/ready" {
-        return Ok(());
-    }
-    let auth = req.headers().iter()
-        .find(|h| h.field.as_str().eq_ignore_ascii_case("Authorization"))
-        .map(|h| h.value.as_str().to_string());
-    match auth {
-        None => Err((401, "missing authorization header")),
-        Some(val) => {
-            let parts: Vec<&str> = val.splitn(2, ' ').collect();
-            if parts.len() != 2 || !parts[0].eq_ignore_ascii_case("bearer") || parts[1].len() < 10 {
-                Err((401, "invalid bearer token format"))
-            } else {
-                // In production, validate JWT against Keycloak JWKS
-                Ok(())
-            }
-        }
-    }
+/// Calculate SHA-256 hash of an audit entry (excluding entry_hash field)
+fn calculate_entry_hash(entry: &AuditEntry) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(entry.sequence.to_string().as_bytes());
+    hasher.update(entry.timestamp.as_bytes());
+    hasher.update(entry.agent_id.to_string().as_bytes());
+    hasher.update(entry.agent_code.as_bytes());
+    hasher.update(entry.action.as_bytes());
+    hasher.update(entry.resource.as_bytes());
+    hasher.update(entry.resource_id.as_bytes());
+    hasher.update(entry.ip_address.as_bytes());
+    hasher.update(entry.previous_hash.as_bytes());
+    hasher.update(serde_json::to_string(&entry.metadata).unwrap_or_default().as_bytes());
+    hex::encode(hasher.finalize())
 }
 
+/// Calculate risk score based on action patterns
+fn calculate_risk_score(action: &str, metadata: &serde_json::Value) -> u8 {
+    let mut score: u8 = 0;
 
-fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
-    let auth_header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or((
-            hyper::StatusCode::UNAUTHORIZED,
-            r#"{"error":"missing authorization header"}"#.to_string(),
-        ))?;
-    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
-        return Err((
-            hyper::StatusCode::UNAUTHORIZED,
-            r#"{"error":"invalid token format"}"#.to_string(),
-        ));
+    // High-risk actions
+    match action {
+        "REVERSAL_APPROVED" | "REVERSAL_REQUESTED" => score = score.saturating_add(40),
+        "FLOAT_ADJUSTMENT" | "FEE_OVERRIDE" => score = score.saturating_add(50),
+        "ACCOUNT_PRIVILEGE_CHANGE" | "AGENT_DEACTIVATED" => score = score.saturating_add(60),
+        "SYSTEM_CONFIG_CHANGE" => score = score.saturating_add(70),
+        "BREAK_GLASS_ACCESS" => score = score.saturating_add(90),
+        "LOAN_DISBURSED" | "COMMISSION_PAYOUT" => score = score.saturating_add(30),
+        _ => score = score.saturating_add(10),
     }
-    Ok(auth_header[7..].to_string())
+
+    // Amount-based risk
+    if let Some(amount) = metadata.get("amount").and_then(|a| a.as_f64()) {
+        if amount > 5_000_000.0 { score = score.saturating_add(30); }
+        else if amount > 1_000_000.0 { score = score.saturating_add(20); }
+        else if amount > 500_000.0 { score = score.saturating_add(10); }
+    }
+
+    // Off-hours risk (UTC 22:00 - 06:00)
+    let hour = Utc::now().hour();
+    if hour >= 22 || hour < 6 {
+        score = score.saturating_add(15);
+    }
+
+    score.min(100)
 }
 
-fn main() {
-    let chain = Arc::new(Mutex::new(AuditChain::new()));
-    let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
-    println!("[{}] v{} listening on :{}", SERVICE_NAME, SERVICE_VERSION, port);
+/// Append a new audit entry to the hash chain
+async fn append_entry(
+    data: web::Data<AppState>,
+    body: web::Json<AuditRequest>,
+) -> HttpResponse {
+    let mut chain = data.chain.lock().unwrap();
 
-    // Seed some initial audit entries for demonstration
-    {
-        let mut c = chain.lock().unwrap();
-        c.append("system", "admin", "service.start", "audit-chain", "1", "Service initialized", "127.0.0.1");
-        c.append("system", "admin", "policy.load", "pbac", "10", "Loaded 10 default policies", "127.0.0.1");
-        c.append("agent-001", "agent", "transaction.create", "cash_in", "TXN-001", "Cash in NGN 50000", "10.0.1.15");
-        c.append("agent-001", "agent", "transaction.create", "cash_out", "TXN-002", "Cash out NGN 25000", "10.0.1.15");
-        c.append("supervisor-001", "supervisor", "transaction.approve", "cash_out", "TXN-002", "Approved high-value withdrawal", "10.0.2.5");
-        let (valid, errors) = c.verify_chain();
-        println!("[{}] Chain integrity: {} ({} entries, {} errors)", SERVICE_NAME, if valid { "VALID" } else { "INVALID" }, c.entries.len(), errors.len());
-    }
+    let previous_hash = chain.last()
+        .map(|e| e.entry_hash.clone())
+        .unwrap_or_else(|| "GENESIS".to_string());
 
-    // HTTP server loop (placeholder — would use actix-web/hyper in production)
-    loop {
-        std::thread::sleep(Duration::from_secs(60));
-        let c = chain.lock().unwrap();
-        let (valid, _) = c.verify_chain();
-        println!("[{}] Periodic verification: {} ({} entries)", SERVICE_NAME, if valid { "VALID" } else { "TAMPERED" }, c.entries.len());
-    }
-}
+    let sequence = chain.len() as u64 + 1;
+    let metadata = body.metadata.clone().unwrap_or(serde_json::json!({}));
+    let risk_score = calculate_risk_score(&body.action, &metadata);
 
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_service_initialization() {
-        // Verify service can initialize without panics
-        assert!(true, "Service module loads correctly");
-    }
-
-    #[test]
-    fn test_configuration_defaults() {
-        // Verify default configuration is sensible
-        assert!(true, "Default config is valid");
-    }
-
-    #[test]
-    fn test_health_endpoint() {
-        // GET /health should return 200
-        assert!(true, "Health endpoint configured");
-    }
-
-    #[test]
-    fn test_request_validation() {
-        // Invalid requests should return proper errors
-        assert!(true, "Request validation works");
-    }
-
-    #[test]
-    fn test_error_handling() {
-        // Errors should be properly propagated
-        assert!(true, "Error handling works");
-    }
-}
-
-// --- Production: Graceful Shutdown ---
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    let mut entry = AuditEntry {
+        id: Uuid::new_v4().to_string(),
+        sequence,
+        timestamp: Utc::now().to_rfc3339(),
+        agent_id: body.agent_id,
+        agent_code: body.agent_code.clone(),
+        action: body.action.clone(),
+        resource: body.resource.clone(),
+        resource_id: body.resource_id.clone(),
+        ip_address: body.ip_address.clone().unwrap_or_else(|| "unknown".to_string()),
+        user_agent: body.user_agent.clone().unwrap_or_else(|| "unknown".to_string()),
+        metadata: metadata.clone(),
+        risk_score,
+        previous_hash,
+        entry_hash: String::new(),
     };
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-    tokio::select! {
-        _ = ctrl_c => { tracing::info!("[shutdown] Received Ctrl+C"); },
-        _ = terminate => { tracing::info!("[shutdown] Received SIGTERM"); },
+
+    entry.entry_hash = calculate_entry_hash(&entry);
+    chain.push(entry.clone());
+
+    // Forward to SIEM if configured
+    if let Some(ref siem_url) = data.siem_endpoint {
+        let siem_url = siem_url.clone();
+        let entry_clone = entry.clone();
+        tokio::spawn(async move {
+            let _ = reqwest::Client::new()
+                .post(&siem_url)
+                .json(&entry_clone)
+                .send()
+                .await;
+        });
     }
-    tracing::info!("[shutdown] Starting graceful shutdown...");
+
+    // Alert on high-risk entries
+    if risk_score >= 70 {
+        let entry_clone = entry.clone();
+        tokio::spawn(async move {
+            let _ = reqwest::Client::new()
+                .post("http://localhost:3500/v1.0/publish/pubsub/insider.threat.high-risk-action")
+                .json(&serde_json::json!({
+                    "entryId": entry_clone.id,
+                    "agentCode": entry_clone.agent_code,
+                    "action": entry_clone.action,
+                    "riskScore": entry_clone.risk_score,
+                    "timestamp": entry_clone.timestamp,
+                }))
+                .send()
+                .await;
+        });
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "id": entry.id,
+        "sequence": entry.sequence,
+        "entryHash": entry.entry_hash,
+        "riskScore": entry.risk_score,
+    }))
+}
+
+/// Verify the integrity of the hash chain
+async fn verify_chain(data: web::Data<AppState>) -> HttpResponse {
+    let chain = data.chain.lock().unwrap();
+
+    if chain.is_empty() {
+        return HttpResponse::Ok().json(VerifyResponse {
+            valid: true,
+            total_entries: 0,
+            checked_entries: 0,
+            first_invalid_at: None,
+            message: "Chain is empty".to_string(),
+        });
+    }
+
+    let mut first_invalid: Option<u64> = None;
+
+    for (i, entry) in chain.iter().enumerate() {
+        // Verify hash
+        let expected_hash = calculate_entry_hash(entry);
+        if expected_hash != entry.entry_hash {
+            first_invalid = Some(entry.sequence);
+            break;
+        }
+
+        // Verify chain linkage
+        if i > 0 {
+            let prev = &chain[i - 1];
+            if entry.previous_hash != prev.entry_hash {
+                first_invalid = Some(entry.sequence);
+                break;
+            }
+        } else if entry.previous_hash != "GENESIS" {
+            first_invalid = Some(entry.sequence);
+            break;
+        }
+    }
+
+    let response = VerifyResponse {
+        valid: first_invalid.is_none(),
+        total_entries: chain.len() as u64,
+        checked_entries: chain.len() as u64,
+        first_invalid_at: first_invalid,
+        message: if first_invalid.is_none() {
+            "Hash chain integrity verified — no tampering detected".to_string()
+        } else {
+            format!("TAMPERING DETECTED at sequence {}", first_invalid.unwrap())
+        },
+    };
+
+    HttpResponse::Ok().json(response)
+}
+
+/// Get recent high-risk entries
+async fn get_high_risk(data: web::Data<AppState>) -> HttpResponse {
+    let chain = data.chain.lock().unwrap();
+    let high_risk: Vec<&AuditEntry> = chain.iter()
+        .rev()
+        .filter(|e| e.risk_score >= 50)
+        .take(100)
+        .collect();
+
+    HttpResponse::Ok().json(high_risk)
+}
+
+/// Health check
+async fn health() -> HttpResponse {
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "healthy",
+        "service": "audit-chain",
+        "version": "1.0.0",
+    }))
+}
+
+use chrono::Timelike;
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let siem_endpoint = std::env::var("SIEM_ENDPOINT").ok();
+    let port: u16 = std::env::var("AUDIT_CHAIN_PORT")
+        .unwrap_or_else(|_| "8260".to_string())
+        .parse()
+        .unwrap_or(8260);
+
+    println!("Audit Chain Service starting on port {}", port);
+    println!("SIEM forwarding: {}", siem_endpoint.as_deref().unwrap_or("disabled"));
+
+    let data = web::Data::new(AppState {
+        chain: Mutex::new(Vec::new()),
+        siem_endpoint,
+    });
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(data.clone())
+            .route("/health", web::get().to(health))
+            .route("/append", web::post().to(append_entry))
+            .route("/verify", web::get().to(verify_chain))
+            .route("/high-risk", web::get().to(get_high_risk))
+    })
+    .bind(("0.0.0.0", port))?
+    .run()
+    .await
 }

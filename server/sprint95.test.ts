@@ -21,7 +21,7 @@ describe("Sprint 95: Router Implementation", () => {
     .filter(f => f.endsWith(".ts") && !f.includes(".test"));
 
   it("should have 481 router files", () => {
-    expect(routerFiles.length).toBe(483);
+    expect(routerFiles.length).toBe(484);
   });
 
   it("should have zero empty routers (router({}))", () => {

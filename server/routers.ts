@@ -522,6 +522,7 @@ import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
 import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
 import { aiAgentSupportRouter } from "./routers/aiAgentSupport";
 import { predictiveFloatRouter } from "./routers/predictiveFloat";
+import { insiderThreatManagementRouter } from "./routers/insiderThreatManagement";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1149,6 +1150,7 @@ export const appRouter = router({
   coalitionLoyalty: coalitionLoyaltyRouter,
   aiAgentSupport: aiAgentSupportRouter,
   predictiveFloat: predictiveFloatRouter,
+  insiderThreatManagement: insiderThreatManagementRouter,
 });
 
 export type AppRouter = typeof appRouter;

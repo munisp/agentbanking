@@ -9,6 +9,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { platformSettings, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -202,6 +207,20 @@ export const recurringPaymentsRouter = router({
           },
           { agentCode: session.agentCode }
         ).catch(() => {});
+
+        const rpRef = `RP-${schedule.id}-${Date.now()}`;
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "2001", creditAccountId: "1001",
+          amount: Math.round((input.amount ?? 0) * 100),
+          ref: rpRef, txType: "recurring_payment", agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({ txRef: rpRef, agentCode: session.agentCode, amount: input.amount ?? 0, type: "recurring_payment", timestamp: Date.now() }).catch(() => {});
+        dapr.publishEvent("pubsub", "recurring.payment.executed", { ref: rpRef, amount: input.amount }).catch(() => {});
+        ingestToLakehouse("recurring_payments", { ref: rpRef, amount: input.amount, frequency: input.frequency, timestamp: new Date().toISOString() }).catch(() => {});
 
         return schedule;
       } catch (error) {

@@ -4,6 +4,11 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, gl_journal_entries } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -159,6 +164,18 @@ const approve = protectedProcedure
           timestamp: new Date().toISOString(),
         }
       ).catch(() => {});
+
+      // TigerBeetle reversal entry
+      tbCreateTransfer({
+        debitAccountId: "2001", creditAccountId: "1001",
+        amount: Math.round(amount * 100),
+        ref: reversalRef, txType: "transaction_reversal", agentCode: "system",
+      }).catch(() => {});
+
+      // Fluvio + Dapr + Lakehouse
+      publishTxToFluvio({ txRef: reversalRef, agentCode: "system", amount, type: "transaction_reversal", timestamp: Date.now() }).catch(() => {});
+      dapr.publishEvent("pubsub", "reversal.approved", { reversalRef, originalTransactionId: input.id, amount, type: txType }).catch(() => {});
+      ingestToLakehouse("transaction_reversals", { reversalRef, originalTransactionId: input.id, amount, type: txType, timestamp: new Date().toISOString() }).catch(() => {});
 
       return {
         success: true,

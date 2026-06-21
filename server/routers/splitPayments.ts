@@ -8,6 +8,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, sql, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -280,6 +285,18 @@ export const splitPaymentsRouter = router({
           },
           { agentCode: session.agentCode }
         ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "1001", creditAccountId: "2001",
+          amount: Math.round(input.totalAmount * 100),
+          ref: groupRef, txType: "split_payment", agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({ txRef: groupRef, agentCode: session.agentCode, amount: input.totalAmount, type: "split_payment", timestamp: Date.now() }).catch(() => {});
+        dapr.publishEvent("pubsub", "split.payment.completed", { ref: groupRef, amount: input.totalAmount, splitCount: input.splits.length }).catch(() => {});
+        ingestToLakehouse("split_payments", { ref: groupRef, amount: input.totalAmount, splitCount: input.splits.length, timestamp: new Date().toISOString() }).catch(() => {});
 
         return {
           groupRef,

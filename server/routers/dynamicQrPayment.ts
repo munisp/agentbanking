@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -20,6 +20,14 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import crypto from "crypto";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -221,11 +229,151 @@ export const dynamicQrPaymentRouter = router({
     }),
 
   generateQr: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      return { success: true };
+    .input(z.object({
+      amount: z.number().positive(),
+      description: z.string().max(255).optional(),
+      expiresInMinutes: z.number().min(1).max(1440).default(30),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+
+      const db = (await getDb())!;
+      const qrCode = `QR-${crypto.randomInt(100000, 999999)}-${Date.now()}`;
+      const expiresAt = new Date(Date.now() + input.expiresInMinutes * 60 * 1000);
+
+      await db.execute(
+        sql`INSERT INTO qr_codes (code, agent_id, type, amount, description, status, expires_at)
+            VALUES (${qrCode}, ${session.id}, 'dynamic', ${String(input.amount)}, ${input.description ?? ""}, 'active', ${expiresAt})`
+      );
+
+      writeAuditLog({
+        agentId: session.id, agentCode: session.agentCode,
+        action: "QR_GENERATED", resource: "dynamicQrPayment", resourceId: qrCode,
+        status: "success",
+        metadata: { amount: input.amount, expiresAt: expiresAt.toISOString() },
+      }).catch(() => {});
+
+      return {
+        success: true,
+        qrCode,
+        amount: input.amount,
+        expiresAt: expiresAt.toISOString(),
+      };
+    }),
+
+  payQr: protectedProcedure
+    .input(z.object({
+      qrCode: z.string().min(1),
+      idempotencyKey: z.string().min(16).max(64),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+
+        const db = (await getDb())!;
+
+        return await withTransaction(async (tx) => {
+          // Lock QR code
+          const qrResult = await tx.execute(
+            sql`SELECT * FROM qr_codes WHERE code = ${input.qrCode} FOR UPDATE`
+          );
+          const qr = (qrResult as any).rows?.[0];
+          if (!qr) throw new TRPCError({ code: "NOT_FOUND", message: "QR code not found" });
+          if (qr.status !== "active")
+            throw new TRPCError({ code: "BAD_REQUEST", message: `QR code is ${qr.status}` });
+          if (new Date(qr.expires_at) < new Date())
+            throw new TRPCError({ code: "BAD_REQUEST", message: "QR code expired" });
+
+          const amount = parseFloat(qr.amount);
+          const ref = `QR-PAY-${crypto.randomInt(100000, 999999)}-${Date.now()}`;
+
+          // CBN limit check
+          const limitCheck = await checkDailyLimit(db, session.id, "tier3", amount);
+          if (!limitCheck.allowed)
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Daily limit exceeded: ${limitCheck.reason}` });
+
+          // Lock agent float
+          const agentResult = await tx.execute(
+            sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agent = (agentResult as any).rows?.[0];
+          if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+          if (parseFloat(agent.float_balance || "0") < amount)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient float balance" });
+
+          const fees = calculateFee(amount, "transfer");
+          const commission = calculateCommission(fees.fee, "transfer");
+
+          // Debit agent float
+          await tx.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${amount} WHERE id = ${session.id}`
+          );
+
+          // Mark QR as used
+          await tx.execute(
+            sql`UPDATE qr_codes SET status = 'used' WHERE code = ${input.qrCode}`
+          );
+
+          // Record transaction
+          const txResult = await tx.execute(
+            sql`INSERT INTO transactions (ref, agent_id, type, amount, fee, commission, currency, channel, status, metadata)
+                VALUES (${ref}, ${session.id}, 'QR Payment', ${String(amount)}, ${String(fees.fee)}, ${String(commission.agentShare)}, 'NGN', 'QR', 'success',
+                ${JSON.stringify({ qrCode: input.qrCode, merchantAgentId: qr.agent_id })}::jsonb) RETURNING id`
+          );
+          const txId = (txResult as any).rows?.[0]?.id;
+
+          // GL: Debit Cash-on-Hand (1001), Credit Agent Float (2001)
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `QR payment for ${input.qrCode}`,
+            debitAccountId: 1001,
+            creditAccountId: 2001,
+            amount: Math.round(amount * 100),
+            currency: "NGN",
+            referenceType: "qr_payment",
+            referenceId: ref,
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          publishEvent("pos.transactions.created", ref, {
+            type: "qr_payment", ref, qrCode: input.qrCode,
+            amount, fee: fees.fee, commission: commission.agentShare,
+            agentId: session.id, merchantAgentId: qr.agent_id,
+            timestamp: new Date().toISOString(),
+          }, { agentCode: session.agentCode }).catch(() => {});
+
+          // TigerBeetle dual-ledger
+          tbCreateTransfer({
+            debitAccountId: "1001", creditAccountId: "2001",
+            amount: Math.round(amount * 100),
+            ref, txType: "qr_payment", agentCode: session.agentCode,
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Redis + Lakehouse
+          publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount, type: "qr_payment", timestamp: Date.now() }).catch(() => {});
+          dapr.publishEvent("pubsub", "qr.payment.completed", { ref, qrCode: input.qrCode, amount, agentId: session.id }).catch(() => {});
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+          ingestToLakehouse("qr_payments", { ref, qrCode: input.qrCode, amount, fee: fees.fee, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
+
+          writeAuditLog({
+            agentId: session.id, agentCode: session.agentCode,
+            action: "QR_PAYMENT", resource: "dynamicQrPayment", resourceId: ref,
+            status: "success",
+            metadata: { qrCode: input.qrCode, amount },
+          }).catch(() => {});
+
+          return {
+            success: true, ref, transactionId: txId,
+            amount, fee: fees.fee, commission: commission.agentShare,
+            timestamp: new Date().toISOString(),
+          };
+        }, "dynamicQrPayment.payQr");
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {

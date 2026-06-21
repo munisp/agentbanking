@@ -10,6 +10,11 @@ import {
   gl_journal_entries,
 } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -284,6 +289,19 @@ export const chargebackManagementRouter = router({
               timestamp: new Date().toISOString(),
             }
           ).catch(() => {});
+
+          // TigerBeetle dual-ledger for refund
+          tbCreateTransfer({
+            debitAccountId: "5001", creditAccountId: "1001",
+            amount: Math.round((input.refundAmount ?? 0) * 100),
+            ref: `CB-${input.id}-${Date.now()}`, txType: "chargeback_refund", agentCode: "system",
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Lakehouse
+          const cbRef = `CB-${input.id}-${Date.now()}`;
+          publishTxToFluvio({ txRef: cbRef, agentCode: "system", amount: input.refundAmount ?? 0, type: "chargeback_resolution", timestamp: Date.now() }).catch(() => {});
+          dapr.publishEvent("pubsub", "chargeback.resolved", { disputeId: input.id, resolution: input.resolution, refundAmount: input.refundAmount }).catch(() => {});
+          ingestToLakehouse("chargeback_resolutions", { disputeId: input.id, resolution: input.resolution, refundAmount: input.refundAmount, timestamp: new Date().toISOString() }).catch(() => {});
         }
 
         await db.insert(auditLog).values({

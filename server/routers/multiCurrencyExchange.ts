@@ -4,6 +4,11 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import crypto from "crypto";
@@ -193,6 +198,19 @@ const convert = protectedProcedure
       },
       { agentCode: session.agentCode }
     ).catch(() => {});
+
+    // TigerBeetle dual-ledger
+    tbCreateTransfer({
+      debitAccountId: "2001", creditAccountId: "2001",
+      amount: Math.round(input.amount * 100),
+      ref, txType: "fx_exchange", agentCode: session.agentCode,
+    }).catch(() => {});
+
+    // Fluvio + Dapr + Redis + Lakehouse
+    publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "fx_exchange", timestamp: Date.now() }).catch(() => {});
+    dapr.publishEvent("pubsub", "fx.exchange.completed", { ref, fromCurrency: input.fromCurrency, toCurrency: input.toCurrency, amount: input.amount, convertedAmount }).catch(() => {});
+    cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+    ingestToLakehouse("fx_exchanges", { ref, fromCurrency: input.fromCurrency, toCurrency: input.toCurrency, amount: input.amount, convertedAmount, rate, fee: feeResult.fee, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
 
     return {
       success: true,

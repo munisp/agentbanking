@@ -8,6 +8,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { eventBus, EVENTS } from "../lib/eventBus";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
@@ -327,6 +332,18 @@ export const billPaymentsRouter = router({
           },
           { agentCode: session.agentCode }
         ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "2001", creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref, txType: "bill_payment", agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "bill_payment", timestamp: Date.now() }).catch(() => {});
+        dapr.publishEvent("pubsub", "bill.payment.completed", { ref, amount: input.amount, billerId: input.billerId }).catch(() => {});
+        ingestToLakehouse("bill_payments", { ref, amount: input.amount, billerId: input.billerId, timestamp: new Date().toISOString() }).catch(() => {});
 
         eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
           type: "bill_payment",

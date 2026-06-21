@@ -18,6 +18,11 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
 import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { eventBus, EVENTS } from "../lib/eventBus";
 
 /**
@@ -220,6 +225,17 @@ export const cashOutRouter = router({
             amount: input.amount,
             agentId: session.id,
           });
+          // TigerBeetle dual-ledger
+          tbCreateTransfer({
+            debitAccountId: "2001", creditAccountId: "1001",
+            amount: Math.round(input.amount * 100),
+            ref, txType: "cash_out", agentCode: session.agentCode,
+          }).catch(() => {});
+          // Fluvio + Dapr + Redis + Lakehouse
+          publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "cash_out", timestamp: Date.now() }).catch(() => {});
+          dapr.publishEvent("pubsub", "cash.out.completed", { ref, amount: input.amount, agentId: session.id, customerPhone: input.customerPhone }).catch(() => {});
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+          ingestToLakehouse("cash_out_transactions", { ref, amount: input.amount, fee: feeResult.fee, agentId: session.id, customerPhone: input.customerPhone, timestamp: new Date().toISOString() }).catch(() => {});
 
           return {
             success: true,

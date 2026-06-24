@@ -467,7 +467,7 @@ export const ecommerceOrdersRouter = router({
         ]),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
@@ -589,7 +589,7 @@ export const ecommerceOrdersRouter = router({
   // ── Fulfill Order ────────────────────────────────────────────────────────
   fulfillOrder: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
@@ -656,7 +656,7 @@ export const ecommerceOrdersRouter = router({
         })
       )
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database)
@@ -741,7 +741,7 @@ export const ecommerceOrdersRouter = router({
   // ── Abandoned Cart Recovery (Gap 9) ────────────────────────────────────
   recoverAbandonedCarts: protectedProcedure
     .input(z.object({ hoursOld: z.number().default(24), limit: z.number().default(50) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
@@ -776,7 +776,7 @@ export const ecommerceOrdersRouter = router({
   // ── Release Expired Inventory Reservations (Gap 13) ────────────────────
   releaseExpiredReservations: protectedProcedure
     .input(z.object({ maxAgeHours: z.number().default(48) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
@@ -833,7 +833,7 @@ export const ecommerceOrdersRouter = router({
       paymentRef: z.string().optional(),
       paymentMethod: z.string().default("card"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
@@ -899,7 +899,7 @@ export const ecommerceOrdersRouter = router({
       heading: z.number().optional(),
       etaMinutes: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "order", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");

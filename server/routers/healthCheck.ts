@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { z } from "zod";
-import { router, publicProcedure } from "../_core/trpc";
+import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -475,7 +475,7 @@ export const healthCheckRouter = router({
     };
   }),
 
-  daprServiceHealth: publicProcedure.query(async () => {
+  daprServiceHealth: protectedProcedure.query(async () => {
     const { invokeDaprService, DAPR_SERVICE_REGISTRY } = await import("../middleware/middlewareConnectors");
     const results: Record<string, { status: string; latencyMs: number; language: string }> = {};
     for (const [name, svc] of Object.entries(DAPR_SERVICE_REGISTRY)) {

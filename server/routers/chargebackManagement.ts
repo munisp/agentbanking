@@ -255,7 +255,7 @@ export const chargebackManagementRouter = router({
         refundAmount: z.number().positive().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       return withTransaction(async (tx) => {
         const db = tx ?? (await getDb())!;

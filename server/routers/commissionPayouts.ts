@@ -370,7 +370,7 @@ export const commissionPayoutsRouter = router({
   // ── Process a payout (deduct from agent balance + mark completed) ────────
   process: protectedProcedure
     .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
       try {
         const db = (await getDb())!;

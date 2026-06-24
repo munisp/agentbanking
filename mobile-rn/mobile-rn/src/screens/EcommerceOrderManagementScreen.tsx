@@ -1,163 +1,122 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextInput,
-} from 'react-native';
-import { apiClient } from '../api/APIClient';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, RefreshControl, ScrollView } from 'react-native';
+import { apiService } from '../services/apiService';
 
-interface ListItem {
-  id: string | number;
-  name?: string;
-  title?: string;
-  status?: string;
-  type?: string;
-  [key: string]: unknown;
-}
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#FF9500', confirmed: '#007AFF', processing: '#AF52DE',
+  shipped: '#5856D6', delivered: '#34C759', cancelled: '#FF3B30',
+};
+const TABS = ['all', 'pending', 'confirmed', 'shipped', 'delivered', 'cancelled'];
 
-const EcommerceOrderManagementScreen: React.FC = () => {
-  const [items, setItems] = useState<ListItem[]>([]);
+export default function EcommerceOrderManagementScreen({ navigation }: { navigation: any }) {
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
+  const [tab, setTab] = useState('all');
 
-  const load = useCallback(async () => {
+  const loadOrders = useCallback(async () => {
     try {
-      setError('');
-      const { data } = await apiClient.get('/general/list?page=1&limit=50');
-      setItems(data?.items ?? data?.data ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to load');
+      setLoading(true);
+      const result = await apiService.get('/ecommerceOrders/listOrders', { customerId: 1, limit: 50 });
+      setOrders(result?.orders ?? []);
+    } catch (e) {
+      Alert.alert('Error', String(e));
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
 
-  const filtered = items.filter(item => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    const label = (item.name ?? item.title ?? String(item.id)).toLowerCase();
-    return label.includes(q);
-  });
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, [load]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={load}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const filtered = tab === 'all' ? orders : orders.filter(o => o.status === tab);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Ecommerce Order Management</Text>
-
-      {/* Summary */}
-      <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { backgroundColor: '#eff6ff' }]}>
-          <Text style={[styles.summaryValue, { color: '#2563eb' }]}>{items.length}</Text>
-          <Text style={styles.summaryLabel}>Total</Text>
-        </View>
-        <View style={[styles.summaryCard, { backgroundColor: '#f0fdf4' }]}>
-          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>{filtered.length}</Text>
-          <Text style={styles.summaryLabel}>Filtered</Text>
-        </View>
-      </View>
-
-      {/* Search */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search..."
-        value={search}
-        onChangeText={setSearch}
-      />
-
-      {/* List */}
-      <FlatList
-        data={filtered}
-        keyExtractor={(item, i) => String(item.id ?? i)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        renderItem={({ item, index }) => (
-          <TouchableOpacity style={styles.card}>
-            <View style={styles.cardLeft}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{index + 1}</Text>
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>
-                  {item.name ?? item.title ?? `Item ${index + 1}`}
-                </Text>
-                <Text style={styles.cardSubtitle}>
-                  {item.status ?? item.type ?? ''}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.chevron}>{'›'}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+        {TABS.map(t => (
+          <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === 'all' ? 'All' : t.charAt(0).toUpperCase() + t.slice(1)}</Text>
           </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={styles.emptyText}>No items found</Text>
-          </View>
-        }
-      />
+        ))}
+      </ScrollView>
+      {loading ? <ActivityIndicator style={styles.loader} size="large" /> : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => String(item.id ?? item.orderNumber)}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={loadOrders} />}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => {
+            const status = item.status || 'pending';
+            const items = item.items as any[] || [];
+            return (
+              <View style={styles.orderCard}>
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderNumber}>#{item.orderNumber ?? item.id}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[status] || '#999' }]}>
+                    <Text style={styles.statusText}>{status}</Text>
+                  </View>
+                </View>
+                <View style={styles.orderBody}>
+                  <Text style={styles.orderTotal}>NGN {item.totalAmount ?? item.total ?? '0'}</Text>
+                  <Text style={styles.orderDate}>{formatDate(item.createdAt)}</Text>
+                </View>
+                {items.length > 0 && (
+                  <View style={styles.itemsList}>
+                    {items.slice(0, 3).map((it, i) => (
+                      <Text key={i} style={styles.itemLine}>{it.name ?? it.sku} x{it.quantity}</Text>
+                    ))}
+                    {items.length > 3 && <Text style={styles.moreItems}>+{items.length - 3} more items</Text>}
+                  </View>
+                )}
+                <View style={styles.actions}>
+                  {status === 'shipped' && (
+                    <TouchableOpacity style={styles.actionBtn}><Text style={styles.actionText}>Track</Text></TouchableOpacity>
+                  )}
+                  {status === 'delivered' && (
+                    <>
+                      <TouchableOpacity style={styles.actionBtn}><Text style={styles.actionText}>Reorder</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.actionOutline]}><Text style={styles.actionOutlineText}>Review</Text></TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              </View>
+            );
+          }}
+          ListEmptyComponent={<Text style={styles.emptyText}>No orders found</Text>}
+        />
+      )}
     </View>
   );
-};
+}
+
+function formatDate(d: string) {
+  try { const dt = new Date(d); return `${dt.getDate()}/${dt.getMonth() + 1}/${dt.getFullYear()}`; }
+  catch { return d?.substring(0, 10) ?? ''; }
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  header: { fontSize: 22, fontWeight: '700', padding: 16, color: '#1e293b' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#dc2626', fontSize: 16, textAlign: 'center', marginBottom: 12 },
-  retryBtn: { backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  summaryRow: { flexDirection: 'row', paddingHorizontal: 12, gap: 8 },
-  summaryCard: { flex: 1, borderRadius: 12, padding: 12, alignItems: 'center' },
-  summaryValue: { fontSize: 24, fontWeight: '700' },
-  summaryLabel: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  searchInput: {
-    margin: 12, padding: 12, backgroundColor: '#fff',
-    borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0',
-  },
-  card: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#fff', marginHorizontal: 12, marginVertical: 4,
-    padding: 14, borderRadius: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#e0e7ff',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  avatarText: { color: '#4f46e5', fontWeight: '600' },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
-  cardSubtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  chevron: { fontSize: 22, color: '#94a3b8' },
-  emptyText: { color: '#94a3b8', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  loader: { flex: 1, justifyContent: 'center' },
+  tabBar: { maxHeight: 48, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  tab: { paddingHorizontal: 16, paddingVertical: 12 },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: '#007AFF' },
+  tabText: { color: '#999', fontSize: 14 },
+  tabTextActive: { color: '#007AFF', fontWeight: '600' },
+  list: { padding: 8 },
+  orderCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee', borderRadius: 8, padding: 12, marginBottom: 8 },
+  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  orderNumber: { fontWeight: 'bold', fontSize: 15 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  orderBody: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  orderTotal: { fontWeight: '600', color: '#007AFF' },
+  orderDate: { color: '#999', fontSize: 12 },
+  itemsList: { borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 8, marginTop: 4 },
+  itemLine: { fontSize: 13, color: '#666', marginBottom: 2 },
+  moreItems: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  actionBtn: { backgroundColor: '#007AFF', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
+  actionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  actionOutline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#007AFF' },
+  actionOutlineText: { color: '#007AFF', fontSize: 13, fontWeight: '600' },
+  emptyText: { textAlign: 'center', marginTop: 40, color: '#999' },
 });
-
-export default EcommerceOrderManagementScreen;

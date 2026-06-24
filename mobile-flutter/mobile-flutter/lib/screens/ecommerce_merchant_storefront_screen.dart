@@ -8,8 +8,8 @@ class EcommerceMerchantStorefrontScreen extends StatefulWidget {
 }
 
 class _EcommerceMerchantStorefrontScreenState extends State<EcommerceMerchantStorefrontScreen> {
-  Map<String, dynamic> _data = {};
-  List<dynamic> _items = [];
+  Map<String, dynamic>? _store;
+  List<dynamic> _products = [];
   bool _loading = true;
   String _error = '';
   String _search = '';
@@ -17,15 +17,16 @@ class _EcommerceMerchantStorefrontScreenState extends State<EcommerceMerchantSto
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadStore();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadStore() async {
     try {
-      final result = await ApiService.instance.get('/merchants/list', queryParams: {'page': '1', 'limit': '50'});
+      final storeResult = await ApiService.instance.get('/agentStore/getMyStore', queryParams: {'agentId': '1'});
+      final productsResult = await ApiService.instance.get('/ecommerceCatalog/listProducts', queryParams: {'limit': '50'});
       setState(() {
-        _data = result ?? {};
-        _items = result['items'] ?? result['data'] ?? [];
+        _store = storeResult;
+        _products = productsResult?['products'] ?? [];
         _loading = false;
       });
     } catch (e) {
@@ -33,99 +34,123 @@ class _EcommerceMerchantStorefrontScreenState extends State<EcommerceMerchantSto
     }
   }
 
-  List<dynamic> get _filtered => _items.where((item) {
-    if (_search.isEmpty) return true;
+  List<dynamic> get _filtered {
+    if (_search.isEmpty) return _products;
     final q = _search.toLowerCase();
-    return (item['name'] ?? item['title'] ?? item['id'] ?? '').toString().toLowerCase().contains(q);
-  }).toList();
+    return _products.where((p) => (p['name'] ?? '').toString().toLowerCase().contains(q)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ecommerce Merchant Storefront'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _load(); }),
-        ],
-      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
                   Text(_error, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _load(); }, child: const Text('Retry')),
+                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _loadStore(); }, child: const Text('Retry')),
                 ]))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: Column(children: [
-                    // Search bar
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              : CustomScrollView(slivers: [
+                  SliverAppBar(
+                    expandedHeight: 200,
+                    floating: false, pinned: true,
+                    flexibleSpace: FlexibleSpaceBar(
+                      title: Text(_store?['storeName'] ?? 'Store'),
+                      background: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft, end: Alignment.bottomRight,
+                            colors: [Theme.of(context).primaryColor, Theme.of(context).primaryColor.withOpacity(0.7)],
+                          ),
                         ),
-                        onChanged: (v) => setState(() => _search = v),
+                        child: _store?['bannerUrl'] != null
+                            ? Image.network(_store!['bannerUrl'], fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox())
+                            : const Center(child: Icon(Icons.store, size: 64, color: Colors.white38)),
                       ),
                     ),
-                    // Summary cards
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        _summaryCard('Total', _items.length.toString(), Colors.blue),
-                        const SizedBox(width: 8),
-                        _summaryCard('Filtered', _filtered.length.toString(), Colors.green),
+                    actions: [
+                      IconButton(icon: const Icon(Icons.share), onPressed: () {}),
+                      IconButton(icon: const Icon(Icons.shopping_cart), onPressed: () => Navigator.pushNamed(context, '/ecommerce-cart')),
+                    ],
+                  ),
+                  // Store info
+                  SliverToBoxAdapter(child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      if (_store?['description'] != null) Text(_store!['description'], style: const TextStyle(color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        if (_store?['averageRating'] != null) ...[
+                          const Icon(Icons.star, size: 16, color: Colors.amber),
+                          Text(' ${_store!['averageRating']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 16),
+                        ],
+                        if (_store?['city'] != null) ...[
+                          const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                          Text(' ${_store!['city']}, ${_store?['state'] ?? ''}'),
+                        ],
                       ]),
+                      if (_store?['deliveryEnabled'] == true) Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Chip(avatar: const Icon(Icons.delivery_dining, size: 16), label: const Text('Delivery Available')),
+                      ),
+                    ]),
+                  )),
+                  // Search bar
+                  SliverToBoxAdapter(child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search products...', prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), isDense: true,
+                      ),
+                      onChanged: (v) => setState(() => _search = v),
                     ),
-                    const SizedBox(height: 8),
-                    // List
-                    Expanded(
-                      child: _filtered.isEmpty
-                          ? const Center(child: Text('No items found'))
-                          : ListView.builder(
-                              itemCount: _filtered.length,
-                              itemBuilder: (ctx, i) {
-                                final item = _filtered[i];
+                  )),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  // Products grid
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    sliver: _filtered.isEmpty
+                        ? const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(32), child: Text('No products available'))))
+                        : SliverGrid(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2, childAspectRatio: 0.75, crossAxisSpacing: 8, mainAxisSpacing: 8,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (ctx, i) {
+                                final product = _filtered[i];
                                 return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  child: ListTile(
-                                    leading: CircleAvatar(child: Text('${i + 1}')),
-                                    title: Text(item['name'] ?? item['title'] ?? item['id']?.toString() ?? 'Item ${i + 1}'),
-                                    subtitle: Text(item['status'] ?? item['type'] ?? ''),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Selected: ${item['name'] ?? item['id']}')),
-                                      );
-                                    },
+                                  child: InkWell(
+                                    onTap: () {},
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Expanded(
+                                        child: Container(
+                                          width: double.infinity,
+                                          decoration: BoxDecoration(color: Colors.grey[200], borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
+                                          child: product['imageUrl'] != null
+                                              ? Image.network(product['imageUrl'], fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 40))
+                                              : const Icon(Icons.inventory_2, size: 40, color: Colors.grey),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                          Text(product['name'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                          const SizedBox(height: 4),
+                                          Text('NGN ${product['price']}', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold, fontSize: 15)),
+                                        ]),
+                                      ),
+                                    ]),
                                   ),
                                 );
                               },
+                              childCount: _filtered.length,
                             ),
-                    ),
-                  ]),
-                ),
-    );
-  }
-
-  Widget _summaryCard(String label, String value, Color color) {
-    return Expanded(
-      child: Card(
-        color: color.withOpacity(0.1),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: TextStyle(color: color.withOpacity(0.8))),
-          ]),
-        ),
-      ),
+                          ),
+                  ),
+                ]),
     );
   }
 }

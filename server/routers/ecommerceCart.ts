@@ -22,6 +22,13 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { TRPCError } from "@trpc/server";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -33,6 +40,14 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   archived: [],
 };
+
+
+async function publishCartMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("ecommerce.cart", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.customerId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.cart.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `ecommerce.cart.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("ecommerce_cart", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+}
 
 const CART_SERVICE_URL =
   process.env.CART_SERVICE_URL || "http://localhost:8102";
@@ -317,6 +332,9 @@ export const ecommerceCartRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      publishCartMiddleware("item.added", input.sku, { customerId: input.customerId, productId: input.productId, quantity: input.quantity, amount: Number(input.unitPrice) * input.quantity });
+      cacheSet(`cart:${input.customerId}`, JSON.stringify({ updated: Date.now() }), 1800).catch(() => {});
+
       return { status: "added" };
     }),
 
@@ -361,6 +379,8 @@ export const ecommerceCartRouter = router({
           );
       }
 
+      publishCartMiddleware("item.updated", input.sku, { customerId: input.customerId, quantity: input.quantity });
+
       return { status: "updated" };
     }),
 
@@ -387,6 +407,8 @@ export const ecommerceCartRouter = router({
           )
         );
 
+      publishCartMiddleware("item.removed", input.sku, { customerId: input.customerId });
+
       return { status: "removed" };
     }),
 
@@ -410,6 +432,8 @@ export const ecommerceCartRouter = router({
           .delete(ecommerceCarts)
           .where(eq(ecommerceCarts.id, cart.id));
       }
+
+      publishCartMiddleware("cart.cleared", String(input.customerId), { customerId: input.customerId });
 
       return { status: "cleared" };
     }),
@@ -511,6 +535,8 @@ export const ecommerceCartRouter = router({
           });
         }
       }
+
+      publishCartMiddleware("cart.synced", String(input.customerId), { customerId: input.customerId, strategy: input.strategy, itemsMerged: input.items.length, deviceId: input.deviceId });
 
       return {
         status: "synced",

@@ -1,163 +1,126 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextInput,
-} from 'react-native';
-import { apiClient } from '../api/APIClient';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, RefreshControl, Image, ScrollView } from 'react-native';
+import { apiService } from '../services/apiService';
 
-interface ListItem {
-  id: string | number;
-  name?: string;
-  title?: string;
-  status?: string;
-  type?: string;
-  [key: string]: unknown;
+interface Product {
+  id: number;
+  sku: string;
+  name: string;
+  price: string;
+  imageUrl?: string;
+  categoryId: number;
+  merchantId: number;
+  description?: string;
 }
 
-const EcommerceProductCatalogScreen: React.FC = () => {
-  const [items, setItems] = useState<ListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
+interface Category { id: number; name: string; slug: string; }
 
-  const load = useCallback(async () => {
+export default function EcommerceProductCatalogScreen({ navigation }: { navigation: any }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+
+  const loadData = useCallback(async () => {
     try {
-      setError('');
-      const { data } = await apiClient.get('/general/list?page=1&limit=50');
-      setItems(data?.items ?? data?.data ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to load');
+      setLoading(true);
+      const [prodResult, catResult] = await Promise.all([
+        apiService.get('/ecommerceCatalog/listProducts', { limit: 50 }),
+        apiService.get('/ecommerceCatalog/listCategories'),
+      ]);
+      setProducts(prodResult?.products ?? []);
+      setCategories(catResult?.categories ?? []);
+    } catch (e) {
+      Alert.alert('Error', String(e));
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const filtered = items.filter(item => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    const label = (item.name ?? item.title ?? String(item.id)).toLowerCase();
-    return label.includes(q);
+  const addToCart = async (product: Product) => {
+    try {
+      await apiService.post('/ecommerceCart/addItem', {
+        customerId: 1, sku: product.sku, productId: product.id,
+        name: product.name, quantity: 1, unitPrice: product.price,
+        merchantId: product.merchantId || 1,
+      });
+      Alert.alert('Added', `${product.name} added to cart`);
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    }
+  };
+
+  const filtered = products.filter(p => {
+    if (selectedCategory && p.categoryId !== selectedCategory) return false;
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
   });
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, [load]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={load}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (loading) return <ActivityIndicator style={styles.loader} size="large" />;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Ecommerce Product Catalog</Text>
-
-      {/* Summary */}
-      <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { backgroundColor: '#eff6ff' }]}>
-          <Text style={[styles.summaryValue, { color: '#2563eb' }]}>{items.length}</Text>
-          <Text style={styles.summaryLabel}>Total</Text>
-        </View>
-        <View style={[styles.summaryCard, { backgroundColor: '#f0fdf4' }]}>
-          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>{filtered.length}</Text>
-          <Text style={styles.summaryLabel}>Filtered</Text>
-        </View>
+      <View style={styles.searchRow}>
+        <TextInput style={styles.searchInput} placeholder="Search products..." value={search} onChangeText={setSearch} />
       </View>
-
-      {/* Search */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search..."
-        value={search}
-        onChangeText={setSearch}
-      />
-
-      {/* List */}
+      {categories.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
+          <TouchableOpacity style={[styles.catChip, !selectedCategory && styles.catChipActive]} onPress={() => setSelectedCategory(null)}>
+            <Text style={[styles.catChipText, !selectedCategory && styles.catChipTextActive]}>All</Text>
+          </TouchableOpacity>
+          {categories.map(cat => (
+            <TouchableOpacity key={cat.id} style={[styles.catChip, selectedCategory === cat.id && styles.catChipActive]} onPress={() => setSelectedCategory(cat.id)}>
+              <Text style={[styles.catChipText, selectedCategory === cat.id && styles.catChipTextActive]}>{cat.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
       <FlatList
         data={filtered}
-        keyExtractor={(item, i) => String(item.id ?? i)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        renderItem={({ item, index }) => (
-          <TouchableOpacity style={styles.card}>
-            <View style={styles.cardLeft}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{index + 1}</Text>
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>
-                  {item.name ?? item.title ?? `Item ${index + 1}`}
-                </Text>
-                <Text style={styles.cardSubtitle}>
-                  {item.status ?? item.type ?? ''}
-                </Text>
-              </View>
+        numColumns={2}
+        keyExtractor={(item) => item.sku}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+        contentContainerStyle={styles.grid}
+        renderItem={({ item }) => (
+          <View style={styles.productCard}>
+            <View style={styles.productImage}>
+              {item.imageUrl ? <Image source={{ uri: item.imageUrl }} style={styles.image} /> : <Text style={styles.imagePlaceholder}>📦</Text>}
             </View>
-            <Text style={styles.chevron}>{'›'}</Text>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={styles.emptyText}>No items found</Text>
+            <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+            <Text style={styles.productPrice}>NGN {item.price}</Text>
+            <TouchableOpacity style={styles.addBtn} onPress={() => addToCart(item)}>
+              <Text style={styles.addBtnText}>Add to Cart</Text>
+            </TouchableOpacity>
           </View>
-        }
+        )}
+        ListEmptyComponent={<Text style={styles.emptyText}>No products found</Text>}
       />
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  header: { fontSize: 22, fontWeight: '700', padding: 16, color: '#1e293b' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#dc2626', fontSize: 16, textAlign: 'center', marginBottom: 12 },
-  retryBtn: { backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  summaryRow: { flexDirection: 'row', paddingHorizontal: 12, gap: 8 },
-  summaryCard: { flex: 1, borderRadius: 12, padding: 12, alignItems: 'center' },
-  summaryValue: { fontSize: 24, fontWeight: '700' },
-  summaryLabel: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  searchInput: {
-    margin: 12, padding: 12, backgroundColor: '#fff',
-    borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0',
-  },
-  card: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#fff', marginHorizontal: 12, marginVertical: 4,
-    padding: 14, borderRadius: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#e0e7ff',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  avatarText: { color: '#4f46e5', fontWeight: '600' },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
-  cardSubtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  chevron: { fontSize: 22, color: '#94a3b8' },
-  emptyText: { color: '#94a3b8', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  loader: { flex: 1, justifyContent: 'center' },
+  searchRow: { padding: 12 },
+  searchInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, paddingHorizontal: 16, height: 42 },
+  catScroll: { maxHeight: 44 },
+  catContent: { paddingHorizontal: 12, gap: 8 },
+  catChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#f0f0f0', marginRight: 8 },
+  catChipActive: { backgroundColor: '#007AFF' },
+  catChipText: { fontSize: 13 },
+  catChipTextActive: { color: '#fff', fontWeight: '600' },
+  grid: { padding: 8 },
+  productCard: { flex: 1, margin: 4, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#eee', padding: 8 },
+  productImage: { height: 100, backgroundColor: '#f5f5f5', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  image: { width: '100%', height: '100%', borderRadius: 8 },
+  imagePlaceholder: { fontSize: 32 },
+  productName: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  productPrice: { color: '#007AFF', fontWeight: 'bold', marginBottom: 8 },
+  addBtn: { backgroundColor: '#007AFF', paddingVertical: 6, borderRadius: 6, alignItems: 'center' },
+  addBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  emptyText: { textAlign: 'center', marginTop: 40, color: '#999' },
 });
-
-export default EcommerceProductCatalogScreen;

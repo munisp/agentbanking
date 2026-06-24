@@ -122,7 +122,19 @@ export type KafkaTopic =
   | "pos.canary.rollback"
   | "sim.failover.triggered"
   | "sim.slot.degraded"
-  | "sim.carrier.switched";
+  | "sim.carrier.switched"
+  | "ecommerce.catalog"
+  | "ecommerce.cart"
+  | "ecommerce.orders"
+  | "ecommerce.store"
+  | "ecommerce.promotions"
+  | "ecommerce.social"
+  | "ecommerce.notifications"
+  | "ecommerce.cart.recovery"
+  | "ecommerce.inventory.ttl"
+  | "settlement.reconciliation"
+  | "settlement.batch"
+  | "settlement.ledger_sync";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

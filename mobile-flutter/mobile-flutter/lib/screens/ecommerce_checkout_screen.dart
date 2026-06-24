@@ -8,24 +8,37 @@ class EcommerceCheckoutScreen extends StatefulWidget {
 }
 
 class _EcommerceCheckoutScreenState extends State<EcommerceCheckoutScreen> {
-  Map<String, dynamic> _data = {};
-  List<dynamic> _items = [];
-  bool _loading = true;
+  int _step = 0;
+  bool _loading = false;
   String _error = '';
-  String _search = '';
+  Map<String, dynamic> _cart = {};
+  List<dynamic> _items = [];
+  double _subTotal = 0;
+  double _shippingFee = 500;
+  double _tax = 0;
+  String _currency = 'NGN';
+  String _paymentMethod = 'card';
+  final _addressController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _nameController = TextEditingController();
+  String _sessionId = '';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadCart();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadCart() async {
+    setState(() => _loading = true);
     try {
-      final result = await ApiService.instance.get('/general/list', queryParams: {'page': '1', 'limit': '50'});
+      final result = await ApiService.instance.get('/ecommerceCart/getCart', queryParams: {'customerId': '1'});
       setState(() {
-        _data = result ?? {};
-        _items = result['items'] ?? result['data'] ?? [];
+        _cart = result ?? {};
+        _items = result?['items'] ?? [];
+        _subTotal = (result?['subTotal'] ?? 0).toDouble();
+        _currency = result?['currency'] ?? 'NGN';
+        _tax = _subTotal * 0.075;
         _loading = false;
       });
     } catch (e) {
@@ -33,99 +46,112 @@ class _EcommerceCheckoutScreenState extends State<EcommerceCheckoutScreen> {
     }
   }
 
-  List<dynamic> get _filtered => _items.where((item) {
-    if (_search.isEmpty) return true;
-    final q = _search.toLowerCase();
-    return (item['name'] ?? item['title'] ?? item['id'] ?? '').toString().toLowerCase().contains(q);
-  }).toList();
+  Future<void> _initiateCheckout() async {
+    setState(() => _loading = true);
+    try {
+      final result = await ApiService.instance.post('/ecommerceOrders/createOrder', body: {
+        'customerId': 1,
+        'items': _items.map((i) => {
+          'sku': i['sku'],
+          'productId': i['productId'],
+          'quantity': i['quantity'],
+          'unitPrice': i['unitPrice'],
+          'merchantId': i['merchantId'] ?? 1,
+        }).toList(),
+        'shippingAddress': _addressController.text,
+        'phone': _phoneController.text,
+        'paymentMethod': _paymentMethod,
+        'currency': _currency,
+      });
+      setState(() {
+        _sessionId = result?['orderId']?.toString() ?? '';
+        _step = 2;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  double get _total => _subTotal + _shippingFee + _tax;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ecommerce Checkout'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _load(); }),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Checkout')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
                   Text(_error, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _load(); }, child: const Text('Retry')),
+                  ElevatedButton(onPressed: () { setState(() { _error = ''; }); }, child: const Text('Dismiss')),
                 ]))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: Column(children: [
-                    // Search bar
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                        ),
-                        onChanged: (v) => setState(() => _search = v),
-                      ),
-                    ),
-                    // Summary cards
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        _summaryCard('Total', _items.length.toString(), Colors.blue),
-                        const SizedBox(width: 8),
-                        _summaryCard('Filtered', _filtered.length.toString(), Colors.green),
+              : Stepper(
+                  currentStep: _step,
+                  onStepContinue: () {
+                    if (_step == 0 && _nameController.text.isNotEmpty && _addressController.text.isNotEmpty) {
+                      setState(() => _step = 1);
+                    } else if (_step == 1) {
+                      _initiateCheckout();
+                    }
+                  },
+                  onStepCancel: () { if (_step > 0) setState(() => _step--); },
+                  steps: [
+                    Step(
+                      title: const Text('Shipping Details'),
+                      isActive: _step >= 0,
+                      content: Column(children: [
+                        TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
+                        const SizedBox(height: 12),
+                        TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder()), keyboardType: TextInputType.phone),
+                        const SizedBox(height: 12),
+                        TextField(controller: _addressController, decoration: const InputDecoration(labelText: 'Delivery Address', border: OutlineInputBorder()), maxLines: 2),
                       ]),
                     ),
-                    const SizedBox(height: 8),
-                    // List
-                    Expanded(
-                      child: _filtered.isEmpty
-                          ? const Center(child: Text('No items found'))
-                          : ListView.builder(
-                              itemCount: _filtered.length,
-                              itemBuilder: (ctx, i) {
-                                final item = _filtered[i];
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  child: ListTile(
-                                    leading: CircleAvatar(child: Text('${i + 1}')),
-                                    title: Text(item['name'] ?? item['title'] ?? item['id']?.toString() ?? 'Item ${i + 1}'),
-                                    subtitle: Text(item['status'] ?? item['type'] ?? ''),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Selected: ${item['name'] ?? item['id']}')),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
+                    Step(
+                      title: const Text('Payment & Review'),
+                      isActive: _step >= 1,
+                      content: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
+                        RadioListTile(value: 'card', groupValue: _paymentMethod, onChanged: (v) => setState(() => _paymentMethod = v!), title: const Text('Card (Paystack/Flutterwave)'), dense: true),
+                        RadioListTile(value: 'bank_transfer', groupValue: _paymentMethod, onChanged: (v) => setState(() => _paymentMethod = v!), title: const Text('Bank Transfer'), dense: true),
+                        RadioListTile(value: 'ussd', groupValue: _paymentMethod, onChanged: (v) => setState(() => _paymentMethod = v!), title: const Text('USSD'), dense: true),
+                        RadioListTile(value: 'cod', groupValue: _paymentMethod, onChanged: (v) => setState(() => _paymentMethod = v!), title: const Text('Cash on Delivery'), dense: true),
+                        const Divider(),
+                        _row('Subtotal', '$_currency ${_subTotal.toStringAsFixed(2)}'),
+                        _row('Shipping', '$_currency ${_shippingFee.toStringAsFixed(2)}'),
+                        _row('VAT (7.5%)', '$_currency ${_tax.toStringAsFixed(2)}'),
+                        const Divider(),
+                        _row('Total', '$_currency ${_total.toStringAsFixed(2)}', bold: true),
+                      ]),
                     ),
-                  ]),
+                    Step(
+                      title: const Text('Confirmation'),
+                      isActive: _step >= 2,
+                      content: Column(children: [
+                        const Icon(Icons.check_circle, size: 64, color: Colors.green),
+                        const SizedBox(height: 16),
+                        const Text('Order Placed!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        if (_sessionId.isNotEmpty) Text('Order #$_sessionId', style: const TextStyle(color: Colors.grey)),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pushNamed(context, '/ecommerce-orders'),
+                          child: const Text('View My Orders'),
+                        ),
+                      ]),
+                    ),
+                  ],
                 ),
     );
   }
 
-  Widget _summaryCard(String label, String value, Color color) {
-    return Expanded(
-      child: Card(
-        color: color.withOpacity(0.1),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: TextStyle(color: color.withOpacity(0.8))),
-          ]),
-        ),
-      ),
+  Widget _row(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label), Text(value, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+      ]),
     );
   }
 }

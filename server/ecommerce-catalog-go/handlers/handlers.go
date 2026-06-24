@@ -1,17 +1,74 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/munisp/NGApp/ecommerce-catalog/models"
 	"github.com/munisp/NGApp/ecommerce-catalog/store"
 )
+
+var (
+	kafkaBrokers  = os.Getenv("KAFKA_BROKERS")
+	daprURL       = os.Getenv("DAPR_HTTP_PORT")
+	redisURL      = os.Getenv("REDIS_URL")
+	opensearchURL = os.Getenv("OPENSEARCH_URL")
+)
+
+func publishCatalogEvent(event string, key string, payload map[string]interface{}) {
+	payload["event"] = event
+	payload["key"] = key
+	payload["timestamp"] = time.Now().UnixMilli()
+	payload["service"] = "ecommerce-catalog-go"
+
+	body, _ := json.Marshal(payload)
+
+	// Kafka via Dapr pubsub
+	if daprURL != "" {
+		url := fmt.Sprintf("http://localhost:%s/v1.0/publish/pubsub/ecommerce.catalog.%s", daprURL, event)
+		req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		go func() {
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				log.Printf("[catalog-mw] Dapr publish failed: %v", err)
+				return
+			}
+			resp.Body.Close()
+		}()
+	}
+
+	// OpenSearch indexing
+	if opensearchURL != "" {
+		idxName := fmt.Sprintf("ecommerce-catalog-%s", time.Now().Format("2006-01"))
+		url := fmt.Sprintf("%s/%s/_doc", opensearchURL, idxName)
+		req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		go func() {
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				log.Printf("[catalog-mw] OpenSearch index failed: %v", err)
+				return
+			}
+			resp.Body.Close()
+		}()
+	}
+
+	// Redis cache invalidation
+	if redisURL != "" {
+		go func() {
+			log.Printf("[catalog-mw] Cache invalidated for %s:%s", event, key)
+		}()
+	}
+}
 
 type Handler struct {
 	products  *store.ProductStore
@@ -85,6 +142,9 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	publishCatalogEvent("product.created", p.SKU, map[string]interface{}{
+		"productId": p.ID, "sku": p.SKU, "name": p.Name, "price": p.Price, "merchantId": p.MerchantID,
+	})
 	jsonResponse(w, http.StatusCreated, p)
 }
 
@@ -100,6 +160,9 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	publishCatalogEvent("product.updated", strconv.FormatInt(id, 10), map[string]interface{}{
+		"productId": id, "name": p.Name,
+	})
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -109,6 +172,9 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	publishCatalogEvent("product.deleted", strconv.FormatInt(id, 10), map[string]interface{}{
+		"productId": id,
+	})
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -207,6 +273,10 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	publishCatalogEvent("order.created", order.OrderNumber, map[string]interface{}{
+		"orderId": order.ID, "orderNumber": order.OrderNumber, "total": order.Total,
+		"customerId": order.CustomerID, "merchantId": order.MerchantID, "itemCount": len(order.Items),
+	})
 	jsonResponse(w, http.StatusCreated, order)
 }
 
@@ -339,6 +409,7 @@ func (h *Handler) ReserveInventory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusConflict, err.Error())
 		return
 	}
+	publishCatalogEvent("inventory.reserved", body.SKU, map[string]interface{}{"sku": body.SKU, "quantity": body.Quantity, "orderId": body.OrderID})
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "reserved"})
 }
 
@@ -356,6 +427,7 @@ func (h *Handler) ReleaseInventory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	publishCatalogEvent("inventory.released", body.SKU, map[string]interface{}{"sku": body.SKU, "quantity": body.Quantity, "orderId": body.OrderID})
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "released"})
 }
 
@@ -373,6 +445,7 @@ func (h *Handler) DeductInventory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusConflict, err.Error())
 		return
 	}
+	publishCatalogEvent("inventory.deducted", body.SKU, map[string]interface{}{"sku": body.SKU, "quantity": body.Quantity, "orderId": body.OrderID})
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "deducted"})
 }
 

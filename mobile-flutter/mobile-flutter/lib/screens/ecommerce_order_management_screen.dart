@@ -7,125 +7,137 @@ class EcommerceOrderManagementScreen extends StatefulWidget {
   State<EcommerceOrderManagementScreen> createState() => _EcommerceOrderManagementScreenState();
 }
 
-class _EcommerceOrderManagementScreenState extends State<EcommerceOrderManagementScreen> {
-  Map<String, dynamic> _data = {};
-  List<dynamic> _items = [];
+class _EcommerceOrderManagementScreenState extends State<EcommerceOrderManagementScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  List<dynamic> _orders = [];
   bool _loading = true;
   String _error = '';
-  String _search = '';
+  String _statusFilter = 'all';
+
+  static const _statuses = ['all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+  static const _statusIcons = {
+    'pending': Icons.hourglass_empty,
+    'confirmed': Icons.check_circle_outline,
+    'processing': Icons.settings,
+    'shipped': Icons.local_shipping,
+    'delivered': Icons.done_all,
+    'cancelled': Icons.cancel,
+  };
+  static const _statusColors = {
+    'pending': Colors.orange,
+    'confirmed': Colors.blue,
+    'processing': Colors.purple,
+    'shipped': Colors.indigo,
+    'delivered': Colors.green,
+    'cancelled': Colors.red,
+  };
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _tabController = TabController(length: _statuses.length, vsync: this);
+    _tabController.addListener(() { setState(() => _statusFilter = _statuses[_tabController.index]); });
+    _loadOrders();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadOrders() async {
     try {
-      final result = await ApiService.instance.get('/general/list', queryParams: {'page': '1', 'limit': '50'});
-      setState(() {
-        _data = result ?? {};
-        _items = result['items'] ?? result['data'] ?? [];
-        _loading = false;
-      });
+      final result = await ApiService.instance.get('/ecommerceOrders/listOrders', queryParams: {'customerId': '1', 'limit': '50'});
+      setState(() { _orders = result?['orders'] ?? []; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
-  List<dynamic> get _filtered => _items.where((item) {
-    if (_search.isEmpty) return true;
-    final q = _search.toLowerCase();
-    return (item['name'] ?? item['title'] ?? item['id'] ?? '').toString().toLowerCase().contains(q);
-  }).toList();
+  List<dynamic> get _filtered => _statusFilter == 'all' ? _orders : _orders.where((o) => o['status'] == _statusFilter).toList();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ecommerce Order Management'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _load(); }),
-        ],
+        title: const Text('My Orders'),
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabs: _statuses.map((s) => Tab(text: s == 'all' ? 'All' : s[0].toUpperCase() + s.substring(1))).toList(),
+        ),
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _loadOrders(); })],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
                   Text(_error, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _load(); }, child: const Text('Retry')),
+                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _loadOrders(); }, child: const Text('Retry')),
                 ]))
               : RefreshIndicator(
-                  onRefresh: _load,
-                  child: Column(children: [
-                    // Search bar
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search...',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                        ),
-                        onChanged: (v) => setState(() => _search = v),
-                      ),
-                    ),
-                    // Summary cards
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        _summaryCard('Total', _items.length.toString(), Colors.blue),
-                        const SizedBox(width: 8),
-                        _summaryCard('Filtered', _filtered.length.toString(), Colors.green),
-                      ]),
-                    ),
-                    const SizedBox(height: 8),
-                    // List
-                    Expanded(
-                      child: _filtered.isEmpty
-                          ? const Center(child: Text('No items found'))
-                          : ListView.builder(
-                              itemCount: _filtered.length,
-                              itemBuilder: (ctx, i) {
-                                final item = _filtered[i];
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  child: ListTile(
-                                    leading: CircleAvatar(child: Text('${i + 1}')),
-                                    title: Text(item['name'] ?? item['title'] ?? item['id']?.toString() ?? 'Item ${i + 1}'),
-                                    subtitle: Text(item['status'] ?? item['type'] ?? ''),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Selected: ${item['name'] ?? item['id']}')),
-                                      );
-                                    },
+                  onRefresh: _loadOrders,
+                  child: _filtered.isEmpty
+                      ? const Center(child: Text('No orders found'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: _filtered.length,
+                          itemBuilder: (ctx, i) {
+                            final order = _filtered[i];
+                            final status = order['status'] ?? 'pending';
+                            final total = order['totalAmount'] ?? order['total'] ?? '0';
+                            final date = order['createdAt'] ?? '';
+                            final items = order['items'] as List? ?? [];
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              child: ExpansionTile(
+                                leading: Icon(_statusIcons[status] ?? Icons.receipt, color: _statusColors[status] ?? Colors.grey),
+                                title: Text('Order #${order['orderNumber'] ?? order['id']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Row(children: [
+                                  Chip(label: Text(status, style: const TextStyle(fontSize: 11, color: Colors.white)), backgroundColor: _statusColors[status] ?? Colors.grey, padding: EdgeInsets.zero, materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                  const SizedBox(width: 8),
+                                  Text('NGN $total', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                ]),
+                                trailing: Text(_formatDate(date), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                children: [
+                                  if (items.isNotEmpty) ...items.map((item) => ListTile(
+                                    dense: true,
+                                    title: Text(item['name'] ?? item['sku'] ?? '', style: const TextStyle(fontSize: 13)),
+                                    subtitle: Text('Qty: ${item['quantity']} x NGN ${item['unitPrice']}'),
+                                    trailing: Text('NGN ${((item['quantity'] ?? 1) * (double.tryParse(item['unitPrice']?.toString() ?? '0') ?? 0)).toStringAsFixed(2)}'),
+                                  )),
+                                  if (status == 'shipped') Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {},
+                                      icon: const Icon(Icons.location_on),
+                                      label: const Text('Track Delivery'),
+                                    ),
                                   ),
-                                );
-                              },
-                            ),
-                    ),
-                  ]),
+                                  if (status == 'delivered') Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                                      ElevatedButton.icon(onPressed: () {}, icon: const Icon(Icons.replay), label: const Text('Reorder')),
+                                      OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.star_border), label: const Text('Review')),
+                                    ]),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                 ),
     );
   }
 
-  Widget _summaryCard(String label, String value, Color color) {
-    return Expanded(
-      child: Card(
-        color: color.withOpacity(0.1),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: TextStyle(color: color.withOpacity(0.8))),
-          ]),
-        ),
-      ),
-    );
+  String _formatDate(String date) {
+    try {
+      final d = DateTime.parse(date);
+      return '${d.day}/${d.month}/${d.year}';
+    } catch (_) {
+      return date.length > 10 ? date.substring(0, 10) : date;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 }

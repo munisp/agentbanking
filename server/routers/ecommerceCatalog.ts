@@ -21,6 +21,13 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { TRPCError } from "@trpc/server";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -32,6 +39,14 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   archived: [],
 };
+
+
+async function publishCatalogMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("ecommerce.catalog", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.merchantId ?? "system"), amount: Number(payload.price ?? 0), type: `ecommerce.catalog.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `ecommerce.catalog.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("ecommerce_catalog", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+}
 
 const CATALOG_SERVICE_URL =
   process.env.CATALOG_SERVICE_URL || "http://localhost:8100";
@@ -282,6 +297,9 @@ export const ecommerceCatalogRouter = router({
         reorderPoint: 10,
       });
 
+      publishCatalogMiddleware("product.created", product.sku, { productId: product.id, name: product.name, price: input.price, merchantId: input.merchantId });
+      cacheSet(`catalog:product:${product.id}`, JSON.stringify(product), 3600).catch(() => {});
+
       return product;
     }),
 
@@ -316,6 +334,8 @@ export const ecommerceCatalogRouter = router({
         .where(eq(ecommerceProducts.id, input.id))
         .returning();
 
+      publishCatalogMiddleware("product.updated", String(input.id), { productId: input.id, changes: Object.keys(updates) });
+
       return updated;
     }),
 
@@ -328,6 +348,8 @@ export const ecommerceCatalogRouter = router({
       await database
         .delete(ecommerceProducts)
         .where(eq(ecommerceProducts.id, input.id));
+
+      publishCatalogMiddleware("product.deleted", String(input.id), { productId: input.id });
 
       return { deleted: true };
     }),
@@ -390,6 +412,8 @@ export const ecommerceCatalogRouter = router({
         })
         .returning();
 
+      publishCatalogMiddleware("category.created", category.slug, { categoryId: category.id, name: category.name });
+
       return category;
     }),
 
@@ -451,6 +475,9 @@ export const ecommerceCatalogRouter = router({
         })
         .where(eq(ecommerceInventory.sku, input.sku))
         .returning();
+
+      publishCatalogMiddleware("stock.updated", input.sku, { quantity: input.quantity, reason: input.reason });
+      cacheSet(`catalog:inventory:${input.sku}`, JSON.stringify(updated), 1800).catch(() => {});
 
       return updated;
     }),

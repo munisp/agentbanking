@@ -43,6 +43,21 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.mdm", key, { eventType, ...payload });
+  fluvioPublish("pos.mdm", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.mdm.command.executed", { eventType, ...payload }).catch(() => {});
+  lakehouseIngest("pos_mdm_events", { event_type: eventType, ...payload, source: "mdm" }).catch(() => {});
+}
+
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],

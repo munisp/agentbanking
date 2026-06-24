@@ -17,6 +17,21 @@ import {
   withTransaction,
 } from "../lib/transactionHelper";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.canary.release", key, { eventType, ...payload });
+  fluvioPublish("pos.canary.release", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.canary.release.promoted", { eventType, ...payload }).catch(() => {});
+  lakehouseIngest("pos_canary_releases", { event_type: eventType, ...payload, source: "canaryReleaseManager" }).catch(() => {});
+}
+
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],

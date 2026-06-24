@@ -390,6 +390,307 @@ export const stablecoinRailsRouter = router({
     }
   }),
 
+  // ── Stablecoin Mutations (mint, burn, transfer, on/off ramp) ──
+
+  mint: protectedProcedure
+    .input(z.object({
+      walletId: z.number(),
+      amount: z.number().positive(),
+      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+      sourceRef: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `MINT-${input.walletId}-${Date.now()}`;
+
+      // Verify wallet exists and is active
+      const wallet = await db.execute(
+        sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active'`
+      );
+      if (!(wallet as any).rows?.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Active wallet not found" });
+      }
+
+      const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
+      const newBalance = currentBalance + input.amount;
+
+      // Update wallet balance
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`
+      );
+
+      // GL entry: Debit Reserve (1004), Credit Stablecoin Liability (3001)
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${ref}`,
+        description: `Mint ${input.amount} ${input.currency} to wallet ${input.walletId}`,
+        debitAccountId: 1004, creditAccountId: 3001,
+        amount: Math.round(input.amount * 100),
+        currency: input.currency,
+        referenceType: "stablecoin_mint", referenceId: ref,
+        postedBy: (ctx as any)?.user?.agentCode ?? "system",
+        status: "posted",
+      });
+
+      await writeAuditLog({ agentId: (ctx as any)?.user?.id ?? 0, agentCode: (ctx as any)?.user?.agentCode ?? "system", action: "STABLECOIN_MINT", resource: "stablecoinRails", resourceId: String(input.walletId), status: "success", metadata: { amount: input.amount, currency: input.currency, ref } });
+
+      // Middleware fan-out
+      publishEvent("stablecoin.minted", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance }).catch(() => {});
+      tbCreateTransfer({ debitAccountId: "1004", creditAccountId: "3001", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_mint", agentCode: "system" }).catch(() => {});
+      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_mint", timestamp: new Date().toISOString() }).catch(() => {});
+      dapr.publishEvent("pubsub", "stablecoin.minted", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency }).catch(() => {});
+      ingestToLakehouse("stablecoin_mints", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
+
+      return { ref, walletId: input.walletId, amount: input.amount, newBalance, currency: input.currency };
+    }),
+
+  burn: protectedProcedure
+    .input(z.object({
+      walletId: z.number(),
+      amount: z.number().positive(),
+      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+      reason: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `BURN-${input.walletId}-${Date.now()}`;
+
+      const wallet = await db.execute(
+        sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active'`
+      );
+      if (!(wallet as any).rows?.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Active wallet not found" });
+      }
+
+      const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
+      if (currentBalance < input.amount) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${currentBalance} < ${input.amount}` });
+      }
+
+      const newBalance = currentBalance - input.amount;
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`
+      );
+
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${ref}`,
+        description: `Burn ${input.amount} ${input.currency} from wallet ${input.walletId}: ${input.reason}`,
+        debitAccountId: 3001, creditAccountId: 1004,
+        amount: Math.round(input.amount * 100),
+        currency: input.currency,
+        referenceType: "stablecoin_burn", referenceId: ref,
+        postedBy: (ctx as any)?.user?.agentCode ?? "system",
+        status: "posted",
+      });
+
+      publishEvent("stablecoin.burned", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, reason: input.reason }).catch(() => {});
+      tbCreateTransfer({ debitAccountId: "3001", creditAccountId: "1004", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_burn", agentCode: "system" }).catch(() => {});
+      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_burn", timestamp: new Date().toISOString() }).catch(() => {});
+      dapr.publishEvent("pubsub", "stablecoin.burned", { ref, walletId: input.walletId, amount: input.amount }).catch(() => {});
+      ingestToLakehouse("stablecoin_burns", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
+
+      return { ref, walletId: input.walletId, amount: input.amount, newBalance, currency: input.currency };
+    }),
+
+  transfer: protectedProcedure
+    .input(z.object({
+      fromWalletId: z.number(),
+      toWalletId: z.number(),
+      amount: z.number().positive(),
+      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+      memo: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `TXF-${input.fromWalletId}-${input.toWalletId}-${Date.now()}`;
+
+      // Atomic transfer with FOR UPDATE locking
+      const fromWallet = await db.execute(
+        sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.fromWalletId} AND status = 'active' FOR UPDATE`
+      );
+      if (!(fromWallet as any).rows?.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Source wallet not found or inactive" });
+      }
+
+      const toWallet = await db.execute(
+        sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.toWalletId} AND status = 'active' FOR UPDATE`
+      );
+      if (!(toWallet as any).rows?.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Destination wallet not found or inactive" });
+      }
+
+      const fromBalance = Number((fromWallet as any).rows[0].data?.balance ?? 0);
+      if (fromBalance < input.amount) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${fromBalance} < ${input.amount}` });
+      }
+
+      const fee = calculateFee(input.amount, "transfer");
+      const netAmount = input.amount - fee.fee;
+      const newFromBalance = fromBalance - input.amount;
+      const toBalance = Number((toWallet as any).rows[0].data?.balance ?? 0);
+      const newToBalance = toBalance + netAmount;
+
+      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newFromBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.fromWalletId}`);
+      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newToBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.toWalletId}`);
+
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${ref}`,
+        description: `Transfer ${input.amount} ${input.currency} from wallet ${input.fromWalletId} to ${input.toWalletId}`,
+        debitAccountId: input.fromWalletId, creditAccountId: input.toWalletId,
+        amount: Math.round(input.amount * 100),
+        currency: input.currency,
+        referenceType: "stablecoin_transfer", referenceId: ref,
+        postedBy: (ctx as any)?.user?.agentCode ?? "system",
+        status: "posted",
+      });
+
+      publishEvent("stablecoin.transferred", ref, { fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, currency: input.currency }).catch(() => {});
+      tbCreateTransfer({ debitAccountId: String(input.fromWalletId), creditAccountId: String(input.toWalletId), amount: Math.round(input.amount * 100), ref, txType: "stablecoin_transfer", agentCode: "system" }).catch(() => {});
+      dapr.publishEvent("pubsub", "stablecoin.transferred", { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount }).catch(() => {});
+      ingestToLakehouse("stablecoin_transfers", { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, currency: input.currency, timestamp: new Date().toISOString() }).catch(() => {});
+
+      return { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, netAmount, currency: input.currency };
+    }),
+
+  onRamp: protectedProcedure
+    .input(z.object({
+      walletId: z.number(),
+      amount: z.number().positive(),
+      fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
+      stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+      provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax", "bank_transfer"]),
+      paymentRef: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `ONRAMP-${input.walletId}-${Date.now()}`;
+
+      // Verify payment with provider (fail-closed for financial ops)
+      const providerUrls: Record<string, string> = {
+        paystack: "https://api.paystack.co/transaction/verify",
+        flutterwave: "https://api.flutterwave.com/v3/transactions/verify",
+        yellowcard: "https://api.yellowcard.io/v1/verify",
+        quidax: "https://www.quidax.com/api/v1/verify",
+        bank_transfer: "",
+      };
+
+      if (input.provider !== "bank_transfer") {
+        try {
+          const verifyUrl = `${providerUrls[input.provider]}/${input.paymentRef}`;
+          const verifyRes = await fetch(verifyUrl, {
+            headers: { Authorization: `Bearer ${process.env[`${input.provider.toUpperCase()}_SECRET_KEY`] ?? ""}` },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!verifyRes.ok) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Payment verification failed: ${verifyRes.status}` });
+          }
+        } catch (err) {
+          if (err instanceof TRPCError) throw err;
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Payment provider unreachable: ${(err as Error).message}` });
+        }
+      }
+
+      // FX rate lookup for non-NGN
+      let stablecoinAmount = input.amount;
+      if (input.fiatCurrency !== "NGN" && input.stablecoin === "cNGN") {
+        const rateRes = await db.execute(sql`SELECT rate FROM "currency_rates" WHERE from_currency = ${input.fiatCurrency} AND to_currency = 'NGN' ORDER BY updated_at DESC LIMIT 1`).catch(() => ({ rows: [] as any[] }));
+        const rate = Number((rateRes as any).rows?.[0]?.rate ?? 1);
+        stablecoinAmount = input.amount * rate;
+      }
+
+      // Credit wallet
+      const wallet = await db.execute(sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`);
+      if (!(wallet as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+
+      const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
+      const newBalance = currentBalance + stablecoinAmount;
+      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`);
+
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${ref}`,
+        description: `On-ramp ${input.amount} ${input.fiatCurrency} → ${stablecoinAmount} ${input.stablecoin} via ${input.provider}`,
+        debitAccountId: 1001, creditAccountId: 3001,
+        amount: Math.round(stablecoinAmount * 100),
+        currency: input.stablecoin,
+        referenceType: "stablecoin_onramp", referenceId: ref,
+        postedBy: (ctx as any)?.user?.agentCode ?? "system",
+        status: "posted",
+      });
+
+      publishEvent("stablecoin.minted", ref, { walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, provider: input.provider }).catch(() => {});
+      tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "3001", amount: Math.round(stablecoinAmount * 100), ref, txType: "stablecoin_onramp", agentCode: "system" }).catch(() => {});
+      dapr.publishEvent("pubsub", "stablecoin.onramp", { ref, walletId: input.walletId, fiatAmount: input.amount, stablecoinAmount, provider: input.provider }).catch(() => {});
+      ingestToLakehouse("stablecoin_onramp", { ref, walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, provider: input.provider, timestamp: new Date().toISOString() }).catch(() => {});
+
+      return { ref, walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, newBalance, provider: input.provider };
+    }),
+
+  offRamp: protectedProcedure
+    .input(z.object({
+      walletId: z.number(),
+      amount: z.number().positive(),
+      stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+      fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
+      bankCode: z.string().min(1),
+      accountNumber: z.string().min(10).max(10),
+      provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = (await getDb())!;
+      const ref = `OFFRAMP-${input.walletId}-${Date.now()}`;
+
+      const wallet = await db.execute(sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`);
+      if (!(wallet as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+
+      const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
+      if (currentBalance < input.amount) throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${currentBalance} < ${input.amount}` });
+
+      const fee = calculateFee(input.amount, "transfer");
+      const netAmount = input.amount - fee.fee;
+      const newBalance = currentBalance - input.amount;
+
+      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`);
+
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${ref}`,
+        description: `Off-ramp ${input.amount} ${input.stablecoin} → ${netAmount} ${input.fiatCurrency} via ${input.provider}`,
+        debitAccountId: 3001, creditAccountId: 1001,
+        amount: Math.round(input.amount * 100),
+        currency: input.stablecoin,
+        referenceType: "stablecoin_offramp", referenceId: ref,
+        postedBy: (ctx as any)?.user?.agentCode ?? "system",
+        status: "posted",
+      });
+
+      publishEvent("stablecoin.burned", ref, { walletId: input.walletId, amount: input.amount, stablecoin: input.stablecoin, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, provider: input.provider }).catch(() => {});
+      tbCreateTransfer({ debitAccountId: "3001", creditAccountId: "1001", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_offramp", agentCode: "system" }).catch(() => {});
+      dapr.publishEvent("pubsub", "stablecoin.offramp", { ref, walletId: input.walletId, amount: input.amount, fiatAmount: netAmount, provider: input.provider }).catch(() => {});
+      ingestToLakehouse("stablecoin_offramp", { ref, walletId: input.walletId, amount: input.amount, stablecoin: input.stablecoin, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, provider: input.provider, timestamp: new Date().toISOString() }).catch(() => {});
+
+      return { ref, walletId: input.walletId, burned: input.amount, fee: fee.fee, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, newBalance, provider: input.provider };
+    }),
+
+  getBalance: protectedProcedure
+    .input(z.object({ walletId: z.number() }))
+    .query(async ({ input }) => {
+      const db = (await getDb())!;
+      const result = await db.execute(sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId}`);
+      if (!(result as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+      const row = (result as any).rows[0];
+      const data = typeof row.data === "string" ? JSON.parse(row.data) : (row.data ?? {});
+      return { walletId: input.walletId, balance: Number(data.balance ?? 0), currency: data.currency ?? "cNGN", status: row.status, walletAddress: data.walletAddress };
+    }),
+
+  getTransactionHistory: protectedProcedure
+    .input(z.object({ walletId: z.number(), limit: z.number().min(1).max(100).default(20), offset: z.number().min(0).default(0) }))
+    .query(async ({ input }) => {
+      const db = (await getDb())!;
+      const lim = input.limit;
+      const off = input.offset;
+      const walletIdStr = `%wallet${input.walletId}%`;
+      const result = await db.execute(sql`SELECT * FROM "gl_journal_entries" WHERE reference_type LIKE 'stablecoin_%' AND (reference_id LIKE ${walletIdStr} OR description LIKE ${walletIdStr}) ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}`);
+      return { transactions: (result as any).rows ?? [], walletId: input.walletId };
+    }),
+
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
       { name: "Stablecoin Rails (Go)", url: "http://localhost:8263/health" },

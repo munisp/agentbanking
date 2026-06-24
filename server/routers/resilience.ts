@@ -1413,7 +1413,7 @@ export const resilienceRouter = router({
         queuedTransactions: z.number().optional(),
       })
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       // Detect tier from telemetry
       let tier = "3g";
       if (input.packetLossPct > 30) tier = "offline";

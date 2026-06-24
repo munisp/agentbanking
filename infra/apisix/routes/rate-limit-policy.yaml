@@ -72,5 +72,25 @@ endpoint_overrides:
     policy: internal
   - uri: /socket.io/*
     policy: websocket
+  - uri: /api/trpc/cashIn.*
+    policy: transaction
+  - uri: /api/trpc/cashOut.*
+    policy: transaction
+  - uri: /api/trpc/floatTopUp.*
+    policy: transaction
+  - uri: /api/trpc/stablecoinRails.*
+    policy: transaction
+  - uri: /api/trpc/crossBorderRemittance.*
+    policy: transaction
+  - uri: /api/trpc/agentLoanFacility.*
+    policy: transaction
+  - uri: /api/trpc/nfcTapToPay.*
+    policy: transaction
+  - uri: /api/trpc/ecommerceOrders.*
+    policy: transaction
+  - uri: /api/trpc/billPayments.*
+    policy: transaction
+  - uri: /api/trpc/splitPayments.*
+    policy: transaction
   - uri: /health
     policy: null  # no rate limiting on health checks

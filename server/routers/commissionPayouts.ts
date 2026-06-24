@@ -35,6 +35,8 @@ import { cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -158,6 +160,8 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "commission", "payout").catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

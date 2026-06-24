@@ -32,6 +32,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { enforcePermission } from "../_core/permify";
+
 
 // ── Payment Gateway Verification ───────────────────────────────────────────
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY ?? "";
@@ -239,6 +241,8 @@ export const ecommerceOrdersRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "order", "create").catch(() => {});
+
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup

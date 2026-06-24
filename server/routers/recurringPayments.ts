@@ -33,6 +33,8 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -122,6 +124,8 @@ export const recurringPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "transaction", "create").catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

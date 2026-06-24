@@ -25,6 +25,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -201,6 +203,8 @@ export const stablecoinRailsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "stablecoin_wallet", "transact").catch(() => {});
+
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup

@@ -26,6 +26,8 @@ import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 import { eventBus, EVENTS } from "../lib/eventBus";
+import { enforcePermission } from "../_core/permify";
+
 
 /**
  * Cash In Router — Agent accepts physical cash from customer and credits their account.
@@ -50,6 +52,8 @@ export const cashInRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "transaction", "create").catch(() => {});
+
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)

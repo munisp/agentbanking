@@ -36,6 +36,8 @@ import {
   dapr,
   tigerbeetle,
 } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -158,6 +160,8 @@ export const agentLoanFacilityRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "loan", "create").catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

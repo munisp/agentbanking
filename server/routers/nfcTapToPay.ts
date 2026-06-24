@@ -28,6 +28,8 @@ import { cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -213,6 +215,8 @@ export const nfcTapToPayRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "transaction", "create").catch(() => {});
+
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup

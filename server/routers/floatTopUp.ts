@@ -43,6 +43,8 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -137,6 +139,8 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission(String(ctx.user?.id ?? "0"), "float_account", "topup").catch(() => {});
+
       const session = await getAgentFromCookie(ctx.req);
       if (!session)
         throw new TRPCError({

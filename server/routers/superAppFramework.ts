@@ -140,7 +140,7 @@ async function publishsuperAppFrameworkMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -305,7 +305,7 @@ export const superAppFrameworkRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishSuperAppFrameworkMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishsuperAppFrameworkMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -352,7 +352,7 @@ export const superAppFrameworkRouter = router({
         sql`UPDATE "mini_apps" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishSuperAppFrameworkMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishsuperAppFrameworkMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

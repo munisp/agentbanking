@@ -145,7 +145,7 @@ async function publishcarrierCostMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `network_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -261,7 +261,7 @@ export const carrierCostRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCarrierCostMiddleware("compare", `${Date.now()}`, { action: "compare" }).catch(() => {});
+      await publishcarrierCostMiddleware("compare", `${Date.now()}`, { action: "compare" }).catch(() => {});
 
 
       return {
@@ -298,7 +298,7 @@ export const carrierCostRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishCarrierCostMiddleware("optimize", `${Date.now()}`, { action: "optimize" }).catch(() => {});
+      await publishcarrierCostMiddleware("optimize", `${Date.now()}`, { action: "optimize" }).catch(() => {});
 
       return {
         success: true,

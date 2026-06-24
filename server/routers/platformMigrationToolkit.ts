@@ -141,7 +141,7 @@ async function publishplatformMigrationToolkitMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformMigrationToolkitRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformMigrationToolkitMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformMigrationToolkitMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformMigrationToolkitRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "migrations_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformMigrationToolkitMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformMigrationToolkitMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

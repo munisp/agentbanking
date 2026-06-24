@@ -223,7 +223,7 @@ async function publishsmsReceiptMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -393,7 +393,7 @@ export const smsReceiptRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishSmsReceiptMiddleware("autoSend", `${Date.now()}`, { action: "autoSend" }).catch(() => {});
+        await publishsmsReceiptMiddleware("autoSend", `${Date.now()}`, { action: "autoSend" }).catch(() => {});
 
 
         return { success: smsResult.success, messageId: smsResult.messageId };
@@ -443,7 +443,7 @@ export const smsReceiptRouter = router({
         const message = lines.join("\n");
         const smsResult = await sendTermiiSMS(input.recipientPhone, message);
         // Middleware fan-out (fail-open)
-        await publishSmsReceiptMiddleware("sendUssd", `${Date.now()}`, { action: "sendUssd" }).catch(() => {});
+        await publishsmsReceiptMiddleware("sendUssd", `${Date.now()}`, { action: "sendUssd" }).catch(() => {});
 
         return {
           success: smsResult.success,
@@ -465,7 +465,7 @@ export const smsReceiptRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSmsReceiptMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+      await publishsmsReceiptMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
 
       return {
         messageId: `msg-${Date.now()}`,
@@ -559,7 +559,7 @@ export const smsReceiptRouter = router({
   }),
   myDisputes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSmsReceiptMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
+    await publishsmsReceiptMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
 
     return {
       disputes: [] as Array<{
@@ -581,7 +581,7 @@ export const smsReceiptRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSmsReceiptMiddleware("processInput", `${Date.now()}`, { action: "processInput" }).catch(() => {});
+      await publishsmsReceiptMiddleware("processInput", `${Date.now()}`, { action: "processInput" }).catch(() => {});
 
       return { response: "", type: "text" as const };
     }),
@@ -595,7 +595,7 @@ export const smsReceiptRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSmsReceiptMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
+      await publishsmsReceiptMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
 
       return { ticketId: `ticket-${Date.now()}`, status: "open" as const };
     }),
@@ -609,7 +609,7 @@ export const smsReceiptRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSmsReceiptMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
+      await publishsmsReceiptMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
 
       return { success: true, switchId: `sw-${Date.now()}` };
     }),
@@ -623,13 +623,13 @@ export const smsReceiptRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSmsReceiptMiddleware("requestRefund", `${Date.now()}`, { action: "requestRefund" }).catch(() => {});
+      await publishsmsReceiptMiddleware("requestRefund", `${Date.now()}`, { action: "requestRefund" }).catch(() => {});
 
       return { refundId: `ref-${Date.now()}`, status: "pending" as const };
     }),
   startSession: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishSmsReceiptMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
+    await publishsmsReceiptMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
 
     return {
       sessionId: `sess-${Date.now()}`,

@@ -146,7 +146,7 @@ async function publishofflinePosModeMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `pos_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -297,7 +297,7 @@ export const offlinePosModeRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishOfflinePosModeMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
+        await publishofflinePosModeMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
 
 
         return {
@@ -348,7 +348,7 @@ export const offlinePosModeRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishOfflinePosModeMiddleware("endSession", `${Date.now()}`, { action: "endSession" }).catch(() => {});
+        await publishofflinePosModeMiddleware("endSession", `${Date.now()}`, { action: "endSession" }).catch(() => {});
 
 
         return {
@@ -407,7 +407,7 @@ export const offlinePosModeRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishOfflinePosModeMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
+        await publishofflinePosModeMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
 
 
         return { success: true, tier, config: configValues };

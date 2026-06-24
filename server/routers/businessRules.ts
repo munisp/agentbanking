@@ -125,7 +125,7 @@ async function publishbusinessRulesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -315,7 +315,7 @@ export const businessRulesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishBusinessRulesMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
+        await publishbusinessRulesMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
 
 
         return { success: true, ruleId };
@@ -350,7 +350,7 @@ export const businessRulesRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishBusinessRulesMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
+          await publishbusinessRulesMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
 
           return { success: false, error: "Rule not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
@@ -397,7 +397,7 @@ export const businessRulesRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishBusinessRulesMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+        await publishbusinessRulesMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -424,7 +424,7 @@ export const businessRulesRouter = router({
           .map(r => JSON.parse(String(r.value ?? "{}")))
           .filter((r: any) => r.enabled !== false);
         // Middleware fan-out (fail-open)
-        await publishBusinessRulesMiddleware("evaluate", `${Date.now()}`, { action: "evaluate" }).catch(() => {});
+        await publishbusinessRulesMiddleware("evaluate", `${Date.now()}`, { action: "evaluate" }).catch(() => {});
 
         return {
           results: rules.map((r: any) => ({

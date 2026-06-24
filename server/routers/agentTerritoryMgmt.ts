@@ -132,7 +132,7 @@ async function publishagentTerritoryMgmtMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -253,7 +253,7 @@ export const agentTerritoryMgmtRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentTerritoryMgmtMiddleware("assignAgent", `${Date.now()}`, { action: "assignAgent" }).catch(() => {});
+        await publishagentTerritoryMgmtMiddleware("assignAgent", `${Date.now()}`, { action: "assignAgent" }).catch(() => {});
 
 
         return { success: true };
@@ -287,7 +287,7 @@ export const agentTerritoryMgmtRouter = router({
           metadata: { agentId: input.agentId },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentTerritoryMgmtMiddleware("unassignAgent", `${Date.now()}`, { action: "unassignAgent" }).catch(() => {});
+        await publishagentTerritoryMgmtMiddleware("unassignAgent", `${Date.now()}`, { action: "unassignAgent" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

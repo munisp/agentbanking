@@ -169,7 +169,7 @@ async function publishadvancedBiReportingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -280,7 +280,7 @@ export const advancedBiReportingRouter = router({
   }),
   reportBuilder: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAdvancedBiReportingMiddleware("reportBuilder", `${Date.now()}`, { action: "reportBuilder" }).catch(() => {});
+    await publishadvancedBiReportingMiddleware("reportBuilder", `${Date.now()}`, { action: "reportBuilder" }).catch(() => {});
 
     return {
       templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],

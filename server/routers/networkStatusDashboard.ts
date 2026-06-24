@@ -129,7 +129,7 @@ async function publishnetworkStatusDashboardMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -284,7 +284,7 @@ export const networkStatusDashboardRouter = router({
   }),
   getTimeSeries: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishNetworkStatusDashboardMiddleware("getTimeSeries", `${Date.now()}`, { action: "getTimeSeries" }).catch(() => {});
+    await publishnetworkStatusDashboardMiddleware("getTimeSeries", `${Date.now()}`, { action: "getTimeSeries" }).catch(() => {});
 
     return {
       data: [] as Array<{
@@ -352,7 +352,7 @@ export const networkStatusDashboardRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishNetworkStatusDashboardMiddleware("resolveAlert", `${Date.now()}`, { action: "resolveAlert" }).catch(() => {});
+      await publishnetworkStatusDashboardMiddleware("resolveAlert", `${Date.now()}`, { action: "resolveAlert" }).catch(() => {});
 
 
       return { success: true, alertId: input.alertId };

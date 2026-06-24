@@ -136,7 +136,7 @@ async function publishmerchantKycOnboardingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -276,7 +276,7 @@ export const merchantKycOnboardingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishMerchantKycOnboardingMiddleware("uploadDoc", `${Date.now()}`, { action: "uploadDoc" }).catch(() => {});
+        await publishmerchantKycOnboardingMiddleware("uploadDoc", `${Date.now()}`, { action: "uploadDoc" }).catch(() => {});
 
 
         return { doc };
@@ -312,7 +312,7 @@ export const merchantKycOnboardingRouter = router({
           })
           .where(eq(merchantKycDocs.id, input.docId));
         // Middleware fan-out (fail-open)
-        await publishMerchantKycOnboardingMiddleware("verifyDoc", `${Date.now()}`, { action: "verifyDoc" }).catch(() => {});
+        await publishmerchantKycOnboardingMiddleware("verifyDoc", `${Date.now()}`, { action: "verifyDoc" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

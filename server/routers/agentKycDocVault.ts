@@ -139,7 +139,7 @@ async function publishagentKycDocVaultMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -274,7 +274,7 @@ export const agentKycDocVaultRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentKycDocVaultMiddleware("uploadDocument", `${Date.now()}`, { action: "uploadDocument" }).catch(() => {});
+        await publishagentKycDocVaultMiddleware("uploadDocument", `${Date.now()}`, { action: "uploadDocument" }).catch(() => {});
 
 
         return { success: true, document: doc };
@@ -314,7 +314,7 @@ export const agentKycDocVaultRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishAgentKycDocVaultMiddleware("verifyDocument", `${Date.now()}`, { action: "verifyDocument" }).catch(() => {});
+        await publishagentKycDocVaultMiddleware("verifyDocument", `${Date.now()}`, { action: "verifyDocument" }).catch(() => {});
 
         return { success: true, document: updated };
       } catch (error) {

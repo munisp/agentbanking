@@ -143,7 +143,7 @@ async function publishiotSmartPosMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `pos_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -308,7 +308,7 @@ export const iotSmartPosRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishIotSmartPosMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishiotSmartPosMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -355,7 +355,7 @@ export const iotSmartPosRouter = router({
         sql`UPDATE "iot_devices" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishIotSmartPosMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishiotSmartPosMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

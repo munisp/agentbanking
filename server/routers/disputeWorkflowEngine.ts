@@ -101,7 +101,7 @@ async function publishdisputeWorkflowEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `disputes_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -327,7 +327,7 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeWorkflowEngineMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
         return {
           success: true,
@@ -385,7 +385,7 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeWorkflowEngineMiddleware("escalate", `${Date.now()}`, { action: "escalate" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware("escalate", `${Date.now()}`, { action: "escalate" }).catch(() => {});
 
         return {
           success: true,
@@ -481,7 +481,7 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeWorkflowEngineMiddleware("autoResolve", `${Date.now()}`, { action: "autoResolve" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware("autoResolve", `${Date.now()}`, { action: "autoResolve" }).catch(() => {});
 
         return {
           success: true,

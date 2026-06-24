@@ -101,7 +101,7 @@ async function publishcustomerDisputePortalMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `customer_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -309,7 +309,7 @@ export const customerDisputePortalRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCustomerDisputePortalMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+      await publishcustomerDisputePortalMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
 
 
       return {
@@ -379,7 +379,7 @@ export const customerDisputePortalRouter = router({
     .input(z.object({ disputeId: z.number(), reason: z.string() }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishCustomerDisputePortalMiddleware("escalateDispute", `${Date.now()}`, { action: "escalateDispute" }).catch(() => {});
+      await publishcustomerDisputePortalMiddleware("escalateDispute", `${Date.now()}`, { action: "escalateDispute" }).catch(() => {});
 
       return {
         success: true,
@@ -397,7 +397,7 @@ export const customerDisputePortalRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishCustomerDisputePortalMiddleware("updateDispute", `${Date.now()}`, { action: "updateDispute" }).catch(() => {});
+      await publishcustomerDisputePortalMiddleware("updateDispute", `${Date.now()}`, { action: "updateDispute" }).catch(() => {});
 
       return {
         success: true,

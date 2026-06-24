@@ -160,7 +160,7 @@ async function publishintelligentRoutingEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -308,7 +308,7 @@ export const intelligentRoutingEngineRouter = router({
 
   listRoutes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishIntelligentRoutingEngineMiddleware("listRoutes", `${Date.now()}`, { action: "listRoutes" }).catch(() => {});
+    await publishintelligentRoutingEngineMiddleware("listRoutes", `${Date.now()}`, { action: "listRoutes" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -319,7 +319,7 @@ export const intelligentRoutingEngineRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishIntelligentRoutingEngineMiddleware("optimizeRouting", `${Date.now()}`, { action: "optimizeRouting" }).catch(() => {});
+      await publishintelligentRoutingEngineMiddleware("optimizeRouting", `${Date.now()}`, { action: "optimizeRouting" }).catch(() => {});
 
       return { success: true };
     }),

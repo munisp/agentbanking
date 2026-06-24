@@ -141,7 +141,7 @@ async function publishopenBankingApiMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -311,7 +311,7 @@ export const openBankingApiRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishOpenBankingApiMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishopenBankingApiMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -358,7 +358,7 @@ export const openBankingApiRouter = router({
         sql`UPDATE "open_banking_partners" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishOpenBankingApiMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishopenBankingApiMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

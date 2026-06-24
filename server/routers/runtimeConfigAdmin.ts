@@ -123,7 +123,7 @@ async function publishruntimeConfigAdminMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `admin_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -283,7 +283,7 @@ export const runtimeConfigAdminRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishRuntimeConfigAdminMiddleware("setConfig", `${Date.now()}`, { action: "setConfig" }).catch(() => {});
+        await publishruntimeConfigAdminMiddleware("setConfig", `${Date.now()}`, { action: "setConfig" }).catch(() => {});
 
 
         return { success: true };
@@ -311,7 +311,7 @@ export const runtimeConfigAdminRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishRuntimeConfigAdminMiddleware("deleteConfig", `${Date.now()}`, { action: "deleteConfig" }).catch(() => {});
+        await publishruntimeConfigAdminMiddleware("deleteConfig", `${Date.now()}`, { action: "deleteConfig" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -381,7 +381,7 @@ export const runtimeConfigAdminRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishRuntimeConfigAdminMiddleware("batchUpdate", `${Date.now()}`, { action: "batchUpdate" }).catch(() => {});
+        await publishruntimeConfigAdminMiddleware("batchUpdate", `${Date.now()}`, { action: "batchUpdate" }).catch(() => {});
 
         return { updated: results.length, results };
       } catch (error) {

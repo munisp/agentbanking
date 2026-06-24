@@ -119,7 +119,7 @@ async function publishsprint15FeaturesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -189,7 +189,7 @@ export const bulkNotifRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishSprint15FeaturesMiddleware("sendBulk", `${Date.now()}`, { action: "sendBulk" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("sendBulk", `${Date.now()}`, { action: "sendBulk" }).catch(() => {});
 
 
         return {
@@ -247,7 +247,7 @@ export const bulkNotifRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("listCampaigns", `${Date.now()}`, { action: "listCampaigns" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("listCampaigns", `${Date.now()}`, { action: "listCampaigns" }).catch(() => {});
 
       return { items: [], total: 0 };
     }),
@@ -255,7 +255,7 @@ export const bulkNotifRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("createCampaign", `${Date.now()}`, { action: "createCampaign" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("createCampaign", `${Date.now()}`, { action: "createCampaign" }).catch(() => {});
 
       return {
         success: true,
@@ -268,7 +268,7 @@ export const bulkNotifRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("startCampaign", `${Date.now()}`, { action: "startCampaign" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("startCampaign", `${Date.now()}`, { action: "startCampaign" }).catch(() => {});
 
       return {
         success: true,
@@ -281,7 +281,7 @@ export const bulkNotifRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("pauseCampaign", `${Date.now()}`, { action: "pauseCampaign" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("pauseCampaign", `${Date.now()}`, { action: "pauseCampaign" }).catch(() => {});
 
       return {
         success: true,
@@ -302,11 +302,11 @@ export const retryQueueRouter = router({
       .orderBy(desc(transactions.id))
       .limit(10);
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishSprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
 
 
     return { items: rows, total: rows.length };
@@ -316,7 +316,7 @@ export const retryQueueRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
 
         return {
           success: true,
@@ -336,7 +336,7 @@ export const retryQueueRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("retryNow", `${Date.now()}`, { action: "retryNow" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("retryNow", `${Date.now()}`, { action: "retryNow" }).catch(() => {});
 
       return {
         success: true,
@@ -349,7 +349,7 @@ export const retryQueueRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("purgeDeadLetters", `${Date.now()}`, { action: "purgeDeadLetters" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("purgeDeadLetters", `${Date.now()}`, { action: "purgeDeadLetters" }).catch(() => {});
 
       return {
         success: true,
@@ -386,11 +386,11 @@ export const digestRouter = router({
 export const rateLimitDashboardRouter = router({
   getStatus: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishSprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
 
 
     return {
@@ -406,7 +406,7 @@ export const rateLimitDashboardRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("updateLimit", `${Date.now()}`, { action: "updateLimit" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("updateLimit", `${Date.now()}`, { action: "updateLimit" }).catch(() => {});
 
         return {
           success: true,
@@ -433,11 +433,11 @@ export const sysConfigRouter = router({
       .from(tenants)
       .limit(100);
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishSprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
 
 
     return { configs: [], tenantCount: total };
@@ -447,17 +447,17 @@ export const sysConfigRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-        await publishSprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishSprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
 
 
@@ -481,7 +481,7 @@ export const sysConfigRouter = router({
 export const sessionMgmtRouter = router({
   listActive: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("listActive", `${Date.now()}`, { action: "listActive" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("listActive", `${Date.now()}`, { action: "listActive" }).catch(() => {});
 
     return { sessions: [], total: 0 };
   }),
@@ -490,7 +490,7 @@ export const sessionMgmtRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
 
         return {
           success: true,
@@ -510,7 +510,7 @@ export const sessionMgmtRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("forceLogout", `${Date.now()}`, { action: "forceLogout" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("forceLogout", `${Date.now()}`, { action: "forceLogout" }).catch(() => {});
 
       return {
         success: true,
@@ -523,7 +523,7 @@ export const sessionMgmtRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("logoutAll", `${Date.now()}`, { action: "logoutAll" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("logoutAll", `${Date.now()}`, { action: "logoutAll" }).catch(() => {});
 
       return {
         success: true,
@@ -543,7 +543,7 @@ export const dataExportRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("requestExport", `${Date.now()}`, { action: "requestExport" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("requestExport", `${Date.now()}`, { action: "requestExport" }).catch(() => {});
 
         return {
           jobId: `export-${Date.now()}`,
@@ -594,7 +594,7 @@ export const dataExportRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("listJobs", `${Date.now()}`, { action: "listJobs" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("listJobs", `${Date.now()}`, { action: "listJobs" }).catch(() => {});
 
       return { items: [], total: 0 };
     }),
@@ -602,7 +602,7 @@ export const dataExportRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("createJob", `${Date.now()}`, { action: "createJob" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("createJob", `${Date.now()}`, { action: "createJob" }).catch(() => {});
 
       return {
         success: true,
@@ -657,7 +657,7 @@ export const webhookRetryRouter = router({
     const db = (await getDb())!;
     const rows = await db.select().from(webhookEndpoints).limit(10);
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("listFailed", `${Date.now()}`, { action: "listFailed" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("listFailed", `${Date.now()}`, { action: "listFailed" }).catch(() => {});
 
     return { items: rows, total: rows.length };
   }),
@@ -666,7 +666,7 @@ export const webhookRetryRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("retryWebhook", `${Date.now()}`, { action: "retryWebhook" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("retryWebhook", `${Date.now()}`, { action: "retryWebhook" }).catch(() => {});
 
         return {
           success: true,
@@ -688,7 +688,7 @@ export const webhookRetryRouter = router({
 export const eventBusRouter = router({
   getTopics: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("getTopics", `${Date.now()}`, { action: "getTopics" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("getTopics", `${Date.now()}`, { action: "getTopics" }).catch(() => {});
 
     return {
       topics: [
@@ -708,7 +708,7 @@ export const eventBusRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("publish", `${Date.now()}`, { action: "publish" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("publish", `${Date.now()}`, { action: "publish" }).catch(() => {});
 
         return {
           success: true,
@@ -819,7 +819,7 @@ export const cacheRouter = router({
         ? await invalidateCacheByPrefix(pattern.replace("*", ""))
         : await invalidateCache(pattern);
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("flush", `${Date.now()}`, { action: "flush" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("flush", `${Date.now()}`, { action: "flush" }).catch(() => {});
 
       return { success: true, flushedKeys: count, pattern };
     }),
@@ -831,7 +831,7 @@ export const cacheRouter = router({
         await invalidateCache(input.id);
       }
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("invalidate", `${Date.now()}`, { action: "invalidate" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("invalidate", `${Date.now()}`, { action: "invalidate" }).catch(() => {});
 
       return {
         success: true,
@@ -846,7 +846,7 @@ export const cacheRouter = router({
       const { invalidateCacheByPrefix } = await import("../lib/cacheAside");
       await invalidateCacheByPrefix("");
       // Middleware fan-out (fail-open)
-      await publishSprint15FeaturesMiddleware("invalidateAll", `${Date.now()}`, { action: "invalidateAll" }).catch(() => {});
+      await publishsprint15FeaturesMiddleware("invalidateAll", `${Date.now()}`, { action: "invalidateAll" }).catch(() => {});
 
       return {
         success: true,
@@ -908,7 +908,7 @@ export const notificationAnalyticsRouter = router({
 export const userQuietHoursRouter = router({
   get: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSprint15FeaturesMiddleware("get", `${Date.now()}`, { action: "get" }).catch(() => {});
+    await publishsprint15FeaturesMiddleware("get", `${Date.now()}`, { action: "get" }).catch(() => {});
 
     return {
       enabled: false,
@@ -957,7 +957,7 @@ export const notifTemplateRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
         return { success: true, id: `tpl-${Date.now()}`, ...input };
       } catch (error) {
@@ -998,7 +998,7 @@ export const notifTemplateRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishSprint15FeaturesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishsprint15FeaturesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return {
           success: true,

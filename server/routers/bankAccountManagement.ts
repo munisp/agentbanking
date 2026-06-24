@@ -282,7 +282,7 @@ async function publishbankAccountManagementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `management_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -357,7 +357,7 @@ export const bankAccountManagementRouter = router({
           metadata: { input: JSON.stringify(input).slice(0, 500) },
         });
         // Middleware fan-out (fail-open)
-        await publishBankAccountManagementMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishbankAccountManagementMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
         return { ...row, success: true };
       } catch (error) {
@@ -393,7 +393,7 @@ export const bankAccountManagementRouter = router({
           .delete(agentBankAccounts)
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishBankAccountManagementMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishbankAccountManagementMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -430,7 +430,7 @@ export const bankAccountManagementRouter = router({
           .set({ verified: true })
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishBankAccountManagementMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
+        await publishbankAccountManagementMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
 
         return { success: true, message: "Account verified" };
       } catch (error) {

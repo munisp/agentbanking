@@ -191,7 +191,7 @@ async function publishguideFeedbackMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -282,7 +282,7 @@ export const guideFeedbackRouter = router({
         comment: input.comment,
       });
       // Middleware fan-out (fail-open)
-      await publishGuideFeedbackMiddleware("submit", `${Date.now()}`, { action: "submit" }).catch(() => {});
+      await publishguideFeedbackMiddleware("submit", `${Date.now()}`, { action: "submit" }).catch(() => {});
 
       return { success: true };
     }),
@@ -348,7 +348,7 @@ export const guideFeedbackRouter = router({
         .delete(guideFeedback)
         .where(eq(guideFeedback.id, Number(input.id)));
       // Middleware fan-out (fail-open)
-      await publishGuideFeedbackMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishguideFeedbackMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return { deleted: true, id: input.id };
     }),

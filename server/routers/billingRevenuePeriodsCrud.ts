@@ -113,7 +113,7 @@ async function publishbillingRevenuePeriodsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `billing_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -278,7 +278,7 @@ export const billingRevenuePeriodsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishBillingRevenuePeriodsCrudMiddleware("closePeriod", `${Date.now()}`, { action: "closePeriod" }).catch(() => {});
+        await publishbillingRevenuePeriodsCrudMiddleware("closePeriod", `${Date.now()}`, { action: "closePeriod" }).catch(() => {});
 
 
         return {
@@ -378,7 +378,7 @@ export const billingRevenuePeriodsRouter = router({
           .delete(billingRevenuePeriods)
           .where(eq(billingRevenuePeriods.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishBillingRevenuePeriodsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishbillingRevenuePeriodsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

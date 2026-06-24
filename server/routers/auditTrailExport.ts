@@ -180,7 +180,7 @@ async function publishauditTrailExportMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -294,7 +294,7 @@ export const auditTrailExportRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAuditTrailExportMiddleware("schedule", `${Date.now()}`, { action: "schedule" }).catch(() => {});
+      await publishauditTrailExportMiddleware("schedule", `${Date.now()}`, { action: "schedule" }).catch(() => {});
 
 
       return {

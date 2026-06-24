@@ -192,7 +192,7 @@ async function publishamlScreeningMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `aml_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -588,7 +588,7 @@ export const amlScreeningRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAmlScreeningMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishamlScreeningMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
 
       return { success: true, id: input.id, newStatus: input.status };

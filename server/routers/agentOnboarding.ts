@@ -116,7 +116,7 @@ async function publishagentOnboardingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -525,7 +525,7 @@ export const agentOnboardingRouter = router({
           .set({ notes: input.note, updatedAt: new Date() })
           .where(eq(agentOnboardingProgress.agentCode, input.agentCode));
         // Middleware fan-out (fail-open)
-        await publishAgentOnboardingMiddleware("addNote", `${Date.now()}`, { action: "addNote" }).catch(() => {});
+        await publishagentOnboardingMiddleware("addNote", `${Date.now()}`, { action: "addNote" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

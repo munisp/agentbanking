@@ -172,7 +172,7 @@ async function publishmlScoringServiceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -351,7 +351,7 @@ export const mlScoringServiceRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishMlScoringServiceMiddleware("scoringHistory", `${Date.now()}`, { action: "scoringHistory" }).catch(() => {});
+      await publishmlScoringServiceMiddleware("scoringHistory", `${Date.now()}`, { action: "scoringHistory" }).catch(() => {});
 
       return { items: [], total: 0 };
     }),
@@ -407,7 +407,7 @@ export const mlScoringServiceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishMlScoringServiceMiddleware("scoreTransaction", `${Date.now()}`, { action: "scoreTransaction" }).catch(() => {});
+      await publishmlScoringServiceMiddleware("scoreTransaction", `${Date.now()}`, { action: "scoreTransaction" }).catch(() => {});
 
 
       return {
@@ -421,7 +421,7 @@ export const mlScoringServiceRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishMlScoringServiceMiddleware("batchScore", `${Date.now()}`, { action: "batchScore" }).catch(() => {});
+      await publishmlScoringServiceMiddleware("batchScore", `${Date.now()}`, { action: "batchScore" }).catch(() => {});
 
       return {
         success: true,

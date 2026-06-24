@@ -165,7 +165,7 @@ async function publishnotificationInboxMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -307,7 +307,7 @@ export const notificationInboxRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishNotificationInboxMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
+        await publishnotificationInboxMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
 
 
         return { success: true, notification: updated };
@@ -336,7 +336,7 @@ export const notificationInboxRouter = router({
             )
           );
         // Middleware fan-out (fail-open)
-        await publishNotificationInboxMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
+        await publishnotificationInboxMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -358,7 +358,7 @@ export const notificationInboxRouter = router({
           .delete(notification_logs)
           .where(eq(notification_logs.id, input.notificationId));
         // Middleware fan-out (fail-open)
-        await publishNotificationInboxMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishnotificationInboxMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -377,7 +377,7 @@ export const notificationInboxRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishNotificationInboxMiddleware("archive", `${Date.now()}`, { action: "archive" }).catch(() => {});
+      await publishnotificationInboxMiddleware("archive", `${Date.now()}`, { action: "archive" }).catch(() => {});
 
       return { success: true };
     }),
@@ -388,7 +388,7 @@ export const notificationInboxRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishNotificationInboxMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
+      await publishnotificationInboxMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
 
       return { success: true };
     }),

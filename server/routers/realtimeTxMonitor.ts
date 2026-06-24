@@ -116,7 +116,7 @@ async function publishrealtimeTxMonitorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -356,7 +356,7 @@ export const realtimeTxMonitorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishRealtimeTxMonitorMiddleware("resolveAlert", `${Date.now()}`, { action: "resolveAlert" }).catch(() => {});
+        await publishrealtimeTxMonitorMiddleware("resolveAlert", `${Date.now()}`, { action: "resolveAlert" }).catch(() => {});
 
 
         return { success: true };

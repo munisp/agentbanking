@@ -101,7 +101,7 @@ async function publishdisputeResolutionMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `disputes_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -322,7 +322,7 @@ export const disputeResolutionRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDisputeResolutionMiddleware("createDispute", `${Date.now()}`, { action: "createDispute" }).catch(() => {});
+        await publishdisputeResolutionMiddleware("createDispute", `${Date.now()}`, { action: "createDispute" }).catch(() => {});
 
 
         return { id: d.id, ref: d.ref, status: d.status };
@@ -382,7 +382,7 @@ export const disputeResolutionRouter = router({
           logger.warn("[DisputeResolution]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeResolutionMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+        await publishdisputeResolutionMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

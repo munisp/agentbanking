@@ -114,7 +114,7 @@ async function publishautoReconciliationEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -206,7 +206,7 @@ export const autoReconciliationEngineRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAutoReconciliationEngineMiddleware("reconcile", `${Date.now()}`, { action: "reconcile" }).catch(() => {});
+        await publishautoReconciliationEngineMiddleware("reconcile", `${Date.now()}`, { action: "reconcile" }).catch(() => {});
 
 
         return {

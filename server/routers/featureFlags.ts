@@ -128,7 +128,7 @@ async function publishfeatureFlagsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -246,7 +246,7 @@ export const featureFlagsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishFeatureFlagsMiddleware("toggleFlag", `${Date.now()}`, { action: "toggleFlag" }).catch(() => {});
+        await publishfeatureFlagsMiddleware("toggleFlag", `${Date.now()}`, { action: "toggleFlag" }).catch(() => {});
 
 
         return { success: true, id: input.id, enabled: input.enabled };
@@ -303,7 +303,7 @@ export const featureFlagsRouter = router({
       .from(tenantFeatureToggles)
       .limit(100);
     // Middleware fan-out (fail-open)
-    await publishFeatureFlagsMiddleware("createFlag", `${Date.now()}`, { action: "createFlag" }).catch(() => {});
+    await publishfeatureFlagsMiddleware("createFlag", `${Date.now()}`, { action: "createFlag" }).catch(() => {});
 
     return {
       totalFlags: Number(total.value),

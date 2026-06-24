@@ -140,7 +140,7 @@ async function publishpredictiveAgentChurnMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -268,7 +268,7 @@ export const predictiveAgentChurnRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPredictiveAgentChurnMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishpredictiveAgentChurnMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -291,7 +291,7 @@ export const predictiveAgentChurnRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "churn_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPredictiveAgentChurnMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishpredictiveAgentChurnMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -336,7 +336,7 @@ export const predictiveAgentChurnRouter = router({
 
   listAtRisk: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPredictiveAgentChurnMiddleware("listAtRisk", `${Date.now()}`, { action: "listAtRisk" }).catch(() => {});
+    await publishpredictiveAgentChurnMiddleware("listAtRisk", `${Date.now()}`, { action: "listAtRisk" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -347,7 +347,7 @@ export const predictiveAgentChurnRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPredictiveAgentChurnMiddleware("triggerIntervention", `${Date.now()}`, { action: "triggerIntervention" }).catch(() => {});
+      await publishpredictiveAgentChurnMiddleware("triggerIntervention", `${Date.now()}`, { action: "triggerIntervention" }).catch(() => {});
 
       return { success: true };
     }),

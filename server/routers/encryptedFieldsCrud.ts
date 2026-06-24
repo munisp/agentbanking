@@ -160,7 +160,7 @@ async function publishencryptedFieldsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -282,7 +282,7 @@ export const encryptedFieldsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishEncryptedFieldsCrudMiddleware("store", `${Date.now()}`, { action: "store" }).catch(() => {});
+        await publishencryptedFieldsCrudMiddleware("store", `${Date.now()}`, { action: "store" }).catch(() => {});
 
 
         return {
@@ -347,7 +347,7 @@ export const encryptedFieldsRouter = router({
           .delete(encryptedFields)
           .where(eq(encryptedFields.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishEncryptedFieldsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishencryptedFieldsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

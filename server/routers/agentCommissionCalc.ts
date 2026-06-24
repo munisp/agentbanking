@@ -127,7 +127,7 @@ async function publishagentCommissionCalcMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -192,7 +192,7 @@ export const agentCommissionCalcRouter = router({
       .orderBy(commissionTiers.id)
       .limit(100);
     // Middleware fan-out (fail-open)
-    await publishAgentCommissionCalcMiddleware("listTiers", `${Date.now()}`, { action: "listTiers" }).catch(() => {});
+    await publishagentCommissionCalcMiddleware("listTiers", `${Date.now()}`, { action: "listTiers" }).catch(() => {});
 
     return { tiers };
   }),
@@ -287,7 +287,7 @@ export const agentCommissionCalcRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAgentCommissionCalcMiddleware("calculateCommission", `${Date.now()}`, { action: "calculateCommission" }).catch(() => {});
+      await publishagentCommissionCalcMiddleware("calculateCommission", `${Date.now()}`, { action: "calculateCommission" }).catch(() => {});
 
 
       return {
@@ -431,7 +431,7 @@ export const agentCommissionCalcRouter = router({
           );
         }
         // Middleware fan-out (fail-open)
-        await publishAgentCommissionCalcMiddleware("approvePayout", `${Date.now()}`, { action: "approvePayout" }).catch(() => {});
+        await publishagentCommissionCalcMiddleware("approvePayout", `${Date.now()}`, { action: "approvePayout" }).catch(() => {});
 
         return {
           success: true,

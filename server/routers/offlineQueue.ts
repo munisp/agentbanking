@@ -158,7 +158,7 @@ async function publishofflineQueueMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -265,28 +265,28 @@ export const offlineQueueRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishOfflineQueueMiddleware("clearSynced", `${Date.now()}`, { action: "clearSynced" }).catch(() => {});
+      await publishofflineQueueMiddleware("clearSynced", `${Date.now()}`, { action: "clearSynced" }).catch(() => {});
 
       return { success: true };
     }),
 
   getNetworkMetrics: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishOfflineQueueMiddleware("getNetworkMetrics", `${Date.now()}`, { action: "getNetworkMetrics" }).catch(() => {});
+    await publishofflineQueueMiddleware("getNetworkMetrics", `${Date.now()}`, { action: "getNetworkMetrics" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   getQueueStatus: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishOfflineQueueMiddleware("getQueueStatus", `${Date.now()}`, { action: "getQueueStatus" }).catch(() => {});
+    await publishofflineQueueMiddleware("getQueueStatus", `${Date.now()}`, { action: "getQueueStatus" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   getSyncHistory: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishOfflineQueueMiddleware("getSyncHistory", `${Date.now()}`, { action: "getSyncHistory" }).catch(() => {});
+    await publishofflineQueueMiddleware("getSyncHistory", `${Date.now()}`, { action: "getSyncHistory" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -297,7 +297,7 @@ export const offlineQueueRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishOfflineQueueMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+      await publishofflineQueueMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
 
       return { success: true };
     }),

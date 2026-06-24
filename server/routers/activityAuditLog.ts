@@ -180,7 +180,7 @@ async function publishactivityAuditLogMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -378,7 +378,7 @@ export const activityAuditLogRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishActivityAuditLogMiddleware("retention", `${Date.now()}`, { action: "retention" }).catch(() => {});
+      await publishactivityAuditLogMiddleware("retention", `${Date.now()}`, { action: "retention" }).catch(() => {});
 
 
       return {

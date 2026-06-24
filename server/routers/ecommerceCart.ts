@@ -175,7 +175,7 @@ async function publishecommerceCartMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `ecommerce_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -410,7 +410,7 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEcommerceCartMiddleware("updateItem", `${Date.now()}`, { action: "updateItem" }).catch(() => {});
+      await publishecommerceCartMiddleware("updateItem", `${Date.now()}`, { action: "updateItem" }).catch(() => {});
 
 
       return { status: "updated" };
@@ -441,7 +441,7 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEcommerceCartMiddleware("removeItem", `${Date.now()}`, { action: "removeItem" }).catch(() => {});
+      await publishecommerceCartMiddleware("removeItem", `${Date.now()}`, { action: "removeItem" }).catch(() => {});
 
 
       return { status: "removed" };
@@ -470,7 +470,7 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEcommerceCartMiddleware("clearCart", `${Date.now()}`, { action: "clearCart" }).catch(() => {});
+      await publishecommerceCartMiddleware("clearCart", `${Date.now()}`, { action: "clearCart" }).catch(() => {});
 
 
       return { status: "cleared" };

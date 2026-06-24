@@ -132,7 +132,7 @@ async function publishagentSuspensionLogCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -359,7 +359,7 @@ export const agentSuspensionLogRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishAgentSuspensionLogCrudMiddleware("suspend", `${Date.now()}`, { action: "suspend" }).catch(() => {});
+        await publishagentSuspensionLogCrudMiddleware("suspend", `${Date.now()}`, { action: "suspend" }).catch(() => {});
 
         return { ...row, message: "Agent suspended successfully" };
       } catch (error) {
@@ -403,7 +403,7 @@ export const agentSuspensionLogRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishAgentSuspensionLogCrudMiddleware("reinstate", `${Date.now()}`, { action: "reinstate" }).catch(() => {});
+        await publishagentSuspensionLogCrudMiddleware("reinstate", `${Date.now()}`, { action: "reinstate" }).catch(() => {});
 
         return { ...row, message: "Agent reinstated successfully" };
       } catch (error) {

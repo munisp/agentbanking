@@ -159,7 +159,7 @@ async function publishincidentManagementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `management_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -262,7 +262,7 @@ export const incidentManagementRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishIncidentManagementMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishincidentManagementMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -274,7 +274,7 @@ export const incidentManagementRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishIncidentManagementMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishincidentManagementMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -287,7 +287,7 @@ export const incidentManagementRouter = router({
 
   createIncident: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishIncidentManagementMiddleware("createIncident", `${Date.now()}`, { action: "createIncident" }).catch(() => {});
+    await publishincidentManagementMiddleware("createIncident", `${Date.now()}`, { action: "createIncident" }).catch(() => {});
 
     return {
       id: "INC-001",

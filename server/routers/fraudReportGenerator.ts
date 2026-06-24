@@ -151,7 +151,7 @@ async function publishfraudReportGeneratorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `fraud_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -309,7 +309,7 @@ export const fraudReportGeneratorRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishFraudReportGeneratorMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
+      await publishfraudReportGeneratorMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
 
 
       return {

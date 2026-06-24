@@ -114,7 +114,7 @@ async function publishglJournalEntriesCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -239,7 +239,7 @@ export const gl_journal_entriesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishGlJournalEntriesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishglJournalEntriesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { ...row, message: "Double-entry journal posted" };
@@ -291,7 +291,7 @@ export const gl_journal_entriesRouter = router({
           .set({ status: "reversed" })
           .where(eq(gl_journal_entries.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishGlJournalEntriesCrudMiddleware("reverse", `${Date.now()}`, { action: "reverse" }).catch(() => {});
+        await publishglJournalEntriesCrudMiddleware("reverse", `${Date.now()}`, { action: "reverse" }).catch(() => {});
 
         return {
           original: input.id,
@@ -316,7 +316,7 @@ export const gl_journal_entriesRouter = router({
           .delete(gl_journal_entries)
           .where(eq(gl_journal_entries.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishGlJournalEntriesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishglJournalEntriesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -130,7 +130,7 @@ async function publisharchivalAdminMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `admin_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -384,7 +384,7 @@ export const archivalAdminRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishArchivalAdminMiddleware("triggerArchival", `${Date.now()}`, { action: "triggerArchival" }).catch(() => {});
+        await publisharchivalAdminMiddleware("triggerArchival", `${Date.now()}`, { action: "triggerArchival" }).catch(() => {});
 
 
         return {
@@ -427,7 +427,7 @@ export const archivalAdminRouter = router({
       const schedule = JSON.stringify(input);
       await setConfig("archival_schedule", schedule);
       // Middleware fan-out (fail-open)
-      await publishArchivalAdminMiddleware("updateSchedule", `${Date.now()}`, { action: "updateSchedule" }).catch(() => {});
+      await publisharchivalAdminMiddleware("updateSchedule", `${Date.now()}`, { action: "updateSchedule" }).catch(() => {});
 
       return { success: true, schedule: input };
     }),

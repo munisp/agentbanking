@@ -157,7 +157,7 @@ async function publishtenantBrandingCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -377,7 +377,7 @@ export const tenantBrandingRouter = router({
         const db = (await getDb())!;
         await db.delete(tenantBranding).where(eq(tenantBranding.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishTenantBrandingCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishtenantBrandingCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -109,7 +109,7 @@ async function publishfxRatesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -253,7 +253,7 @@ export const fxRatesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishFxRatesMiddleware("updateRates", `${Date.now()}`, { action: "updateRates" }).catch(() => {});
+        await publishfxRatesMiddleware("updateRates", `${Date.now()}`, { action: "updateRates" }).catch(() => {});
 
 
         return { success: true, updatedAt: new Date().toISOString() };
@@ -309,7 +309,7 @@ export const fxRatesRouter = router({
     }),
   currencies: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishFxRatesMiddleware("currencies", `${Date.now()}`, { action: "currencies" }).catch(() => {});
+    await publishfxRatesMiddleware("currencies", `${Date.now()}`, { action: "currencies" }).catch(() => {});
 
     return {
       currencies: [] as Array<{
@@ -323,7 +323,7 @@ export const fxRatesRouter = router({
   }),
   refresh: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishFxRatesMiddleware("refresh", `${Date.now()}`, { action: "refresh" }).catch(() => {});
+    await publishfxRatesMiddleware("refresh", `${Date.now()}`, { action: "refresh" }).catch(() => {});
 
     return {
       success: true,

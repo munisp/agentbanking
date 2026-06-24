@@ -138,7 +138,7 @@ async function publishcarrierSlaMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `network_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -263,7 +263,7 @@ export const carrierSlaRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishCarrierSlaMiddleware("updateSla", `${Date.now()}`, { action: "updateSla" }).catch(() => {});
+        await publishcarrierSlaMiddleware("updateSla", `${Date.now()}`, { action: "updateSla" }).catch(() => {});
 
 
         return { success: true };
@@ -301,7 +301,7 @@ export const carrierSlaRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishCarrierSlaMiddleware("reportBreach", `${Date.now()}`, { action: "reportBreach" }).catch(() => {});
+        await publishcarrierSlaMiddleware("reportBreach", `${Date.now()}`, { action: "reportBreach" }).catch(() => {});
 
         return {
           success: true,

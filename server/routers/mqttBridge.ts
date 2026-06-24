@@ -149,7 +149,7 @@ async function publishmqttBridgeMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -330,7 +330,7 @@ export const mqttBridgeRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishMqttBridgeMiddleware("testMqttBridge", `${Date.now()}`, { action: "testMqttBridge" }).catch(() => {});
+        await publishmqttBridgeMiddleware("testMqttBridge", `${Date.now()}`, { action: "testMqttBridge" }).catch(() => {});
 
 
         return {
@@ -398,7 +398,7 @@ export const mqttBridgeRouter = router({
           await fluvioProduce(event);
           const latencyMs = Date.now() - start;
           // Middleware fan-out (fail-open)
-          await publishMqttBridgeMiddleware("publishTest", `${Date.now()}`, { action: "publishTest" }).catch(() => {});
+          await publishmqttBridgeMiddleware("publishTest", `${Date.now()}`, { action: "publishTest" }).catch(() => {});
 
           return {
             success: true,

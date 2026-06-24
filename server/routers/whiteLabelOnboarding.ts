@@ -139,7 +139,7 @@ async function publishwhiteLabelOnboardingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `onboarding_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -293,7 +293,7 @@ export const whiteLabelOnboardingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWhiteLabelOnboardingMiddleware("submitApplication", `${Date.now()}`, { action: "submitApplication" }).catch(() => {});
+        await publishwhiteLabelOnboardingMiddleware("submitApplication", `${Date.now()}`, { action: "submitApplication" }).catch(() => {});
 
 
         return { success: true, tenant };
@@ -346,7 +346,7 @@ export const whiteLabelOnboardingRouter = router({
           metadata: { notes: input.notes },
         });
         // Middleware fan-out (fail-open)
-        await publishWhiteLabelOnboardingMiddleware("approveApplication", `${Date.now()}`, { action: "approveApplication" }).catch(() => {});
+        await publishwhiteLabelOnboardingMiddleware("approveApplication", `${Date.now()}`, { action: "approveApplication" }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {

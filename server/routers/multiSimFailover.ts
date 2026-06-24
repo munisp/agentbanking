@@ -149,7 +149,7 @@ async function publishmultiSimFailoverMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `network_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -257,7 +257,7 @@ export const multiSimFailoverRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishMultiSimFailoverMiddleware("triggerFailover", `${Date.now()}`, { action: "triggerFailover" }).catch(() => {});
+        await publishmultiSimFailoverMiddleware("triggerFailover", `${Date.now()}`, { action: "triggerFailover" }).catch(() => {});
 
 
         return {
@@ -321,7 +321,7 @@ export const multiSimFailoverRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishMultiSimFailoverMiddleware("updateSimConfig", `${Date.now()}`, { action: "updateSimConfig" }).catch(() => {});
+        await publishmultiSimFailoverMiddleware("updateSimConfig", `${Date.now()}`, { action: "updateSimConfig" }).catch(() => {});
 
 
         return { success: true };

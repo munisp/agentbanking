@@ -132,7 +132,7 @@ async function publishdisputesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `disputes_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -297,13 +297,13 @@ export const disputesRouter = router({
         });
       }
       // Middleware fan-out (fail-open)
-      await publishDisputesMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
+      await publishdisputesMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
 
       return { disputeRef: input.disputeRef, resolved: true };
     }),
   myDisputes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDisputesMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
+    await publishdisputesMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
 
     return { items: [], total: 0 };
   }),
@@ -311,7 +311,7 @@ export const disputesRouter = router({
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishDisputesMiddleware("getDispute", `${Date.now()}`, { action: "getDispute" }).catch(() => {});
+      await publishdisputesMiddleware("getDispute", `${Date.now()}`, { action: "getDispute" }).catch(() => {});
 
       return { data: null, id: input.id };
     }),
@@ -346,7 +346,7 @@ export const disputesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishDisputesMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
+      await publishdisputesMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
 
 
       return { success: true, id: tx.id, transactionRef: input.transactionRef };
@@ -355,7 +355,7 @@ export const disputesRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishDisputesMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+      await publishdisputesMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
 
       return { success: true, id: input?.id ?? null };
     }),

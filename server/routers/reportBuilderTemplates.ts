@@ -141,7 +141,7 @@ async function publishreportBuilderTemplatesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -321,7 +321,7 @@ export const reportBuilderTemplatesRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "rpt_builder_" + input.templateId));
         // Middleware fan-out (fail-open)
-        await publishReportBuilderTemplatesMiddleware("deleteTemplate", `${Date.now()}`, { action: "deleteTemplate" }).catch(() => {});
+        await publishreportBuilderTemplatesMiddleware("deleteTemplate", `${Date.now()}`, { action: "deleteTemplate" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -357,7 +357,7 @@ export const reportBuilderTemplatesRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishReportBuilderTemplatesMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
+        await publishreportBuilderTemplatesMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
 
         return { success: true, reportId, status: "generating" };
       } catch (error) {

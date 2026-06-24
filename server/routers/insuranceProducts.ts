@@ -135,7 +135,7 @@ async function publishinsuranceProductsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `insurance_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -293,7 +293,7 @@ export const insuranceProductsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishInsuranceProductsMiddleware("createProduct", `${Date.now()}`, { action: "createProduct" }).catch(() => {});
+        await publishinsuranceProductsMiddleware("createProduct", `${Date.now()}`, { action: "createProduct" }).catch(() => {});
 
 
         return { success: true, productId };
@@ -327,7 +327,7 @@ export const insuranceProductsRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishInsuranceProductsMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
+          await publishinsuranceProductsMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
 
           return { success: false, error: "Product not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));

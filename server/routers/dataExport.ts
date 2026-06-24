@@ -133,7 +133,7 @@ async function publishdataExportMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -339,7 +339,7 @@ export const dataExportRouter = router({
       const tax = calculateTax(fees.fee, "vat");
       try {
         // Middleware fan-out (fail-open)
-        await publishDataExportMiddleware("createJob", `${Date.now()}`, { action: "createJob" }).catch(() => {});
+        await publishdataExportMiddleware("createJob", `${Date.now()}`, { action: "createJob" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

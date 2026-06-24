@@ -159,7 +159,7 @@ async function publishapiGatewayMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -271,14 +271,14 @@ export const apiGatewayRouter = router({
 
   listApiKeys: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishApiGatewayMiddleware("listApiKeys", `${Date.now()}`, { action: "listApiKeys" }).catch(() => {});
+    await publishapiGatewayMiddleware("listApiKeys", `${Date.now()}`, { action: "listApiKeys" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishApiGatewayMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishapiGatewayMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -291,7 +291,7 @@ export const apiGatewayRouter = router({
 
   createApiKey: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishApiGatewayMiddleware("createApiKey", `${Date.now()}`, { action: "createApiKey" }).catch(() => {});
+    await publishapiGatewayMiddleware("createApiKey", `${Date.now()}`, { action: "createApiKey" }).catch(() => {});
 
     return { id: "KEY-001", key: "ak_xxx", created: true };
   }),

@@ -206,7 +206,7 @@ async function publishkafkaConsumerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -354,7 +354,7 @@ export const kafkaConsumerRouter = router({
             .where(eq(dlqMessages.id, msg.id));
         }
         // Middleware fan-out (fail-open)
-        await publishKafkaConsumerMiddleware("drainDlq", `${Date.now()}`, { action: "drainDlq" }).catch(() => {});
+        await publishkafkaConsumerMiddleware("drainDlq", `${Date.now()}`, { action: "drainDlq" }).catch(() => {});
 
         return { requeued: pending.length };
       } catch (error) {
@@ -389,7 +389,7 @@ export const kafkaConsumerRouter = router({
           await db.delete(dlqMessages).where(eq(dlqMessages.id, msg.id));
         }
         // Middleware fan-out (fail-open)
-        await publishKafkaConsumerMiddleware("purgeDlq", `${Date.now()}`, { action: "purgeDlq" }).catch(() => {});
+        await publishkafkaConsumerMiddleware("purgeDlq", `${Date.now()}`, { action: "purgeDlq" }).catch(() => {});
 
         return { purged: toDelete.length };
       } catch (error) {

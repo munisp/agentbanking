@@ -150,7 +150,7 @@ async function publishrateAlertsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -303,7 +303,7 @@ export const rateAlertsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishRateAlertsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishrateAlertsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return {
@@ -317,7 +317,7 @@ export const rateAlertsRouter = router({
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishRateAlertsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishrateAlertsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return { success: true, deletedId: input.id };
     }),
@@ -362,7 +362,7 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishRateAlertsMiddleware("rearm", `${Date.now()}`, { action: "rearm" }).catch(() => {});
+      await publishrateAlertsMiddleware("rearm", `${Date.now()}`, { action: "rearm" }).catch(() => {});
 
       return { success: true };
     }),
@@ -373,7 +373,7 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishRateAlertsMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
+      await publishrateAlertsMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
 
       return { success: true };
     }),
@@ -384,7 +384,7 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishRateAlertsMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
+      await publishrateAlertsMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
 
       return { success: true };
     }),
@@ -400,7 +400,7 @@ export const rateAlertsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishRateAlertsMiddleware("subscribe", `${Date.now()}`, { action: "subscribe" }).catch(() => {});
+      await publishrateAlertsMiddleware("subscribe", `${Date.now()}`, { action: "subscribe" }).catch(() => {});
 
       return {
         id: `alert-${Date.now()}`,

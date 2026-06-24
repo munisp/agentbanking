@@ -165,7 +165,7 @@ async function publishpromotionsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `promotions_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -341,7 +341,7 @@ export const promotionsRouter = router({
         .set({ usedCount: sql`${promotions.usedCount} + 1` })
         .where(eq(promotions.code, input.code));
       // Middleware fan-out (fail-open)
-      await publishPromotionsMiddleware("redeemCoupon", `${Date.now()}`, { action: "redeemCoupon" }).catch(() => {});
+      await publishpromotionsMiddleware("redeemCoupon", `${Date.now()}`, { action: "redeemCoupon" }).catch(() => {});
 
       return { success: true };
     }),
@@ -444,7 +444,7 @@ export const promotionsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishPromotionsMiddleware("earnPoints", `${Date.now()}`, { action: "earnPoints" }).catch(() => {});
+      await publishpromotionsMiddleware("earnPoints", `${Date.now()}`, { action: "earnPoints" }).catch(() => {});
 
 
       return {
@@ -491,7 +491,7 @@ export const promotionsRouter = router({
       // Convert points to value: 100 points = ₦100
       const value = input.points;
       // Middleware fan-out (fail-open)
-      await publishPromotionsMiddleware("redeemPoints", `${Date.now()}`, { action: "redeemPoints" }).catch(() => {});
+      await publishpromotionsMiddleware("redeemPoints", `${Date.now()}`, { action: "redeemPoints" }).catch(() => {});
 
       return {
         redeemed: input.points,
@@ -540,7 +540,7 @@ export const promotionsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishPromotionsMiddleware("applyReferral", `${Date.now()}`, { action: "applyReferral" }).catch(() => {});
+      await publishpromotionsMiddleware("applyReferral", `${Date.now()}`, { action: "applyReferral" }).catch(() => {});
 
 
       return {

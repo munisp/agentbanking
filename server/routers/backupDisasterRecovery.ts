@@ -108,7 +108,7 @@ async function publishbackupDisasterRecoveryMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -249,13 +249,13 @@ export const backupDisasterRecoveryRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishBackupDisasterRecoveryMiddleware("createBackup", `${Date.now()}`, { action: "createBackup" }).catch(() => {});
+        await publishbackupDisasterRecoveryMiddleware("createBackup", `${Date.now()}`, { action: "createBackup" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishBackupDisasterRecoveryMiddleware("deleteBackup", `${Date.now()}`, { action: "deleteBackup" }).catch(() => {});
+        await publishbackupDisasterRecoveryMiddleware("deleteBackup", `${Date.now()}`, { action: "deleteBackup" }).catch(() => {});
 
 
 
@@ -371,7 +371,7 @@ export const backupDisasterRecoveryRouter = router({
           metadata: { snapshotType: input.snapshotType },
         });
         // Middleware fan-out (fail-open)
-        await publishBackupDisasterRecoveryMiddleware("createSnapshot", `${Date.now()}`, { action: "createSnapshot" }).catch(() => {});
+        await publishbackupDisasterRecoveryMiddleware("createSnapshot", `${Date.now()}`, { action: "createSnapshot" }).catch(() => {});
 
         return {
           id: snapshot.id,
@@ -406,7 +406,7 @@ export const backupDisasterRecoveryRouter = router({
           metadata: { snapshotType: snapshot.snapshotType },
         });
         // Middleware fan-out (fail-open)
-        await publishBackupDisasterRecoveryMiddleware("restoreSnapshot", `${Date.now()}`, { action: "restoreSnapshot" }).catch(() => {});
+        await publishbackupDisasterRecoveryMiddleware("restoreSnapshot", `${Date.now()}`, { action: "restoreSnapshot" }).catch(() => {});
 
         return {
           snapshotId: input.snapshotId,

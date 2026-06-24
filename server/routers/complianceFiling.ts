@@ -148,7 +148,7 @@ async function publishcomplianceFilingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `compliance_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -283,7 +283,7 @@ export const complianceFilingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishComplianceFilingMiddleware("createFiling", `${Date.now()}`, { action: "createFiling" }).catch(() => {});
+        await publishcomplianceFilingMiddleware("createFiling", `${Date.now()}`, { action: "createFiling" }).catch(() => {});
 
 
         return { filing };
@@ -311,7 +311,7 @@ export const complianceFilingRouter = router({
           } as any)
           .where(eq(complianceFilings.id, input.filingId));
         // Middleware fan-out (fail-open)
-        await publishComplianceFilingMiddleware("submitFiling", `${Date.now()}`, { action: "submitFiling" }).catch(() => {});
+        await publishcomplianceFilingMiddleware("submitFiling", `${Date.now()}`, { action: "submitFiling" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -337,7 +337,7 @@ export const complianceFilingRouter = router({
           })
           .where(eq(complianceFilings.id, input.filingId));
         // Middleware fan-out (fail-open)
-        await publishComplianceFilingMiddleware("acknowledgeFiling", `${Date.now()}`, { action: "acknowledgeFiling" }).catch(() => {});
+        await publishcomplianceFilingMiddleware("acknowledgeFiling", `${Date.now()}`, { action: "acknowledgeFiling" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

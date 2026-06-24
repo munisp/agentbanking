@@ -166,7 +166,7 @@ async function publishkycDocumentsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -387,7 +387,7 @@ export const kycDocumentsRouter = router({
           .where(eq(kycDocuments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishKycDocumentsCrudMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
+        await publishkycDocumentsCrudMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
 
         return { ...row, message: "Document verified" };
       } catch (error) {
@@ -436,7 +436,7 @@ export const kycDocumentsRouter = router({
           .where(eq(kycDocuments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishKycDocumentsCrudMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
+        await publishkycDocumentsCrudMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
 
         return { ...row, message: "Document rejected" };
       } catch (error) {

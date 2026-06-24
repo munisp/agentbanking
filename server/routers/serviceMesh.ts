@@ -160,7 +160,7 @@ async function publishserviceMeshMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -263,7 +263,7 @@ export const serviceMeshRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishServiceMeshMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishserviceMeshMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -275,7 +275,7 @@ export const serviceMeshRouter = router({
 
   toggleCircuitBreaker: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishServiceMeshMiddleware("toggleCircuitBreaker", `${Date.now()}`, { action: "toggleCircuitBreaker" }).catch(() => {});
+    await publishserviceMeshMiddleware("toggleCircuitBreaker", `${Date.now()}`, { action: "toggleCircuitBreaker" }).catch(() => {});
 
     return { service: "default", enabled: true, state: "closed" };
   }),

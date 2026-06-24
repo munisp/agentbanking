@@ -133,7 +133,7 @@ async function publishtrainingEnrollmentsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `training_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -350,7 +350,7 @@ export const trainingEnrollmentsRouter = router({
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishTrainingEnrollmentsCrudMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
 
         return {
           ...row,
@@ -400,7 +400,7 @@ export const trainingEnrollmentsRouter = router({
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishTrainingEnrollmentsCrudMiddleware("submitScore", `${Date.now()}`, { action: "submitScore" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware("submitScore", `${Date.now()}`, { action: "submitScore" }).catch(() => {});
 
         return {
           ...row,
@@ -464,7 +464,7 @@ export const trainingEnrollmentsRouter = router({
           .delete(trainingEnrollments)
           .where(eq(trainingEnrollments.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishTrainingEnrollmentsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

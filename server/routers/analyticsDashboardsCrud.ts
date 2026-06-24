@@ -140,7 +140,7 @@ async function publishanalyticsDashboardsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -271,13 +271,13 @@ export const analyticsDashboardsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAnalyticsDashboardsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishanalyticsDashboardsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishAnalyticsDashboardsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishanalyticsDashboardsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
 
 

@@ -139,7 +139,7 @@ async function publishaccountOpeningMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -365,7 +365,7 @@ export const accountOpeningRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishAccountOpeningMiddleware("approveAccount", `${Date.now()}`, { action: "approveAccount" }).catch(() => {});
+        await publishaccountOpeningMiddleware("approveAccount", `${Date.now()}`, { action: "approveAccount" }).catch(() => {});
 
         return { success: true, customer: updated };
       } catch (error) {

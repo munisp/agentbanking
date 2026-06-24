@@ -99,7 +99,7 @@ async function publishrevenueReconciliationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -451,7 +451,7 @@ export const revenueReconciliationRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishRevenueReconciliationMiddleware("resolveDiscrepancy", `${Date.now()}`, { action: "resolveDiscrepancy" }).catch(() => {});
+      await publishrevenueReconciliationMiddleware("resolveDiscrepancy", `${Date.now()}`, { action: "resolveDiscrepancy" }).catch(() => {});
 
 
       return {

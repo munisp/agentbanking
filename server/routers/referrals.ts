@@ -131,7 +131,7 @@ async function publishreferralsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -226,7 +226,7 @@ export const referralsRouter = router({
 
           // Middleware fan-out (fail-open)
 
-          await publishReferralsMiddleware("generateCode", `${Date.now()}`, { action: "generateCode" }).catch(() => {});
+          await publishreferralsMiddleware("generateCode", `${Date.now()}`, { action: "generateCode" }).catch(() => {});
 
 
           return { referralCode: existing[0].referralCode, existing: true };
@@ -321,7 +321,7 @@ export const referralsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishReferralsMiddleware("useCode", `${Date.now()}`, { action: "useCode" }).catch(() => {});
+        await publishreferralsMiddleware("useCode", `${Date.now()}`, { action: "useCode" }).catch(() => {});
 
 
         return { success: true, message: "Referral code applied successfully" };
@@ -392,7 +392,7 @@ export const referralsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishReferralsMiddleware("awardBonus", `${Date.now()}`, { action: "awardBonus" }).catch(() => {});
+        await publishreferralsMiddleware("awardBonus", `${Date.now()}`, { action: "awardBonus" }).catch(() => {});
 
 
         return {

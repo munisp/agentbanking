@@ -172,7 +172,7 @@ async function publishaiMonitoringMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -378,7 +378,7 @@ export const aiMonitoringRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAiMonitoringMiddleware("retrain", `${Date.now()}`, { action: "retrain" }).catch(() => {});
+      await publishaiMonitoringMiddleware("retrain", `${Date.now()}`, { action: "retrain" }).catch(() => {});
 
 
       return {
@@ -431,7 +431,7 @@ export const aiMonitoringRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishAiMonitoringMiddleware("throughputTimeSeries", `${Date.now()}`, { action: "throughputTimeSeries" }).catch(() => {});
+      await publishaiMonitoringMiddleware("throughputTimeSeries", `${Date.now()}`, { action: "throughputTimeSeries" }).catch(() => {});
 
       return { data: null, timestamp: new Date().toISOString() };
     }),
@@ -439,7 +439,7 @@ export const aiMonitoringRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishAiMonitoringMiddleware("acknowledgeAlert", `${Date.now()}`, { action: "acknowledgeAlert" }).catch(() => {});
+      await publishaiMonitoringMiddleware("acknowledgeAlert", `${Date.now()}`, { action: "acknowledgeAlert" }).catch(() => {});
 
       return {
         success: true,

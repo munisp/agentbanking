@@ -169,7 +169,7 @@ async function publishkycMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -350,13 +350,13 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishKycMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
+        await publishkycMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishKycMiddleware("registerDevice", `${Date.now()}`, { action: "registerDevice" }).catch(() => {});
+        await publishkycMiddleware("registerDevice", `${Date.now()}`, { action: "registerDevice" }).catch(() => {});
 
 
 
@@ -413,7 +413,7 @@ export const kycRouter = router({
           input.score
         );
         // Middleware fan-out (fail-open)
-        await publishKycMiddleware("recordDeviceAttempt", `${Date.now()}`, { action: "recordDeviceAttempt" }).catch(() => {});
+        await publishkycMiddleware("recordDeviceAttempt", `${Date.now()}`, { action: "recordDeviceAttempt" }).catch(() => {});
 
         return { recorded: true, fingerprintHash: fingerprint.fingerprintHash };
       } catch (error) {
@@ -512,7 +512,7 @@ export const kycRouter = router({
         if (!challenge) {
           // Service unavailable — return session ID so the client can still proceed
           // Middleware fan-out (fail-open)
-          await publishKycMiddleware("startLiveness", `${Date.now()}`, { action: "startLiveness" }).catch(() => {});
+          await publishkycMiddleware("startLiveness", `${Date.now()}`, { action: "startLiveness" }).catch(() => {});
 
           return {
             sessionId: session.id,
@@ -619,7 +619,7 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishKycMiddleware("submitLivenessFrame", `${Date.now()}`, { action: "submitLivenessFrame" }).catch(() => {});
+        await publishkycMiddleware("submitLivenessFrame", `${Date.now()}`, { action: "submitLivenessFrame" }).catch(() => {});
 
 
         return {
@@ -918,7 +918,7 @@ export const kycRouter = router({
             input.mimeType
           );
           // Middleware fan-out (fail-open)
-          await publishKycMiddleware("requestDocumentUpload", `${Date.now()}`, { action: "requestDocumentUpload" }).catch(() => {});
+          await publishkycMiddleware("requestDocumentUpload", `${Date.now()}`, { action: "requestDocumentUpload" }).catch(() => {});
 
           return {
             uploadUrl: url,
@@ -985,7 +985,7 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishKycMiddleware("geoIpCorrelate", `${Date.now()}`, { action: "geoIpCorrelate" }).catch(() => {});
+        await publishkycMiddleware("geoIpCorrelate", `${Date.now()}`, { action: "geoIpCorrelate" }).catch(() => {});
 
 
         return {

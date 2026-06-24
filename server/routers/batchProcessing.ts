@@ -165,7 +165,7 @@ async function publishbatchProcessingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -268,7 +268,7 @@ export const batchProcessingRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishBatchProcessingMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishbatchProcessingMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -280,7 +280,7 @@ export const batchProcessingRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishBatchProcessingMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishbatchProcessingMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -293,7 +293,7 @@ export const batchProcessingRouter = router({
 
   submitJob: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishBatchProcessingMiddleware("submitJob", `${Date.now()}`, { action: "submitJob" }).catch(() => {});
+    await publishbatchProcessingMiddleware("submitJob", `${Date.now()}`, { action: "submitJob" }).catch(() => {});
 
     return {
       jobId: "JOB-001",

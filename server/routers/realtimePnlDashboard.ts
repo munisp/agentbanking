@@ -146,7 +146,7 @@ async function publishrealtimePnlDashboardMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -274,7 +274,7 @@ export const realtimePnlDashboardRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishRealtimePnlDashboardMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishrealtimePnlDashboardMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -297,7 +297,7 @@ export const realtimePnlDashboardRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "pnl_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishRealtimePnlDashboardMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishrealtimePnlDashboardMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

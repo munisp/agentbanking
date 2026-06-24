@@ -126,7 +126,7 @@ async function publishtransactionReceiptGeneratorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `transactions_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -257,7 +257,7 @@ export const transactionReceiptGeneratorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishTransactionReceiptGeneratorMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
+        await publishtransactionReceiptGeneratorMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
 
 
         return { success: true, templateId };
@@ -288,7 +288,7 @@ export const transactionReceiptGeneratorRouter = router({
           .limit(1);
         if (txRows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishTransactionReceiptGeneratorMiddleware("generateReceipt", `${Date.now()}`, { action: "generateReceipt" }).catch(() => {});
+          await publishtransactionReceiptGeneratorMiddleware("generateReceipt", `${Date.now()}`, { action: "generateReceipt" }).catch(() => {});
 
           return { success: false, error: "Transaction not found" };
         const tx = txRows[0];

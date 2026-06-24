@@ -149,7 +149,7 @@ async function publishautoComplianceWorkflowMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `compliance_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -295,7 +295,7 @@ export const autoComplianceWorkflowRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAutoComplianceWorkflowMiddleware("createWorkflow", `${Date.now()}`, { action: "createWorkflow" }).catch(() => {});
+        await publishautoComplianceWorkflowMiddleware("createWorkflow", `${Date.now()}`, { action: "createWorkflow" }).catch(() => {});
 
 
         return { success: true, workflowId: wfId };
@@ -322,7 +322,7 @@ export const autoComplianceWorkflowRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishAutoComplianceWorkflowMiddleware("triggerWorkflow", `${Date.now()}`, { action: "triggerWorkflow" }).catch(() => {});
+        await publishautoComplianceWorkflowMiddleware("triggerWorkflow", `${Date.now()}`, { action: "triggerWorkflow" }).catch(() => {});
 
         return {
           success: true,

@@ -132,7 +132,7 @@ async function publishaiCreditScoringMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -303,7 +303,7 @@ export const aiCreditScoringRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAiCreditScoringMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishaiCreditScoringMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -356,7 +356,7 @@ export const aiCreditScoringRouter = router({
         sql`UPDATE "credit_scores" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishAiCreditScoringMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishaiCreditScoringMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

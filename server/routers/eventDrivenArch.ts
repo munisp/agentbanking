@@ -158,7 +158,7 @@ async function publisheventDrivenArchMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -267,7 +267,7 @@ export const eventDrivenArchRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishEventDrivenArchMiddleware("listTopics", `${Date.now()}`, { action: "listTopics" }).catch(() => {});
+      await publisheventDrivenArchMiddleware("listTopics", `${Date.now()}`, { action: "listTopics" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -275,7 +275,7 @@ export const eventDrivenArchRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishEventDrivenArchMiddleware("getDeadLetterQueue", `${Date.now()}`, { action: "getDeadLetterQueue" }).catch(() => {});
+      await publisheventDrivenArchMiddleware("getDeadLetterQueue", `${Date.now()}`, { action: "getDeadLetterQueue" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -283,7 +283,7 @@ export const eventDrivenArchRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishEventDrivenArchMiddleware("retryDeadLetter", `${Date.now()}`, { action: "retryDeadLetter" }).catch(() => {});
+      await publisheventDrivenArchMiddleware("retryDeadLetter", `${Date.now()}`, { action: "retryDeadLetter" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

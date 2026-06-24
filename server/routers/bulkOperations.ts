@@ -170,7 +170,7 @@ async function publishbulkOperationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -285,7 +285,7 @@ export const bulkOperationsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishBulkOperationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishbulkOperationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return {
@@ -350,7 +350,7 @@ export const bulkOperationsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishBulkOperationsMiddleware("cancel", `${Date.now()}`, { action: "cancel" }).catch(() => {});
+      await publishbulkOperationsMiddleware("cancel", `${Date.now()}`, { action: "cancel" }).catch(() => {});
 
       return {
         success: true,
@@ -402,7 +402,7 @@ export const bulkOperationsRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishBulkOperationsMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
+      await publishbulkOperationsMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
 
       return {
         success: true,

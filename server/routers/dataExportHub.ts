@@ -128,7 +128,7 @@ async function publishdataExportHubMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -277,13 +277,13 @@ export const dataExportHubRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDataExportHubMiddleware("createExport", `${Date.now()}`, { action: "createExport" }).catch(() => {});
+        await publishdataExportHubMiddleware("createExport", `${Date.now()}`, { action: "createExport" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishDataExportHubMiddleware("cancelExport", `${Date.now()}`, { action: "cancelExport" }).catch(() => {});
+        await publishdataExportHubMiddleware("cancelExport", `${Date.now()}`, { action: "cancelExport" }).catch(() => {});
 
 
 

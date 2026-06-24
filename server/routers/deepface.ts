@@ -181,7 +181,7 @@ async function publishdeepfaceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `biometric_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -523,11 +523,11 @@ export const deepfaceRouter = router({
   // ── Supported Models & Detectors ──────────────────────────────────────
   models: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDeepfaceMiddleware("enrollFace", `${Date.now()}`, { action: "enrollFace" }).catch(() => {});
+    await publishdeepfaceMiddleware("enrollFace", `${Date.now()}`, { action: "enrollFace" }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishDeepfaceMiddleware("searchGallery", `${Date.now()}`, { action: "searchGallery" }).catch(() => {});
+    await publishdeepfaceMiddleware("searchGallery", `${Date.now()}`, { action: "searchGallery" }).catch(() => {});
 
 
     return {

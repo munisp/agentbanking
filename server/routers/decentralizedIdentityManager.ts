@@ -121,7 +121,7 @@ async function publishdecentralizedIdentityManagerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -244,7 +244,7 @@ export const decentralizedIdentityManagerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDecentralizedIdentityManagerMiddleware("verifyIdentity", `${Date.now()}`, { action: "verifyIdentity" }).catch(() => {});
+        await publishdecentralizedIdentityManagerMiddleware("verifyIdentity", `${Date.now()}`, { action: "verifyIdentity" }).catch(() => {});
 
 
         return { success: true, agent: updated };
@@ -276,7 +276,7 @@ export const decentralizedIdentityManagerRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishDecentralizedIdentityManagerMiddleware("revokeIdentity", `${Date.now()}`, { action: "revokeIdentity" }).catch(() => {});
+        await publishdecentralizedIdentityManagerMiddleware("revokeIdentity", `${Date.now()}`, { action: "revokeIdentity" }).catch(() => {});
 
         return { success: true, agent: updated };
       } catch (error) {

@@ -203,7 +203,7 @@ async function publishkycEnforcementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -746,7 +746,7 @@ export const kycEnforcementRouter = router({
 
     // Middleware fan-out (fail-open)
 
-    await publishKycEnforcementMiddleware("createCTR", `${Date.now()}`, { action: "createCTR" }).catch(() => {});
+    await publishkycEnforcementMiddleware("createCTR", `${Date.now()}`, { action: "createCTR" }).catch(() => {});
 
 
     return { services: checks };

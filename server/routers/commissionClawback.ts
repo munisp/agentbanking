@@ -126,7 +126,7 @@ async function publishcommissionClawbackMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `commission_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -376,7 +376,7 @@ export const commissionClawbackRouter = router({
           );
         }
         // Middleware fan-out (fail-open)
-        await publishCommissionClawbackMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
+        await publishcommissionClawbackMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
 
         return { success: true, message: "Clawback approved and applied" };
       } catch (error) {
@@ -412,7 +412,7 @@ export const commissionClawbackRouter = router({
           details: JSON.stringify({ reason: input.reason } as any),
         } as any);
         // Middleware fan-out (fail-open)
-        await publishCommissionClawbackMiddleware("dispute", `${Date.now()}`, { action: "dispute" }).catch(() => {});
+        await publishcommissionClawbackMiddleware("dispute", `${Date.now()}`, { action: "dispute" }).catch(() => {});
 
         return { success: true, message: "Dispute filed" };
       } catch (error) {

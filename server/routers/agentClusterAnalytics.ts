@@ -159,7 +159,7 @@ async function publishagentClusterAnalyticsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -288,7 +288,7 @@ export const agentClusterAnalyticsRouter = router({
 
   listClusters: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAgentClusterAnalyticsMiddleware("listClusters", `${Date.now()}`, { action: "listClusters" }).catch(() => {});
+    await publishagentClusterAnalyticsMiddleware("listClusters", `${Date.now()}`, { action: "listClusters" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -299,7 +299,7 @@ export const agentClusterAnalyticsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishAgentClusterAnalyticsMiddleware("optimizeNetwork", `${Date.now()}`, { action: "optimizeNetwork" }).catch(() => {});
+      await publishagentClusterAnalyticsMiddleware("optimizeNetwork", `${Date.now()}`, { action: "optimizeNetwork" }).catch(() => {});
 
       return { success: true };
     }),

@@ -128,7 +128,7 @@ async function publishbulkRoleImportMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -214,7 +214,7 @@ export const bulkRoleImportRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishBulkRoleImportMiddleware("upload", `${Date.now()}`, { action: "upload" }).catch(() => {});
+      await publishbulkRoleImportMiddleware("upload", `${Date.now()}`, { action: "upload" }).catch(() => {});
 
 
       return {
@@ -251,7 +251,7 @@ export const bulkRoleImportRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishBulkRoleImportMiddleware("validate", `${Date.now()}`, { action: "validate" }).catch(() => {});
+      await publishbulkRoleImportMiddleware("validate", `${Date.now()}`, { action: "validate" }).catch(() => {});
 
       return {
         success: true,
@@ -287,7 +287,7 @@ export const bulkRoleImportRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishBulkRoleImportMiddleware("execute", `${Date.now()}`, { action: "execute" }).catch(() => {});
+      await publishbulkRoleImportMiddleware("execute", `${Date.now()}`, { action: "execute" }).catch(() => {});
 
       return {
         success: true,

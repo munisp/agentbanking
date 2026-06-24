@@ -114,7 +114,7 @@ async function publishwebhookManagementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `management_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -318,7 +318,7 @@ export const webhookManagementRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWebhookManagementMiddleware("createWebhook", `${Date.now()}`, { action: "createWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware("createWebhook", `${Date.now()}`, { action: "createWebhook" }).catch(() => {});
 
 
         return {
@@ -365,7 +365,7 @@ export const webhookManagementRouter = router({
           .set(updates)
           .where(eq(webhookEndpoints.id, id));
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("updateWebhook", `${Date.now()}`, { action: "updateWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware("updateWebhook", `${Date.now()}`, { action: "updateWebhook" }).catch(() => {});
 
         return { success: true, webhookId: input.webhookId };
       } catch (error) {
@@ -387,7 +387,7 @@ export const webhookManagementRouter = router({
         if (!db || !id) throw new Error("Database unavailable");
         await db.delete(webhookEndpoints).where(eq(webhookEndpoints.id, id));
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("deleteWebhook", `${Date.now()}`, { action: "deleteWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware("deleteWebhook", `${Date.now()}`, { action: "deleteWebhook" }).catch(() => {});
 
         return { success: true, webhookId: input.webhookId };
       } catch (error) {
@@ -422,7 +422,7 @@ export const webhookManagementRouter = router({
           });
         }
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
 
         return {
           success: true,
@@ -465,7 +465,7 @@ export const webhookManagementRouter = router({
           }
         }
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+        await publishwebhookManagementMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
 
         return {
           success: true,
@@ -535,7 +535,7 @@ export const webhookManagementRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("createEndpoint", `${Date.now()}`, { action: "createEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware("createEndpoint", `${Date.now()}`, { action: "createEndpoint" }).catch(() => {});
 
         return {
           id: ep.id,
@@ -577,7 +577,7 @@ export const webhookManagementRouter = router({
           .set(updates)
           .where(eq(webhookEndpoints.id, input.endpointId));
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("updateEndpoint", `${Date.now()}`, { action: "updateEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware("updateEndpoint", `${Date.now()}`, { action: "updateEndpoint" }).catch(() => {});
 
         return { success: true, endpointId: input.endpointId };
       } catch (error) {
@@ -598,7 +598,7 @@ export const webhookManagementRouter = router({
           .delete(webhookEndpoints)
           .where(eq(webhookEndpoints.id, input.endpointId));
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("deleteEndpoint", `${Date.now()}`, { action: "deleteEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware("deleteEndpoint", `${Date.now()}`, { action: "deleteEndpoint" }).catch(() => {});
 
         return { success: true, endpointId: input.endpointId };
       } catch (error) {
@@ -666,7 +666,7 @@ export const webhookManagementRouter = router({
           })
           .where(eq(webhookDeliveries.id, input.deliveryId));
         // Middleware fan-out (fail-open)
-        await publishWebhookManagementMiddleware("retryDelivery", `${Date.now()}`, { action: "retryDelivery" }).catch(() => {});
+        await publishwebhookManagementMiddleware("retryDelivery", `${Date.now()}`, { action: "retryDelivery" }).catch(() => {});
 
         return {
           success: true,

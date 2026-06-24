@@ -149,7 +149,7 @@ async function publishautomatedComplianceCheckerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `compliance_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -282,7 +282,7 @@ export const automatedComplianceCheckerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAutomatedComplianceCheckerMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
+        await publishautomatedComplianceCheckerMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
 
 
         return {
@@ -324,7 +324,7 @@ export const automatedComplianceCheckerRouter = router({
           }),
         });
         // Middleware fan-out (fail-open)
-        await publishAutomatedComplianceCheckerMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
+        await publishautomatedComplianceCheckerMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
 
         return { success: true, ruleId };
       } catch (error) {

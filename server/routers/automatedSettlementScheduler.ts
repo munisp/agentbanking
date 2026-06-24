@@ -203,7 +203,7 @@ async function publishautomatedSettlementSchedulerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `settlement_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -326,13 +326,13 @@ export const automatedSettlementSchedulerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAutomatedSettlementSchedulerMiddleware("listSchedules", `${Date.now()}`, { action: "listSchedules" }).catch(() => {});
+        await publishautomatedSettlementSchedulerMiddleware("listSchedules", `${Date.now()}`, { action: "listSchedules" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishAutomatedSettlementSchedulerMiddleware("createSchedule", `${Date.now()}`, { action: "createSchedule" }).catch(() => {});
+        await publishautomatedSettlementSchedulerMiddleware("createSchedule", `${Date.now()}`, { action: "createSchedule" }).catch(() => {});
 
 
 
@@ -374,7 +374,7 @@ export const automatedSettlementSchedulerRouter = router({
           logger.warn("[SettlementScheduler] Middleware:", e);
         }
         // Middleware fan-out (fail-open)
-        await publishAutomatedSettlementSchedulerMiddleware("toggleSchedule", `${Date.now()}`, { action: "toggleSchedule" }).catch(() => {});
+        await publishautomatedSettlementSchedulerMiddleware("toggleSchedule", `${Date.now()}`, { action: "toggleSchedule" }).catch(() => {});
 
         return {
           success: true,
@@ -432,7 +432,7 @@ export const automatedSettlementSchedulerRouter = router({
           logger.warn("[SettlementScheduler] Middleware:", e);
         }
         // Middleware fan-out (fail-open)
-        await publishAutomatedSettlementSchedulerMiddleware("triggerManual", `${Date.now()}`, { action: "triggerManual" }).catch(() => {});
+        await publishautomatedSettlementSchedulerMiddleware("triggerManual", `${Date.now()}`, { action: "triggerManual" }).catch(() => {});
 
         return {
           executionId: batchRef,

@@ -158,7 +158,7 @@ async function publishautomatedTestingFrameworkMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -261,7 +261,7 @@ export const automatedTestingFrameworkRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAutomatedTestingFrameworkMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishautomatedTestingFrameworkMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -273,7 +273,7 @@ export const automatedTestingFrameworkRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAutomatedTestingFrameworkMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishautomatedTestingFrameworkMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -286,7 +286,7 @@ export const automatedTestingFrameworkRouter = router({
 
   runSuite: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishAutomatedTestingFrameworkMiddleware("runSuite", `${Date.now()}`, { action: "runSuite" }).catch(() => {});
+    await publishautomatedTestingFrameworkMiddleware("runSuite", `${Date.now()}`, { action: "runSuite" }).catch(() => {});
 
     return {
       suiteId: "TS-001",

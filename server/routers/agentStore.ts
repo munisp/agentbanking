@@ -158,7 +158,7 @@ async function publishagentStoreMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -852,7 +852,7 @@ export const agentStoreRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAgentStoreMiddleware("createPaymentSplit", `${Date.now()}`, { action: "createPaymentSplit" }).catch(() => {});
+      await publishagentStoreMiddleware("createPaymentSplit", `${Date.now()}`, { action: "createPaymentSplit" }).catch(() => {});
 
 
       return { splits, total: totalResult[0]?.total ?? 0 };

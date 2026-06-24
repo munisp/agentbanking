@@ -135,7 +135,7 @@ async function publishemailDeliveryLogCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `delivery_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -316,7 +316,7 @@ export const emailDeliveryLogRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishEmailDeliveryLogCrudMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+        await publishemailDeliveryLogCrudMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
 
 
         return {
@@ -342,7 +342,7 @@ export const emailDeliveryLogRouter = router({
           .delete(emailDeliveryLog)
           .where(eq(emailDeliveryLog.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishEmailDeliveryLogCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishemailDeliveryLogCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -140,7 +140,7 @@ async function publishfraudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `fraud_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -248,7 +248,7 @@ export const fraudRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishFraudMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+        await publishfraudMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -310,7 +310,7 @@ export const fraudRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishFraudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishfraudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, alertId: alert.id };
@@ -465,7 +465,7 @@ export const fraudRouter = router({
           });
         await db.delete(fraudRules).where(eq(fraudRules.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishFraudMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+        await publishfraudMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -494,7 +494,7 @@ export const fraudRouter = router({
           .where(eq(fraudRules.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishFraudMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+        await publishfraudMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
 
         return { ...rule, threshold: Number(rule.threshold) };
       } catch (error) {
@@ -530,7 +530,7 @@ export const fraudRouter = router({
         .limit(1);
       if (existing.length > 0)
         // Middleware fan-out (fail-open)
-        await publishFraudMiddleware("seedDefaultRules", `${Date.now()}`, { action: "seedDefaultRules" }).catch(() => {});
+        await publishfraudMiddleware("seedDefaultRules", `${Date.now()}`, { action: "seedDefaultRules" }).catch(() => {});
 
         return { seeded: 0, message: "Rules already exist — no changes made" };
       const DEFAULT_RULES = [

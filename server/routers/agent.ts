@@ -143,7 +143,7 @@ async function publishagentMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -281,10 +281,10 @@ export const agentRouter = router({
     }),
 
   // ── Logout ────────────────────────────────────────────────────────────────
-  logout: protectedProcedure.mutation(({ ctx }) => {
+  logout: protectedProcedure.mutation(async ({ ctx }) => {
     ctx.res.clearCookie("agent_session", { path: "/" });
     // Middleware fan-out (fail-open)
-    await publishAgentMiddleware("logout", `${Date.now()}`, { action: "logout" }).catch(() => {});
+    await publishagentMiddleware("logout", `${Date.now()}`, { action: "logout" }).catch(() => {});
 
     return { success: true };
   }),
@@ -651,7 +651,7 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishagentMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -694,7 +694,7 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("setFloatLock", `${Date.now()}`, { action: "setFloatLock" }).catch(() => {});
+        await publishagentMiddleware("setFloatLock", `${Date.now()}`, { action: "setFloatLock" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -743,7 +743,7 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("setTerminalEnabled", `${Date.now()}`, { action: "setTerminalEnabled" }).catch(() => {});
+        await publishagentMiddleware("setTerminalEnabled", `${Date.now()}`, { action: "setTerminalEnabled" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -777,7 +777,7 @@ export const agentRouter = router({
           metadata: { count: input.ids.length },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("bulkActivate", `${Date.now()}`, { action: "bulkActivate" }).catch(() => {});
+        await publishagentMiddleware("bulkActivate", `${Date.now()}`, { action: "bulkActivate" }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -814,7 +814,7 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("bulkSuspend", `${Date.now()}`, { action: "bulkSuspend" }).catch(() => {});
+        await publishagentMiddleware("bulkSuspend", `${Date.now()}`, { action: "bulkSuspend" }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -855,7 +855,7 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
+        await publishagentMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -892,7 +892,7 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, tier: input.tier },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMiddleware("bulkSetTier", `${Date.now()}`, { action: "bulkSetTier" }).catch(() => {});
+        await publishagentMiddleware("bulkSetTier", `${Date.now()}`, { action: "bulkSetTier" }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {

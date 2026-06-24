@@ -134,7 +134,7 @@ async function publishagentMicroInsuranceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -281,7 +281,7 @@ export const agentMicroInsuranceRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentMicroInsuranceMiddleware("createPolicy", `${Date.now()}`, { action: "createPolicy" }).catch(() => {});
+        await publishagentMicroInsuranceMiddleware("createPolicy", `${Date.now()}`, { action: "createPolicy" }).catch(() => {});
 
 
         return {
@@ -324,7 +324,7 @@ export const agentMicroInsuranceRouter = router({
           metadata: { amount: input.amount, description: input.description },
         });
         // Middleware fan-out (fail-open)
-        await publishAgentMicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
+        await publishagentMicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
 
         return {
           success: true,

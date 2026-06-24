@@ -168,7 +168,7 @@ async function publishregulatorySandboxTesterMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -301,7 +301,7 @@ export const regulatorySandboxTesterRouter = router({
 
   listSandboxes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishRegulatorySandboxTesterMiddleware("listSandboxes", `${Date.now()}`, { action: "listSandboxes" }).catch(() => {});
+    await publishregulatorySandboxTesterMiddleware("listSandboxes", `${Date.now()}`, { action: "listSandboxes" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -312,7 +312,7 @@ export const regulatorySandboxTesterRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishRegulatorySandboxTesterMiddleware("runComplianceCheck", `${Date.now()}`, { action: "runComplianceCheck" }).catch(() => {});
+      await publishregulatorySandboxTesterMiddleware("runComplianceCheck", `${Date.now()}`, { action: "runComplianceCheck" }).catch(() => {});
 
       return { success: true };
     }),

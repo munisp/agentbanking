@@ -160,7 +160,7 @@ async function publishwebsocketServiceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -263,7 +263,7 @@ export const websocketServiceRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishWebsocketServiceMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishwebsocketServiceMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -276,7 +276,7 @@ export const websocketServiceRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishWebsocketServiceMiddleware("listConnections", `${Date.now()}`, { action: "listConnections" }).catch(() => {});
+      await publishwebsocketServiceMiddleware("listConnections", `${Date.now()}`, { action: "listConnections" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -284,7 +284,7 @@ export const websocketServiceRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishWebsocketServiceMiddleware("broadcastMessage", `${Date.now()}`, { action: "broadcastMessage" }).catch(() => {});
+      await publishwebsocketServiceMiddleware("broadcastMessage", `${Date.now()}`, { action: "broadcastMessage" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

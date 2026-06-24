@@ -216,7 +216,7 @@ async function publishgoServiceBridgeMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -359,7 +359,7 @@ export const goServiceBridgeRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishGoServiceBridgeMiddleware("restartService", `${Date.now()}`, { action: "restartService" }).catch(() => {});
+        await publishgoServiceBridgeMiddleware("restartService", `${Date.now()}`, { action: "restartService" }).catch(() => {});
 
 
         return {
@@ -389,17 +389,17 @@ export const goServiceBridgeRouter = router({
     .input(z.object({ name: z.string(), steps: z.array(z.string()) }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishGoServiceBridgeMiddleware("serviceHealth", `${Date.now()}`, { action: "serviceHealth" }).catch(() => {});
+      await publishgoServiceBridgeMiddleware("serviceHealth", `${Date.now()}`, { action: "serviceHealth" }).catch(() => {});
 
       // Middleware fan-out (fail-open)
 
-      await publishGoServiceBridgeMiddleware("circuit", `${Date.now()}`, { action: "circuit" }).catch(() => {});
+      await publishgoServiceBridgeMiddleware("circuit", `${Date.now()}`, { action: "circuit" }).catch(() => {});
 
 
       // Middleware fan-out (fail-open)
 
 
-      await publishGoServiceBridgeMiddleware("workflowCreate", `${Date.now()}`, { action: "workflowCreate" }).catch(() => {});
+      await publishgoServiceBridgeMiddleware("workflowCreate", `${Date.now()}`, { action: "workflowCreate" }).catch(() => {});
 
 
 

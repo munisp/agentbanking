@@ -141,7 +141,7 @@ async function publishplatformCapacityPlannerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformCapacityPlannerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformCapacityPlannerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformCapacityPlannerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformCapacityPlannerRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "capacity_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformCapacityPlannerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformCapacityPlannerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -337,7 +337,7 @@ export const platformCapacityPlannerRouter = router({
 
   listResources: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPlatformCapacityPlannerMiddleware("listResources", `${Date.now()}`, { action: "listResources" }).catch(() => {});
+    await publishplatformCapacityPlannerMiddleware("listResources", `${Date.now()}`, { action: "listResources" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -348,7 +348,7 @@ export const platformCapacityPlannerRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPlatformCapacityPlannerMiddleware("runProjection", `${Date.now()}`, { action: "runProjection" }).catch(() => {});
+      await publishplatformCapacityPlannerMiddleware("runProjection", `${Date.now()}`, { action: "runProjection" }).catch(() => {});
 
       return { success: true };
     }),

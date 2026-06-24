@@ -160,7 +160,7 @@ async function publishsecurityHardeningMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -276,21 +276,21 @@ export const securityHardeningRouter = router({
 
   owaspTop10: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSecurityHardeningMiddleware("owaspTop10", `${Date.now()}`, { action: "owaspTop10" }).catch(() => {});
+    await publishsecurityHardeningMiddleware("owaspTop10", `${Date.now()}`, { action: "owaspTop10" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   pciDssCompliance: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSecurityHardeningMiddleware("pciDssCompliance", `${Date.now()}`, { action: "pciDssCompliance" }).catch(() => {});
+    await publishsecurityHardeningMiddleware("pciDssCompliance", `${Date.now()}`, { action: "pciDssCompliance" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   recentScans: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishSecurityHardeningMiddleware("recentScans", `${Date.now()}`, { action: "recentScans" }).catch(() => {});
+    await publishsecurityHardeningMiddleware("recentScans", `${Date.now()}`, { action: "recentScans" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -301,7 +301,7 @@ export const securityHardeningRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishSecurityHardeningMiddleware("runScan", `${Date.now()}`, { action: "runScan" }).catch(() => {});
+      await publishsecurityHardeningMiddleware("runScan", `${Date.now()}`, { action: "runScan" }).catch(() => {});
 
       return { success: true };
     }),

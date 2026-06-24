@@ -138,7 +138,7 @@ async function publishglAccountsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -301,7 +301,7 @@ export const gl_accountsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishGlAccountsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishglAccountsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { ...row, normalBalance: NORMAL_BALANCE[input.accountType] };
@@ -340,7 +340,7 @@ export const gl_accountsRouter = router({
         const db = (await getDb())!;
         await db.delete(gl_accounts).where(eq(gl_accounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishGlAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishglAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

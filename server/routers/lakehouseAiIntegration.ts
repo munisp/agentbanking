@@ -128,7 +128,7 @@ async function publishlakehouseAiIntegrationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -244,7 +244,7 @@ export const lakehouseAiIntegrationRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishLakehouseAiIntegrationMiddleware("train", `${Date.now()}`, { action: "train" }).catch(() => {});
+      await publishlakehouseAiIntegrationMiddleware("train", `${Date.now()}`, { action: "train" }).catch(() => {});
 
 
       return {
@@ -281,7 +281,7 @@ export const lakehouseAiIntegrationRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishLakehouseAiIntegrationMiddleware("predict", `${Date.now()}`, { action: "predict" }).catch(() => {});
+      await publishlakehouseAiIntegrationMiddleware("predict", `${Date.now()}`, { action: "predict" }).catch(() => {});
 
       return {
         success: true,
@@ -397,7 +397,7 @@ export const lakehouseAiIntegrationRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishLakehouseAiIntegrationMiddleware("dataLineage", `${Date.now()}`, { action: "dataLineage" }).catch(() => {});
+      await publishlakehouseAiIntegrationMiddleware("dataLineage", `${Date.now()}`, { action: "dataLineage" }).catch(() => {});
 
       return { data: null, timestamp: new Date().toISOString() };
     }),
@@ -405,7 +405,7 @@ export const lakehouseAiIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishLakehouseAiIntegrationMiddleware("promoteModel", `${Date.now()}`, { action: "promoteModel" }).catch(() => {});
+      await publishlakehouseAiIntegrationMiddleware("promoteModel", `${Date.now()}`, { action: "promoteModel" }).catch(() => {});
 
       return {
         success: true,
@@ -418,7 +418,7 @@ export const lakehouseAiIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishLakehouseAiIntegrationMiddleware("submitBatchJob", `${Date.now()}`, { action: "submitBatchJob" }).catch(() => {});
+      await publishlakehouseAiIntegrationMiddleware("submitBatchJob", `${Date.now()}`, { action: "submitBatchJob" }).catch(() => {});
 
       return {
         success: true,

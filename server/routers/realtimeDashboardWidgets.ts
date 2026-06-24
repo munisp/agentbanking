@@ -129,7 +129,7 @@ async function publishrealtimeDashboardWidgetsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -245,7 +245,7 @@ export const realtimeDashboardWidgetsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishRealtimeDashboardWidgetsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return {
@@ -282,7 +282,7 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishRealtimeDashboardWidgetsMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
       return {
         success: true,
@@ -318,7 +318,7 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishRealtimeDashboardWidgetsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return {
         success: true,
@@ -354,7 +354,7 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishRealtimeDashboardWidgetsMiddleware("layout", `${Date.now()}`, { action: "layout" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware("layout", `${Date.now()}`, { action: "layout" }).catch(() => {});
 
       return {
         success: true,

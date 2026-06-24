@@ -141,7 +141,7 @@ async function publishplatformFeatureFlagsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformFeatureFlagsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformFeatureFlagsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformFeatureFlagsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformFeatureFlagsRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "feature_flags_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformFeatureFlagsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformFeatureFlagsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

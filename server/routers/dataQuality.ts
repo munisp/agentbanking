@@ -158,7 +158,7 @@ async function publishdataQualityMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -261,7 +261,7 @@ export const dataQualityRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDataQualityMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishdataQualityMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -273,14 +273,14 @@ export const dataQualityRouter = router({
 
   getValidationRules: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDataQualityMiddleware("getValidationRules", `${Date.now()}`, { action: "getValidationRules" }).catch(() => {});
+    await publishdataQualityMiddleware("getValidationRules", `${Date.now()}`, { action: "getValidationRules" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   runProfile: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishDataQualityMiddleware("runProfile", `${Date.now()}`, { action: "runProfile" }).catch(() => {});
+    await publishdataQualityMiddleware("runProfile", `${Date.now()}`, { action: "runProfile" }).catch(() => {});
 
     return { profileId: "PF-001", status: "completed", columns: 0, issues: 0 };
   }),

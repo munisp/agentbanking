@@ -160,7 +160,7 @@ async function publishmicroInsuranceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `insurance_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -255,7 +255,7 @@ export const microInsuranceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishMicroInsuranceMiddleware("enroll", `${Date.now()}`, { action: "enroll" }).catch(() => {});
+      await publishmicroInsuranceMiddleware("enroll", `${Date.now()}`, { action: "enroll" }).catch(() => {});
 
 
       return {
@@ -310,7 +310,7 @@ export const microInsuranceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishMicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
+      await publishmicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
 
 
       return {

@@ -399,7 +399,7 @@ async function publishollamaLLMMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -422,7 +422,7 @@ export const ollamaLLMRouter = router({
     .mutation(async () => {
       try {
         // Middleware fan-out (fail-open)
-        await publishOllamaLLMMiddleware("classifyTransactionMutation", `${Date.now()}`, { action: "classifyTransactionMutation" }).catch(() => {});
+        await publishollamaLLMMiddleware("classifyTransactionMutation", `${Date.now()}`, { action: "classifyTransactionMutation" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

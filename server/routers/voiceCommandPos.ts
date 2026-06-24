@@ -153,7 +153,7 @@ async function publishvoiceCommandPosMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `pos_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -245,7 +245,7 @@ export const voiceCommandPosRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishVoiceCommandPosMiddleware("processCommand", `${Date.now()}`, { action: "processCommand" }).catch(() => {});
+        await publishvoiceCommandPosMiddleware("processCommand", `${Date.now()}`, { action: "processCommand" }).catch(() => {});
 
 
         return {

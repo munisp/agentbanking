@@ -108,7 +108,7 @@ async function publishhelpDeskMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -267,13 +267,13 @@ export const helpDeskRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishHelpDeskMiddleware("createTicket", `${Date.now()}`, { action: "createTicket" }).catch(() => {});
+        await publishhelpDeskMiddleware("createTicket", `${Date.now()}`, { action: "createTicket" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishHelpDeskMiddleware("resolveTicket", `${Date.now()}`, { action: "resolveTicket" }).catch(() => {});
+        await publishhelpDeskMiddleware("resolveTicket", `${Date.now()}`, { action: "resolveTicket" }).catch(() => {});
 
 
 

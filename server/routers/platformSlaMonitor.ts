@@ -141,7 +141,7 @@ async function publishplatformSlaMonitorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformSlaMonitorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformSlaMonitorMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformSlaMonitorMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformSlaMonitorRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "sla_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformSlaMonitorMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformSlaMonitorMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

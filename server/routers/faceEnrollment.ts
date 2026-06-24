@@ -109,7 +109,7 @@ async function publishfaceEnrollmentMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -263,7 +263,7 @@ export const faceEnrollmentRouter = router({
               )[0] ?? null,
           });
           // Middleware fan-out (fail-open)
-          await publishFaceEnrollmentMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
+          await publishfaceEnrollmentMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
 
           return { match: false, score: 0, reason: "no_enrollment" };
         }
@@ -426,7 +426,7 @@ export const faceEnrollmentRouter = router({
           });
         }
         // Middleware fan-out (fail-open)
-        await publishFaceEnrollmentMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+        await publishfaceEnrollmentMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
 
         return { success: !!updated };
       } catch (error) {

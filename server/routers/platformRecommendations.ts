@@ -141,7 +141,7 @@ async function publishplatformRecommendationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformRecommendationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformRecommendationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformRecommendationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformRecommendationsRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "recommendations_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformRecommendationsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformRecommendationsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -132,7 +132,7 @@ async function publishbiReportDefinitionsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -262,7 +262,7 @@ export const biReportDefinitionsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishBiReportDefinitionsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishbiReportDefinitionsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return {
@@ -289,7 +289,7 @@ export const biReportDefinitionsRouter = router({
           .delete(biReportDefinitions)
           .where(eq(biReportDefinitions.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishBiReportDefinitionsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishbiReportDefinitionsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

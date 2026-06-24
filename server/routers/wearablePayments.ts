@@ -128,7 +128,7 @@ async function publishwearablePaymentsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `payments_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -307,7 +307,7 @@ export const wearablePaymentsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishWearablePaymentsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishwearablePaymentsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -354,7 +354,7 @@ export const wearablePaymentsRouter = router({
         sql`UPDATE "wearable_devices" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishWearablePaymentsMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishwearablePaymentsMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

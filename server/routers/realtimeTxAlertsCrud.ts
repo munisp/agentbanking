@@ -143,7 +143,7 @@ async function publishrealtimeTxAlertsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -283,7 +283,7 @@ export const realtime_tx_alertsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishRealtimeTxAlertsCrudMiddleware("evaluateTransaction", `${Date.now()}`, { action: "evaluateTransaction" }).catch(() => {});
+        await publishrealtimeTxAlertsCrudMiddleware("evaluateTransaction", `${Date.now()}`, { action: "evaluateTransaction" }).catch(() => {});
 
 
         return {
@@ -334,11 +334,11 @@ export const realtime_tx_alertsRouter = router({
           .set({ metadata: "dismissed", acknowledged: true } as any)
           .where(eq(realtime_tx_alerts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishRealtimeTxAlertsCrudMiddleware("getVelocityRules", `${Date.now()}`, { action: "getVelocityRules" }).catch(() => {});
+        await publishrealtimeTxAlertsCrudMiddleware("getVelocityRules", `${Date.now()}`, { action: "getVelocityRules" }).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-        await publishRealtimeTxAlertsCrudMiddleware("dismiss", `${Date.now()}`, { action: "dismiss" }).catch(() => {});
+        await publishrealtimeTxAlertsCrudMiddleware("dismiss", `${Date.now()}`, { action: "dismiss" }).catch(() => {});
 
 
         return { success: true, message: "Alert dismissed" };
@@ -360,7 +360,7 @@ export const realtime_tx_alertsRouter = router({
           .delete(realtime_tx_alerts)
           .where(eq(realtime_tx_alerts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishRealtimeTxAlertsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishrealtimeTxAlertsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

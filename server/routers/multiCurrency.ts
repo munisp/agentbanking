@@ -114,7 +114,7 @@ async function publishmultiCurrencyMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -200,7 +200,7 @@ export const multiCurrencyRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishMultiCurrencyMiddleware("listBalances", `${Date.now()}`, { action: "listBalances" }).catch(() => {});
+      await publishmultiCurrencyMiddleware("listBalances", `${Date.now()}`, { action: "listBalances" }).catch(() => {});
 
 
       return {
@@ -237,7 +237,7 @@ export const multiCurrencyRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishMultiCurrencyMiddleware("convert", `${Date.now()}`, { action: "convert" }).catch(() => {});
+      await publishmultiCurrencyMiddleware("convert", `${Date.now()}`, { action: "convert" }).catch(() => {});
 
       return {
         success: true,
@@ -329,7 +329,7 @@ export const multiCurrencyRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishMultiCurrencyMiddleware("settings", `${Date.now()}`, { action: "settings" }).catch(() => {});
+      await publishmultiCurrencyMiddleware("settings", `${Date.now()}`, { action: "settings" }).catch(() => {});
 
       return {
         success: true,

@@ -124,7 +124,7 @@ async function publishproductionFeaturesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -272,7 +272,7 @@ export const productionFeaturesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishProductionFeaturesMiddleware("toggleFeature", `${Date.now()}`, { action: "toggleFeature" }).catch(() => {});
+        await publishproductionFeaturesMiddleware("toggleFeature", `${Date.now()}`, { action: "toggleFeature" }).catch(() => {});
 
 
         return { success: true };
@@ -317,7 +317,7 @@ export const productionFeaturesRouter = router({
           metadata: { name: input.name },
         });
         // Middleware fan-out (fail-open)
-        await publishProductionFeaturesMiddleware("createFeature", `${Date.now()}`, { action: "createFeature" }).catch(() => {});
+        await publishproductionFeaturesMiddleware("createFeature", `${Date.now()}`, { action: "createFeature" }).catch(() => {});
 
         return { success: true, featureKey: key };
       } catch (error) {

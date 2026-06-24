@@ -137,7 +137,7 @@ async function publishmerchantPayoutSettlementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `settlement_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -310,7 +310,7 @@ export const merchantPayoutSettlementRouter = router({
           })
           .where(eq(merchantPayouts.id, input.payoutId));
         // Middleware fan-out (fail-open)
-        await publishMerchantPayoutSettlementMiddleware("approvePayout", `${Date.now()}`, { action: "approvePayout" }).catch(() => {});
+        await publishmerchantPayoutSettlementMiddleware("approvePayout", `${Date.now()}`, { action: "approvePayout" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -337,7 +337,7 @@ export const merchantPayoutSettlementRouter = router({
           })
           .where(eq(merchantPayouts.id, input.payoutId));
         // Middleware fan-out (fail-open)
-        await publishMerchantPayoutSettlementMiddleware("processPayout", `${Date.now()}`, { action: "processPayout" }).catch(() => {});
+        await publishmerchantPayoutSettlementMiddleware("processPayout", `${Date.now()}`, { action: "processPayout" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -363,7 +363,7 @@ export const merchantPayoutSettlementRouter = router({
           })
           .where(eq(merchantPayouts.id, input.payoutId));
         // Middleware fan-out (fail-open)
-        await publishMerchantPayoutSettlementMiddleware("completePayout", `${Date.now()}`, { action: "completePayout" }).catch(() => {});
+        await publishmerchantPayoutSettlementMiddleware("completePayout", `${Date.now()}`, { action: "completePayout" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

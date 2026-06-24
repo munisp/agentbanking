@@ -127,7 +127,7 @@ async function publishartRobustnessMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -243,7 +243,7 @@ export const artRobustnessRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishArtRobustnessMiddleware("attack", `${Date.now()}`, { action: "attack" }).catch(() => {});
+      await publishartRobustnessMiddleware("attack", `${Date.now()}`, { action: "attack" }).catch(() => {});
 
 
       return {
@@ -280,7 +280,7 @@ export const artRobustnessRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishArtRobustnessMiddleware("defense", `${Date.now()}`, { action: "defense" }).catch(() => {});
+      await publishartRobustnessMiddleware("defense", `${Date.now()}`, { action: "defense" }).catch(() => {});
 
       return {
         success: true,
@@ -387,7 +387,7 @@ export const artRobustnessRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishArtRobustnessMiddleware("listResults", `${Date.now()}`, { action: "listResults" }).catch(() => {});
+      await publishartRobustnessMiddleware("listResults", `${Date.now()}`, { action: "listResults" }).catch(() => {});
 
       return { items: [], total: 0 };
     }),
@@ -395,7 +395,7 @@ export const artRobustnessRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishArtRobustnessMiddleware("runAttack", `${Date.now()}`, { action: "runAttack" }).catch(() => {});
+      await publishartRobustnessMiddleware("runAttack", `${Date.now()}`, { action: "runAttack" }).catch(() => {});
 
       return {
         success: true,
@@ -408,7 +408,7 @@ export const artRobustnessRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishArtRobustnessMiddleware("runFullSuite", `${Date.now()}`, { action: "runFullSuite" }).catch(() => {});
+      await publishartRobustnessMiddleware("runFullSuite", `${Date.now()}`, { action: "runFullSuite" }).catch(() => {});
 
       return {
         success: true,

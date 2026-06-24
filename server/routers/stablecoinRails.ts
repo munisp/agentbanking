@@ -436,7 +436,7 @@ export const stablecoinRailsRouter = router({
       // Middleware fan-out
       publishEvent("stablecoin.minted", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance }).catch(() => {});
       tbCreateTransfer({ debitAccountId: "1004", creditAccountId: "3001", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_mint", agentCode: "system" }).catch(() => {});
-      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_mint", timestamp: new Date().toISOString() }).catch(() => {});
+      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_mint", timestamp: Date.now() }).catch(() => {});
       dapr.publishEvent("pubsub", "stablecoin.minted", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency }).catch(() => {});
       ingestToLakehouse("stablecoin_mints", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
 
@@ -484,7 +484,7 @@ export const stablecoinRailsRouter = router({
 
       publishEvent("stablecoin.burned", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, reason: input.reason }).catch(() => {});
       tbCreateTransfer({ debitAccountId: "3001", creditAccountId: "1004", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_burn", agentCode: "system" }).catch(() => {});
-      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_burn", timestamp: new Date().toISOString() }).catch(() => {});
+      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_burn", timestamp: Date.now() }).catch(() => {});
       dapr.publishEvent("pubsub", "stablecoin.burned", { ref, walletId: input.walletId, amount: input.amount }).catch(() => {});
       ingestToLakehouse("stablecoin_burns", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
 

@@ -182,7 +182,7 @@ async function publishbillingInvoiceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `billing_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -433,7 +433,7 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishBillingInvoiceMiddleware("markPaid", `${Date.now()}`, { action: "markPaid" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("markPaid", `${Date.now()}`, { action: "markPaid" }).catch(() => {});
 
         return {
           success: true,
@@ -462,7 +462,7 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishBillingInvoiceMiddleware("generateCreditNote", `${Date.now()}`, { action: "generateCreditNote" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("generateCreditNote", `${Date.now()}`, { action: "generateCreditNote" }).catch(() => {});
 
         return {
           creditNoteNumber: `CN-${crypto.randomUUID().toUpperCase()}`,
@@ -493,7 +493,7 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishBillingInvoiceMiddleware("exportInvoices", `${Date.now()}`, { action: "exportInvoices" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("exportInvoices", `${Date.now()}`, { action: "exportInvoices" }).catch(() => {});
 
         return {
           downloadUrl: `/api/billing/export/${input.tenantId}/${input.format}`,
@@ -641,7 +641,7 @@ export const billingInvoiceRouter = router({
       try {
         const invoice = await getStripe().invoices.pay(input.stripeInvoiceId);
         // Middleware fan-out (fail-open)
-        await publishBillingInvoiceMiddleware("collectPayment", `${Date.now()}`, { action: "collectPayment" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("collectPayment", `${Date.now()}`, { action: "collectPayment" }).catch(() => {});
 
         return {
           success: true,
@@ -734,7 +734,7 @@ export const billingInvoiceRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishBillingInvoiceMiddleware("createInvoiceCheckout", `${Date.now()}`, { action: "createInvoiceCheckout" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("createInvoiceCheckout", `${Date.now()}`, { action: "createInvoiceCheckout" }).catch(() => {});
 
         return { checkoutUrl: session.url, sessionId: session.id };
       } catch (err: any) {

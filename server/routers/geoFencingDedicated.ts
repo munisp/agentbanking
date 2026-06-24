@@ -131,7 +131,7 @@ async function publishgeoFencingDedicatedMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,13 +269,13 @@ export const geoFencingDedicatedRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishGeoFencingDedicatedMiddleware("createZone", `${Date.now()}`, { action: "createZone" }).catch(() => {});
+        await publishgeoFencingDedicatedMiddleware("createZone", `${Date.now()}`, { action: "createZone" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishGeoFencingDedicatedMiddleware("deleteZone", `${Date.now()}`, { action: "deleteZone" }).catch(() => {});
+        await publishgeoFencingDedicatedMiddleware("deleteZone", `${Date.now()}`, { action: "deleteZone" }).catch(() => {});
 
 
 

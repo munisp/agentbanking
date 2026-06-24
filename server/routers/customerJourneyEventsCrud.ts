@@ -137,7 +137,7 @@ async function publishcustomerJourneyEventsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `customer_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -288,12 +288,6 @@ export const customer_journey_eventsRouter = router({
               (s: Record<string, unknown>) => s.stage === JOURNEY_STAGES[i - 1]
             )?.count || 0
           : stageCount;
-
-      // Middleware fan-out (fail-open)
-
-      await publishCustomerJourneyEventsCrudMiddleware("trackEvent", `${Date.now()}`, { action: "trackEvent" }).catch(() => {});
-
-
       return {
         stage,
         count: stageCount,
@@ -314,7 +308,7 @@ export const customer_journey_eventsRouter = router({
           .delete(customerJourneySteps)
           .where(eq(customerJourneySteps.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishCustomerJourneyEventsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishcustomerJourneyEventsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

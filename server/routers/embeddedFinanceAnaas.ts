@@ -140,7 +140,7 @@ async function publishembeddedFinanceAnaasMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -309,7 +309,7 @@ export const embeddedFinanceAnaasRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEmbeddedFinanceAnaasMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishembeddedFinanceAnaasMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -356,7 +356,7 @@ export const embeddedFinanceAnaasRouter = router({
         sql`UPDATE "anaas_tenants" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishEmbeddedFinanceAnaasMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishembeddedFinanceAnaasMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

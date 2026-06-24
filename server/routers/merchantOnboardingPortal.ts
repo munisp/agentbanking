@@ -117,7 +117,7 @@ async function publishmerchantOnboardingPortalMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `merchant_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -253,7 +253,7 @@ export const merchantOnboardingPortalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishMerchantOnboardingPortalMiddleware("approveMerchant", `${Date.now()}`, { action: "approveMerchant" }).catch(() => {});
+        await publishmerchantOnboardingPortalMiddleware("approveMerchant", `${Date.now()}`, { action: "approveMerchant" }).catch(() => {});
 
 
         return { success: true };
@@ -283,7 +283,7 @@ export const merchantOnboardingPortalRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishMerchantOnboardingPortalMiddleware("rejectMerchant", `${Date.now()}`, { action: "rejectMerchant" }).catch(() => {});
+        await publishmerchantOnboardingPortalMiddleware("rejectMerchant", `${Date.now()}`, { action: "rejectMerchant" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

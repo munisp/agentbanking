@@ -158,7 +158,7 @@ async function publishdisputeMediationAIMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `disputes_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -320,7 +320,7 @@ export const disputeMediationAIRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDisputeMediationAIMiddleware("analyzeDispute", `${Date.now()}`, { action: "analyzeDispute" }).catch(() => {});
+        await publishdisputeMediationAIMiddleware("analyzeDispute", `${Date.now()}`, { action: "analyzeDispute" }).catch(() => {});
 
 
         return {
@@ -385,7 +385,7 @@ export const disputeMediationAIRouter = router({
           logger.warn("[DisputeMediation]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeMediationAIMiddleware("acceptRecommendation", `${Date.now()}`, { action: "acceptRecommendation" }).catch(() => {});
+        await publishdisputeMediationAIMiddleware("acceptRecommendation", `${Date.now()}`, { action: "acceptRecommendation" }).catch(() => {});
 
         return {
           success: true,
@@ -451,7 +451,7 @@ export const disputeMediationAIRouter = router({
           logger.warn("[DisputeMediation]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishDisputeMediationAIMiddleware("overrideRecommendation", `${Date.now()}`, { action: "overrideRecommendation" }).catch(() => {});
+        await publishdisputeMediationAIMiddleware("overrideRecommendation", `${Date.now()}`, { action: "overrideRecommendation" }).catch(() => {});
 
         return {
           success: true,

@@ -147,7 +147,7 @@ async function publishstoreReviewsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `store_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -373,13 +373,13 @@ export const storeReviewsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishStoreReviewsMiddleware("replyToProductReview", `${Date.now()}`, { action: "replyToProductReview" }).catch(() => {});
+      await publishstoreReviewsMiddleware("replyToProductReview", `${Date.now()}`, { action: "replyToProductReview" }).catch(() => {});
 
 
       // Middleware fan-out (fail-open)
 
 
-      await publishStoreReviewsMiddleware("markHelpful", `${Date.now()}`, { action: "markHelpful" }).catch(() => {});
+      await publishstoreReviewsMiddleware("markHelpful", `${Date.now()}`, { action: "markHelpful" }).catch(() => {});
 
 
 

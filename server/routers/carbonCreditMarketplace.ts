@@ -132,7 +132,7 @@ async function publishcarbonCreditMarketplaceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -317,7 +317,7 @@ export const carbonCreditMarketplaceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCarbonCreditMarketplaceMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishcarbonCreditMarketplaceMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -370,7 +370,7 @@ export const carbonCreditMarketplaceRouter = router({
         sql`UPDATE "carbon_projects" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishCarbonCreditMarketplaceMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishcarbonCreditMarketplaceMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

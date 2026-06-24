@@ -145,7 +145,7 @@ async function publishcarrierSwitchingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `network_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -386,7 +386,7 @@ export const carrierSwitchingRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCarrierSwitchingMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
+      await publishcarrierSwitchingMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
 
 
       return {

@@ -343,7 +343,7 @@ async function publishloadTestMetricsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -580,12 +580,6 @@ export const loadTestMetricsRouter = router({
       const zipfB = rB.zipfDistribution ?? [];
       const zipfComparison: any[] = zipfA.map((dA: any, i: number) => {
         const dB = zipfB[i];
-
-        // Middleware fan-out (fail-open)
-
-        await publishLoadTestMetricsMiddleware("recordRun", `${Date.now()}`, { action: "recordRun" }).catch(() => {});
-
-
         return {
           merchantId: dA.merchantId,
           requestsA: dA.requestCount,

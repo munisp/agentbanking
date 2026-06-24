@@ -241,7 +241,7 @@ async function publishcbnReportingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -410,13 +410,13 @@ export const cbnReportingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishCbnReportingMiddleware("generateQuarterlyFraudReport", `${Date.now()}`, { action: "generateQuarterlyFraudReport" }).catch(() => {});
+        await publishcbnReportingMiddleware("generateQuarterlyFraudReport", `${Date.now()}`, { action: "generateQuarterlyFraudReport" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishCbnReportingMiddleware("fileSar", `${Date.now()}`, { action: "fileSar" }).catch(() => {});
+        await publishcbnReportingMiddleware("fileSar", `${Date.now()}`, { action: "fileSar" }).catch(() => {});
 
 
 
@@ -444,7 +444,7 @@ export const cbnReportingRouter = router({
   getPendingSubmissions: protectedProcedure.query(async () => {
     const svc = await callCbnService("/api/v1/cbn-reports/pending");
     // Middleware fan-out (fail-open)
-    await publishCbnReportingMiddleware("getPendingSubmissions", `${Date.now()}`, { action: "getPendingSubmissions" }).catch(() => {});
+    await publishcbnReportingMiddleware("getPendingSubmissions", `${Date.now()}`, { action: "getPendingSubmissions" }).catch(() => {});
 
     return { reports: svc ?? [], source: svc ? "service" : "fallback" };
   }),
@@ -485,7 +485,7 @@ export const cbnReportingRouter = router({
   health: protectedProcedure.query(async () => {
     const svc = await callCbnService("/api/v1/cbn-reports/health");
     // Middleware fan-out (fail-open)
-    await publishCbnReportingMiddleware("markSubmitted", `${Date.now()}`, { action: "markSubmitted" }).catch(() => {});
+    await publishcbnReportingMiddleware("markSubmitted", `${Date.now()}`, { action: "markSubmitted" }).catch(() => {});
 
     return {
       serviceAvailable: !!svc,

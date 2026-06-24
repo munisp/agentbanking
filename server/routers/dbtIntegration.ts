@@ -159,7 +159,7 @@ async function publishdbtIntegrationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -262,7 +262,7 @@ export const dbtIntegrationRouter = router({
 
   getProjectInfo: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDbtIntegrationMiddleware("getProjectInfo", `${Date.now()}`, { action: "getProjectInfo" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("getProjectInfo", `${Date.now()}`, { action: "getProjectInfo" }).catch(() => {});
 
     return {
       name: "ngapp_analytics",
@@ -274,7 +274,7 @@ export const dbtIntegrationRouter = router({
   }),
   listModels: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDbtIntegrationMiddleware("listModels", `${Date.now()}`, { action: "listModels" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("listModels", `${Date.now()}`, { action: "listModels" }).catch(() => {});
 
     return {
       models: [
@@ -289,13 +289,13 @@ export const dbtIntegrationRouter = router({
   }),
   runTests: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishDbtIntegrationMiddleware("runTests", `${Date.now()}`, { action: "runTests" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("runTests", `${Date.now()}`, { action: "runTests" }).catch(() => {});
 
     return { passed: 118, failed: 2, total: 120, duration: 45 };
   }),
   getLineage: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishDbtIntegrationMiddleware("getLineage", `${Date.now()}`, { action: "getLineage" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("getLineage", `${Date.now()}`, { action: "getLineage" }).catch(() => {});
 
     return {
       nodes: [{ name: "fct_transactions", type: "model" }],
@@ -306,7 +306,7 @@ export const dbtIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishDbtIntegrationMiddleware("projectInfo", `${Date.now()}`, { action: "projectInfo" }).catch(() => {});
+      await publishdbtIntegrationMiddleware("projectInfo", `${Date.now()}`, { action: "projectInfo" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -314,7 +314,7 @@ export const dbtIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishDbtIntegrationMiddleware("triggerRun", `${Date.now()}`, { action: "triggerRun" }).catch(() => {});
+      await publishdbtIntegrationMiddleware("triggerRun", `${Date.now()}`, { action: "triggerRun" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

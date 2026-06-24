@@ -132,7 +132,7 @@ async function publishdataConsentRecordsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -291,7 +291,7 @@ export const dataConsentRecordsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDataConsentRecordsCrudMiddleware("grantConsent", `${Date.now()}`, { action: "grantConsent" }).catch(() => {});
+        await publishdataConsentRecordsCrudMiddleware("grantConsent", `${Date.now()}`, { action: "grantConsent" }).catch(() => {});
 
 
         return {
@@ -329,7 +329,7 @@ export const dataConsentRecordsRouter = router({
           } as any)
           .where(eq(dataConsentRecords.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishDataConsentRecordsCrudMiddleware("withdrawConsent", `${Date.now()}`, { action: "withdrawConsent" }).catch(() => {});
+        await publishdataConsentRecordsCrudMiddleware("withdrawConsent", `${Date.now()}`, { action: "withdrawConsent" }).catch(() => {});
 
         return {
           success: true,
@@ -388,7 +388,7 @@ export const dataConsentRecordsRouter = router({
           .delete(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishDataConsentRecordsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishdataConsentRecordsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

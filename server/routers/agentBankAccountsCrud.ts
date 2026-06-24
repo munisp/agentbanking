@@ -152,7 +152,7 @@ async function publishagentBankAccountsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -382,7 +382,7 @@ export const agentBankAccountsRouter = router({
           .set({ isDefault: true })
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishAgentBankAccountsCrudMiddleware("setPrimary", `${Date.now()}`, { action: "setPrimary" }).catch(() => {});
+        await publishagentBankAccountsCrudMiddleware("setPrimary", `${Date.now()}`, { action: "setPrimary" }).catch(() => {});
 
         return { success: true, message: "Primary account updated" };
       } catch (error) {
@@ -413,7 +413,7 @@ export const agentBankAccountsRouter = router({
           .delete(agentBankAccounts)
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishAgentBankAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishagentBankAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true, deleted: input.id };
       } catch (error) {

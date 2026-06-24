@@ -132,7 +132,7 @@ async function publishpayrollDisbursementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -307,7 +307,7 @@ export const payrollDisbursementRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishPayrollDisbursementMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishpayrollDisbursementMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -354,7 +354,7 @@ export const payrollDisbursementRouter = router({
         sql`UPDATE "payroll_employers" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishPayrollDisbursementMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishpayrollDisbursementMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

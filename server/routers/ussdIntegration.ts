@@ -128,7 +128,7 @@ async function publishussdIntegrationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -280,7 +280,7 @@ export const ussdIntegrationRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishUssdIntegrationMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
+      await publishussdIntegrationMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
 
 
       return {
@@ -294,7 +294,7 @@ export const ussdIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishUssdIntegrationMiddleware("processInput", `${Date.now()}`, { action: "processInput" }).catch(() => {});
+      await publishussdIntegrationMiddleware("processInput", `${Date.now()}`, { action: "processInput" }).catch(() => {});
 
       return {
         success: true,

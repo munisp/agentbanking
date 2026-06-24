@@ -152,7 +152,7 @@ async function publishuserNotifPreferencesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -278,26 +278,17 @@ export const userNotifPreferencesRouter = router({
     .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
   getPreferences: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishUserNotifPreferencesMiddleware("updateQuietHours", `${Date.now()}`, { action: "updateQuietHours" }).catch(() => {});
+    await publishuserNotifPreferencesMiddleware("updateQuietHours", `${Date.now()}`, { action: "updateQuietHours" }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishUserNotifPreferencesMiddleware("updateDigestMode", `${Date.now()}`, { action: "updateDigestMode" }).catch(() => {});
-
-
-    // Middleware fan-out (fail-open)
-
-
-    await publishUserNotifPreferencesMiddleware("bulkUpdate", `${Date.now()}`, { action: "bulkUpdate" }).catch(() => {});
-
+    await publishuserNotifPreferencesMiddleware("updateDigestMode", `${Date.now()}`, { action: "updateDigestMode" }).catch(() => {});
 
 
     // Middleware fan-out (fail-open)
 
 
-
-    await publishUserNotifPreferencesMiddleware("resetToDefaults", `${Date.now()}`, { action: "resetToDefaults" }).catch(() => {});
-
+    await publishuserNotifPreferencesMiddleware("bulkUpdate", `${Date.now()}`, { action: "bulkUpdate" }).catch(() => {});
 
 
 
@@ -305,8 +296,17 @@ export const userNotifPreferencesRouter = router({
 
 
 
+    await publishuserNotifPreferencesMiddleware("resetToDefaults", `${Date.now()}`, { action: "resetToDefaults" }).catch(() => {});
 
-    await publishUserNotifPreferencesMiddleware("enableAllForChannel", `${Date.now()}`, { action: "enableAllForChannel" }).catch(() => {});
+
+
+
+    // Middleware fan-out (fail-open)
+
+
+
+
+    await publishuserNotifPreferencesMiddleware("enableAllForChannel", `${Date.now()}`, { action: "enableAllForChannel" }).catch(() => {});
 
 
 
@@ -386,7 +386,7 @@ export const userNotifPreferencesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishUserNotifPreferencesMiddleware("updateCategory", `${Date.now()}`, { action: "updateCategory" }).catch(() => {});
+      await publishuserNotifPreferencesMiddleware("updateCategory", `${Date.now()}`, { action: "updateCategory" }).catch(() => {});
 
 
       return {

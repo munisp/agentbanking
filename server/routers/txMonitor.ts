@@ -125,7 +125,7 @@ async function publishtxMonitorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const txMonitorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishTxMonitorMiddleware("createAlertRule", `${Date.now()}`, { action: "createAlertRule" }).catch(() => {});
+        await publishtxMonitorMiddleware("createAlertRule", `${Date.now()}`, { action: "createAlertRule" }).catch(() => {});
 
 
         return { success: true, ruleId };
@@ -318,7 +318,7 @@ export const txMonitorRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishTxMonitorMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+          await publishtxMonitorMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
 
           return { success: false, error: "Rule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));

@@ -159,7 +159,7 @@ async function publishpartnerOnboardingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `onboarding_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -266,7 +266,7 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPartnerOnboardingMiddleware("addCorridor", `${Date.now()}`, { action: "addCorridor" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("addCorridor", `${Date.now()}`, { action: "addCorridor" }).catch(() => {});
 
       return { success: true };
     }),
@@ -277,7 +277,7 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPartnerOnboardingMiddleware("addFeeOverride", `${Date.now()}`, { action: "addFeeOverride" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("addFeeOverride", `${Date.now()}`, { action: "addFeeOverride" }).catch(() => {});
 
       return { success: true };
     }),
@@ -288,28 +288,28 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPartnerOnboardingMiddleware("completeOnboarding", `${Date.now()}`, { action: "completeOnboarding" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("completeOnboarding", `${Date.now()}`, { action: "completeOnboarding" }).catch(() => {});
 
       return { success: true };
     }),
 
   getBranding: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPartnerOnboardingMiddleware("getBranding", `${Date.now()}`, { action: "getBranding" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("getBranding", `${Date.now()}`, { action: "getBranding" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listCorridors: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPartnerOnboardingMiddleware("listCorridors", `${Date.now()}`, { action: "listCorridors" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("listCorridors", `${Date.now()}`, { action: "listCorridors" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listFees: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPartnerOnboardingMiddleware("listFees", `${Date.now()}`, { action: "listFees" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("listFees", `${Date.now()}`, { action: "listFees" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -320,7 +320,7 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPartnerOnboardingMiddleware("registerTenant", `${Date.now()}`, { action: "registerTenant" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("registerTenant", `${Date.now()}`, { action: "registerTenant" }).catch(() => {});
 
       return { success: true };
     }),
@@ -331,7 +331,7 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPartnerOnboardingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
 
       return { success: true };
     }),

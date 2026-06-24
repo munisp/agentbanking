@@ -88,7 +88,7 @@ async function publishagentLoanOriginationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -323,7 +323,7 @@ export const agentLoanOriginationRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishAgentLoanOriginationMiddleware("decide", `${Date.now()}`, { action: "decide" }).catch(() => {});
+      await publishagentLoanOriginationMiddleware("decide", `${Date.now()}`, { action: "decide" }).catch(() => {});
 
 
       return { success: true, loanId: input.loanId, status: input.decision };

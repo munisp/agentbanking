@@ -148,7 +148,7 @@ async function publishagentPerformanceScoresCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -323,7 +323,7 @@ export const agentPerformanceScoresRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentPerformanceScoresCrudMiddleware("calculateForAgent", `${Date.now()}`, { action: "calculateForAgent" }).catch(() => {});
+        await publishagentPerformanceScoresCrudMiddleware("calculateForAgent", `${Date.now()}`, { action: "calculateForAgent" }).catch(() => {});
 
 
         return {
@@ -409,7 +409,7 @@ export const agentPerformanceScoresRouter = router({
           .delete(agentPerformanceScores)
           .where(eq(agentPerformanceScores.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishAgentPerformanceScoresCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishagentPerformanceScoresCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -124,7 +124,7 @@ async function publishpushNotificationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -204,7 +204,7 @@ export const pushNotificationsRouter = router({
             })
             .where(eq(agentPushSubscriptions.id, existing[0].id));
           // Middleware fan-out (fail-open)
-          await publishPushNotificationsMiddleware("subscribePush", `${Date.now()}`, { action: "subscribePush" }).catch(() => {});
+          await publishpushNotificationsMiddleware("subscribePush", `${Date.now()}`, { action: "subscribePush" }).catch(() => {});
 
           return { success: true, action: "updated" as const };
         }
@@ -251,7 +251,7 @@ export const pushNotificationsRouter = router({
             )
           );
         // Middleware fan-out (fail-open)
-        await publishPushNotificationsMiddleware("unsubscribePush", `${Date.now()}`, { action: "unsubscribePush" }).catch(() => {});
+        await publishpushNotificationsMiddleware("unsubscribePush", `${Date.now()}`, { action: "unsubscribePush" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -310,7 +310,7 @@ export const pushNotificationsRouter = router({
           data: { type: "test", timestamp: Date.now() },
         });
         // Middleware fan-out (fail-open)
-        await publishPushNotificationsMiddleware("testPush", `${Date.now()}`, { action: "testPush" }).catch(() => {});
+        await publishpushNotificationsMiddleware("testPush", `${Date.now()}`, { action: "testPush" }).catch(() => {});
 
         return { success: true, sent };
       } catch (error) {

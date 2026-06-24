@@ -166,7 +166,7 @@ async function publishresilienceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `resilience_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -380,11 +380,11 @@ export const resilienceRouter = router({
             { method: "POST" }
           );
           // Middleware fan-out (fail-open)
-          await publishResilienceMiddleware("enqueueOffline", `${Date.now()}`, { action: "enqueueOffline" }).catch(() => {});
+          await publishresilienceMiddleware("enqueueOffline", `${Date.now()}`, { action: "enqueueOffline" }).catch(() => {});
 
           // Middleware fan-out (fail-open)
 
-          await publishResilienceMiddleware("dequeueOffline", `${Date.now()}`, { action: "dequeueOffline" }).catch(() => {});
+          await publishresilienceMiddleware("dequeueOffline", `${Date.now()}`, { action: "dequeueOffline" }).catch(() => {});
 
 
           return { item: null, dequeued: result?.success ?? false };
@@ -663,7 +663,7 @@ export const resilienceRouter = router({
           });
         }
         // Middleware fan-out (fail-open)
-        await publishResilienceMiddleware("discardOfflineItem", `${Date.now()}`, { action: "discardOfflineItem" }).catch(() => {});
+        await publishresilienceMiddleware("discardOfflineItem", `${Date.now()}`, { action: "discardOfflineItem" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -711,7 +711,7 @@ export const resilienceRouter = router({
             },
           });
         // Middleware fan-out (fail-open)
-        await publishResilienceMiddleware("savePushSubscription", `${Date.now()}`, { action: "savePushSubscription" }).catch(() => {});
+        await publishresilienceMiddleware("savePushSubscription", `${Date.now()}`, { action: "savePushSubscription" }).catch(() => {});
 
         return { ok: true };
       } catch (error) {
@@ -788,7 +788,7 @@ export const resilienceRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishResilienceMiddleware("notifyPendingSync", `${Date.now()}`, { action: "notifyPendingSync" }).catch(() => {});
+        await publishresilienceMiddleware("notifyPendingSync", `${Date.now()}`, { action: "notifyPendingSync" }).catch(() => {});
 
 
         return { sent, failed };
@@ -890,7 +890,7 @@ export const resilienceRouter = router({
       })
       .where(eq(erpSyncLog.status, "failed"));
     // Middleware fan-out (fail-open)
-    await publishResilienceMiddleware("retryDeadLetter", `${Date.now()}`, { action: "retryDeadLetter" }).catch(() => {});
+    await publishresilienceMiddleware("retryDeadLetter", `${Date.now()}`, { action: "retryDeadLetter" }).catch(() => {});
 
     return { requeued: result.rowCount ?? 0 };
   }),
@@ -915,7 +915,7 @@ export const resilienceRouter = router({
           recordedAt: new Date(),
         });
         // Middleware fan-out (fail-open)
-        await publishResilienceMiddleware("logConnectivity", `${Date.now()}`, { action: "logConnectivity" }).catch(() => {});
+        await publishresilienceMiddleware("logConnectivity", `${Date.now()}`, { action: "logConnectivity" }).catch(() => {});
 
         return { logged: true };
       } catch (error) {
@@ -1000,7 +1000,7 @@ export const resilienceRouter = router({
 
         if (rows.length < 3) {
           // Middleware fan-out (fail-open)
-          await publishResilienceMiddleware("alertOnPoorConnectivity", `${Date.now()}`, { action: "alertOnPoorConnectivity" }).catch(() => {});
+          await publishresilienceMiddleware("alertOnPoorConnectivity", `${Date.now()}`, { action: "alertOnPoorConnectivity" }).catch(() => {});
 
           return {
             alerted: false,
@@ -1182,11 +1182,11 @@ export const resilienceRouter = router({
           .set({ status: "resolved", resolvedAt: new Date() })
           .where(eq(dlqMessages.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishResilienceMiddleware("createDlqMessage", `${Date.now()}`, { action: "createDlqMessage" }).catch(() => {});
+        await publishresilienceMiddleware("createDlqMessage", `${Date.now()}`, { action: "createDlqMessage" }).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-        await publishResilienceMiddleware("resolveDlqMessage", `${Date.now()}`, { action: "resolveDlqMessage" }).catch(() => {});
+        await publishresilienceMiddleware("resolveDlqMessage", `${Date.now()}`, { action: "resolveDlqMessage" }).catch(() => {});
 
 
         return { success: true };
@@ -1244,7 +1244,7 @@ export const resilienceRouter = router({
           .where(eq(agentPushSubscriptions.agentCode, input.agentCode))
           .orderBy(agentPushSubscriptions.createdAt);
         // Middleware fan-out (fail-open)
-        await publishResilienceMiddleware("retryDlqMessage", `${Date.now()}`, { action: "retryDlqMessage" }).catch(() => {});
+        await publishresilienceMiddleware("retryDlqMessage", `${Date.now()}`, { action: "retryDlqMessage" }).catch(() => {});
 
         return {
           subscriptions: subs.map(s => ({
@@ -1435,7 +1435,7 @@ export const resilienceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishResilienceMiddleware("reportTerminalTelemetry", `${Date.now()}`, { action: "reportTerminalTelemetry" }).catch(() => {});
+      await publishresilienceMiddleware("reportTerminalTelemetry", `${Date.now()}`, { action: "reportTerminalTelemetry" }).catch(() => {});
 
 
       return {

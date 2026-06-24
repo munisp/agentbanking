@@ -128,7 +128,7 @@ async function publishdataExportRouterMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -256,13 +256,13 @@ export const dataExportRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDataExportRouterMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishdataExportRouterMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishDataExportRouterMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishdataExportRouterMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
 
 

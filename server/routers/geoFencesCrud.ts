@@ -154,7 +154,7 @@ async function publishgeoFencesCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -293,7 +293,7 @@ export const geoFencesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishGeoFencesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishgeoFencesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { ...row, vertexCount: input.coordinates.length };
@@ -345,7 +345,7 @@ export const geoFencesRouter = router({
         const db = (await getDb())!;
         await db.delete(geoFences).where(eq(geoFences.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishGeoFencesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishgeoFencesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -139,7 +139,7 @@ async function publishpbacManagementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `management_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -274,7 +274,7 @@ export const pbacManagementRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPbacManagementMiddleware("createPolicy", `${Date.now()}`, { action: "createPolicy" }).catch(() => {});
+        await publishpbacManagementMiddleware("createPolicy", `${Date.now()}`, { action: "createPolicy" }).catch(() => {});
 
 
         return { success: true, policyId: key };
@@ -303,7 +303,7 @@ export const pbacManagementRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishPbacManagementMiddleware("deletePolicy", `${Date.now()}`, { action: "deletePolicy" }).catch(() => {});
+        await publishpbacManagementMiddleware("deletePolicy", `${Date.now()}`, { action: "deletePolicy" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -322,7 +322,7 @@ export const pbacManagementRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPbacManagementMiddleware("assignRole", `${Date.now()}`, { action: "assignRole" }).catch(() => {});
+      await publishpbacManagementMiddleware("assignRole", `${Date.now()}`, { action: "assignRole" }).catch(() => {});
 
       return { success: true };
     }),
@@ -337,21 +337,21 @@ export const pbacManagementRouter = router({
 
   listPermissions: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPbacManagementMiddleware("listPermissions", `${Date.now()}`, { action: "listPermissions" }).catch(() => {});
+    await publishpbacManagementMiddleware("listPermissions", `${Date.now()}`, { action: "listPermissions" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listRoles: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPbacManagementMiddleware("listRoles", `${Date.now()}`, { action: "listRoles" }).catch(() => {});
+    await publishpbacManagementMiddleware("listRoles", `${Date.now()}`, { action: "listRoles" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listUserAssignments: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishPbacManagementMiddleware("listUserAssignments", `${Date.now()}`, { action: "listUserAssignments" }).catch(() => {});
+    await publishpbacManagementMiddleware("listUserAssignments", `${Date.now()}`, { action: "listUserAssignments" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -362,7 +362,7 @@ export const pbacManagementRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPbacManagementMiddleware("modifyPermissions", `${Date.now()}`, { action: "modifyPermissions" }).catch(() => {});
+      await publishpbacManagementMiddleware("modifyPermissions", `${Date.now()}`, { action: "modifyPermissions" }).catch(() => {});
 
       return { success: true };
     }),
@@ -373,7 +373,7 @@ export const pbacManagementRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPbacManagementMiddleware("removeAssignment", `${Date.now()}`, { action: "removeAssignment" }).catch(() => {});
+      await publishpbacManagementMiddleware("removeAssignment", `${Date.now()}`, { action: "removeAssignment" }).catch(() => {});
 
       return { success: true };
     }),

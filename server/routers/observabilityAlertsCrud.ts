@@ -134,7 +134,7 @@ async function publishobservabilityAlertsCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -289,7 +289,7 @@ export const observabilityAlertsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishObservabilityAlertsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishobservabilityAlertsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return {
@@ -351,7 +351,7 @@ export const observabilityAlertsRouter = router({
           .where(eq(observabilityAlerts.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishObservabilityAlertsCrudMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
+        await publishobservabilityAlertsCrudMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
 
         return { ...row, message: "Alert acknowledged" };
       } catch (error) {
@@ -374,7 +374,7 @@ export const observabilityAlertsRouter = router({
           .where(eq(observabilityAlerts.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishObservabilityAlertsCrudMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
+        await publishobservabilityAlertsCrudMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
 
         return { ...row, message: "Alert resolved" };
       } catch (error) {

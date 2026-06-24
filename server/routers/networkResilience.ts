@@ -145,7 +145,7 @@ async function publishnetworkResilienceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `resilience_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -231,7 +231,7 @@ export const networkResilienceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishNetworkResilienceMiddleware("status", `${Date.now()}`, { action: "status" }).catch(() => {});
+      await publishnetworkResilienceMiddleware("status", `${Date.now()}`, { action: "status" }).catch(() => {});
 
 
       return {
@@ -268,7 +268,7 @@ export const networkResilienceRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishNetworkResilienceMiddleware("failover", `${Date.now()}`, { action: "failover" }).catch(() => {});
+      await publishnetworkResilienceMiddleware("failover", `${Date.now()}`, { action: "failover" }).catch(() => {});
 
       return {
         success: true,
@@ -364,7 +364,7 @@ export const networkResilienceRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishNetworkResilienceMiddleware("test", `${Date.now()}`, { action: "test" }).catch(() => {});
+      await publishnetworkResilienceMiddleware("test", `${Date.now()}`, { action: "test" }).catch(() => {});
 
       return {
         success: true,

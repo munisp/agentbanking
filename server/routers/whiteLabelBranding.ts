@@ -121,7 +121,7 @@ async function publishwhiteLabelBrandingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -265,7 +265,7 @@ export const whiteLabelBrandingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWhiteLabelBrandingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
+        await publishwhiteLabelBrandingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
 
 
         return { success: true };

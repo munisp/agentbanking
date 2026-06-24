@@ -152,7 +152,7 @@ async function publishplatformProxyMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -285,7 +285,7 @@ export const platformProxyRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformProxyMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
+        await publishplatformProxyMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
 
 
         return { success: true, config: merged };

@@ -141,7 +141,7 @@ async function publishpensionMicroMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -312,7 +312,7 @@ export const pensionMicroRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishPensionMicroMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishpensionMicroMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -359,7 +359,7 @@ export const pensionMicroRouter = router({
         sql`UPDATE "pension_accounts" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishPensionMicroMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishpensionMicroMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

@@ -140,7 +140,7 @@ async function publishcoalitionLoyaltyMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `loyalty_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -317,7 +317,7 @@ export const coalitionLoyaltyRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCoalitionLoyaltyMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishcoalitionLoyaltyMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -372,7 +372,7 @@ export const coalitionLoyaltyRouter = router({
         sql`UPDATE "loyalty_members" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishCoalitionLoyaltyMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishcoalitionLoyaltyMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

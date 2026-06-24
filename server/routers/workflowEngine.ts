@@ -127,7 +127,7 @@ async function publishworkflowEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -264,7 +264,7 @@ export const workflowEngineRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWorkflowEngineMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
+        await publishworkflowEngineMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
 
 
         return { definition: def };
@@ -319,7 +319,7 @@ export const workflowEngineRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishWorkflowEngineMiddleware("startInstance", `${Date.now()}`, { action: "startInstance" }).catch(() => {});
+        await publishworkflowEngineMiddleware("startInstance", `${Date.now()}`, { action: "startInstance" }).catch(() => {});
 
         return { instance };
       } catch (error) {
@@ -433,7 +433,7 @@ export const workflowEngineRouter = router({
           })
           .where(eq(workflowInstances.id, input.instanceId));
         // Middleware fan-out (fail-open)
-        await publishWorkflowEngineMiddleware("advanceStep", `${Date.now()}`, { action: "advanceStep" }).catch(() => {});
+        await publishworkflowEngineMiddleware("advanceStep", `${Date.now()}`, { action: "advanceStep" }).catch(() => {});
 
         return {
           success: true,
@@ -466,7 +466,7 @@ export const workflowEngineRouter = router({
           .set({ status: "cancelled", completedAt: new Date() })
           .where(eq(workflowInstances.id, input.instanceId));
         // Middleware fan-out (fail-open)
-        await publishWorkflowEngineMiddleware("cancelInstance", `${Date.now()}`, { action: "cancelInstance" }).catch(() => {});
+        await publishworkflowEngineMiddleware("cancelInstance", `${Date.now()}`, { action: "cancelInstance" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -156,7 +156,7 @@ async function publishdashboardLayoutMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -282,7 +282,7 @@ export const dashboardLayoutRouter = router({
 
               // Middleware fan-out (fail-open)
 
-              await publishDashboardLayoutMiddleware("saveLayout", `${Date.now()}`, { action: "saveLayout" }).catch(() => {});
+              await publishdashboardLayoutMiddleware("saveLayout", `${Date.now()}`, { action: "saveLayout" }).catch(() => {});
 
 
               return {
@@ -323,7 +323,7 @@ export const dashboardLayoutRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "dashboard_layout_" + input.userId));
         // Middleware fan-out (fail-open)
-        await publishDashboardLayoutMiddleware("resetLayout", `${Date.now()}`, { action: "resetLayout" }).catch(() => {});
+        await publishdashboardLayoutMiddleware("resetLayout", `${Date.now()}`, { action: "resetLayout" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

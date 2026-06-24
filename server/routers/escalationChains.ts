@@ -145,7 +145,7 @@ async function publishescalationChainsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -297,7 +297,7 @@ export const escalationChainsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEscalationChainsMiddleware("acknowledgeEvent", `${Date.now()}`, { action: "acknowledgeEvent" }).catch(() => {});
+      await publishescalationChainsMiddleware("acknowledgeEvent", `${Date.now()}`, { action: "acknowledgeEvent" }).catch(() => {});
 
 
       return { success: true, eventId: input.eventId };
@@ -315,7 +315,7 @@ export const escalationChainsRouter = router({
   }),
   listEvents: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishEscalationChainsMiddleware("listEvents", `${Date.now()}`, { action: "listEvents" }).catch(() => {});
+    await publishescalationChainsMiddleware("listEvents", `${Date.now()}`, { action: "listEvents" }).catch(() => {});
 
     return {
       events: [] as Array<{
@@ -337,13 +337,13 @@ export const escalationChainsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishEscalationChainsMiddleware("resolveEvent", `${Date.now()}`, { action: "resolveEvent" }).catch(() => {});
+      await publishescalationChainsMiddleware("resolveEvent", `${Date.now()}`, { action: "resolveEvent" }).catch(() => {});
 
       return { success: true, eventId: input.eventId };
     }),
   runEscalationCheck: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishEscalationChainsMiddleware("runEscalationCheck", `${Date.now()}`, { action: "runEscalationCheck" }).catch(() => {});
+    await publishescalationChainsMiddleware("runEscalationCheck", `${Date.now()}`, { action: "runEscalationCheck" }).catch(() => {});
 
     return { triggered: 0, checked: 0 };
   }),
@@ -353,7 +353,7 @@ export const escalationChainsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishEscalationChainsMiddleware("toggleChain", `${Date.now()}`, { action: "toggleChain" }).catch(() => {});
+      await publishescalationChainsMiddleware("toggleChain", `${Date.now()}`, { action: "toggleChain" }).catch(() => {});
 
       return { success: true, chainId: input.chainId, enabled: input.enabled };
     }),

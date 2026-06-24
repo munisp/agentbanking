@@ -130,7 +130,7 @@ async function publishplatformRevenueOptimizerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -258,7 +258,7 @@ export const platformRevenueOptimizerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformRevenueOptimizerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformRevenueOptimizerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -281,7 +281,7 @@ export const platformRevenueOptimizerRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "revenue_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformRevenueOptimizerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformRevenueOptimizerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -300,7 +300,7 @@ export const platformRevenueOptimizerRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPlatformRevenueOptimizerMiddleware("createExperiment", `${Date.now()}`, { action: "createExperiment" }).catch(() => {});
+      await publishplatformRevenueOptimizerMiddleware("createExperiment", `${Date.now()}`, { action: "createExperiment" }).catch(() => {});
 
       return { success: true };
     }),

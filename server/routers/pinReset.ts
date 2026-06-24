@@ -161,7 +161,7 @@ async function publishpinResetMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -250,7 +250,7 @@ export const pinResetRouter = router({
 
           // Middleware fan-out (fail-open)
 
-          await publishPinResetMiddleware("requestOtp", `${Date.now()}`, { action: "requestOtp" }).catch(() => {});
+          await publishpinResetMiddleware("requestOtp", `${Date.now()}`, { action: "requestOtp" }).catch(() => {});
 
 
           return {
@@ -400,7 +400,7 @@ export const pinResetRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPinResetMiddleware("resetPin", `${Date.now()}`, { action: "resetPin" }).catch(() => {});
+        await publishpinResetMiddleware("resetPin", `${Date.now()}`, { action: "resetPin" }).catch(() => {});
 
 
         return {

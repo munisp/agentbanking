@@ -130,7 +130,7 @@ async function publishrealtimeNotificationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -233,7 +233,7 @@ export const realtimeNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishRealtimeNotificationsMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
+        await publishrealtimeNotificationsMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
 
 
         return { success: true };
@@ -253,7 +253,7 @@ export const realtimeNotificationsRouter = router({
       .set({ status: "read" })
       .where(eq(notification_logs.status, "pending"));
     // Middleware fan-out (fail-open)
-    await publishRealtimeNotificationsMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
+    await publishrealtimeNotificationsMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
 
     return { success: true };
   }),
@@ -291,7 +291,7 @@ export const realtimeNotificationsRouter = router({
     }),
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishRealtimeNotificationsMiddleware("send", `${Date.now()}`, { action: "send" }).catch(() => {});
+    await publishrealtimeNotificationsMiddleware("send", `${Date.now()}`, { action: "send" }).catch(() => {});
 
     return {
       totalRecords: 0,

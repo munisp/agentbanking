@@ -132,7 +132,7 @@ async function publishcustomerJourneyAnalyticsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `customer_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -262,7 +262,7 @@ export const customerJourneyAnalyticsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishCustomerJourneyAnalyticsMiddleware("recordStep", `${Date.now()}`, { action: "recordStep" }).catch(() => {});
+        await publishcustomerJourneyAnalyticsMiddleware("recordStep", `${Date.now()}`, { action: "recordStep" }).catch(() => {});
 
 
         return { step };

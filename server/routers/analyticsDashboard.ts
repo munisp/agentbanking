@@ -134,7 +134,7 @@ async function publishanalyticsDashboardMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `analytics_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -296,13 +296,13 @@ export const analyticsDashboardRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAnalyticsDashboardMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishanalyticsDashboardMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishAnalyticsDashboardMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+        await publishanalyticsDashboardMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
 
 
@@ -332,7 +332,7 @@ export const analyticsDashboardRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishAnalyticsDashboardMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishanalyticsDashboardMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

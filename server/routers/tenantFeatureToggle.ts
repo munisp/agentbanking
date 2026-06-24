@@ -128,7 +128,7 @@ async function publishtenantFeatureToggleMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -257,7 +257,7 @@ export const tenantFeatureToggleRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishTenantFeatureToggleMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishtenantFeatureToggleMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { toggle };
@@ -295,7 +295,7 @@ export const tenantFeatureToggleRouter = router({
           .set(updates)
           .where(eq(tenantFeatureToggles.id, input.toggleId));
         // Middleware fan-out (fail-open)
-        await publishTenantFeatureToggleMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+        await publishtenantFeatureToggleMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -318,7 +318,7 @@ export const tenantFeatureToggleRouter = router({
           .delete(tenantFeatureToggles)
           .where(eq(tenantFeatureToggles.id, input.toggleId));
         // Middleware fan-out (fail-open)
-        await publishTenantFeatureToggleMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishtenantFeatureToggleMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -381,7 +381,7 @@ export const tenantFeatureToggleRouter = router({
           .set({ enabled: false } as any)
           .where(eq(tenantFeatureToggles.featureKey, input.featureName));
         // Middleware fan-out (fail-open)
-        await publishTenantFeatureToggleMiddleware("killSwitch", `${Date.now()}`, { action: "killSwitch" }).catch(() => {});
+        await publishtenantFeatureToggleMiddleware("killSwitch", `${Date.now()}`, { action: "killSwitch" }).catch(() => {});
 
         return { success: true, killed: input.featureName };
       } catch (error) {

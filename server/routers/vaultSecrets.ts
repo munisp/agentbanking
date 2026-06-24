@@ -127,7 +127,7 @@ async function publishvaultSecretsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -273,7 +273,7 @@ export const vaultSecretsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishVaultSecretsMiddleware("set", `${Date.now()}`, { action: "set" }).catch(() => {});
+      await publishvaultSecretsMiddleware("set", `${Date.now()}`, { action: "set" }).catch(() => {});
 
 
       return {
@@ -310,7 +310,7 @@ export const vaultSecretsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishVaultSecretsMiddleware("rotate", `${Date.now()}`, { action: "rotate" }).catch(() => {});
+      await publishvaultSecretsMiddleware("rotate", `${Date.now()}`, { action: "rotate" }).catch(() => {});
 
       return {
         success: true,
@@ -346,7 +346,7 @@ export const vaultSecretsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishVaultSecretsMiddleware("audit", `${Date.now()}`, { action: "audit" }).catch(() => {});
+      await publishvaultSecretsMiddleware("audit", `${Date.now()}`, { action: "audit" }).catch(() => {});
 
       return {
         success: true,
@@ -378,7 +378,7 @@ export const vaultSecretsRouter = router({
     }),
   summary: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishVaultSecretsMiddleware("summary", `${Date.now()}`, { action: "summary" }).catch(() => {});
+    await publishvaultSecretsMiddleware("summary", `${Date.now()}`, { action: "summary" }).catch(() => {});
 
     return {
       total: 0,
@@ -398,7 +398,7 @@ export const vaultSecretsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishVaultSecretsMiddleware("rotateSecret", `${Date.now()}`, { action: "rotateSecret" }).catch(() => {});
+      await publishvaultSecretsMiddleware("rotateSecret", `${Date.now()}`, { action: "rotateSecret" }).catch(() => {});
 
       return {
         success: true,

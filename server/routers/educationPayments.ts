@@ -143,7 +143,7 @@ async function publisheducationPaymentsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `payments_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -317,7 +317,7 @@ export const educationPaymentsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEducationPaymentsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publisheducationPaymentsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -370,7 +370,7 @@ export const educationPaymentsRouter = router({
         sql`UPDATE "edu_schools" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishEducationPaymentsMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publisheducationPaymentsMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

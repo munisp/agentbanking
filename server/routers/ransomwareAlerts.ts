@@ -162,7 +162,7 @@ async function publishransomwareAlertsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const ransomwareAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishRansomwareAlertsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
+      await publishransomwareAlertsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
 
       return { success: true };
     }),

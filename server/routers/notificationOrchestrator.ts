@@ -170,7 +170,7 @@ async function publishnotificationOrchestratorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -370,7 +370,7 @@ export const notificationOrchestratorRouter = router({
         }));
         await db.insert(notificationDispatchLog).values(records as any);
         // Middleware fan-out (fail-open)
-        await publishNotificationOrchestratorMiddleware("bulkSend", `${Date.now()}`, { action: "bulkSend" }).catch(() => {});
+        await publishnotificationOrchestratorMiddleware("bulkSend", `${Date.now()}`, { action: "bulkSend" }).catch(() => {});
 
         return { queued: records.length, template: input.templateId };
       } catch (error) {
@@ -409,7 +409,7 @@ export const notificationOrchestratorRouter = router({
           })
           .where(eq(notificationDispatchLog.id, input.notificationId));
         // Middleware fan-out (fail-open)
-        await publishNotificationOrchestratorMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
+        await publishnotificationOrchestratorMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
 
         return { success: true, nextRetryIn: retryDelay };
       } catch (error) {

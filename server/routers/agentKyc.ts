@@ -144,7 +144,7 @@ async function publishagentKycMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `kyc_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -284,7 +284,7 @@ export const agentKycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentKycMiddleware("createSession", `${Date.now()}`, { action: "createSession" }).catch(() => {});
+        await publishagentKycMiddleware("createSession", `${Date.now()}`, { action: "createSession" }).catch(() => {});
 
 
         return { success: true, session };
@@ -317,7 +317,7 @@ export const agentKycRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishAgentKycMiddleware("approveSession", `${Date.now()}`, { action: "approveSession" }).catch(() => {});
+        await publishagentKycMiddleware("approveSession", `${Date.now()}`, { action: "approveSession" }).catch(() => {});
 
         return { success: true, session: updated };
       } catch (error) {

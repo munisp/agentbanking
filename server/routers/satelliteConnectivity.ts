@@ -140,7 +140,7 @@ async function publishsatelliteConnectivityMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -313,7 +313,7 @@ export const satelliteConnectivityRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishSatelliteConnectivityMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishsatelliteConnectivityMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return { id, status: "created" };
@@ -365,7 +365,7 @@ export const satelliteConnectivityRouter = router({
         sql`UPDATE "satellite_links" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishSatelliteConnectivityMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishsatelliteConnectivityMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

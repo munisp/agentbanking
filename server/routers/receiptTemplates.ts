@@ -149,7 +149,7 @@ async function publishreceiptTemplatesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -261,7 +261,7 @@ export const receiptTemplatesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishReceiptTemplatesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishreceiptTemplatesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
       return {
@@ -307,7 +307,7 @@ export const receiptTemplatesRouter = router({
         .set(updates)
         .where(eq(receiptTemplates.id, input.id));
       // Middleware fan-out (fail-open)
-      await publishReceiptTemplatesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+      await publishreceiptTemplatesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
 
       return { id: input.id, updated: true };
     }),
@@ -321,7 +321,7 @@ export const receiptTemplatesRouter = router({
         .delete(receiptTemplates)
         .where(eq(receiptTemplates.id, input.id));
       // Middleware fan-out (fail-open)
-      await publishReceiptTemplatesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishreceiptTemplatesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return { id: input.id, deleted: true };
     }),

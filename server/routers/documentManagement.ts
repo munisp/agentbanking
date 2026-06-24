@@ -126,7 +126,7 @@ async function publishdocumentManagementMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `management_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -275,13 +275,13 @@ export const documentManagementRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDocumentManagementMiddleware("uploadDocument", `${Date.now()}`, { action: "uploadDocument" }).catch(() => {});
+        await publishdocumentManagementMiddleware("uploadDocument", `${Date.now()}`, { action: "uploadDocument" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishDocumentManagementMiddleware("verifyDocument", `${Date.now()}`, { action: "verifyDocument" }).catch(() => {});
+        await publishdocumentManagementMiddleware("verifyDocument", `${Date.now()}`, { action: "verifyDocument" }).catch(() => {});
 
 
 

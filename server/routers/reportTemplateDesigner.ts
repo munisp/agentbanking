@@ -141,7 +141,7 @@ async function publishreportTemplateDesignerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -281,7 +281,7 @@ export const reportTemplateDesignerRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishReportTemplateDesignerMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
+        await publishreportTemplateDesignerMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
 
 
         return { success: true, templateId };
@@ -304,7 +304,7 @@ export const reportTemplateDesignerRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "report_template_" + input.templateId));
         // Middleware fan-out (fail-open)
-        await publishReportTemplateDesignerMiddleware("deleteTemplate", `${Date.now()}`, { action: "deleteTemplate" }).catch(() => {});
+        await publishreportTemplateDesignerMiddleware("deleteTemplate", `${Date.now()}`, { action: "deleteTemplate" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -341,7 +341,7 @@ export const reportTemplateDesignerRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishReportTemplateDesignerMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
+        await publishreportTemplateDesignerMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
 
         return {
           success: true,
@@ -364,7 +364,7 @@ export const reportTemplateDesignerRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishReportTemplateDesignerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishreportTemplateDesignerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
       return { success: true };
     }),
@@ -375,14 +375,14 @@ export const reportTemplateDesignerRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishReportTemplateDesignerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishreportTemplateDesignerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return { success: true };
     }),
 
   list: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishReportTemplateDesignerMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+    await publishreportTemplateDesignerMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -393,7 +393,7 @@ export const reportTemplateDesignerRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishReportTemplateDesignerMiddleware("setDefault", `${Date.now()}`, { action: "setDefault" }).catch(() => {});
+      await publishreportTemplateDesignerMiddleware("setDefault", `${Date.now()}`, { action: "setDefault" }).catch(() => {});
 
       return { success: true };
     }),
@@ -401,7 +401,7 @@ export const reportTemplateDesignerRouter = router({
   widgetCatalog: protectedProcedure.query(async () => {
     // Widget types: kpi, chart, table, gauge, heatmap
     // Middleware fan-out (fail-open)
-    await publishReportTemplateDesignerMiddleware("widgetCatalog", `${Date.now()}`, { action: "widgetCatalog" }).catch(() => {});
+    await publishreportTemplateDesignerMiddleware("widgetCatalog", `${Date.now()}`, { action: "widgetCatalog" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),

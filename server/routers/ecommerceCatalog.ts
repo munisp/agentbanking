@@ -173,7 +173,7 @@ async function publishecommerceCatalogMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `ecommerce_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -378,13 +378,13 @@ export const ecommerceCatalogRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishEcommerceCatalogMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
+      await publishecommerceCatalogMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
 
 
       // Middleware fan-out (fail-open)
 
 
-      await publishEcommerceCatalogMiddleware("deleteProduct", `${Date.now()}`, { action: "deleteProduct" }).catch(() => {});
+      await publishecommerceCatalogMiddleware("deleteProduct", `${Date.now()}`, { action: "deleteProduct" }).catch(() => {});
 
 
 
@@ -467,7 +467,7 @@ export const ecommerceCatalogRouter = router({
 
       if (!inv) return null;
       // Middleware fan-out (fail-open)
-      await publishEcommerceCatalogMiddleware("createCategory", `${Date.now()}`, { action: "createCategory" }).catch(() => {});
+      await publishecommerceCatalogMiddleware("createCategory", `${Date.now()}`, { action: "createCategory" }).catch(() => {});
 
       return { ...inv, available: inv.quantity - inv.reserved };
     }),

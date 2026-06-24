@@ -157,7 +157,7 @@ async function publishsystemConfigMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -295,7 +295,7 @@ export const systemConfigRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishSystemConfigMiddleware("set", `${Date.now()}`, { action: "set" }).catch(() => {});
+        await publishsystemConfigMiddleware("set", `${Date.now()}`, { action: "set" }).catch(() => {});
 
 
         return {

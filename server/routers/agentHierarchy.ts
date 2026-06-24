@@ -173,7 +173,7 @@ async function publishagentHierarchyMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -284,7 +284,7 @@ export const agentHierarchyRouter = router({
   }),
   analytics: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAgentHierarchyMiddleware("analytics", `${Date.now()}`, { action: "analytics" }).catch(() => {});
+    await publishagentHierarchyMiddleware("analytics", `${Date.now()}`, { action: "analytics" }).catch(() => {});
 
     return {
       totalAgents: 150,

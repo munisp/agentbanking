@@ -150,7 +150,7 @@ async function publishmerchantAcquirerGatewayMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `merchant_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -283,7 +283,7 @@ export const merchantAcquirerGatewayRouter = router({
 
   listMerchants: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishMerchantAcquirerGatewayMiddleware("listMerchants", `${Date.now()}`, { action: "listMerchants" }).catch(() => {});
+    await publishmerchantAcquirerGatewayMiddleware("listMerchants", `${Date.now()}`, { action: "listMerchants" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -294,7 +294,7 @@ export const merchantAcquirerGatewayRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishMerchantAcquirerGatewayMiddleware("onboardMerchant", `${Date.now()}`, { action: "onboardMerchant" }).catch(() => {});
+      await publishmerchantAcquirerGatewayMiddleware("onboardMerchant", `${Date.now()}`, { action: "onboardMerchant" }).catch(() => {});
 
       return { success: true };
     }),

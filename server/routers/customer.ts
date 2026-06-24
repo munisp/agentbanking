@@ -146,7 +146,7 @@ async function publishcustomerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `customer_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -299,7 +299,7 @@ export const customerRouter = router({
             db.select({ total: count() }).from(transactions).where(where),
           ]);
           // Middleware fan-out (fail-open)
-          await publishCustomerMiddleware("register", `${Date.now()}`, { action: "register" }).catch(() => {});
+          await publishcustomerMiddleware("register", `${Date.now()}`, { action: "register" }).catch(() => {});
 
           return { items, total };
         } catch (error) {
@@ -673,7 +673,7 @@ export const customerRouter = router({
             })
             .returning();
           // Middleware fan-out (fail-open)
-          await publishCustomerMiddleware("createChallenge", `${Date.now()}`, { action: "createChallenge" }).catch(() => {});
+          await publishcustomerMiddleware("createChallenge", `${Date.now()}`, { action: "createChallenge" }).catch(() => {});
 
           return { challenge: row.challenge, expiresAt: row.expiresAt };
         } catch (error) {

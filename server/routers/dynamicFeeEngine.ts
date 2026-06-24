@@ -114,7 +114,7 @@ async function publishdynamicFeeEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -344,7 +344,7 @@ export const dynamicFeeEngineRouter = router({
           newValues: JSON.stringify(updates),
         } as any);
         // Middleware fan-out (fail-open)
-        await publishDynamicFeeEngineMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
+        await publishdynamicFeeEngineMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

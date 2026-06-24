@@ -397,7 +397,7 @@ async function publishtenantBillingOnboardingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `billing_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -465,7 +465,7 @@ export const tenantBillingOnboardingRouter = router({
 
         if (existing) {
           // Middleware fan-out (fail-open)
-          await publishTenantBillingOnboardingMiddleware("provisionBilling", `${Date.now()}`, { action: "provisionBilling" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware("provisionBilling", `${Date.now()}`, { action: "provisionBilling" }).catch(() => {});
 
           return {
             success: false,
@@ -601,7 +601,7 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!existing) {
           // Middleware fan-out (fail-open)
-          await publishTenantBillingOnboardingMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
 
           return {
             success: false,
@@ -704,7 +704,7 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!config) {
           // Middleware fan-out (fail-open)
-          await publishTenantBillingOnboardingMiddleware("retryStep", `${Date.now()}`, { action: "retryStep" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware("retryStep", `${Date.now()}`, { action: "retryStep" }).catch(() => {});
 
           return { success: false, error: "No billing config found" };
         }
@@ -754,7 +754,7 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!existing)
           // Middleware fan-out (fail-open)
-          await publishTenantBillingOnboardingMiddleware("deactivateBilling", `${Date.now()}`, { action: "deactivateBilling" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware("deactivateBilling", `${Date.now()}`, { action: "deactivateBilling" }).catch(() => {});
 
           return { success: false, error: "No billing config found" };
 

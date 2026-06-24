@@ -145,7 +145,7 @@ async function publishapacheAirflowMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -283,7 +283,7 @@ export const apacheAirflowRouter = router({
   }),
   listDags: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishApacheAirflowMiddleware("listDags", `${Date.now()}`, { action: "listDags" }).catch(() => {});
+    await publishapacheAirflowMiddleware("listDags", `${Date.now()}`, { action: "listDags" }).catch(() => {});
 
     return {
       dags: [
@@ -357,7 +357,7 @@ export const apacheAirflowRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheAirflowMiddleware("getDag", `${Date.now()}`, { action: "getDag" }).catch(() => {});
+      await publishapacheAirflowMiddleware("getDag", `${Date.now()}`, { action: "getDag" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -365,7 +365,7 @@ export const apacheAirflowRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheAirflowMiddleware("toggleDag", `${Date.now()}`, { action: "toggleDag" }).catch(() => {});
+      await publishapacheAirflowMiddleware("toggleDag", `${Date.now()}`, { action: "toggleDag" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

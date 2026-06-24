@@ -141,7 +141,7 @@ async function publishplatformCostAllocatorMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -269,7 +269,7 @@ export const platformCostAllocatorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishPlatformCostAllocatorMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishplatformCostAllocatorMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
 
         return { success: true, itemId };
@@ -292,7 +292,7 @@ export const platformCostAllocatorRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "cost_allocation_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishPlatformCostAllocatorMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishplatformCostAllocatorMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -311,7 +311,7 @@ export const platformCostAllocatorRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishPlatformCostAllocatorMiddleware("allocateBudget", `${Date.now()}`, { action: "allocateBudget" }).catch(() => {});
+      await publishplatformCostAllocatorMiddleware("allocateBudget", `${Date.now()}`, { action: "allocateBudget" }).catch(() => {});
 
       return { success: true };
     }),

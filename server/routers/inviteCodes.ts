@@ -200,7 +200,7 @@ async function publishinviteCodesMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -441,7 +441,7 @@ export const inviteCodesRouter = router({
           WHERE id = ${record.id}
         `);
         // Middleware fan-out (fail-open)
-        await publishInviteCodesMiddleware("markUsed", `${Date.now()}`, { action: "markUsed" }).catch(() => {});
+        await publishinviteCodesMiddleware("markUsed", `${Date.now()}`, { action: "markUsed" }).catch(() => {});
 
         return { ...record, used_count: newUsedCount, status: newStatus };
       }
@@ -480,7 +480,7 @@ export const inviteCodesRouter = router({
           sql`UPDATE invite_codes SET status = 'revoked', updated_at = NOW() WHERE id = ${input.id}`
         );
         // Middleware fan-out (fail-open)
-        await publishInviteCodesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+        await publishinviteCodesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
 
         return { ...record, status: "revoked" };
       }

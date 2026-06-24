@@ -141,7 +141,7 @@ async function publishtransactionLimitsEngineMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `transactions_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -307,7 +307,7 @@ export const transactionLimitsEngineRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishTransactionLimitsEngineMiddleware("setLimit", `${Date.now()}`, { action: "setLimit" }).catch(() => {});
+        await publishtransactionLimitsEngineMiddleware("setLimit", `${Date.now()}`, { action: "setLimit" }).catch(() => {});
 
 
         return { success: true };

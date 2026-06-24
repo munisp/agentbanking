@@ -133,7 +133,7 @@ async function publishagentScorecardMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -334,7 +334,7 @@ export const agentScorecardRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentScorecardMiddleware("refreshScorecard", `${Date.now()}`, { action: "refreshScorecard" }).catch(() => {});
+        await publishagentScorecardMiddleware("refreshScorecard", `${Date.now()}`, { action: "refreshScorecard" }).catch(() => {});
 
 
         return {

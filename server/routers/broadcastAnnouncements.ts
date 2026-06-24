@@ -167,7 +167,7 @@ async function publishbroadcastAnnouncementsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -274,7 +274,7 @@ export const broadcastAnnouncementsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishBroadcastAnnouncementsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishbroadcastAnnouncementsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
       return { success: true };
     }),
@@ -285,14 +285,14 @@ export const broadcastAnnouncementsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishBroadcastAnnouncementsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishbroadcastAnnouncementsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
       return { success: true };
     }),
 
   stats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishBroadcastAnnouncementsMiddleware("stats", `${Date.now()}`, { action: "stats" }).catch(() => {});
+    await publishbroadcastAnnouncementsMiddleware("stats", `${Date.now()}`, { action: "stats" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -303,7 +303,7 @@ export const broadcastAnnouncementsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishBroadcastAnnouncementsMiddleware("togglePin", `${Date.now()}`, { action: "togglePin" }).catch(() => {});
+      await publishbroadcastAnnouncementsMiddleware("togglePin", `${Date.now()}`, { action: "togglePin" }).catch(() => {});
 
       return { success: true };
     }),

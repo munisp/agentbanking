@@ -166,7 +166,7 @@ async function publishcdnCacheManagerMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -374,7 +374,7 @@ export const cdnCacheManagerRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishCdnCacheManagerMiddleware("purge", `${Date.now()}`, { action: "purge" }).catch(() => {});
+      await publishcdnCacheManagerMiddleware("purge", `${Date.now()}`, { action: "purge" }).catch(() => {});
 
 
       return {
@@ -388,7 +388,7 @@ export const cdnCacheManagerRouter = router({
   purgeAll: protectedProcedure.mutation(async () => {
     const count = await invalidateCacheByPrefix("trpc:");
     // Middleware fan-out (fail-open)
-    await publishCdnCacheManagerMiddleware("purgeAll", `${Date.now()}`, { action: "purgeAll" }).catch(() => {});
+    await publishcdnCacheManagerMiddleware("purgeAll", `${Date.now()}`, { action: "purgeAll" }).catch(() => {});
 
     return {
       success: true,

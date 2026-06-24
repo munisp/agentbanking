@@ -158,7 +158,7 @@ async function publishgraphqlFederationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -270,7 +270,7 @@ export const graphqlFederationRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishGraphqlFederationMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -283,14 +283,14 @@ export const graphqlFederationRouter = router({
 
   getSchema: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishGraphqlFederationMiddleware("getSchema", `${Date.now()}`, { action: "getSchema" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("getSchema", `${Date.now()}`, { action: "getSchema" }).catch(() => {});
 
     return { schema: "", services: [], version: "1.0" };
   }),
 
   executeQuery: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishGraphqlFederationMiddleware("executeQuery", `${Date.now()}`, { action: "executeQuery" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("executeQuery", `${Date.now()}`, { action: "executeQuery" }).catch(() => {});
 
     return { data: null, errors: [] };
   }),

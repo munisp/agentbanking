@@ -148,7 +148,7 @@ async function publishagentRevenueAttributionMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -277,7 +277,7 @@ export const agentRevenueAttributionRouter = router({
 
   listAttributions: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAgentRevenueAttributionMiddleware("listAttributions", `${Date.now()}`, { action: "listAttributions" }).catch(() => {});
+    await publishagentRevenueAttributionMiddleware("listAttributions", `${Date.now()}`, { action: "listAttributions" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -288,7 +288,7 @@ export const agentRevenueAttributionRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishAgentRevenueAttributionMiddleware("recalculate", `${Date.now()}`, { action: "recalculate" }).catch(() => {});
+      await publishagentRevenueAttributionMiddleware("recalculate", `${Date.now()}`, { action: "recalculate" }).catch(() => {});
 
       return { success: true };
     }),

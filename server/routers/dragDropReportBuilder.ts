@@ -128,7 +128,7 @@ async function publishdragDropReportBuilderMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `reporting_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -265,13 +265,13 @@ export const dragDropReportBuilderRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishDragDropReportBuilderMiddleware("createReport", `${Date.now()}`, { action: "createReport" }).catch(() => {});
+        await publishdragDropReportBuilderMiddleware("createReport", `${Date.now()}`, { action: "createReport" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishDragDropReportBuilderMiddleware("updateReport", `${Date.now()}`, { action: "updateReport" }).catch(() => {});
+        await publishdragDropReportBuilderMiddleware("updateReport", `${Date.now()}`, { action: "updateReport" }).catch(() => {});
 
 
 
@@ -301,7 +301,7 @@ export const dragDropReportBuilderRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishDragDropReportBuilderMiddleware("deleteReport", `${Date.now()}`, { action: "deleteReport" }).catch(() => {});
+        await publishdragDropReportBuilderMiddleware("deleteReport", `${Date.now()}`, { action: "deleteReport" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -320,7 +320,7 @@ export const dragDropReportBuilderRouter = router({
       .from(biReportDefinitions)
       .limit(100);
     // Middleware fan-out (fail-open)
-    await publishDragDropReportBuilderMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishdragDropReportBuilderMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
 
     return { totalReports: Number(total.value) };
   }),

@@ -164,7 +164,7 @@ async function publishannouncementReactionsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -271,14 +271,14 @@ export const announcementReactionsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishAnnouncementReactionsMiddleware("addComment", `${Date.now()}`, { action: "addComment" }).catch(() => {});
+      await publishannouncementReactionsMiddleware("addComment", `${Date.now()}`, { action: "addComment" }).catch(() => {});
 
       return { success: true };
     }),
 
   getReactions: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAnnouncementReactionsMiddleware("getReactions", `${Date.now()}`, { action: "getReactions" }).catch(() => {});
+    await publishannouncementReactionsMiddleware("getReactions", `${Date.now()}`, { action: "getReactions" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -289,7 +289,7 @@ export const announcementReactionsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishAnnouncementReactionsMiddleware("react", `${Date.now()}`, { action: "react" }).catch(() => {});
+      await publishannouncementReactionsMiddleware("react", `${Date.now()}`, { action: "react" }).catch(() => {});
 
       return { success: true };
     }),

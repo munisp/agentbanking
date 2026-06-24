@@ -121,7 +121,7 @@ async function publishwhiteLabelApprovalMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -250,7 +250,7 @@ export const whiteLabelApprovalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWhiteLabelApprovalMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
+        await publishwhiteLabelApprovalMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
 
 
         return { success: true, tenant: updated };
@@ -282,7 +282,7 @@ export const whiteLabelApprovalRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishWhiteLabelApprovalMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
+        await publishwhiteLabelApprovalMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {

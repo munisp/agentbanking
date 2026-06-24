@@ -132,7 +132,7 @@ async function publishgdprMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -454,7 +454,7 @@ export const gdprRouter = router({
           db.select({ total: count() }).from(dataRightsRequests).where(where),
         ]);
         // Middleware fan-out (fail-open)
-        await publishGdprMiddleware("submitDataRightsRequest", `${Date.now()}`, { action: "submitDataRightsRequest" }).catch(() => {});
+        await publishgdprMiddleware("submitDataRightsRequest", `${Date.now()}`, { action: "submitDataRightsRequest" }).catch(() => {});
 
         return { items, total };
       } catch (error) {
@@ -539,7 +539,7 @@ export const gdprRouter = router({
 
       if (requests.length === 0) {
         // Middleware fan-out (fail-open)
-        await publishGdprMiddleware("processDataRightsRequest", `${Date.now()}`, { action: "processDataRightsRequest" }).catch(() => {});
+        await publishgdprMiddleware("processDataRightsRequest", `${Date.now()}`, { action: "processDataRightsRequest" }).catch(() => {});
 
         return { hasRequest: false, status: null, requestedAt: null };
       }

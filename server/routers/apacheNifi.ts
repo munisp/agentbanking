@@ -158,7 +158,7 @@ async function publishapacheNifiMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -261,7 +261,7 @@ export const apacheNifiRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishApacheNifiMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishapacheNifiMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -274,7 +274,7 @@ export const apacheNifiRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheNifiMiddleware("listProcessGroups", `${Date.now()}`, { action: "listProcessGroups" }).catch(() => {});
+      await publishapacheNifiMiddleware("listProcessGroups", `${Date.now()}`, { action: "listProcessGroups" }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -282,7 +282,7 @@ export const apacheNifiRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheNifiMiddleware("instantiateTemplate", `${Date.now()}`, { action: "instantiateTemplate" }).catch(() => {});
+      await publishapacheNifiMiddleware("instantiateTemplate", `${Date.now()}`, { action: "instantiateTemplate" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),
@@ -290,7 +290,7 @@ export const apacheNifiRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheNifiMiddleware("startProcessGroup", `${Date.now()}`, { action: "startProcessGroup" }).catch(() => {});
+      await publishapacheNifiMiddleware("startProcessGroup", `${Date.now()}`, { action: "startProcessGroup" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),
@@ -298,7 +298,7 @@ export const apacheNifiRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishApacheNifiMiddleware("stopProcessGroup", `${Date.now()}`, { action: "stopProcessGroup" }).catch(() => {});
+      await publishapacheNifiMiddleware("stopProcessGroup", `${Date.now()}`, { action: "stopProcessGroup" }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

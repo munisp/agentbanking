@@ -148,7 +148,7 @@ async function publishfloatReconciliationMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `float_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -305,7 +305,7 @@ export const floatReconciliationRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishFloatReconciliationMiddleware("reconcile", `${Date.now()}`, { action: "reconcile" }).catch(() => {});
+      await publishfloatReconciliationMiddleware("reconcile", `${Date.now()}`, { action: "reconcile" }).catch(() => {});
 
 
       return { reconciled: 0, discrepancies: 0, status: "completed" as const };

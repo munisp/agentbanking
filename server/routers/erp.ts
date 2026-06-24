@@ -236,7 +236,7 @@ async function publisherpMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -314,7 +314,7 @@ export const erpRouter = router({
           .where(eq(erpConfig.id, existing.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishErpMiddleware("saveConfig", `${Date.now()}`, { action: "saveConfig" }).catch(() => {});
+        await publisherpMiddleware("saveConfig", `${Date.now()}`, { action: "saveConfig" }).catch(() => {});
 
         return { success: true, config: updated };
       } catch (error) {
@@ -335,7 +335,7 @@ export const erpRouter = router({
       const cfg = await getOrCreateConfig(db);
       if (!cfg.baseUrl) {
         // Middleware fan-out (fail-open)
-        await publishErpMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
+        await publisherpMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
 
         return {
           success: false,
@@ -452,7 +452,7 @@ export const erpRouter = router({
         })
         .where(eq(erpConfig.id, cfg.id));
       // Middleware fan-out (fail-open)
-      await publishErpMiddleware("syncNow", `${Date.now()}`, { action: "syncNow" }).catch(() => {});
+      await publisherpMiddleware("syncNow", `${Date.now()}`, { action: "syncNow" }).catch(() => {});
 
       return { synced, failed, total: toSync.length };
     } catch (error) {
@@ -542,7 +542,7 @@ export const erpRouter = router({
           })
           .where(eq(erpSyncLog.id, input.logId));
         // Middleware fan-out (fail-open)
-        await publishErpMiddleware("retrySync", `${Date.now()}`, { action: "retrySync" }).catch(() => {});
+        await publisherpMiddleware("retrySync", `${Date.now()}`, { action: "retrySync" }).catch(() => {});
 
         return { success: result.success, error: result.error };
       } catch (error) {

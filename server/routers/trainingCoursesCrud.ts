@@ -134,7 +134,7 @@ async function publishtrainingCoursesCrudMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `training_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -329,7 +329,7 @@ export const trainingCoursesRouter = router({
           .set({ isActive: false })
           .where(eq(trainingCourses.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishTrainingCoursesCrudMiddleware("deactivate", `${Date.now()}`, { action: "deactivate" }).catch(() => {});
+        await publishtrainingCoursesCrudMiddleware("deactivate", `${Date.now()}`, { action: "deactivate" }).catch(() => {});
 
         return { success: true, message: "Course deactivated" };
       } catch (error) {
@@ -350,7 +350,7 @@ export const trainingCoursesRouter = router({
           .delete(trainingCourses)
           .where(eq(trainingCourses.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishTrainingCoursesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishtrainingCoursesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

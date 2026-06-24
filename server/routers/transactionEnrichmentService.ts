@@ -141,7 +141,7 @@ async function publishtransactionEnrichmentServiceMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `transactions_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -278,7 +278,7 @@ export const transactionEnrichmentServiceRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishTransactionEnrichmentServiceMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
+        await publishtransactionEnrichmentServiceMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
 
 
         return { success: true, ruleId };
@@ -309,7 +309,7 @@ export const transactionEnrichmentServiceRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishTransactionEnrichmentServiceMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+          await publishtransactionEnrichmentServiceMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
 
           return { success: false, error: "Rule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));

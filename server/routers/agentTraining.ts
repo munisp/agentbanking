@@ -132,7 +132,7 @@ async function publishagentTrainingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -301,13 +301,13 @@ export const agentTrainingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAgentTrainingMiddleware("enroll", `${Date.now()}`, { action: "enroll" }).catch(() => {});
+        await publishagentTrainingMiddleware("enroll", `${Date.now()}`, { action: "enroll" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishAgentTrainingMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
+        await publishagentTrainingMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
 
 
 

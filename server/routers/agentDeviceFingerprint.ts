@@ -159,7 +159,7 @@ async function publishagentDeviceFingerprintMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `agent_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -288,7 +288,7 @@ export const agentDeviceFingerprintRouter = router({
 
   listDevices: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishAgentDeviceFingerprintMiddleware("listDevices", `${Date.now()}`, { action: "listDevices" }).catch(() => {});
+    await publishagentDeviceFingerprintMiddleware("listDevices", `${Date.now()}`, { action: "listDevices" }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -299,7 +299,7 @@ export const agentDeviceFingerprintRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishAgentDeviceFingerprintMiddleware("verifyDevice", `${Date.now()}`, { action: "verifyDevice" }).catch(() => {});
+      await publishagentDeviceFingerprintMiddleware("verifyDevice", `${Date.now()}`, { action: "verifyDevice" }).catch(() => {});
 
       return { success: true };
     }),

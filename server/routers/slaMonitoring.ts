@@ -132,7 +132,7 @@ async function publishslaMonitoringMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -266,7 +266,7 @@ export const slaMonitoringRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishSlaMonitoringMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
+        await publishslaMonitoringMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
 
 
         return { definition: def };
@@ -301,7 +301,7 @@ export const slaMonitoringRouter = router({
           .set(updates)
           .where(eq(sla_definitions.id, input.definitionId));
         // Middleware fan-out (fail-open)
-        await publishSlaMonitoringMiddleware("updateDefinition", `${Date.now()}`, { action: "updateDefinition" }).catch(() => {});
+        await publishslaMonitoringMiddleware("updateDefinition", `${Date.now()}`, { action: "updateDefinition" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -386,7 +386,7 @@ export const slaMonitoringRouter = router({
           } as any)
           .returning();
         // Middleware fan-out (fail-open)
-        await publishSlaMonitoringMiddleware("recordBreach", `${Date.now()}`, { action: "recordBreach" }).catch(() => {});
+        await publishslaMonitoringMiddleware("recordBreach", `${Date.now()}`, { action: "recordBreach" }).catch(() => {});
 
         return { breach };
       } catch (error) {
@@ -412,7 +412,7 @@ export const slaMonitoringRouter = router({
           })
           .where(eq(sla_breaches.id, input.breachId));
         // Middleware fan-out (fail-open)
-        await publishSlaMonitoringMiddleware("resolveBreach", `${Date.now()}`, { action: "resolveBreach" }).catch(() => {});
+        await publishslaMonitoringMiddleware("resolveBreach", `${Date.now()}`, { action: "resolveBreach" }).catch(() => {});
 
         return { success: true };
       } catch (error) {

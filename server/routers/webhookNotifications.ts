@@ -116,7 +116,7 @@ async function publishwebhookNotificationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -223,13 +223,13 @@ export const webhookNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishWebhookNotificationsMiddleware("createEndpoint", `${Date.now()}`, { action: "createEndpoint" }).catch(() => {});
+        await publishwebhookNotificationsMiddleware("createEndpoint", `${Date.now()}`, { action: "createEndpoint" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishWebhookNotificationsMiddleware("deleteEndpoint", `${Date.now()}`, { action: "deleteEndpoint" }).catch(() => {});
+        await publishwebhookNotificationsMiddleware("deleteEndpoint", `${Date.now()}`, { action: "deleteEndpoint" }).catch(() => {});
 
 
 
@@ -294,7 +294,7 @@ export const webhookNotificationsRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishWebhookNotificationsMiddleware("retryDelivery", `${Date.now()}`, { action: "retryDelivery" }).catch(() => {});
+        await publishwebhookNotificationsMiddleware("retryDelivery", `${Date.now()}`, { action: "retryDelivery" }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -344,7 +344,7 @@ export const webhookNotificationsRouter = router({
     }),
   getSupportedEvents: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishWebhookNotificationsMiddleware("getSupportedEvents", `${Date.now()}`, { action: "getSupportedEvents" }).catch(() => {});
+    await publishwebhookNotificationsMiddleware("getSupportedEvents", `${Date.now()}`, { action: "getSupportedEvents" }).catch(() => {});
 
     return {
       events: [] as Array<{
@@ -364,13 +364,13 @@ export const webhookNotificationsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishWebhookNotificationsMiddleware("ingest", `${Date.now()}`, { action: "ingest" }).catch(() => {});
+      await publishwebhookNotificationsMiddleware("ingest", `${Date.now()}`, { action: "ingest" }).catch(() => {});
 
       return { received: true, eventId: `evt-${Date.now()}` };
     }),
   listConfigs: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishWebhookNotificationsMiddleware("listConfigs", `${Date.now()}`, { action: "listConfigs" }).catch(() => {});
+    await publishwebhookNotificationsMiddleware("listConfigs", `${Date.now()}`, { action: "listConfigs" }).catch(() => {});
 
     return {
       configs: [] as Array<{
@@ -389,7 +389,7 @@ export const webhookNotificationsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishWebhookNotificationsMiddleware("toggleWebhook", `${Date.now()}`, { action: "toggleWebhook" }).catch(() => {});
+      await publishwebhookNotificationsMiddleware("toggleWebhook", `${Date.now()}`, { action: "toggleWebhook" }).catch(() => {});
 
       return {
         success: true,

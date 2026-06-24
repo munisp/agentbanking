@@ -142,7 +142,7 @@ async function publishalertNotificationsMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `notifications_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -254,7 +254,7 @@ export const alertNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishAlertNotificationsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
+        await publishalertNotificationsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
 
 
         return { success: true, alert: updated };
@@ -290,7 +290,7 @@ export const alertNotificationsRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishAlertNotificationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishalertNotificationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
         return { success: true, alert };
       } catch (error) {

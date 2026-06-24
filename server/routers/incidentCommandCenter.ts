@@ -127,7 +127,7 @@ async function publishincidentCommandCenterMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -276,13 +276,13 @@ export const incidentCommandCenterRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishIncidentCommandCenterMiddleware("createIncident", `${Date.now()}`, { action: "createIncident" }).catch(() => {});
+        await publishincidentCommandCenterMiddleware("createIncident", `${Date.now()}`, { action: "createIncident" }).catch(() => {});
 
 
         // Middleware fan-out (fail-open)
 
 
-        await publishIncidentCommandCenterMiddleware("resolveIncident", `${Date.now()}`, { action: "resolveIncident" }).catch(() => {});
+        await publishincidentCommandCenterMiddleware("resolveIncident", `${Date.now()}`, { action: "resolveIncident" }).catch(() => {});
 
 
 

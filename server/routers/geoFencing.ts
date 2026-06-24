@@ -164,7 +164,7 @@ async function publishgeoFencingMiddleware(
     agentCode: String(payload.agentCode ?? "system"),
     amount: Number(payload.amount ?? 0),
     type: `platform_${action}`,
-    timestamp: ts,
+    timestamp: Date.now(),
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
@@ -251,7 +251,7 @@ export const geoFencingRouter = router({
         })
         .returning();
       // Middleware fan-out (fail-open)
-      await publishGeoFencingMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishgeoFencingMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
 
       return { id: String(zone.id), name: zone.name, created: true };
     }),
@@ -266,7 +266,7 @@ export const geoFencingRouter = router({
         .set({ isActive: input.active, updatedAt: new Date() })
         .where(eq(geofenceZones.id, Number(input.id)));
       // Middleware fan-out (fail-open)
-      await publishGeoFencingMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
+      await publishgeoFencingMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
 
       return { id: input.id, active: input.active, updated: true };
     }),
@@ -330,7 +330,7 @@ export const geoFencingRouter = router({
       const db = await getDb();
       if (!db)
         // Middleware fan-out (fail-open)
-        await publishGeoFencingMiddleware("createZone", `${Date.now()}`, { action: "createZone" }).catch(() => {});
+        await publishgeoFencingMiddleware("createZone", `${Date.now()}`, { action: "createZone" }).catch(() => {});
 
         return {
           id: `zone-${Date.now()}`,
@@ -364,7 +364,7 @@ export const geoFencingRouter = router({
         .delete(geofenceZones)
         .where(eq(geofenceZones.id, Number(input.zoneId)));
       // Middleware fan-out (fail-open)
-      await publishGeoFencingMiddleware("deleteZone", `${Date.now()}`, { action: "deleteZone" }).catch(() => {});
+      await publishgeoFencingMiddleware("deleteZone", `${Date.now()}`, { action: "deleteZone" }).catch(() => {});
 
       return { success: true, zoneId: input.zoneId };
     }),

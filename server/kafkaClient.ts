@@ -91,7 +91,22 @@ export type KafkaTopic =
   | "insider.approval.requested"
   | "insider.approval.actioned"
   | "insider.threat.velocity"
-  | "insider.auth.step-up";
+  | "insider.auth.step-up"
+  | "kyc.limit.exceeded"
+  | "kyc.tier.upgraded"
+  | "kyc.document.expired"
+  | "kyc.monitoring.hit"
+  | "settlement.fee.split"
+  | "settlement.batch.completed"
+  | "float.alert.warning"
+  | "float.alert.critical"
+  | "recurring.payment.executed"
+  | "reconciliation.completed"
+  | "outbox.published"
+  | "outbox.dlq.moved"
+  | "saga.workflow.started"
+  | "saga.workflow.completed"
+  | "saga.workflow.compensated";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

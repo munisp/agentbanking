@@ -1,3 +1,4 @@
+import '../services/api_service.dart';
 import 'package:flutter/material.dart';
 
 /// POS Enhanced Dashboard — Flutter native screen.
@@ -29,6 +30,7 @@ class _PosEnhancedDashboardScreenState extends State<PosEnhancedDashboardScreen>
   @override
   void initState() {
     super.initState();
+    _loadDashboard();
     _tabController = TabController(length: _tabs.length, vsync: this);
   }
 
@@ -38,6 +40,15 @@ class _PosEnhancedDashboardScreenState extends State<PosEnhancedDashboardScreen>
     super.dispose();
   }
 
+
+  Future<void> _loadDashboard() async {
+    try {
+      final data = await ApiService.get('/pos/dashboard/summary');
+      setState(() { /* loaded */ });
+    } catch (e) {
+      debugPrint('_loadDashboard error: \$e');
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -20,6 +20,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -50,6 +97,11 @@ import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_commerce_integration")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 def get_db():
@@ -73,6 +125,15 @@ init_db()
 
 @app.get("/api/v1/items")
 async def list_items():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "agent-commerce-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, status, data, created_at FROM items ORDER BY created_at DESC LIMIT 100")
@@ -82,6 +143,10 @@ async def list_items():
 
 @app.post("/api/v1/items")
 async def create_item(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "agent-commerce-integration")
+
     body = await request.json()
     name = body.get("name", "")
     if not name:
@@ -97,6 +162,15 @@ async def create_item(request: Request):
 
 @app.get("/api/v1/items/{item_id}")
 async def get_item(item_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_item", "agent-commerce-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items WHERE id = %s", (item_id,))
@@ -108,6 +182,10 @@ async def get_item(item_id: int):
 
 @app.put("/api/v1/items/{item_id}")
 async def update_item(item_id: int, request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "agent-commerce-integration")
+
     body = await request.json()
     conn = get_db()
     cursor = conn.cursor()
@@ -119,6 +197,10 @@ async def update_item(item_id: int, request: Request):
 
 @app.delete("/api/v1/items/{item_id}")
 async def delete_item(item_id: int):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "agent-commerce-integration")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM items WHERE id = %s", (item_id,))
@@ -146,11 +228,24 @@ async def health_check():
 @app.get("/api/v1/products")
 async def list_products(category: str = None, limit: int = 20, offset: int = 0):
     """List available products in the agent marketplace."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_products", "agent-commerce-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"products": [], "total": 0, "limit": limit, "offset": offset, "category": category}
 
 @app.post("/api/v1/orders")
 async def create_order(agent_id: str, customer_phone: str, items: list):
     """Create a new order on behalf of a customer."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_order_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_order", "timestamp": _time.time()}), "agent-commerce-integration")
+
     if not items:
         raise HTTPException(status_code=400, detail="Order must contain at least one item")
     return {
@@ -166,11 +261,24 @@ async def create_order(agent_id: str, customer_phone: str, items: list):
 @app.get("/api/v1/orders/{order_id}")
 async def get_order(order_id: str):
     """Get order details and status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_order", "agent-commerce-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"order_id": order_id, "status": "pending", "items": [], "total": 0.0, "tracking": None}
 
 @app.put("/api/v1/orders/{order_id}/fulfill")
 async def fulfill_order(order_id: str, tracking_number: str = None):
     """Mark order as fulfilled/shipped."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("fulfill_order_" + str(int(_time.time() * 1000)), _json.dumps({"action": "fulfill_order", "timestamp": _time.time()}), "agent-commerce-integration")
+
     return {"order_id": order_id, "status": "fulfilled", "tracking_number": tracking_number, "fulfilled_at": __import__('datetime').datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

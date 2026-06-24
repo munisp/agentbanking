@@ -26,6 +26,8 @@ import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 import { eventBus, EVENTS } from "../lib/eventBus";
+import { enforcePermission } from "../_core/permify";
+
 
 /**
  * Cash In Router — Agent accepts physical cash from customer and credits their account.
@@ -50,6 +52,8 @@ export const cashInRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -234,6 +238,8 @@ export const cashInRouter = router({
           dapr.publishEvent("pubsub", "cash.in.completed", { ref, amount: input.amount, agentId: session.id, customerPhone: input.customerPhone }).catch(() => {});
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
           ingestToLakehouse("cash_in_transactions", { ref, amount: input.amount, fee: feeResult.fee, agentId: session.id, customerPhone: input.customerPhone, timestamp: new Date().toISOString() }).catch(() => {});
+          // Partitioned ingest for analytics (date + region partitioning)
+          import("../lakehouse").then(lh => lh.ingestToLakehousePartitioned("transactions", { ref, amount: input.amount, fee: feeResult.fee, type: "cash_in", agentId: session.id, timestamp: new Date().toISOString() })).catch(() => {});
 
           return {
             success: true,

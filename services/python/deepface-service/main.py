@@ -54,6 +54,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -972,6 +1019,11 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/deepface_service")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 def get_db():
@@ -1019,6 +1071,15 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "deepface-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "deepface-service",
         "version": "1.0.0",
@@ -1053,6 +1114,10 @@ async def health():
 @app.post("/verify")
 async def verify_faces(req: VerifyRequest):
     """1:1 face verification between two images."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_faces_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_faces", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1080,6 +1145,10 @@ async def verify_faces(req: VerifyRequest):
 @app.post("/verify/ensemble")
 async def ensemble_verify_faces(req: EnsembleVerifyRequest):
     """Multi-model ensemble verification for higher confidence."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ensemble_verify_faces_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ensemble_verify_faces", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1102,6 +1171,10 @@ async def ensemble_verify_faces(req: EnsembleVerifyRequest):
 @app.post("/analyze")
 async def analyze_face(req: AnalyzeRequest):
     """Analyze facial attributes: age, gender, emotion, race."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("analyze_face_" + str(int(_time.time() * 1000)), _json.dumps({"action": "analyze_face", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1129,6 +1202,10 @@ async def analyze_face(req: AnalyzeRequest):
 @app.post("/detect")
 async def detect_faces(req: DetectRequest):
     """Detect faces in an image with bounding boxes and confidence scores."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("detect_faces_" + str(int(_time.time() * 1000)), _json.dumps({"action": "detect_faces", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1150,6 +1227,10 @@ async def detect_faces(req: DetectRequest):
 @app.post("/represent")
 async def extract_embedding(req: EmbeddingRequest):
     """Extract face embedding vector for external use."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("extract_embedding_" + str(int(_time.time() * 1000)), _json.dumps({"action": "extract_embedding", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1174,6 +1255,10 @@ async def extract_embedding(req: EmbeddingRequest):
 @app.post("/gallery/enroll")
 async def enroll_face(req: EnrollRequest):
     """Enroll a face into the gallery for 1:N recognition."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("enroll_face_" + str(int(_time.time() * 1000)), _json.dumps({"action": "enroll_face", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1195,6 +1280,10 @@ async def enroll_face(req: EnrollRequest):
 @app.post("/gallery/search")
 async def search_gallery(req: SearchRequest):
     """Search the gallery for matching faces (1:N recognition)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("search_gallery_" + str(int(_time.time() * 1000)), _json.dumps({"action": "search_gallery", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1217,6 +1306,10 @@ async def search_gallery(req: SearchRequest):
 @app.delete("/gallery/{identity}")
 async def delete_from_gallery(identity: str, model_name: str = DEFAULT_MODEL):
     """Remove an identity from the gallery."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_from_gallery_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_from_gallery", "timestamp": _time.time()}), "deepface-service")
+
     deleted = engine.redis.delete_gallery_entry(identity, model_name)
 
     identity_dir = os.path.join(engine.gallery_dir, identity)
@@ -1229,6 +1322,10 @@ async def delete_from_gallery(identity: str, model_name: str = DEFAULT_MODEL):
 @app.post("/anti-spoof")
 async def anti_spoof(req: AntiSpoofRequest):
     """Run anti-spoofing detection on a face image."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("anti_spoof_" + str(int(_time.time() * 1000)), _json.dumps({"action": "anti_spoof", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1247,6 +1344,10 @@ async def anti_spoof(req: AntiSpoofRequest):
 @app.post("/compare-multiple")
 async def compare_multiple(req: CompareMultipleRequest):
     """Compare one reference face against multiple candidates."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("compare_multiple_" + str(int(_time.time() * 1000)), _json.dumps({"action": "compare_multiple", "timestamp": _time.time()}), "deepface-service")
+
     if not DEEPFACE_AVAILABLE:
         raise HTTPException(503, "DeepFace library not installed")
 
@@ -1271,6 +1372,15 @@ async def compare_multiple(req: CompareMultipleRequest):
 @app.get("/models")
 async def list_models():
     """List all supported recognition models and detectors."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "deepface-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "recognition_models": SUPPORTED_MODELS,
         "detector_backends": SUPPORTED_DETECTORS,
@@ -1283,6 +1393,15 @@ async def list_models():
 @app.get("/stats")
 async def get_stats():
     """Get service usage statistics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "deepface-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "stats": engine.stats,
         "gallery_dir": engine.gallery_dir,

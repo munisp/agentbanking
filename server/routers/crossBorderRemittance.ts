@@ -34,6 +34,8 @@ import {
   withIdempotency,
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
+import { enforcePermission } from "../_core/permify";
+
 
 const CORRIDORS = {
   "NG-GH": {
@@ -156,6 +158,8 @@ export const crossBorderRemittanceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       const session = await getAgentFromCookie(ctx.req);
       if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 

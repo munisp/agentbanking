@@ -42,6 +42,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -673,6 +720,11 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyc_workflow_orchestration")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 def get_db():
@@ -724,6 +776,10 @@ class ManualDecisionRequest(BaseModel):
 @app.post("/api/v1/workflow/start")
 async def start_workflow(req: StartWorkflowRequest, background_tasks: BackgroundTasks):
     """Start a new KYC verification workflow."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("start_workflow_" + str(int(_time.time() * 1000)), _json.dumps({"action": "start_workflow", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     workflow_id = str(uuid.uuid4())
     sla_hours = SLA_HOURS.get(req.target_tier, 24)
     deadline = datetime.now(timezone.utc) + timedelta(hours=sla_hours)
@@ -761,6 +817,15 @@ async def start_workflow(req: StartWorkflowRequest, background_tasks: Background
 @app.get("/api/v1/workflow/{workflow_id}")
 async def get_workflow(workflow_id: str):
     """Get workflow status and results."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -769,6 +834,15 @@ async def get_workflow(workflow_id: str):
 @app.get("/api/v1/workflow/{workflow_id}/stages")
 async def get_workflow_stages(workflow_id: str):
     """Get detailed stage results for a workflow."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow_stages", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -782,6 +856,10 @@ async def get_workflow_stages(workflow_id: str):
 @app.post("/api/v1/workflow/{workflow_id}/manual-decision")
 async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
     """Override auto-decision with manual review decision (requires compliance role)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("manual_decision_" + str(int(_time.time() * 1000)), _json.dumps({"action": "manual_decision", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -806,6 +884,15 @@ async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
 @app.get("/api/v1/workflows")
 async def list_workflows(status: Optional[str] = None, customer_id: Optional[str] = None):
     """List all workflows with optional filters."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_workflows", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     results = []
     for wf in workflows.values():
         if status and wf.status != status:

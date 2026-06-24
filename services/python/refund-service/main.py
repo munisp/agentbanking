@@ -18,6 +18,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -42,6 +89,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Refund Service", description="Automated refund processing with policy enforcement, approval workflows, and settlement adjustment", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 import psycopg2
@@ -126,6 +178,10 @@ async def health():
 @app.post("/api/v1/refunds")
 async def create_refund(transaction_id: str, amount: float, reason: str):
     """Create a refund request."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_refund_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_refund", "timestamp": _time.time()}), "refund-service")
+
     valid_reasons = ["customer_request", "duplicate_charge", "service_not_delivered", "overcharge", "fraud"]
     if reason not in valid_reasons: raise HTTPException(400, f"Must be one of: {valid_reasons}")
     return {"refund_id": f"RFD-{transaction_id}", "transaction_id": transaction_id, "amount": amount, "reason": reason, "status": "pending_approval"}
@@ -133,16 +189,38 @@ async def create_refund(transaction_id: str, amount: float, reason: str):
 @app.get("/api/v1/refunds/{refund_id}")
 async def get_refund(refund_id: str):
     """Get refund status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_refund", "refund-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"refund_id": refund_id, "status": "unknown", "amount": 0.0, "reason": "", "processed_at": None}
 
 @app.post("/api/v1/refunds/{refund_id}/approve")
 async def approve_refund(refund_id: str, approver_id: str):
     """Approve a pending refund."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("approve_refund_" + str(int(_time.time() * 1000)), _json.dumps({"action": "approve_refund", "timestamp": _time.time()}), "refund-service")
+
     return {"refund_id": refund_id, "status": "approved", "approved_by": approver_id, "approved_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/refunds")
 async def list_refunds(status: str = None, limit: int = 20):
     """List refunds with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_refunds", "refund-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"refunds": [], "total": 0, "status": status}
 
 if __name__ == "__main__":

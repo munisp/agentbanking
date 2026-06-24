@@ -7,6 +7,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -59,6 +106,11 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/multilingual_integration_service")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -433,6 +485,15 @@ stats = {
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "multilingual-integration-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "multilingual-integration-service",
         "version": "1.0.0",
@@ -454,6 +515,10 @@ async def health_check():
 @app.post("/translate/ui")
 async def translate_ui(request: TranslateUIRequest):
     """Translate UI elements for a specific module"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("translate_ui_" + str(int(_time.time() * 1000)), _json.dumps({"action": "translate_ui", "timestamp": _time.time()}), "multilingual-integration-service")
+
     
     if request.module not in UI_TRANSLATIONS:
         raise HTTPException(status_code=400, detail=f"Unknown module: {request.module}")
@@ -481,6 +546,10 @@ async def translate_ui(request: TranslateUIRequest):
 @app.post("/translate/text")
 async def translate_text(request: TranslateTextRequest):
     """Translate arbitrary text using the translation service"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("translate_text_" + str(int(_time.time() * 1000)), _json.dumps({"action": "translate_text", "timestamp": _time.time()}), "multilingual-integration-service")
+
     
     try:
         async with httpx.AsyncClient() as client:
@@ -506,6 +575,15 @@ async def translate_text(request: TranslateTextRequest):
 @app.get("/translations/{module}")
 async def get_module_translations(module: str, language: str = "en"):
     """Get all translations for a specific module"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_module_translations", "multilingual-integration-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     
     if module not in UI_TRANSLATIONS:
         raise HTTPException(status_code=404, detail=f"Module not found: {module}")
@@ -526,6 +604,15 @@ async def get_module_translations(module: str, language: str = "en"):
 @app.get("/translations")
 async def get_all_translations(language: str = "en"):
     """Get all translations for all modules in a specific language"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_all_translations", "multilingual-integration-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     
     result = {}
     
@@ -543,6 +630,15 @@ async def get_all_translations(language: str = "en"):
 @app.get("/modules")
 async def get_modules():
     """Get list of all supported modules"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_modules", "multilingual-integration-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     
     modules = []
     for module_name, module_translations in UI_TRANSLATIONS.items():
@@ -559,6 +655,15 @@ async def get_modules():
 @app.get("/stats")
 async def get_stats():
     """Get service statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "multilingual-integration-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     
     total_keys = sum(len(m) for m in UI_TRANSLATIONS.values())

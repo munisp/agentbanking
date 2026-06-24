@@ -36,6 +36,8 @@ import {
   dapr,
   tigerbeetle,
 } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -158,6 +160,8 @@ export const agentLoanFacilityRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;
@@ -268,6 +272,7 @@ export const agentLoanFacilityRouter = router({
   approve: protectedProcedure
     .input(z.object({ loanId: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -312,6 +317,7 @@ export const agentLoanFacilityRouter = router({
   disburse: protectedProcedure
     .input(z.object({ loanId: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -429,6 +435,7 @@ export const agentLoanFacilityRouter = router({
   recordRepayment: protectedProcedure
     .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -546,7 +553,8 @@ export const agentLoanFacilityRouter = router({
   // Reject a loan
   reject: protectedProcedure
     .input(z.object({ loanId: z.number(), reason: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");

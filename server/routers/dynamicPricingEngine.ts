@@ -26,6 +26,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -84,6 +87,16 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+async function publishdynamicPricingEngineMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("scoring.calculated", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `scoring.calculated.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `scoring.calculated.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("dynamicPricingEngine", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`dynamicPricingEngine:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
 
 export const dynamicPricingEngineRouter = router({
   listRules: protectedProcedure
@@ -215,6 +228,8 @@ export const dynamicPricingEngineRouter = router({
           status: "success",
           metadata: { transactionType: input.transactionType },
         } as any);
+        await publishdynamicPricingEngineMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
+
         return rule;
       } catch (error) {
         if (error instanceof TRPCError) throw error;

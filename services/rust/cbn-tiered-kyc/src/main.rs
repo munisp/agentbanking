@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Configuration
@@ -272,9 +273,7 @@ struct ComplianceScoreResult {
 // ══════════════════════════════════════════════════════════════════════════════
 
 struct AppState {
-    config: Config,
-    assignments: RwLock<HashMap<String, TierAssignResult>>,
-    start_time: DateTime<Utc>,
+    pool: PgPool,
 }
 
 impl AppState {
@@ -770,6 +769,44 @@ fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode,
         ));
     }
     Ok(auth_header[7..].to_string())
+}
+
+
+async fn init_db(pool: &PgPool) {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_state (
+            key TEXT PRIMARY KEY,
+            value JSONB NOT NULL DEFAULT '{}',
+            service TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"
+    ).execute(pool).await.ok();
+}
+
+
+async fn get_state(pool: &PgPool, key: &str, service: &str) -> Option<serde_json::Value> {
+    sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT value FROM service_state WHERE key = $1 AND service = $2"
+    )
+    .bind(key)
+    .bind(service)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn set_state(pool: &PgPool, key: &str, value: &serde_json::Value, service: &str) {
+    sqlx::query(
+        "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()"
+    )
+    .bind(key)
+    .bind(value)
+    .bind(service)
+    .execute(pool)
+    .await
+    .ok();
 }
 
 #[tokio::main]

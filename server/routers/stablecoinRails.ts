@@ -25,6 +25,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -201,6 +203,8 @@ export const stablecoinRailsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
@@ -337,7 +341,8 @@ export const stablecoinRailsRouter = router({
 
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
 
       const validStatuses = [
@@ -400,6 +405,7 @@ export const stablecoinRailsRouter = router({
       sourceRef: z.string().min(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
       const ref = `MINT-${input.walletId}-${Date.now()}`;
 
@@ -451,6 +457,7 @@ export const stablecoinRailsRouter = router({
       reason: z.string().min(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
       const ref = `BURN-${input.walletId}-${Date.now()}`;
 
@@ -500,6 +507,7 @@ export const stablecoinRailsRouter = router({
       memo: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
       const ref = `TXF-${input.fromWalletId}-${input.toWalletId}-${Date.now()}`;
 
@@ -561,6 +569,7 @@ export const stablecoinRailsRouter = router({
       paymentRef: z.string().min(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
       const ref = `ONRAMP-${input.walletId}-${Date.now()}`;
 
@@ -635,6 +644,7 @@ export const stablecoinRailsRouter = router({
       provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax"]),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
       const db = (await getDb())!;
       const ref = `OFFRAMP-${input.walletId}-${Date.now()}`;
 

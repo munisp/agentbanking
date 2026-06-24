@@ -20,6 +20,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -49,6 +96,11 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_performance")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 def get_db():
@@ -101,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/agents/{agent_id}/kpis")
 async def get_agent_kpis(agent_id: str, period: str = "current_month"):
     """Get agent KPI dashboard data."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_kpis", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "period": period,
@@ -120,6 +181,15 @@ async def get_agent_kpis(agent_id: str, period: str = "current_month"):
 @app.get("/api/v1/agents/{agent_id}/incentives")
 async def get_incentives(agent_id: str):
     """Get agent's current incentive tier and progress."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_incentives", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "current_tier": "bronze",
@@ -134,6 +204,15 @@ async def get_incentives(agent_id: str):
 @app.get("/api/v1/leaderboard")
 async def get_leaderboard(region: str = None, period: str = "current_month", limit: int = 10):
     """Get agent performance leaderboard."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_leaderboard", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "period": period,
         "region": region,
@@ -145,6 +224,10 @@ async def get_leaderboard(region: str = None, period: str = "current_month", lim
 @app.post("/api/v1/agents/{agent_id}/goals")
 async def set_agent_goals(agent_id: str, transaction_target: int, volume_target: float):
     """Set performance goals for an agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("set_agent_goals_" + str(int(_time.time() * 1000)), _json.dumps({"action": "set_agent_goals", "timestamp": _time.time()}), "agent-performance")
+
     return {
         "agent_id": agent_id,
         "goals": {

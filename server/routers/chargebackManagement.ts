@@ -29,6 +29,8 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -189,6 +191,8 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;
@@ -251,7 +255,8 @@ export const chargebackManagementRouter = router({
         refundAmount: z.number().positive().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       return withTransaction(async (tx) => {
         const db = tx ?? (await getDb())!;
         await db

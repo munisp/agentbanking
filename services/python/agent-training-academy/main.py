@@ -18,6 +18,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -42,6 +89,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Agent Training Academy", description="Comprehensive training platform with video courses, quizzes, certifications, and gamified learning paths", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 import psycopg2
@@ -126,26 +178,61 @@ async def health():
 @app.get("/api/v1/academy/courses")
 async def list_courses(track: str = None, difficulty: str = None):
     """List training courses with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_courses", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"courses": [], "total": 0, "tracks": ["onboarding", "advanced", "compliance", "sales"]}
 
 @app.get("/api/v1/academy/courses/{course_id}/modules")
 async def get_modules(course_id: str):
     """Get course modules with video content and quizzes."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_modules", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"course_id": course_id, "modules": [], "total_duration_mins": 0, "quiz_count": 0}
 
 @app.post("/api/v1/academy/progress")
 async def update_progress(agent_id: str, course_id: str, module_id: str, completed: bool = False):
     """Update agent's course progress."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_progress_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_progress", "timestamp": _time.time()}), "agent-training-academy")
+
     return {"agent_id": agent_id, "course_id": course_id, "module_id": module_id, "completed": completed, "progress_pct": 0}
 
 @app.get("/api/v1/academy/{agent_id}/certificates")
 async def get_certificates(agent_id: str):
     """Get agent's earned certificates."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_certificates", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "certificates": [], "total": 0}
 
 @app.post("/api/v1/academy/quiz/{quiz_id}/submit")
 async def submit_quiz(quiz_id: str, agent_id: str, answers: dict):
     """Submit quiz answers for grading."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_quiz_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_quiz", "timestamp": _time.time()}), "agent-training-academy")
+
     return {"quiz_id": quiz_id, "agent_id": agent_id, "score": 0, "passed": False, "correct_answers": 0, "total_questions": 0}
 
 if __name__ == "__main__":

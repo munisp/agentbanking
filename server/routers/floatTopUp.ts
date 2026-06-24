@@ -43,6 +43,11 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -116,6 +121,16 @@ const _floatTopUpSchemas = {
   }),
 };
 
+
+async function publishfloatTopUpMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("float.topped_up", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `float.topped_up.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `float.topped_up.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("floatTopUp", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`floatTopUp:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
+
 export const floatTopUpRouter = router({
   // ── Submit a top-up request ───────────────────────────────────────────────
   submit: protectedProcedure
@@ -127,6 +142,8 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "float_account", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "topup" }).catch(() => {});
+
       const session = await getAgentFromCookie(ctx.req);
       if (!session)
         throw new TRPCError({
@@ -216,6 +233,9 @@ export const floatTopUpRouter = router({
         }
 
         floatTopupRequestsTotal.labels("submitted").inc();
+
+        await publishfloatTopUpMiddleware("submit", `${Date.now()}`, { action: "submit" }).catch(() => {});
+
 
         return {
           success: true,
@@ -362,6 +382,7 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -446,6 +467,9 @@ export const floatTopUpRouter = router({
             notes: input.notes,
           },
         });
+
+        await publishfloatTopUpMiddleware("supervisorApproveTopUp", `${Date.now()}`, { action: "supervisorApproveTopUp" }).catch(() => {});
+
 
         return {
           success: true,

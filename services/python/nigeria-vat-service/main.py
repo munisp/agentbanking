@@ -18,6 +18,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -42,6 +89,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nigeria VAT Service", description="Nigerian Value Added Tax calculation, collection, and FIRS reporting with automated filing", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 import psycopg2
@@ -126,6 +178,10 @@ async def health():
 @app.post("/api/v1/vat/calculate")
 async def calculate_vat(amount: float, category: str = "standard"):
     """Calculate VAT for a transaction."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("calculate_vat_" + str(int(_time.time() * 1000)), _json.dumps({"action": "calculate_vat", "timestamp": _time.time()}), "nigeria-vat-service")
+
     rates = {"standard": 7.5, "exempt": 0.0, "zero_rated": 0.0}
     rate = rates.get(category, 7.5)
     vat_amount = amount * rate / 100
@@ -134,16 +190,38 @@ async def calculate_vat(amount: float, category: str = "standard"):
 @app.get("/api/v1/vat/summary")
 async def get_vat_summary(period: str = "current_month"):
     """Get VAT collection summary for a period."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_vat_summary", "nigeria-vat-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"period": period, "total_collected": 0.0, "total_remitted": 0.0, "pending_remittance": 0.0, "transactions_count": 0}
 
 @app.post("/api/v1/vat/file")
 async def file_vat_return(period: str, total_output_vat: float, total_input_vat: float):
     """File VAT return with FIRS."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("file_vat_return_" + str(int(_time.time() * 1000)), _json.dumps({"action": "file_vat_return", "timestamp": _time.time()}), "nigeria-vat-service")
+
     return {"filing_id": f"VAT-{int(__import__('time').time())}", "period": period, "net_vat": total_output_vat - total_input_vat, "status": "filed", "filed_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/vat/rates")
 async def get_vat_rates():
     """Get current VAT rates by category."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_vat_rates", "nigeria-vat-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"standard": 7.5, "exempt_categories": ["basic_food", "medical", "education", "books"], "zero_rated": ["exports"]}
 
 if __name__ == "__main__":

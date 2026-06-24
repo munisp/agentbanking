@@ -18,6 +18,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -42,6 +89,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Analytics Service", description="Business intelligence and analytics engine with real-time metrics, cohort analysis, and custom report generation", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 import psycopg2
@@ -126,21 +178,52 @@ async def health():
 @app.get("/api/v1/analytics/dashboard")
 async def get_dashboard(period: str = "7d"):
     """Get analytics dashboard summary."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"period": period, "metrics": {"total_transactions": 0, "total_volume": 0.0, "active_agents": 0, "new_customers": 0, "avg_transaction_value": 0.0}, "trends": []}
 
 @app.get("/api/v1/analytics/cohort")
 async def cohort_analysis(cohort_type: str = "monthly", metric: str = "retention"):
     """Run cohort analysis on agent or customer data."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("cohort_analysis", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"cohort_type": cohort_type, "metric": metric, "cohorts": [], "generated_at": datetime.utcnow().isoformat()}
 
 @app.post("/api/v1/analytics/reports/generate")
 async def generate_report(report_type: str, date_range: str, filters: dict = None):
     """Generate a custom analytics report."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_report_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_report", "timestamp": _time.time()}), "analytics-service")
+
     return {"report_id": f"RPT-{int(__import__('time').time())}", "type": report_type, "status": "generating", "estimated_time": "30-60 seconds"}
 
 @app.get("/api/v1/analytics/funnel")
 async def get_funnel(funnel_name: str = "onboarding"):
     """Get conversion funnel metrics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_funnel", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"funnel": funnel_name, "stages": [], "overall_conversion": 0.0}
 
 if __name__ == "__main__":

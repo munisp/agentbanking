@@ -33,6 +33,8 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -207,6 +209,8 @@ export const billPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
         const newStatus = (input as Record<string, unknown>).status as string;

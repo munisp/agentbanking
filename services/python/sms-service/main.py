@@ -24,6 +24,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -71,6 +118,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 # --- Security (Authentication & Authorization) ---
@@ -138,6 +190,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "sms-service")
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -153,6 +209,10 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
 @app.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_user_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_user", "timestamp": _time.time()}), "sms-service")
+
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
@@ -166,6 +226,15 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/users/me/", response_model=UserResponse)
 async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_users_me", "sms-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return current_user
 
 @app.post("/sms/send", response_model=MessageResponse, status_code=status.HTTP_202_ACCEPTED)

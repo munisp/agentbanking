@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { z } from "zod";
-import { router, publicProcedure } from "../_core/trpc";
+import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -471,6 +471,27 @@ export const healthCheckRouter = router({
             : "critical",
       services: results,
       summary: `${healthy}/${total} services healthy`,
+      timestamp: new Date().toISOString(),
+    };
+  }),
+
+  daprServiceHealth: protectedProcedure.query(async () => {
+    const { invokeDaprService, DAPR_SERVICE_REGISTRY } = await import("../middleware/middlewareConnectors");
+    const results: Record<string, { status: string; latencyMs: number; language: string }> = {};
+    for (const [name, svc] of Object.entries(DAPR_SERVICE_REGISTRY)) {
+      const start = Date.now();
+      try {
+        await invokeDaprService(name, "health");
+        results[name] = { status: "healthy", latencyMs: Date.now() - start, language: svc.language };
+      } catch {
+        results[name] = { status: "unreachable", latencyMs: Date.now() - start, language: svc.language };
+      }
+    }
+    const healthy = Object.values(results).filter(r => r.status === "healthy").length;
+    return {
+      overall: healthy === Object.keys(results).length ? "healthy" : healthy > 0 ? "degraded" : "critical",
+      services: results,
+      summary: `${healthy}/${Object.keys(results).length} Dapr services healthy`,
       timestamp: new Date().toISOString(),
     };
   }),

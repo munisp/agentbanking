@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException, status, Security
 import sys as _sys2, os as _os2
 _sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
@@ -18,6 +19,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -42,7 +90,12 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # Initialize FastAPI app
 app = FastAPI(
-    title=get_settings().app_name,
+    title=get_settings()
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+.app_name,
 apply_middleware(app, enable_auth=True)
     description="Service for managing offline synchronization of remittance data.",
     version="1.0.0",
@@ -125,6 +178,10 @@ async def health_check():
 # Authentication Endpoint
 @app.post("/token", summary="Get Access Token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "offline-sync")
+
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -202,6 +259,15 @@ async def sync_offline_data(
 # Example of a protected endpoint (requires authentication)
 @app.get("/protected-data", summary="Get Protected Data", response_model=Dict[str, str])
 async def get_protected_data(current_user: User = Depends(get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_protected_data", "offline-sync")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": f"Hello {current_user.username}, you have access to protected data!", "role": current_user.roles[0]}
 
 # Error Handling (example for a specific HTTPException)

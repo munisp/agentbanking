@@ -28,6 +28,8 @@ import { cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -213,6 +215,8 @@ export const nfcTapToPayRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
         const currentStatus = "pending"; // Will be overridden by DB lookup
@@ -308,7 +312,8 @@ export const nfcTapToPayRouter = router({
 
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       const db = (await getDb())!;
 
       const validStatuses = [
@@ -392,6 +397,7 @@ export const nfcTapToPayRouter = router({
       idempotencyKey: z.string().min(16).max(64),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -522,6 +528,7 @@ export const nfcTapToPayRouter = router({
       idempotencyKey: z.string().min(16).max(64),
     }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)

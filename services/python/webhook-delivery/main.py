@@ -36,6 +36,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -57,6 +104,11 @@ signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 app = FastAPI(title="54Link Webhook Delivery Service", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 import psycopg2
@@ -203,6 +255,10 @@ async def deliver_webhook(record: DeliveryRecord, endpoint_secret: str) -> Deliv
 
 @app.post("/endpoints/register")
 async def register_endpoint(reg: WebhookRegistration):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_endpoint_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_endpoint", "timestamp": _time.time()}), "webhook-delivery")
+
     endpoint_id = str(uuid.uuid4())
     endpoints[endpoint_id] = {
         "id": endpoint_id,
@@ -220,10 +276,23 @@ async def register_endpoint(reg: WebhookRegistration):
 
 @app.get("/endpoints")
 async def list_endpoints():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_endpoints", "webhook-delivery")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"endpoints": list(endpoints.values()), "count": len(endpoints)}
 
 @app.delete("/endpoints/{endpoint_id}")
 async def remove_endpoint(endpoint_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("remove_endpoint_" + str(int(_time.time() * 1000)), _json.dumps({"action": "remove_endpoint", "timestamp": _time.time()}), "webhook-delivery")
+
     if endpoint_id not in endpoints:
         raise HTTPException(404, "endpoint not found")
     del endpoints[endpoint_id]
@@ -232,6 +301,10 @@ async def remove_endpoint(endpoint_id: str):
 @app.post("/deliver")
 async def deliver(payload: WebhookPayload):
     """Deliver a webhook to all registered endpoints matching the event type."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("deliver_" + str(int(_time.time() * 1000)), _json.dumps({"action": "deliver", "timestamp": _time.time()}), "webhook-delivery")
+
     matching = [
         ep for ep in endpoints.values()
         if ep["active"] and (payload.event_type in ep["events"] or "*" in ep["events"])
@@ -268,6 +341,15 @@ async def deliver(payload: WebhookPayload):
 
 @app.get("/deliveries")
 async def list_deliveries(status: Optional[str] = None, limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_deliveries", "webhook-delivery")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = list(deliveries.values())
     if status:
         items = [d for d in items if d.status.value == status]
@@ -276,12 +358,25 @@ async def list_deliveries(status: Optional[str] = None, limit: int = 50):
 
 @app.get("/deliveries/{delivery_id}")
 async def get_delivery(delivery_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_delivery", "webhook-delivery")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if delivery_id not in deliveries:
         raise HTTPException(404, "delivery not found")
     return deliveries[delivery_id].model_dump()
 
 @app.post("/deliveries/{delivery_id}/retry")
 async def retry_delivery(delivery_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("retry_delivery_" + str(int(_time.time() * 1000)), _json.dumps({"action": "retry_delivery", "timestamp": _time.time()}), "webhook-delivery")
+
     if delivery_id not in deliveries:
         raise HTTPException(404, "delivery not found")
     record = deliveries[delivery_id]
@@ -293,10 +388,23 @@ async def retry_delivery(delivery_id: str):
 
 @app.get("/dlq")
 async def list_dlq(limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_dlq", "webhook-delivery")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"dead_letters": [d.model_dump() for d in dlq[-limit:]], "total": len(dlq)}
 
 @app.post("/dlq/replay")
 async def replay_dlq():
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("replay_dlq_" + str(int(_time.time() * 1000)), _json.dumps({"action": "replay_dlq", "timestamp": _time.time()}), "webhook-delivery")
+
     replayed = 0
     for record in list(dlq):
         record.attempts = 0

@@ -27,6 +27,8 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -78,6 +80,8 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
+
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;
@@ -193,7 +197,8 @@ const reject = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;
@@ -250,7 +255,8 @@ const escalate = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;

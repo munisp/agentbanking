@@ -27,6 +27,9 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -96,6 +99,16 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+async function publishsmartContractPaymentMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("blockchain.tx_confirmed", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `blockchain.tx_confirmed.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `blockchain.tx_confirmed.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("smartContractPayment", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`smartContractPayment:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
 
 export const smartContractPaymentRouter = router({
   list: protectedProcedure
@@ -224,6 +237,8 @@ export const smartContractPaymentRouter = router({
     )
     .mutation(async () => {
       try {
+        await publishsmartContractPaymentMiddleware("deployContract", `${Date.now()}`, { action: "deployContract" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

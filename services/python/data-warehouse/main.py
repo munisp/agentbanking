@@ -1,3 +1,4 @@
+import os
 
 import logging
 from datetime import datetime, timedelta
@@ -20,6 +21,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -53,6 +101,11 @@ app = FastAPI(
     description="Data Warehouse Service for Remittance Platform",
     version="1.0.0",
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 apply_middleware(app, enable_auth=True)
 
 # Create database tables
@@ -122,6 +175,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 # --- Authentication Endpoints ---
 @app.post("/token", response_model=models.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "data-warehouse")
+
     user = get_user(form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -139,6 +196,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/agents/", response_model=models.AgentDimensionResponse, status_code=status.HTTP_201_CREATED)
 def create_agent(agent: models.AgentDimensionCreate, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_agent", "timestamp": _time.time()}), "data-warehouse")
+
     logger.info(f"User {current_user.username} creating agent: {agent.agent_id}")
     db_agent = db.query(models.AgentDimension).filter(models.AgentDimension.agent_id == agent.agent_id).first()
     if db_agent:
@@ -158,12 +219,30 @@ def create_agent(agent: models.AgentDimensionCreate, db: Session = Depends(get_d
 
 @app.get("/agents/", response_model=List[models.AgentDimensionResponse])
 def read_agents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agents", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading agents (skip={skip}, limit={limit})")
     agents = db.query(models.AgentDimension).offset(skip).limit(limit).all()
     return agents
 
 @app.get("/agents/{agent_id}", response_model=models.AgentDimensionResponse)
 def read_agent(agent_id: str, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agent", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading agent: {agent_id}")
     db_agent = db.query(models.AgentDimension).filter(models.AgentDimension.agent_id == agent_id).first()
     if db_agent is None:
@@ -172,6 +251,10 @@ def read_agent(agent_id: str, db: Session = Depends(get_db), current_user: UserI
 
 @app.post("/customers/", response_model=models.CustomerDimensionResponse, status_code=status.HTTP_201_CREATED)
 def create_customer(customer: models.CustomerDimensionCreate, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_customer_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_customer", "timestamp": _time.time()}), "data-warehouse")
+
     logger.info(f"User {current_user.username} creating customer: {customer.customer_id}")
     db_customer = db.query(models.CustomerDimension).filter(models.CustomerDimension.customer_id == customer.customer_id).first()
     if db_customer:
@@ -191,12 +274,30 @@ def create_customer(customer: models.CustomerDimensionCreate, db: Session = Depe
 
 @app.get("/customers/", response_model=List[models.CustomerDimensionResponse])
 def read_customers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_customers", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading customers (skip={skip}, limit={limit})")
     customers = db.query(models.CustomerDimension).offset(skip).limit(limit).all()
     return customers
 
 @app.get("/customers/{customer_id}", response_model=models.CustomerDimensionResponse)
 def read_customer(customer_id: str, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_customer", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading customer: {customer_id}")
     db_customer = db.query(models.CustomerDimension).filter(models.CustomerDimension.customer_id == customer_id).first()
     if db_customer is None:
@@ -205,6 +306,10 @@ def read_customer(customer_id: str, db: Session = Depends(get_db), current_user:
 
 @app.post("/locations/", response_model=models.LocationDimensionResponse, status_code=status.HTTP_201_CREATED)
 def create_location(location: models.LocationDimensionCreate, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_location_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_location", "timestamp": _time.time()}), "data-warehouse")
+
     logger.info(f"User {current_user.username} creating location: {location.location_id}")
     db_location = db.query(models.LocationDimension).filter(models.LocationDimension.location_id == location.location_id).first()
     if db_location:
@@ -224,12 +329,30 @@ def create_location(location: models.LocationDimensionCreate, db: Session = Depe
 
 @app.get("/locations/", response_model=List[models.LocationDimensionResponse])
 def read_locations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_locations", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading locations (skip={skip}, limit={limit})")
     locations = db.query(models.LocationDimension).offset(skip).limit(limit).all()
     return locations
 
 @app.get("/locations/{location_id}", response_model=models.LocationDimensionResponse)
 def read_location(location_id: str, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_location", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading location: {location_id}")
     db_location = db.query(models.LocationDimension).filter(models.LocationDimension.location_id == location_id).first()
     if db_location is None:
@@ -240,6 +363,10 @@ def read_location(location_id: str, db: Session = Depends(get_db), current_user:
 
 @app.post("/transactions/", response_model=models.TransactionFactResponse, status_code=status.HTTP_201_CREATED)
 def create_transaction(transaction: models.TransactionFactCreate, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_transaction", "timestamp": _time.time()}), "data-warehouse")
+
     logger.info(f"User {current_user.username} creating transaction: {transaction.transaction_uuid}")
     db_transaction = db.query(models.TransactionFact).filter(models.TransactionFact.transaction_uuid == transaction.transaction_uuid).first()
     if db_transaction:
@@ -259,12 +386,30 @@ def create_transaction(transaction: models.TransactionFactCreate, db: Session = 
 
 @app.get("/transactions/", response_model=List[models.TransactionFactResponse])
 def read_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transactions", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading transactions (skip={skip}, limit={limit})")
     transactions = db.query(models.TransactionFact).offset(skip).limit(limit).all()
     return transactions
 
 @app.get("/transactions/{transaction_uuid}", response_model=models.TransactionFactResponse)
 def read_transaction(transaction_uuid: str, db: Session = Depends(get_db), current_user: UserInDB = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transaction", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user.username} reading transaction: {transaction_uuid}")
     db_transaction = db.query(models.TransactionFact).filter(models.TransactionFact.transaction_uuid == transaction_uuid).first()
     if db_transaction is None:
@@ -320,5 +465,14 @@ def health_check(db: Session = Depends(get_db), current_user: UserInDB = Depends
 # Root endpoint
 @app.get("/", tags=["Root"])
 async def read_root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_root", "data-warehouse")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": "Welcome to the Data Warehouse Service"}
 

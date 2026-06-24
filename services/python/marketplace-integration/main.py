@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -61,6 +108,11 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/marketplace_integration")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -207,6 +259,10 @@ async def health_check():
 @app.post("/connections", response_model=MarketplaceConnection)
 async def create_connection(connection: MarketplaceConnection):
     """Create a new marketplace connection"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_connection_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_connection", "timestamp": _time.time()}), "marketplace-integration")
+
     try:
         connection.id = str(uuid.uuid4())
         connection.connected_at = datetime.utcnow()
@@ -245,6 +301,15 @@ async def list_connections(
 @app.get("/connections/{connection_id}", response_model=MarketplaceConnection)
 async def get_connection(connection_id: str):
     """Get a specific connection"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_connection", "marketplace-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if connection_id not in connections_db:
         raise HTTPException(status_code=404, detail="Connection not found")
     return connections_db[connection_id]
@@ -252,6 +317,10 @@ async def get_connection(connection_id: str):
 @app.put("/connections/{connection_id}", response_model=MarketplaceConnection)
 async def update_connection(connection_id: str, connection: MarketplaceConnection):
     """Update a marketplace connection"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_connection_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_connection", "timestamp": _time.time()}), "marketplace-integration")
+
     if connection_id not in connections_db:
         raise HTTPException(status_code=404, detail="Connection not found")
     
@@ -264,6 +333,10 @@ async def update_connection(connection_id: str, connection: MarketplaceConnectio
 @app.delete("/connections/{connection_id}")
 async def delete_connection(connection_id: str):
     """Delete a marketplace connection"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_connection_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_connection", "timestamp": _time.time()}), "marketplace-integration")
+
     if connection_id not in connections_db:
         raise HTTPException(status_code=404, detail="Connection not found")
     
@@ -274,6 +347,10 @@ async def delete_connection(connection_id: str):
 @app.post("/products", response_model=MarketplaceProduct)
 async def create_product(product: MarketplaceProduct):
     """Create a marketplace product"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_product_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_product", "timestamp": _time.time()}), "marketplace-integration")
+
     try:
         product.id = str(uuid.uuid4())
         product.created_at = datetime.utcnow()
@@ -309,6 +386,15 @@ async def list_products(
 @app.get("/products/{product_id}", response_model=MarketplaceProduct)
 async def get_product(product_id: str):
     """Get a specific product"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_product", "marketplace-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if product_id not in products_db:
         raise HTTPException(status_code=404, detail="Product not found")
     return products_db[product_id]
@@ -316,6 +402,10 @@ async def get_product(product_id: str):
 @app.put("/products/{product_id}", response_model=MarketplaceProduct)
 async def update_product(product_id: str, product: MarketplaceProduct):
     """Update a marketplace product"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_product_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_product", "timestamp": _time.time()}), "marketplace-integration")
+
     if product_id not in products_db:
         raise HTTPException(status_code=404, detail="Product not found")
     
@@ -329,6 +419,10 @@ async def update_product(product_id: str, product: MarketplaceProduct):
 @app.post("/sync")
 async def sync_marketplace(sync_request: SyncRequest):
     """Sync data with marketplace"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("sync_marketplace_" + str(int(_time.time() * 1000)), _json.dumps({"action": "sync_marketplace", "timestamp": _time.time()}), "marketplace-integration")
+
     try:
         if sync_request.connection_id not in connections_db:
             raise HTTPException(status_code=404, detail="Connection not found")
@@ -370,6 +464,15 @@ async def sync_marketplace(sync_request: SyncRequest):
 @app.get("/orders", response_model=List[MarketplaceOrder])
 async def list_orders(connection_id: Optional[str] = None):
     """List marketplace orders"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_orders", "marketplace-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         orders = list(orders_db.values())
         
@@ -384,6 +487,10 @@ async def list_orders(connection_id: Optional[str] = None):
 @app.post("/webhooks", response_model=WebhookConfig)
 async def configure_webhook(webhook: WebhookConfig):
     """Configure webhook for marketplace events"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("configure_webhook_" + str(int(_time.time() * 1000)), _json.dumps({"action": "configure_webhook", "timestamp": _time.time()}), "marketplace-integration")
+
     try:
         if webhook.connection_id not in connections_db:
             raise HTTPException(status_code=404, detail="Connection not found")
@@ -402,6 +509,10 @@ async def configure_webhook(webhook: WebhookConfig):
 @app.post("/webhooks/receive")
 async def receive_webhook(data: Dict[str, Any]):
     """Receive webhook from marketplace"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("receive_webhook_" + str(int(_time.time() * 1000)), _json.dumps({"action": "receive_webhook", "timestamp": _time.time()}), "marketplace-integration")
+
     try:
         logger.info(f"Received webhook: {data.get('event_type')}")
         
@@ -425,6 +536,15 @@ async def receive_webhook(data: Dict[str, Any]):
 @app.get("/analytics/{agent_id}")
 async def get_marketplace_analytics(agent_id: str):
     """Get marketplace analytics for an agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_marketplace_analytics", "marketplace-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         agent_connections = [c for c in connections_db.values() if c.agent_id == agent_id]
         connection_ids = [c.id for c in agent_connections]

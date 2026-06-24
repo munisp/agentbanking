@@ -27,6 +27,9 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -96,6 +99,16 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+async function publishcrossBorderRemittanceHubMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("transfers.initiated", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `transfers.initiated.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `transfers.initiated.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("crossBorderRemittanceHub", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`crossBorderRemittanceHub:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
 
 export const crossBorderRemittanceHubRouter = router({
   list: protectedProcedure
@@ -254,6 +267,8 @@ export const crossBorderRemittanceHubRouter = router({
     )
     .mutation(async () => {
       try {
+        await publishcrossBorderRemittanceHubMiddleware("initiateTransfer", `${Date.now()}`, { action: "initiateTransfer" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

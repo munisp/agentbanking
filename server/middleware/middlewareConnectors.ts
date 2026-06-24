@@ -992,6 +992,73 @@ export class OpenSearchConnector {
       return null;
     }
   }
+
+  async searchAsYouType(indexName: string, field: string, prefix: string, limit: number = 10): Promise<any[]> {
+    if (!canAttempt("opensearch")) return [];
+    try {
+      const query = {
+        size: limit,
+        query: {
+          bool: {
+            should: [
+              { prefix: { [field]: { value: prefix.toLowerCase(), boost: 2.0 } } },
+              { match_phrase_prefix: { [field]: { query: prefix, max_expansions: 20 } } },
+              { fuzzy: { [field]: { value: prefix.toLowerCase(), fuzziness: "AUTO" } } },
+            ],
+            minimum_should_match: 1,
+          },
+        },
+        _source: true,
+        highlight: { fields: { [field]: {} } },
+      };
+      const res = await fetch(`${this.baseUrl}/${indexName}/_search`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(query),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        recordSuccess("opensearch");
+        return data.hits?.hits?.map((h: any) => ({
+          ...h._source,
+          _highlight: h.highlight,
+          _score: h._score,
+        })) ?? [];
+      }
+      recordFailure("opensearch");
+      return [];
+    } catch {
+      recordFailure("opensearch");
+      return [];
+    }
+  }
+
+  async multiSearch(queries: { index: string; query: any }[]): Promise<any[][]> {
+    if (!canAttempt("opensearch")) return queries.map(() => []);
+    try {
+      const body = queries.flatMap(q => [
+        JSON.stringify({ index: q.index }),
+        JSON.stringify({ query: q.query, size: 10 }),
+      ]).join("\n") + "\n";
+      const res = await fetch(`${this.baseUrl}/_msearch`, {
+        method: "POST",
+        headers: this.headers(),
+        body,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        recordSuccess("opensearch");
+        return data.responses?.map((r: any) => r.hits?.hits?.map((h: any) => h._source) ?? []) ?? [];
+      }
+      recordFailure("opensearch");
+      return queries.map(() => []);
+    } catch {
+      recordFailure("opensearch");
+      return queries.map(() => []);
+    }
+  }
 }
 
 // ─── 10. APISIX Connector ────────────────────────────────────────────────────
@@ -1213,6 +1280,43 @@ export const opensearch = new OpenSearchConnector();
 export const apisix = new APISIXConnector();
 export const tigerbeetle = new TigerBeetleConnector();
 export const lakehouse = new LakehouseConnector();
+
+// ─── Dapr Service Registry ───────────────────────────────────────────────────
+export const DAPR_SERVICE_REGISTRY: Record<string, { appId: string; port: number; language: string }> = {
+  // Go services
+  "tigerbeetle-core": { appId: "tigerbeetle-core", port: 9300, language: "go" },
+  "tigerbeetle-cdc": { appId: "tigerbeetle-cdc", port: 9301, language: "go" },
+  "tigerbeetle-edge": { appId: "tigerbeetle-edge", port: 9302, language: "go" },
+  "settlement-batch-processor": { appId: "settlement-batch-processor", port: 9200, language: "go" },
+  "revenue-reconciler": { appId: "revenue-reconciler", port: 9201, language: "go" },
+  "settlement-ledger-sync": { appId: "settlement-ledger-sync", port: 9202, language: "go" },
+  "ecommerce-catalog-go": { appId: "ecommerce-catalog-go", port: 9100, language: "go" },
+  "apisix-gateway": { appId: "apisix-gateway", port: 9102, language: "go" },
+  // Rust services
+  "tigerbeetle-bridge": { appId: "tigerbeetle-bridge", port: 9400, language: "rust" },
+  "ecommerce-cart-rust": { appId: "ecommerce-cart-rust", port: 9401, language: "rust" },
+  "ddos-shield": { appId: "ddos-shield", port: 9500, language: "rust" },
+  "multi-sim-failover": { appId: "multi-sim-failover", port: 9501, language: "rust" },
+  "cbn-tiered-kyc": { appId: "cbn-tiered-kyc", port: 9502, language: "rust" },
+  "ledger-integrity-validator": { appId: "ledger-integrity-validator", port: 9503, language: "rust" },
+  "fee-splitter-realtime": { appId: "fee-splitter-realtime", port: 9504, language: "rust" },
+  // Python services
+  "tigerbeetle-orchestrator": { appId: "tigerbeetle-orchestrator", port: 9500, language: "python" },
+  "tigerbeetle-zig": { appId: "tigerbeetle-zig", port: 9600, language: "python" },
+  "compliance-screening": { appId: "compliance-screening", port: 9700, language: "python" },
+  "ecommerce-intelligence": { appId: "ecommerce-intelligence", port: 9701, language: "python" },
+  "opensearch-indexer": { appId: "opensearch-indexer", port: 9702, language: "python" },
+};
+
+export async function invokeDaprService(
+  serviceName: string,
+  method: string,
+  data?: Record<string, unknown>
+): Promise<unknown> {
+  const svc = DAPR_SERVICE_REGISTRY[serviceName];
+  if (!svc) throw new Error(`Unknown service: ${serviceName}`);
+  return dapr.invokeService(svc.appId, method, data);
+}
 
 // ─── Get All Circuit States ──────────────────────────────────────────────────
 export function getCircuitStates(): Record<string, CircuitState> {

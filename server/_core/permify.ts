@@ -150,8 +150,133 @@ export async function canUpdateFraudAlert(
   });
 }
 
+/**
+ * Write a relationship tuple to Permify.
+ * Used to establish ownership/access when resources are created.
+ */
+export async function permifyWriteRelation(params: {
+  entityType: string;
+  entityId: string;
+  relation: string;
+  subjectType: string;
+  subjectId: string;
+}): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/relationships/write`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metadata: { schemaVersion: "" },
+          tuples: [{
+            entity: { type: params.entityType, id: params.entityId },
+            relation: params.relation,
+            subject: { type: params.subjectType, id: params.subjectId },
+          }],
+        }),
+        signal: AbortSignal.timeout(2_000),
+      }
+    );
+    if (!res.ok) {
+      logger.warn(`[Permify] Write relation failed: ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err }, "[Permify] Write relation failed — service unavailable");
+    return false;
+  }
+}
+
+/**
+ * Delete a relationship tuple from Permify.
+ */
+export async function permifyDeleteRelation(params: {
+  entityType: string;
+  entityId: string;
+  relation: string;
+  subjectType: string;
+  subjectId: string;
+}): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/relationships/delete`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tupleFilter: {
+            entity: { type: params.entityType, id: params.entityId },
+            relation: params.relation,
+            subject: { type: params.subjectType, id: params.subjectId },
+          },
+        }),
+        signal: AbortSignal.timeout(2_000),
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Enforce permission check as tRPC middleware.
+ * Throws TRPCError if permission denied.
+ */
+export async function enforcePermission(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): Promise<void> {
+  const allowed = await permifyCheck(params);
+  if (!allowed) {
+    throw new Error(`Permission denied: ${params.subjectType}:${params.subjectId} cannot ${params.permission} on ${params.entityType}:${params.entityId}`);
+  }
+}
+
+/**
+ * Batch write relationship tuples for resource creation.
+ */
+export async function permifyWriteRelations(tuples: Array<{
+  entityType: string;
+  entityId: string;
+  relation: string;
+  subjectType: string;
+  subjectId: string;
+}>): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/relationships/write`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metadata: { schemaVersion: "" },
+          tuples: tuples.map(t => ({
+            entity: { type: t.entityType, id: t.entityId },
+            relation: t.relation,
+            subject: { type: t.subjectType, id: t.subjectId },
+          })),
+        }),
+        signal: AbortSignal.timeout(2_000),
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default {
   permifyCheck,
+  permifyWriteRelation,
+  permifyDeleteRelation,
+  permifyWriteRelations,
+  enforcePermission,
   canAccessTransaction,
   canApproveTopUp,
   canUpdateFraudAlert,

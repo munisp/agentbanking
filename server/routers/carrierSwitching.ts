@@ -204,24 +204,88 @@ export const carrierSwitchingRouter = router({
         .object({ id: z.string().optional(), query: z.string().optional() })
         .optional()
     )
-    .query(async ({ input }) => {
-      return { data: null, id: input?.id ?? null };
+    .query(async () => {
+      try {
+        const db = (await getDb())!;
+        if (!db) return { data: [], rankings: [] };
+        const rows = await db
+          .select({
+            carrier: simOrchestratorConfig.terminalId,
+            count: count(),
+          })
+          .from(simOrchestratorConfig)
+          .groupBy(simOrchestratorConfig.terminalId)
+          .orderBy(desc(count()));
+
+        const { getCarrierProfiles } = await import("../middleware/carrierAwareFailover");
+        const profiles = getCarrierProfiles();
+        const rankings = profiles.map((p, i) => ({
+          rank: i + 1,
+          carrier: p.code,
+          name: p.name,
+          reliabilityPct: p.reliabilityPct,
+          avgLatencyMs: p.avgLatencyMs,
+          costPerMbNgn: p.costPerMbNgn,
+          slaUptimePct: p.slaUptimePct,
+          preferredForFinancial: p.preferredForFinancial,
+          score: Math.round(p.reliabilityPct * 0.4 + (100 - p.avgLatencyMs / 10) * 0.3 + (100 - p.costPerMbNgn * 200) * 0.3),
+        })).sort((a, b) => b.score - a.score).map((r, i) => ({ ...r, rank: i + 1 }));
+        return { data: rankings, rankings };
+      } catch {
+        return { data: [], rankings: [] };
+      }
     }),
   getRecommendation: protectedProcedure
     .input(
       z
-        .object({ id: z.string().optional(), query: z.string().optional() })
+        .object({
+          terminalId: z.string().optional(),
+          transactionType: z.enum(["financial", "payment", "transfer", "settlement", "general", "telemetry"]).optional(),
+        })
         .optional()
     )
     .query(async ({ input }) => {
-      return { data: null, id: input?.id ?? null };
+      const { getCarrierProfiles } = await import("../middleware/carrierAwareFailover");
+      const profiles = getCarrierProfiles();
+      const txType = input?.transactionType ?? "general";
+      const isFinancial = ["financial", "payment", "transfer", "settlement"].includes(txType);
+
+      const recommended = isFinancial
+        ? profiles.filter(p => p.preferredForFinancial).sort((a, b) => b.reliabilityPct - a.reliabilityPct)[0]
+        : profiles.sort((a, b) => {
+            const scoreA = a.reliabilityPct * 0.3 + (100 - a.costPerMbNgn * 200) * 0.4 + (100 - a.avgLatencyMs / 10) * 0.3;
+            const scoreB = b.reliabilityPct * 0.3 + (100 - b.costPerMbNgn * 200) * 0.4 + (100 - b.avgLatencyMs / 10) * 0.3;
+            return scoreB - scoreA;
+          })[0];
+
+      return {
+        data: recommended ?? null,
+        recommendation: recommended ? {
+          carrier: recommended.code,
+          name: recommended.name,
+          reason: isFinancial
+            ? `${recommended.code} recommended for ${txType}: ${recommended.reliabilityPct}% reliability, ${recommended.slaUptimePct}% SLA uptime`
+            : `${recommended.code} recommended for ${txType}: best cost/performance (₦${recommended.costPerMbNgn}/MB, ${recommended.avgLatencyMs}ms latency)`,
+          transactionType: txType,
+          ussdBalance: recommended.ussdBalance,
+        } : null,
+      };
     }),
   getSwitchStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeItems: 0,
-      lastUpdated: new Date().toISOString(),
-    };
+    try {
+      const db = (await getDb())!;
+      if (!db) return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+      const [stats] = await db
+        .select({ total: count() })
+        .from(simOrchestratorConfig);
+      return {
+        totalRecords: stats?.total ?? 0,
+        activeItems: stats?.total ?? 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+    }
   }),
   recordSwitch: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())

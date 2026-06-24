@@ -119,7 +119,10 @@ export type KafkaTopic =
   | "pos.eod.reconciliation"
   | "pos.geo.velocity.alert"
   | "pos.ota.delta.requested"
-  | "pos.canary.rollback";
+  | "pos.canary.rollback"
+  | "sim.failover.triggered"
+  | "sim.slot.degraded"
+  | "sim.carrier.switched";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

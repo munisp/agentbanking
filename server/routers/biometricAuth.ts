@@ -20,6 +20,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["scheduled", "generating"],
@@ -144,6 +150,47 @@ const _txPatterns = {
   },
 };
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishbiometricAuthMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `biometric.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `biometric_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `biometric_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("biometric", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const biometricAuthRouter = router({
   // ── Passive Liveness Check ──────────────────────────────────────────────
   passiveLiveness: protectedProcedure
@@ -211,6 +258,11 @@ export const biometricAuthRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
+
+
         return {
           isLive: result.is_live ?? false,
           confidence: result.overall_score ?? 0,
@@ -252,6 +304,11 @@ export const biometricAuthRouter = router({
             message: "Liveness service unavailable",
           });
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("activeLiveness", `${Date.now()}`, { action: "activeLiveness" }).catch(() => {});
+
 
         return {
           isLive: result.is_live ?? false,
@@ -295,6 +352,11 @@ export const biometricAuthRouter = router({
           });
         }
 
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("matchFaces", `${Date.now()}`, { action: "matchFaces" }).catch(() => {});
+
+
         return {
           match: result.match ?? false,
           similarity: result.similarity ?? 0,
@@ -331,6 +393,11 @@ export const biometricAuthRouter = router({
             message: "Face detection service unavailable",
           });
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("detectFaces", `${Date.now()}`, { action: "detectFaces" }).catch(() => {});
+
 
         return {
           faces: (result.faces ?? []).map((f: any) => ({
@@ -370,6 +437,11 @@ export const biometricAuthRouter = router({
             message: "Deepfake detection service unavailable",
           });
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("detectDeepfake", `${Date.now()}`, { action: "detectDeepfake" }).catch(() => {});
+
 
         return {
           isReal: result.is_real ?? true,
@@ -441,6 +513,11 @@ export const biometricAuthRouter = router({
           }
         }
 
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("fullVerification", `${Date.now()}`, { action: "fullVerification" }).catch(() => {});
+
+
         return {
           verificationId: result.verification_id,
           status: result.status,
@@ -482,6 +559,11 @@ export const biometricAuthRouter = router({
           });
         }
 
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("assessQuality", `${Date.now()}`, { action: "assessQuality" }).catch(() => {});
+
+
         return {
           overallQuality: result.overall_quality ?? 0,
           scores: result.scores ?? {},
@@ -516,6 +598,11 @@ export const biometricAuthRouter = router({
             message: "Anti-spoofing service unavailable",
           });
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishBiometricAuthMiddleware("antiSpoof", `${Date.now()}`, { action: "antiSpoof" }).catch(() => {});
+
 
         return {
           antiSpoofScore: result.anti_spoof_score ?? 0,

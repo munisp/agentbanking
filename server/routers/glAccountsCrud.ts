@@ -21,6 +21,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending_verification: ["email_verified"],
@@ -100,6 +106,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishglAccountsCrudMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const gl_accountsRouter = router({
   list: protectedProcedure
@@ -252,6 +299,11 @@ export const gl_accountsRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishGlAccountsCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
+
         return { ...row, normalBalance: NORMAL_BALANCE[input.accountType] };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -287,6 +339,9 @@ export const gl_accountsRouter = router({
       try {
         const db = (await getDb())!;
         await db.delete(gl_accounts).where(eq(gl_accounts.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishGlAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

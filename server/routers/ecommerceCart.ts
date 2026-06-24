@@ -29,7 +29,6 @@ import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -40,14 +39,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   archived: [],
 };
-
-
-async function publishCartMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("ecommerce.cart", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: String(payload.customerId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.cart.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `ecommerce.cart.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("ecommerce_cart", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
-}
 
 const CART_SERVICE_URL =
   process.env.CART_SERVICE_URL || "http://localhost:8102";
@@ -151,6 +142,47 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishecommerceCartMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `ecommerce.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `ecommerce_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `ecommerce_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("ecommerce", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const ecommerceCartRouter = router({
@@ -332,9 +364,6 @@ export const ecommerceCartRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
-      publishCartMiddleware("item.added", input.sku, { customerId: input.customerId, productId: input.productId, quantity: input.quantity, amount: Number(input.unitPrice) * input.quantity });
-      cacheSet(`cart:${input.customerId}`, JSON.stringify({ updated: Date.now() }), 1800).catch(() => {});
-
       return { status: "added" };
     }),
 
@@ -379,7 +408,10 @@ export const ecommerceCartRouter = router({
           );
       }
 
-      publishCartMiddleware("item.updated", input.sku, { customerId: input.customerId, quantity: input.quantity });
+      // Middleware fan-out (fail-open)
+
+      await publishEcommerceCartMiddleware("updateItem", `${Date.now()}`, { action: "updateItem" }).catch(() => {});
+
 
       return { status: "updated" };
     }),
@@ -407,7 +439,10 @@ export const ecommerceCartRouter = router({
           )
         );
 
-      publishCartMiddleware("item.removed", input.sku, { customerId: input.customerId });
+      // Middleware fan-out (fail-open)
+
+      await publishEcommerceCartMiddleware("removeItem", `${Date.now()}`, { action: "removeItem" }).catch(() => {});
+
 
       return { status: "removed" };
     }),
@@ -433,7 +468,10 @@ export const ecommerceCartRouter = router({
           .where(eq(ecommerceCarts.id, cart.id));
       }
 
-      publishCartMiddleware("cart.cleared", String(input.customerId), { customerId: input.customerId });
+      // Middleware fan-out (fail-open)
+
+      await publishEcommerceCartMiddleware("clearCart", `${Date.now()}`, { action: "clearCart" }).catch(() => {});
+
 
       return { status: "cleared" };
     }),
@@ -535,8 +573,6 @@ export const ecommerceCartRouter = router({
           });
         }
       }
-
-      publishCartMiddleware("cart.synced", String(input.customerId), { customerId: input.customerId, strategy: input.strategy, itemsMerged: input.items.length, deviceId: input.deviceId });
 
       return {
         status: "synced",

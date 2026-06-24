@@ -32,6 +32,12 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -166,6 +172,47 @@ async function checkDbHealth() {
   }
 }
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishautomatedSettlementSchedulerMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `settlement.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `settlement_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `settlement_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("settlement", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const automatedSettlementSchedulerRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -277,6 +324,18 @@ export const automatedSettlementSchedulerRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishAutomatedSettlementSchedulerMiddleware("listSchedules", `${Date.now()}`, { action: "listSchedules" }).catch(() => {});
+
+
+        // Middleware fan-out (fail-open)
+
+
+        await publishAutomatedSettlementSchedulerMiddleware("createSchedule", `${Date.now()}`, { action: "createSchedule" }).catch(() => {});
+
+
+
         return { id: ns.id, ...input, status: "active", createdAt: Date.now() };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -314,6 +373,9 @@ export const automatedSettlementSchedulerRouter = router({
           // @ts-expect-error auto-fix
           logger.warn("[SettlementScheduler] Middleware:", e);
         }
+        // Middleware fan-out (fail-open)
+        await publishAutomatedSettlementSchedulerMiddleware("toggleSchedule", `${Date.now()}`, { action: "toggleSchedule" }).catch(() => {});
+
         return {
           success: true,
           scheduleId: input.scheduleId,
@@ -369,6 +431,9 @@ export const automatedSettlementSchedulerRouter = router({
           // @ts-expect-error middleware type mismatch
           logger.warn("[SettlementScheduler] Middleware:", e);
         }
+        // Middleware fan-out (fail-open)
+        await publishAutomatedSettlementSchedulerMiddleware("triggerManual", `${Date.now()}`, { action: "triggerManual" }).catch(() => {});
+
         return {
           executionId: batchRef,
           scheduleId: input.scheduleId,

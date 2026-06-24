@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   open: ["investigating", "resolved", "rejected"],
@@ -93,6 +99,47 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
     });
   }
   return value;
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishdisputesMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `disputes.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `disputes_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `disputes_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("disputes", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const disputesRouter = router({
@@ -249,14 +296,23 @@ export const disputesRouter = router({
           message: "Unauthorized — admin or supervisor role required",
         });
       }
+      // Middleware fan-out (fail-open)
+      await publishDisputesMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
+
       return { disputeRef: input.disputeRef, resolved: true };
     }),
   myDisputes: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishDisputesMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
+
     return { items: [], total: 0 };
   }),
   getDispute: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishDisputesMiddleware("getDispute", `${Date.now()}`, { action: "getDispute" }).catch(() => {});
+
       return { data: null, id: input.id };
     }),
   raise: protectedProcedure
@@ -288,11 +344,19 @@ export const disputesRouter = router({
         });
       }
 
+      // Middleware fan-out (fail-open)
+
+      await publishDisputesMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
+
+
       return { success: true, id: tx.id, transactionRef: input.transactionRef };
     }),
   addMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishDisputesMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+
       return { success: true, id: input?.id ?? null };
     }),
 });

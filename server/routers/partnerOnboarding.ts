@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -122,6 +128,47 @@ const _txPatterns = {
   },
 };
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishpartnerOnboardingMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `onboarding.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `onboarding_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `onboarding_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("onboarding", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const partnerOnboardingRouter = router({
   list: protectedProcedure
     .input(
@@ -218,6 +265,9 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPartnerOnboardingMiddleware("addCorridor", `${Date.now()}`, { action: "addCorridor" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -226,6 +276,9 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPartnerOnboardingMiddleware("addFeeOverride", `${Date.now()}`, { action: "addFeeOverride" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -234,18 +287,30 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPartnerOnboardingMiddleware("completeOnboarding", `${Date.now()}`, { action: "completeOnboarding" }).catch(() => {});
+
       return { success: true };
     }),
 
   getBranding: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishPartnerOnboardingMiddleware("getBranding", `${Date.now()}`, { action: "getBranding" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
   listCorridors: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishPartnerOnboardingMiddleware("listCorridors", `${Date.now()}`, { action: "listCorridors" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
   listFees: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishPartnerOnboardingMiddleware("listFees", `${Date.now()}`, { action: "listFees" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -254,6 +319,9 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPartnerOnboardingMiddleware("registerTenant", `${Date.now()}`, { action: "registerTenant" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -262,6 +330,9 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPartnerOnboardingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
+
       return { success: true };
     }),
   validateInvite: protectedProcedure

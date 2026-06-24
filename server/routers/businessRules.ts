@@ -36,6 +36,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -87,6 +93,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishbusinessRulesMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const businessRulesRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -266,6 +313,11 @@ export const businessRulesRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishBusinessRulesMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
+
+
         return { success: true, ruleId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -297,6 +349,9 @@ export const businessRulesRouter = router({
           .where(eq(systemConfig.key, "biz_rule_" + input.ruleId))
           .limit(1);
         if (rows.length === 0)
+          // Middleware fan-out (fail-open)
+          await publishBusinessRulesMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
+
           return { success: false, error: "Rule not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const { ruleId, ...updates } = input;
@@ -341,6 +396,9 @@ export const businessRulesRouter = router({
           resourceId: input.ruleId,
           status: "success",
         });
+        // Middleware fan-out (fail-open)
+        await publishBusinessRulesMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -365,6 +423,9 @@ export const businessRulesRouter = router({
         const rules = rows
           .map(r => JSON.parse(String(r.value ?? "{}")))
           .filter((r: any) => r.enabled !== false);
+        // Middleware fan-out (fail-open)
+        await publishBusinessRulesMiddleware("evaluate", `${Date.now()}`, { action: "evaluate" }).catch(() => {});
+
         return {
           results: rules.map((r: any) => ({
             name: r.name,

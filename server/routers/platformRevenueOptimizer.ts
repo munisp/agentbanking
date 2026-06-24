@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   proposed: ["review"],
@@ -92,6 +98,47 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishplatformRevenueOptimizerMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const platformRevenueOptimizerRouter = router({
   dashboard: protectedProcedure.query(async () => {
@@ -209,6 +256,11 @@ export const platformRevenueOptimizerRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishPlatformRevenueOptimizerMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
+
         return { success: true, itemId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -228,6 +280,9 @@ export const platformRevenueOptimizerRouter = router({
         await db
           .delete(systemConfig)
           .where(eq(systemConfig.key, "revenue_" + input.itemId));
+        // Middleware fan-out (fail-open)
+        await publishPlatformRevenueOptimizerMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -244,6 +299,9 @@ export const platformRevenueOptimizerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishPlatformRevenueOptimizerMiddleware("createExperiment", `${Date.now()}`, { action: "createExperiment" }).catch(() => {});
+
       return { success: true };
     }),
 

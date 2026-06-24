@@ -20,6 +20,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["queued", "scheduled"],
@@ -112,6 +118,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishrateAlertsMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const rateAlertsRouter = router({
   list: protectedProcedure
@@ -254,6 +301,11 @@ export const rateAlertsRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // Middleware fan-out (fail-open)
+
+      await publishRateAlertsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
+
       return {
         success: true,
         id: crypto.randomUUID(),
@@ -264,6 +316,9 @@ export const rateAlertsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishRateAlertsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
       return { success: true, deletedId: input.id };
     }),
 
@@ -306,6 +361,9 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishRateAlertsMiddleware("rearm", `${Date.now()}`, { action: "rearm" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -314,6 +372,9 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishRateAlertsMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -322,6 +383,9 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishRateAlertsMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
+
       return { success: true };
     }),
   // Rate alert subscriptions with threshold logic
@@ -335,6 +399,9 @@ export const rateAlertsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishRateAlertsMiddleware("subscribe", `${Date.now()}`, { action: "subscribe" }).catch(() => {});
+
       return {
         id: `alert-${Date.now()}`,
         currencyPair: input.currencyPair,

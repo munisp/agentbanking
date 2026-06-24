@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["scheduled", "generating"],
@@ -118,6 +124,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishdashboardLayoutMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `analytics.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `analytics_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `analytics_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("analytics", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const dashboardLayoutRouter = router({
   getLayout: protectedProcedure
@@ -233,6 +280,11 @@ export const dashboardLayoutRouter = router({
                 metadata: { input: typeof input === "object" ? input : {} },
               });
 
+              // Middleware fan-out (fail-open)
+
+              await publishDashboardLayoutMiddleware("saveLayout", `${Date.now()}`, { action: "saveLayout" }).catch(() => {});
+
+
               return {
                 items: [
                   { id: "default", name: "Default", widgets: [] },
@@ -270,6 +322,9 @@ export const dashboardLayoutRouter = router({
         await db
           .delete(systemConfig)
           .where(eq(systemConfig.key, "dashboard_layout_" + input.userId));
+        // Middleware fan-out (fail-open)
+        await publishDashboardLayoutMiddleware("resetLayout", `${Date.now()}`, { action: "resetLayout" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

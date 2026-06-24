@@ -27,6 +27,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   detected: ["under_investigation"],
@@ -102,6 +108,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishfraudMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `fraud.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `fraud_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `fraud_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const fraudRouter = router({
   // ── List alerts (admin or agent-scoped) ───────────────────────────────────
@@ -200,6 +247,9 @@ export const fraudRouter = router({
           resourceId: String(input.id),
           status: "success",
         });
+        // Middleware fan-out (fail-open)
+        await publishFraudMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -257,6 +307,11 @@ export const fraudRouter = router({
           .catch((e: unknown) =>
             console.error("[Fluvio] Fraud alert event failed:", e)
           );
+
+        // Middleware fan-out (fail-open)
+
+        await publishFraudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
 
         return { success: true, alertId: alert.id };
       } catch (error) {
@@ -409,6 +464,9 @@ export const fraudRouter = router({
             message: "DB unavailable",
           });
         await db.delete(fraudRules).where(eq(fraudRules.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishFraudMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -435,6 +493,9 @@ export const fraudRouter = router({
           .set({ enabled: input.enabled, updatedAt: new Date() })
           .where(eq(fraudRules.id, input.id))
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishFraudMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+
         return { ...rule, threshold: Number(rule.threshold) };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -468,6 +529,9 @@ export const fraudRouter = router({
         .from(fraudRules)
         .limit(1);
       if (existing.length > 0)
+        // Middleware fan-out (fail-open)
+        await publishFraudMiddleware("seedDefaultRules", `${Date.now()}`, { action: "seedDefaultRules" }).catch(() => {});
+
         return { seeded: 0, message: "Rules already exist — no changes made" };
       const DEFAULT_RULES = [
         {

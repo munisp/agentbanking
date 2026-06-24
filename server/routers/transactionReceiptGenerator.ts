@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -88,6 +94,47 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishtransactionReceiptGeneratorMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `transactions.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `transactions_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `transactions_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("transactions", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const transactionReceiptGeneratorRouter = router({
   dashboard: protectedProcedure.query(async () => {
@@ -208,6 +255,11 @@ export const transactionReceiptGeneratorRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishTransactionReceiptGeneratorMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
+
+
         return { success: true, templateId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -235,6 +287,9 @@ export const transactionReceiptGeneratorRouter = router({
           .where(eq(transactions.id, input.transactionId))
           .limit(1);
         if (txRows.length === 0)
+          // Middleware fan-out (fail-open)
+          await publishTransactionReceiptGeneratorMiddleware("generateReceipt", `${Date.now()}`, { action: "generateReceipt" }).catch(() => {});
+
           return { success: false, error: "Transaction not found" };
         const tx = txRows[0];
         const receiptId = "RCT-" + crypto.randomUUID().toUpperCase();

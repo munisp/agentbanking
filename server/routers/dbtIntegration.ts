@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   registered: ["configuring"],
@@ -122,6 +128,47 @@ const _txPatterns = {
   },
 };
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishdbtIntegrationMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const dbtIntegrationRouter = router({
   list: protectedProcedure
     .input(
@@ -214,6 +261,9 @@ export const dbtIntegrationRouter = router({
     }),
 
   getProjectInfo: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishDbtIntegrationMiddleware("getProjectInfo", `${Date.now()}`, { action: "getProjectInfo" }).catch(() => {});
+
     return {
       name: "ngapp_analytics",
       version: "1.0.0",
@@ -223,6 +273,9 @@ export const dbtIntegrationRouter = router({
     };
   }),
   listModels: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishDbtIntegrationMiddleware("listModels", `${Date.now()}`, { action: "listModels" }).catch(() => {});
+
     return {
       models: [
         {
@@ -235,9 +288,15 @@ export const dbtIntegrationRouter = router({
     };
   }),
   runTests: protectedProcedure.mutation(async () => {
+    // Middleware fan-out (fail-open)
+    await publishDbtIntegrationMiddleware("runTests", `${Date.now()}`, { action: "runTests" }).catch(() => {});
+
     return { passed: 118, failed: 2, total: 120, duration: 45 };
   }),
   getLineage: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishDbtIntegrationMiddleware("getLineage", `${Date.now()}`, { action: "getLineage" }).catch(() => {});
+
     return {
       nodes: [{ name: "fct_transactions", type: "model" }],
       edges: [{ from: "stg_transactions", to: "fct_transactions" }],
@@ -246,11 +305,17 @@ export const dbtIntegrationRouter = router({
   projectInfo: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
+      // Middleware fan-out (fail-open)
+      await publishDbtIntegrationMiddleware("projectInfo", `${Date.now()}`, { action: "projectInfo" }).catch(() => {});
+
       return { items: [], total: 0, status: "ok" };
     }),
   triggerRun: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishDbtIntegrationMiddleware("triggerRun", `${Date.now()}`, { action: "triggerRun" }).catch(() => {});
+
       return { success: true, status: "ok" };
     }),
   listTests: protectedProcedure

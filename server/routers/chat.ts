@@ -18,6 +18,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -104,6 +110,47 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishchatMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `chat.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `chat_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `chat_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("chat", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const chatRouter = router({
@@ -226,6 +273,11 @@ export const chatRouter = router({
             .orderBy(desc(chatSessions.createdAt))
             .limit(input?.limit ?? 50);
 
+      // Middleware fan-out (fail-open)
+
+      await publishChatMiddleware("sendMessage", `${Date.now()}`, { action: "sendMessage" }).catch(() => {});
+
+
       return { sessions: rows, total: rows.length };
     }),
 
@@ -244,6 +296,9 @@ export const chatRouter = router({
         status: "success",
         metadata: {},
       });
+      // Middleware fan-out (fail-open)
+      await publishChatMiddleware("closeSession", `${Date.now()}`, { action: "closeSession" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -294,6 +349,14 @@ export const chatRouter = router({
       const db = (await getDb())!;
       await db.delete(chatMessages).where(eq(chatMessages.sessionId, input.id));
       await db.delete(chatSessions).where(eq(chatSessions.id, input.id));
+      // Middleware fan-out (fail-open)
+      await publishChatMiddleware("adminGetMessages", `${Date.now()}`, { action: "adminGetMessages" }).catch(() => {});
+
+      // Middleware fan-out (fail-open)
+
+      await publishChatMiddleware("adminDeleteSession", `${Date.now()}`, { action: "adminDeleteSession" }).catch(() => {});
+
+
       return { success: true };
     }),
 
@@ -336,6 +399,9 @@ export const chatRouter = router({
           supportAgentName: input.supportAgentName,
         } as any)
         .where(eq(chatSessions.id, input.sessionId));
+      // Middleware fan-out (fail-open)
+      await publishChatMiddleware("adminAssignSession", `${Date.now()}`, { action: "adminAssignSession" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -382,6 +448,14 @@ export const chatRouter = router({
         status: "success",
         metadata: { reason: input.reason },
       } as any);
+      // Middleware fan-out (fail-open)
+      await publishChatMiddleware("adminReply", `${Date.now()}`, { action: "adminReply" }).catch(() => {});
+
+      // Middleware fan-out (fail-open)
+
+      await publishChatMiddleware("adminEscalate", `${Date.now()}`, { action: "adminEscalate" }).catch(() => {});
+
+
       return { success: true };
     }),
 
@@ -393,6 +467,9 @@ export const chatRouter = router({
         .update(chatSessions)
         .set({ status: "resolved" })
         .where(eq(chatSessions.id, input.sessionId));
+      // Middleware fan-out (fail-open)
+      await publishChatMiddleware("adminResolve", `${Date.now()}`, { action: "adminResolve" }).catch(() => {});
+
       return { success: true };
     }),
 });

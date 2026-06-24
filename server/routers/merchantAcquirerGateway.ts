@@ -20,6 +20,12 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -111,6 +117,47 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
     });
   }
   return value;
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishmerchantAcquirerGatewayMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `merchant.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `merchant_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `merchant_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("merchant", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const merchantAcquirerGatewayRouter = router({
@@ -235,6 +282,9 @@ export const merchantAcquirerGatewayRouter = router({
   }),
 
   listMerchants: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishMerchantAcquirerGatewayMiddleware("listMerchants", `${Date.now()}`, { action: "listMerchants" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -243,6 +293,9 @@ export const merchantAcquirerGatewayRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishMerchantAcquirerGatewayMiddleware("onboardMerchant", `${Date.now()}`, { action: "onboardMerchant" }).catch(() => {});
+
       return { success: true };
     }),
 });

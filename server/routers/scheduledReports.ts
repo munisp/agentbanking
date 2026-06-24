@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["scheduled", "generating"],
@@ -103,6 +109,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishscheduledReportsMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `reporting.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `reporting_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `reporting_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("reporting", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const scheduledReportsRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -236,6 +283,11 @@ export const scheduledReportsRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishScheduledReportsMiddleware("createSchedule", `${Date.now()}`, { action: "createSchedule" }).catch(() => {});
+
+
         return { success: true, scheduleId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -255,6 +307,9 @@ export const scheduledReportsRouter = router({
         await db
           .delete(systemConfig)
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId));
+        // Middleware fan-out (fail-open)
+        await publishScheduledReportsMiddleware("deleteSchedule", `${Date.now()}`, { action: "deleteSchedule" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -277,6 +332,9 @@ export const scheduledReportsRouter = router({
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId))
           .limit(1);
         if (rows.length === 0)
+          // Middleware fan-out (fail-open)
+          await publishScheduledReportsMiddleware("pauseSchedule", `${Date.now()}`, { action: "pauseSchedule" }).catch(() => {});
+
           return { success: false, error: "Schedule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.status = data.status === "active" ? "paused" : "active";
@@ -298,6 +356,9 @@ export const scheduledReportsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishScheduledReportsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
       return {
         success: true,
         id: crypto.randomUUID(),
@@ -308,14 +369,23 @@ export const scheduledReportsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishScheduledReportsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
       return { success: true, deletedId: input.id };
     }),
 
   list: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishScheduledReportsMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
   recentRuns: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishScheduledReportsMiddleware("recentRuns", `${Date.now()}`, { action: "recentRuns" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -324,10 +394,16 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishScheduledReportsMiddleware("runNow", `${Date.now()}`, { action: "runNow" }).catch(() => {});
+
       return { success: true };
     }),
 
   templates: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishScheduledReportsMiddleware("templates", `${Date.now()}`, { action: "templates" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -336,6 +412,9 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishScheduledReportsMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+
       return { success: true };
     }),
 });

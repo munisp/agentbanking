@@ -36,6 +36,12 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted"],
@@ -96,6 +102,47 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishagentMicroInsuranceMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `agent.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `agent_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `agent_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const agentMicroInsuranceRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -232,6 +279,11 @@ export const agentMicroInsuranceRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishAgentMicroInsuranceMiddleware("createPolicy", `${Date.now()}`, { action: "createPolicy" }).catch(() => {});
+
+
         return {
           success: true,
           policy: {
@@ -271,6 +323,9 @@ export const agentMicroInsuranceRouter = router({
           status: "success",
           metadata: { amount: input.amount, description: input.description },
         });
+        // Middleware fan-out (fail-open)
+        await publishAgentMicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
+
         return {
           success: true,
           claimId: "CLM-" + crypto.randomUUID().toUpperCase(),

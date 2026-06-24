@@ -29,15 +29,6 @@ import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 
-
-
-async function publishPromoMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("ecommerce.promotions", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: "system", amount: Number(payload.amount ?? payload.discountAmount ?? 0), type: `ecommerce.promotions.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `ecommerce.promotions.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("ecommerce_promotions", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
-}
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -143,6 +134,47 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   }
 }
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishpromotionsMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `promotions.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `promotions_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `promotions_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("promotions", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const promotionsRouter = router({
   // ─── Coupon Management ───────────────────────────────────────────────────
   listPromotions: protectedProcedure
@@ -235,9 +267,6 @@ export const promotionsRouter = router({
           endDate: new Date(input.endDate),
         })
         .returning();
-      publishPromoMiddleware("promo.created", code, { promoId: promo.id, name: input.name, type: input.type, value: input.value });
-      cacheSet(`promo:${code}`, JSON.stringify(promo), 3600).catch(() => {});
-
       return promo;
     }),
 
@@ -311,7 +340,8 @@ export const promotionsRouter = router({
         .update(promotions)
         .set({ usedCount: sql`${promotions.usedCount} + 1` })
         .where(eq(promotions.code, input.code));
-      publishPromoMiddleware("coupon.redeemed", input.code, { code: input.code });
+      // Middleware fan-out (fail-open)
+      await publishPromotionsMiddleware("redeemCoupon", `${Date.now()}`, { action: "redeemCoupon" }).catch(() => {});
 
       return { success: true };
     }),
@@ -412,7 +442,10 @@ export const promotionsRouter = router({
           .where(eq(loyaltyAccounts.customerId, input.customerId));
       }
 
-      publishPromoMiddleware("points.earned", String(input.customerId), { customerId: input.customerId, points: input.points, type: input.type, newTier: tier });
+      // Middleware fan-out (fail-open)
+
+      await publishPromotionsMiddleware("earnPoints", `${Date.now()}`, { action: "earnPoints" }).catch(() => {});
+
 
       return {
         points: input.points,
@@ -457,7 +490,8 @@ export const promotionsRouter = router({
 
       // Convert points to value: 100 points = ₦100
       const value = input.points;
-      publishPromoMiddleware("points.redeemed", String(input.customerId), { customerId: input.customerId, points: input.points, discountAmount: value });
+      // Middleware fan-out (fail-open)
+      await publishPromotionsMiddleware("redeemPoints", `${Date.now()}`, { action: "redeemPoints" }).catch(() => {});
 
       return {
         redeemed: input.points,
@@ -504,7 +538,10 @@ export const promotionsRouter = router({
         .set({ referredBy: referrer.customerId })
         .where(eq(loyaltyAccounts.customerId, input.customerId));
 
-      publishPromoMiddleware("referral.applied", input.referralCode, { customerId: input.customerId, referrerId: referrer.customerId, bonus: referralBonus });
+      // Middleware fan-out (fail-open)
+
+      await publishPromotionsMiddleware("applyReferral", `${Date.now()}`, { action: "applyReferral" }).catch(() => {});
+
 
       return {
         success: true,

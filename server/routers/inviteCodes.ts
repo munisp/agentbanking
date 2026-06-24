@@ -24,6 +24,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -162,6 +168,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishinviteCodesMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const inviteCodesRouter = router({
   generate: protectedProcedure
@@ -393,6 +440,9 @@ export const inviteCodesRouter = router({
           UPDATE invite_codes SET used_count = ${newUsedCount}, assigned_tenant_id = ${input.tenantId}, status = ${newStatus}, updated_at = NOW()
           WHERE id = ${record.id}
         `);
+        // Middleware fan-out (fail-open)
+        await publishInviteCodesMiddleware("markUsed", `${Date.now()}`, { action: "markUsed" }).catch(() => {});
+
         return { ...record, used_count: newUsedCount, status: newStatus };
       }
 
@@ -429,6 +479,9 @@ export const inviteCodesRouter = router({
         await db.execute(
           sql`UPDATE invite_codes SET status = 'revoked', updated_at = NOW() WHERE id = ${input.id}`
         );
+        // Middleware fan-out (fail-open)
+        await publishInviteCodesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+
         return { ...record, status: "revoked" };
       }
 

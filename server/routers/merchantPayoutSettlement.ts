@@ -22,6 +22,12 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -99,6 +105,47 @@ const _constraints = {
       throw new Error(`Invalid status: ${current}`);
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishmerchantPayoutSettlementMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `settlement.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `settlement_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `settlement_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("settlement", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const merchantPayoutSettlementRouter = router({
   list: protectedProcedure
@@ -262,6 +309,9 @@ export const merchantPayoutSettlementRouter = router({
             status: "approved",
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+        // Middleware fan-out (fail-open)
+        await publishMerchantPayoutSettlementMiddleware("approvePayout", `${Date.now()}`, { action: "approvePayout" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -286,6 +336,9 @@ export const merchantPayoutSettlementRouter = router({
             processedAt: new Date(),
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+        // Middleware fan-out (fail-open)
+        await publishMerchantPayoutSettlementMiddleware("processPayout", `${Date.now()}`, { action: "processPayout" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -309,6 +362,9 @@ export const merchantPayoutSettlementRouter = router({
             status: "completed",
           })
           .where(eq(merchantPayouts.id, input.payoutId));
+        // Middleware fan-out (fail-open)
+        await publishMerchantPayoutSettlementMiddleware("completePayout", `${Date.now()}`, { action: "completePayout" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

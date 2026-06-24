@@ -28,7 +28,6 @@ import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -39,14 +38,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   archived: [],
 };
-
-
-async function publishCatalogMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("ecommerce.catalog", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: String(payload.merchantId ?? "system"), amount: Number(payload.price ?? 0), type: `ecommerce.catalog.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `ecommerce.catalog.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("ecommerce_catalog", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
-}
 
 const CATALOG_SERVICE_URL =
   process.env.CATALOG_SERVICE_URL || "http://localhost:8100";
@@ -149,6 +140,47 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishecommerceCatalogMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `ecommerce.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `ecommerce_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `ecommerce_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("ecommerce", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const ecommerceCatalogRouter = router({
@@ -297,9 +329,6 @@ export const ecommerceCatalogRouter = router({
         reorderPoint: 10,
       });
 
-      publishCatalogMiddleware("product.created", product.sku, { productId: product.id, name: product.name, price: input.price, merchantId: input.merchantId });
-      cacheSet(`catalog:product:${product.id}`, JSON.stringify(product), 3600).catch(() => {});
-
       return product;
     }),
 
@@ -334,8 +363,6 @@ export const ecommerceCatalogRouter = router({
         .where(eq(ecommerceProducts.id, input.id))
         .returning();
 
-      publishCatalogMiddleware("product.updated", String(input.id), { productId: input.id, changes: Object.keys(updates) });
-
       return updated;
     }),
 
@@ -349,7 +376,17 @@ export const ecommerceCatalogRouter = router({
         .delete(ecommerceProducts)
         .where(eq(ecommerceProducts.id, input.id));
 
-      publishCatalogMiddleware("product.deleted", String(input.id), { productId: input.id });
+      // Middleware fan-out (fail-open)
+
+      await publishEcommerceCatalogMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
+
+
+      // Middleware fan-out (fail-open)
+
+
+      await publishEcommerceCatalogMiddleware("deleteProduct", `${Date.now()}`, { action: "deleteProduct" }).catch(() => {});
+
+
 
       return { deleted: true };
     }),
@@ -412,8 +449,6 @@ export const ecommerceCatalogRouter = router({
         })
         .returning();
 
-      publishCatalogMiddleware("category.created", category.slug, { categoryId: category.id, name: category.name });
-
       return category;
     }),
 
@@ -431,6 +466,9 @@ export const ecommerceCatalogRouter = router({
         .limit(1);
 
       if (!inv) return null;
+      // Middleware fan-out (fail-open)
+      await publishEcommerceCatalogMiddleware("createCategory", `${Date.now()}`, { action: "createCategory" }).catch(() => {});
+
       return { ...inv, available: inv.quantity - inv.reserved };
     }),
 
@@ -475,9 +513,6 @@ export const ecommerceCatalogRouter = router({
         })
         .where(eq(ecommerceInventory.sku, input.sku))
         .returning();
-
-      publishCatalogMiddleware("stock.updated", input.sku, { quantity: input.quantity, reason: input.reason });
-      cacheSet(`catalog:inventory:${input.sku}`, JSON.stringify(updated), 1800).catch(() => {});
 
       return updated;
     }),

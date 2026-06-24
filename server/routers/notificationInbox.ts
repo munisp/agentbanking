@@ -29,6 +29,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["queued", "scheduled"],
@@ -127,6 +133,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishnotificationInboxMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `notifications.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `notifications_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `notifications_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const notificationInboxRouter = router({
   getStats: protectedProcedure
@@ -258,6 +305,11 @@ export const notificationInboxRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishNotificationInboxMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
+
+
         return { success: true, notification: updated };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -283,6 +335,9 @@ export const notificationInboxRouter = router({
               eq(notification_logs.status, "pending")
             )
           );
+        // Middleware fan-out (fail-open)
+        await publishNotificationInboxMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -302,6 +357,9 @@ export const notificationInboxRouter = router({
         await db
           .delete(notification_logs)
           .where(eq(notification_logs.id, input.notificationId));
+        // Middleware fan-out (fail-open)
+        await publishNotificationInboxMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -318,6 +376,9 @@ export const notificationInboxRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishNotificationInboxMiddleware("archive", `${Date.now()}`, { action: "archive" }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -326,6 +387,9 @@ export const notificationInboxRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishNotificationInboxMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
+
       return { success: true };
     }),
 

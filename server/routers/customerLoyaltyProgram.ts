@@ -17,6 +17,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -115,6 +121,47 @@ const _customerLoyaltyProgramCalc = {
   applyRate: (amount: number, rate: number) =>
     parseFloat((amount * rate).toFixed(2)),
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishcustomerLoyaltyProgramMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `customer.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `customer_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `customer_${action}`,
+    timestamp: ts,
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("customer", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const customerLoyaltyProgramRouter = router({
   getBalance: protectedProcedure
     .input(z.object({ customerId: z.number() }))
@@ -316,6 +363,11 @@ export const customerLoyaltyProgramRouter = router({
       .select({ value: count() })
       .from(customers)
       .limit(100);
+
+    // Middleware fan-out (fail-open)
+
+    await publishCustomerLoyaltyProgramMiddleware("redeemPoints", `${Date.now()}`, { action: "redeemPoints" }).catch(() => {});
+
 
     return {
       totalPointsEarned: Number(totalEarned.total ?? 0),

@@ -378,6 +378,41 @@ export const globalSearchRouter = router({
       };
     }),
 
+  // ── OpenSearch search-as-you-type ──────────────────────────
+  typeahead: protectedProcedure
+    .input(z.object({
+      query: z.string().min(1).max(200),
+      entityType: z.enum(["agents", "transactions", "customers", "disputes"]).default("agents"),
+      limit: z.number().min(1).max(20).default(10),
+    }))
+    .query(async ({ input }) => {
+      const { opensearch } = await import("../middleware/middlewareConnectors");
+      const fieldMap: Record<string, string> = {
+        agents: "name",
+        transactions: "txRef",
+        customers: "name",
+        disputes: "description",
+      };
+      const field = fieldMap[input.entityType] ?? "name";
+      return opensearch.searchAsYouType(input.entityType, field, input.query, input.limit);
+    }),
+
+  multiEntitySearch: protectedProcedure
+    .input(z.object({
+      query: z.string().min(1).max(200),
+    }))
+    .query(async ({ input }) => {
+      const { opensearch } = await import("../middleware/middlewareConnectors");
+      const queries = [
+        { index: "agents", query: { match_phrase_prefix: { name: { query: input.query } } } },
+        { index: "transactions", query: { match_phrase_prefix: { txRef: { query: input.query } } } },
+        { index: "customers", query: { match_phrase_prefix: { name: { query: input.query } } } },
+        { index: "disputes", query: { match_phrase_prefix: { description: { query: input.query } } } },
+      ];
+      const [agentResults, txResults, customerResults, disputeResults] = await opensearch.multiSearch(queries);
+      return { agents: agentResults, transactions: txResults, customers: customerResults, disputes: disputeResults };
+    }),
+
   // ── Additional query/mutation procedures ─────────────────────
   getStats_globalSearch: protectedProcedure.query(async () => {
     return {

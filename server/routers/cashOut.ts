@@ -240,6 +240,7 @@ export const cashOutRouter = router({
           dapr.publishEvent("pubsub", "cash.out.completed", { ref, amount: input.amount, agentId: session.id, customerPhone: input.customerPhone }).catch(() => {});
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
           ingestToLakehouse("cash_out_transactions", { ref, amount: input.amount, fee: feeResult.fee, agentId: session.id, customerPhone: input.customerPhone, timestamp: new Date().toISOString() }).catch(() => {});
+          import("../lakehouse").then(lh => lh.ingestToLakehousePartitioned("transactions", { ref, amount: input.amount, fee: feeResult.fee, type: "cash_out", agentId: session.id, timestamp: new Date().toISOString() })).catch(() => {});
 
           return {
             success: true,

@@ -238,6 +238,8 @@ export const cashInRouter = router({
           dapr.publishEvent("pubsub", "cash.in.completed", { ref, amount: input.amount, agentId: session.id, customerPhone: input.customerPhone }).catch(() => {});
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
           ingestToLakehouse("cash_in_transactions", { ref, amount: input.amount, fee: feeResult.fee, agentId: session.id, customerPhone: input.customerPhone, timestamp: new Date().toISOString() }).catch(() => {});
+          // Partitioned ingest for analytics (date + region partitioning)
+          import("../lakehouse").then(lh => lh.ingestToLakehousePartitioned("transactions", { ref, amount: input.amount, fee: feeResult.fee, type: "cash_in", agentId: session.id, timestamp: new Date().toISOString() })).catch(() => {});
 
           return {
             success: true,

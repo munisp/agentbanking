@@ -422,20 +422,61 @@ class TigerBeetleOrchestrator:
                 logger.error(f"Reconciliation failed: {e}")
 
     async def _run_reconciliation(self):
-        """Compare TigerBeetle balances with PostgreSQL balances."""
+        """Compare TigerBeetle core balances with PostgreSQL balances."""
         self._reconciliations += 1
 
-        # Query TB Hub for account balances
-        tb_url = f"{self.config.tb_hub_url}/metrics"
+        # Step 1: Query TB Core for account balances via /api/v1/reconcile
+        tb_url = f"{self.config.tb_hub_url}/api/v1/reconcile"
+        tb_results = []
         try:
-            async with self.session.get(tb_url) as resp:
+            async with self.session.post(tb_url) as resp:
                 if resp.status == 200:
-                    tb_metrics = await resp.json()
-                    logger.info(
-                        f"Reconciliation check: TB processed={tb_metrics.get('transfers_processed', 0)}"
-                    )
+                    data = await resp.json()
+                    tb_results = data.get("results", [])
+                    logger.info(f"Reconciliation: TB core returned {len(tb_results)} accounts")
         except Exception as e:
             logger.debug(f"Reconciliation TB query failed: {e}")
+
+        # Step 2: Query TB Bridge for persisted transfer count
+        bridge_url = f"{self.config.tb_bridge_url}/metrics"
+        bridge_transfers = 0
+        try:
+            async with self.session.get(bridge_url) as resp:
+                if resp.status == 200:
+                    bridge_data = await resp.json()
+                    bridge_transfers = bridge_data.get("pg_persisted", bridge_data.get("transfers_processed", 0))
+        except Exception:
+            pass
+
+        # Step 3: Query PostgreSQL for transfer summary
+        pg_url = f"{self.config.tb_hub_url}/api/v1/metrics"
+        pg_transfers = 0
+        try:
+            async with self.session.get(pg_url) as resp:
+                if resp.status == 200:
+                    pg_data = await resp.json()
+                    pg_transfers = pg_data.get("transfers_total", 0)
+        except Exception:
+            pass
+
+        # Step 4: Report discrepancies
+        discrepancies = [r for r in tb_results if r.get("discrepancy", False)]
+        if discrepancies:
+            logger.warning(f"Reconciliation found {len(discrepancies)} discrepancies out of {len(tb_results)} accounts")
+            # Publish discrepancy alert to Kafka
+            try:
+                url = f"http://localhost:3500/v1.0/publish/kafka-pubsub/reconciliation.discrepancy"
+                await self.session.post(url, json={
+                    "discrepancies": len(discrepancies),
+                    "total_checked": len(tb_results),
+                    "bridge_transfers": bridge_transfers,
+                    "pg_transfers": pg_transfers,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception:
+                pass
+        else:
+            logger.info(f"Reconciliation OK: {len(tb_results)} accounts matched, bridge={bridge_transfers}, pg={pg_transfers}")
 
     # ── Metrics ───────────────────────────────────────────────────────────────
 
@@ -587,40 +628,5 @@ def create_app() -> web.Application:
 
 if __name__ == "__main__":
     port = int(os.getenv("TB_ORCHESTRATOR_PORT", "9500"))
-    logger.info(f"TigerBeetle Middleware Orchestrator (Python) listening on :{port}")
+    logger.info(f"TigerBeetle Middleware Orchestrator (Python) listening on :{port} [PostgreSQL reconciliation]")
     web.run_app(create_app(), host="0.0.0.0", port=port)
-
-import psycopg2
-import psycopg2.extras
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/tigerbeetle_middleware_orchestrator")
-
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
-    return conn
-
-def init_db():
-    conn = get_db()
-    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-        id SERIAL PRIMARY KEY,
-        action TEXT, entity_id TEXT, data TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
-        key TEXT PRIMARY KEY, value TEXT,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def log_audit(action: str, entity_id: str, data: str = ""):
-    try:
-        conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass

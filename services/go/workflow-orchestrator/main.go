@@ -47,6 +47,7 @@ var (
 	wfSeq       int
 )
 
+var workflowTemplatesMu sync.RWMutex
 var workflowTemplates = map[string][]string{
 	"agent_onboarding":   {"Submit Application", "Document Upload", "KYC Check", "Background Verification", "Training Assignment", "Account Activation", "Float Allocation"},
 	"kyc_verification":   {"Document Submission", "OCR Extraction", "Identity Verification", "Address Verification", "PEP/Sanctions Check", "Approval/Rejection"},

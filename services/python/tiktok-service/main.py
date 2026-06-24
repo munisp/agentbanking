@@ -6,6 +6,87 @@ import sys
 import atexit
 import logging
 
+# PostgreSQL persistence layer (replaces in-memory state)
+import asyncpg
+import json
+import os
+
+_pg_pool = None
+
+async def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        database_url = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agentbanking")
+        try:
+            _pg_pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection failed: {e} — using in-memory fallback")
+            return None
+    return _pg_pool
+
+async def pg_get_list(service: str, collection: str) -> list:
+    pool = await get_pg_pool()
+    if pool is None:
+        return []
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_list", service
+        )
+        return json.loads(row["value"]) if row else []
+    except:
+        return []
+
+async def pg_append_list(service: str, collection: str, item: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        items = await pg_get_list(service, collection)
+        items.append(item)
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_list", json.dumps(items), service
+        )
+    except:
+        pass
+
+async def pg_get_dict(service: str, collection: str) -> dict:
+    pool = await get_pg_pool()
+    if pool is None:
+        return {}
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_dict", service
+        )
+        return json.loads(row["value"]) if row else {}
+    except:
+        return {}
+
+async def pg_set_dict(service: str, collection: str, data: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_dict", json.dumps(data), service
+        )
+    except:
+        pass
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -147,8 +228,8 @@ class MessageResponse(BaseModel):
     timestamp: datetime
 
 # In-memory storage (replace with database in production)
-messages_db = []
-orders_db = []
+messages_cache = []  # PG-backed via pg_get_list("tiktok-service", "messages")
+orders_cache = []  # PG-backed via pg_get_list("tiktok-service", "orders")
 
 # Service state
 service_start_time = datetime.now()

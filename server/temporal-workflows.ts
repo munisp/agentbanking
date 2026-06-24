@@ -485,3 +485,248 @@ export async function BillingProvisioningWorkflow(
     duration: `${Date.now() - startTime}ms`,
   };
 }
+
+// ── Dispute Resolution Workflow ─────────────────────────────────────────────
+export interface DisputeWorkflowInput {
+  disputeId: string;
+  txRef: string;
+  agentCode: string;
+  amount: number;
+  reason: string;
+  evidence?: string[];
+}
+
+const disputeActivities = proxyActivities<{
+  createDisputeRecord: (input: DisputeWorkflowInput) => Promise<{ id: string }>;
+  notifyCounterparty: (disputeId: string) => Promise<void>;
+  collectEvidence: (disputeId: string, txRef: string) => Promise<{ evidence: any[] }>;
+  assignInvestigator: (disputeId: string) => Promise<{ investigatorId: string }>;
+  makeDecision: (disputeId: string, evidence: any[]) => Promise<{ decision: string; refundAmount: number }>;
+  executeRefund: (disputeId: string, amount: number) => Promise<{ refundRef: string }>;
+  closeDispute: (disputeId: string, outcome: string) => Promise<void>;
+}>({
+  startToCloseTimeout: "10 minutes",
+  retry: { maximumAttempts: 3, initialInterval: "2s", backoffCoefficient: 2, maximumInterval: "1m" },
+});
+
+export const getDisputeStatusQuery = defineQuery<{ phase: string; decision?: string }>("getDisputeStatus");
+
+export async function DisputeResolutionWorkflow(input: DisputeWorkflowInput): Promise<{ success: boolean; outcome: string; refundRef?: string }> {
+  let phase = "filing";
+  let decision = "";
+  setHandler(getDisputeStatusQuery, () => ({ phase, decision }));
+
+  // Step 1: Create dispute record
+  phase = "creating_record";
+  const record = await disputeActivities.createDisputeRecord(input);
+
+  // Step 2: Notify counterparty
+  phase = "notifying_counterparty";
+  await disputeActivities.notifyCounterparty(record.id);
+
+  // Step 3: Collect evidence (auto-fetch from transaction logs)
+  phase = "collecting_evidence";
+  const { evidence } = await disputeActivities.collectEvidence(record.id, input.txRef);
+
+  // Step 4: Wait for investigation (with timeout)
+  phase = "investigating";
+  const { investigatorId } = await disputeActivities.assignInvestigator(record.id);
+  log.info("Investigator assigned", { disputeId: record.id, investigatorId });
+
+  // Step 5: Make decision
+  phase = "deciding";
+  const result = await disputeActivities.makeDecision(record.id, evidence);
+  decision = result.decision;
+
+  // Step 6: Execute refund if decision is in favor
+  let refundRef: string | undefined;
+  if (result.decision === "refund" && result.refundAmount > 0) {
+    phase = "refunding";
+    const refund = await disputeActivities.executeRefund(record.id, result.refundAmount);
+    refundRef = refund.refundRef;
+  }
+
+  // Step 7: Close dispute
+  phase = "closing";
+  await disputeActivities.closeDispute(record.id, result.decision);
+
+  return { success: true, outcome: result.decision, refundRef };
+}
+
+// ── KYC Approval Workflow ───────────────────────────────────────────────────
+export interface KYCWorkflowInput {
+  agentCode: string;
+  documentType: string;
+  documentId: string;
+  tier: number;
+  submittedBy: string;
+}
+
+const kycActivities = proxyActivities<{
+  validateDocument: (docId: string, docType: string) => Promise<{ valid: boolean; confidence: number; issues?: string[] }>;
+  runPEPCheck: (name: string) => Promise<{ result: string; risk: number }>;
+  runSanctionsCheck: (name: string) => Promise<{ result: string; risk: number }>;
+  runLivenessCheck: (agentCode: string) => Promise<{ passed: boolean }>;
+  assignReviewer: (docId: string, tier: number) => Promise<{ reviewerId: string }>;
+  awaitReviewDecision: (docId: string) => Promise<{ approved: boolean; notes?: string }>;
+  updateKYCTier: (agentCode: string, newTier: number) => Promise<void>;
+  notifyAgent: (agentCode: string, status: string, notes?: string) => Promise<void>;
+}>({
+  startToCloseTimeout: "30 minutes",
+  retry: { maximumAttempts: 3, initialInterval: "5s", backoffCoefficient: 2, maximumInterval: "2m" },
+});
+
+export async function KYCApprovalWorkflow(input: KYCWorkflowInput): Promise<{ approved: boolean; tier: number; notes?: string }> {
+  log.info("KYC approval started", { agentCode: input.agentCode, tier: input.tier });
+
+  // Step 1: Document validation (OCR + authenticity)
+  const docResult = await kycActivities.validateDocument(input.documentId, input.documentType);
+  if (!docResult.valid) {
+    await kycActivities.notifyAgent(input.agentCode, "document_rejected", docResult.issues?.join("; "));
+    return { approved: false, tier: input.tier, notes: "Document validation failed" };
+  }
+
+  // Step 2: PEP + Sanctions screening (parallel)
+  const [pepResult, sanctionsResult] = await Promise.all([
+    kycActivities.runPEPCheck(input.agentCode),
+    kycActivities.runSanctionsCheck(input.agentCode),
+  ]);
+  if (sanctionsResult.result === "hit") {
+    await kycActivities.notifyAgent(input.agentCode, "sanctions_block");
+    return { approved: false, tier: input.tier, notes: "Sanctions list match" };
+  }
+
+  // Step 3: Liveness check (biometric) for tier 2+
+  if (input.tier >= 2) {
+    const liveness = await kycActivities.runLivenessCheck(input.agentCode);
+    if (!liveness.passed) {
+      await kycActivities.notifyAgent(input.agentCode, "liveness_failed");
+      return { approved: false, tier: input.tier, notes: "Liveness check failed" };
+    }
+  }
+
+  // Step 4: Manual review for tier 3+ or PEP hits
+  if (input.tier >= 3 || pepResult.result === "hit") {
+    const { reviewerId } = await kycActivities.assignReviewer(input.documentId, input.tier);
+    log.info("Manual review assigned", { reviewerId, docId: input.documentId });
+    const review = await kycActivities.awaitReviewDecision(input.documentId);
+    if (!review.approved) {
+      await kycActivities.notifyAgent(input.agentCode, "review_rejected", review.notes);
+      return { approved: false, tier: input.tier, notes: review.notes };
+    }
+  }
+
+  // Step 5: Upgrade tier
+  await kycActivities.updateKYCTier(input.agentCode, input.tier);
+  await kycActivities.notifyAgent(input.agentCode, "approved");
+
+  return { approved: true, tier: input.tier };
+}
+
+// ── Agent Onboarding Workflow ───────────────────────────────────────────────
+export interface OnboardingWorkflowInput {
+  agentCode: string;
+  agentName: string;
+  businessType: string;
+  region: string;
+  supervisorCode: string;
+}
+
+const onboardingActivities = proxyActivities<{
+  createAgentProfile: (input: OnboardingWorkflowInput) => Promise<{ agentId: string }>;
+  assignTerritory: (agentCode: string, region: string) => Promise<void>;
+  provisionFloat: (agentCode: string, initialAmount: number) => Promise<{ floatRef: string }>;
+  assignTerminal: (agentCode: string) => Promise<{ terminalId: string }>;
+  scheduleTraining: (agentCode: string) => Promise<{ trainingId: string }>;
+  enableTransactions: (agentCode: string) => Promise<void>;
+  sendWelcomeKit: (agentCode: string, agentName: string) => Promise<void>;
+}>({
+  startToCloseTimeout: "5 minutes",
+  retry: { maximumAttempts: 3, initialInterval: "1s", backoffCoefficient: 2, maximumInterval: "30s" },
+});
+
+export async function AgentOnboardingWorkflow(input: OnboardingWorkflowInput): Promise<{ success: boolean; agentId: string; terminalId?: string }> {
+  log.info("Agent onboarding started", { agentCode: input.agentCode });
+
+  // Step 1: Create profile
+  const { agentId } = await onboardingActivities.createAgentProfile(input);
+
+  // Step 2: Assign territory
+  await onboardingActivities.assignTerritory(input.agentCode, input.region);
+
+  // Step 3: Provision initial float
+  await onboardingActivities.provisionFloat(input.agentCode, 50000);
+
+  // Step 4: Assign POS terminal
+  let terminalId: string | undefined;
+  try {
+    const terminal = await onboardingActivities.assignTerminal(input.agentCode);
+    terminalId = terminal.terminalId;
+  } catch {
+    log.warn("No available terminals for assignment", { agentCode: input.agentCode });
+  }
+
+  // Step 5: Schedule training
+  await onboardingActivities.scheduleTraining(input.agentCode);
+
+  // Step 6: Enable transactions
+  await onboardingActivities.enableTransactions(input.agentCode);
+
+  // Step 7: Send welcome kit
+  await onboardingActivities.sendWelcomeKit(input.agentCode, input.agentName);
+
+  return { success: true, agentId, terminalId };
+}
+
+// ── Commission Payout Workflow ──────────────────────────────────────────────
+export interface CommissionWorkflowInput {
+  period: string;
+  agentCodes?: string[];
+  currency: string;
+}
+
+const commissionActivities = proxyActivities<{
+  calculateCommissions: (period: string, agentCodes?: string[]) => Promise<Array<{ agentCode: string; amount: number; txCount: number }>>;
+  validatePayouts: (payouts: Array<{ agentCode: string; amount: number }>) => Promise<{ valid: boolean; issues?: string[] }>;
+  executePayouts: (payouts: Array<{ agentCode: string; amount: number }>, currency: string) => Promise<Array<{ agentCode: string; ref: string; status: string }>>;
+  generateCommissionReport: (period: string, results: any[]) => Promise<string>;
+  notifyAgentsOfPayout: (results: Array<{ agentCode: string; amount: number; ref: string }>) => Promise<void>;
+}>({
+  startToCloseTimeout: "15 minutes",
+  retry: { maximumAttempts: 3, initialInterval: "2s", backoffCoefficient: 2, maximumInterval: "1m" },
+});
+
+export async function CommissionPayoutWorkflow(input: CommissionWorkflowInput): Promise<{ success: boolean; totalPaid: number; agentCount: number }> {
+  log.info("Commission payout started", { period: input.period });
+
+  // Step 1: Calculate commissions for period
+  const commissions = await commissionActivities.calculateCommissions(input.period, input.agentCodes);
+  if (commissions.length === 0) {
+    return { success: true, totalPaid: 0, agentCount: 0 };
+  }
+
+  // Step 2: Validate payouts
+  const validation = await commissionActivities.validatePayouts(commissions);
+  if (!validation.valid) {
+    log.error("Commission validation failed", { issues: validation.issues });
+    return { success: false, totalPaid: 0, agentCount: 0 };
+  }
+
+  // Step 3: Execute payouts
+  const results = await commissionActivities.executePayouts(commissions, input.currency);
+  const successful = results.filter(r => r.status === "completed");
+
+  // Step 4: Generate report
+  await commissionActivities.generateCommissionReport(input.period, results);
+
+  // Step 5: Notify agents
+  const notifications = successful.map(r => ({
+    agentCode: r.agentCode,
+    amount: commissions.find(c => c.agentCode === r.agentCode)?.amount ?? 0,
+    ref: r.ref,
+  }));
+  await commissionActivities.notifyAgentsOfPayout(notifications);
+
+  const totalPaid = notifications.reduce((sum, n) => sum + n.amount, 0);
+  return { success: true, totalPaid, agentCount: successful.length };
+}

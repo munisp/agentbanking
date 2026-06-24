@@ -21,6 +21,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -75,6 +81,47 @@ function logOperation(action: string, details: Record<string, unknown>) {
     action,
     JSON.stringify(auditEntry).slice(0, 200)
   );
+}
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishglJournalEntriesCrudMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
 }
 
 export const gl_journal_entriesRouter = router({
@@ -190,6 +237,11 @@ export const gl_journal_entriesRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishglJournalEntriesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
+
         return { ...row, message: "Double-entry journal posted" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -238,6 +290,9 @@ export const gl_journal_entriesRouter = router({
           .update(gl_journal_entries)
           .set({ status: "reversed" })
           .where(eq(gl_journal_entries.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishglJournalEntriesCrudMiddleware("reverse", `${Date.now()}`, { action: "reverse" }).catch(() => {});
+
         return {
           original: input.id,
           reversal: reversal.id,
@@ -260,6 +315,9 @@ export const gl_journal_entriesRouter = router({
         await db
           .delete(gl_journal_entries)
           .where(eq(gl_journal_entries.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishglJournalEntriesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

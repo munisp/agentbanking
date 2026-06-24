@@ -173,39 +173,96 @@ pub struct CircuitBreakerConfig {
 // ── Application State ────────────────────────────────────────────────
 
 pub struct AppState {
+    // Hot path: DashMap for O(1) lookups during request processing
     ip_reputations: DashMap<String, IPReputation>,
     rate_windows: DashMap<String, RateLimitWindow>,
     circuits: DashMap<String, CircuitState>,
     threat_intel: DashMap<String, ThreatIntelEntry>,
     connection_stats: DashMap<String, ConnectionAnalysis>,
-    permanent_blocklist: DashMap<String, String>,  // ip -> reason
+    permanent_blocklist: DashMap<String, String>,
     start_time: Instant,
     global_request_count: Arc<RwLock<u64>>,
-    // Configurable limits
-    base_rate_limit: u64,      // requests per minute
-    burst_limit: u64,          // requests per second
+    // PostgreSQL for persistence across restarts
+    pg: sqlx::PgPool,
+    base_rate_limit: u64,
+    burst_limit: u64,
     max_concurrent: u32,
     block_duration_secs: u64,
     permanent_block_violations: u32,
 }
 
 impl AppState {
-    fn new() -> Self {
+    async fn new() -> Self {
+        let database_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/agentbanking".to_string());
+        let pg = sqlx::PgPool::connect(&database_url).await.unwrap_or_else(|e| {
+            eprintln!("Failed to connect to PostgreSQL: {}", e);
+            std::process::exit(1);
+        });
+
+        // Create persistence tables
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS ddos_ip_reputations (
+                ip TEXT PRIMARY KEY, reputation_score REAL NOT NULL,
+                total_requests BIGINT DEFAULT 0, blocked_requests BIGINT DEFAULT 0,
+                last_seen TIMESTAMPTZ DEFAULT NOW(), country TEXT, is_tor BOOLEAN DEFAULT FALSE
+            )"
+        ).execute(&pg).await.ok();
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS ddos_permanent_blocklist (
+                ip TEXT PRIMARY KEY, reason TEXT NOT NULL, blocked_at TIMESTAMPTZ DEFAULT NOW()
+            )"
+        ).execute(&pg).await.ok();
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS ddos_threat_intel (
+                ip TEXT PRIMARY KEY, threat_type TEXT NOT NULL, confidence REAL,
+                source TEXT, first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW()
+            )"
+        ).execute(&pg).await.ok();
+
+        // Load persisted blocklist into DashMap on startup
+        let blocklist = DashMap::new();
+        if let Ok(rows) = sqlx::query_as::<_, (String, String)>(
+            "SELECT ip, reason FROM ddos_permanent_blocklist"
+        ).fetch_all(&pg).await {
+            for (ip, reason) in rows {
+                blocklist.insert(ip, reason);
+            }
+        }
+
         Self {
             ip_reputations: DashMap::new(),
             rate_windows: DashMap::new(),
             circuits: DashMap::new(),
             threat_intel: DashMap::new(),
             connection_stats: DashMap::new(),
-            permanent_blocklist: DashMap::new(),
+            permanent_blocklist: blocklist,
             start_time: Instant::now(),
             global_request_count: Arc::new(RwLock::new(0)),
+            pg,
             base_rate_limit: 200,
             burst_limit: 20,
             max_concurrent: 50,
             block_duration_secs: 300,
             permanent_block_violations: 10,
         }
+    }
+
+    async fn persist_blocklist_entry(&self, ip: &str, reason: &str) {
+        sqlx::query(
+            "INSERT INTO ddos_permanent_blocklist (ip, reason) VALUES ($1, $2)
+             ON CONFLICT (ip) DO UPDATE SET reason = $2, blocked_at = NOW()"
+        ).bind(ip).bind(reason).execute(&self.pg).await.ok();
+    }
+
+    async fn persist_ip_reputation(&self, ip: &str, score: f64, total: u64, blocked: u64) {
+        sqlx::query(
+            "INSERT INTO ddos_ip_reputations (ip, reputation_score, total_requests, blocked_requests, last_seen)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (ip) DO UPDATE SET reputation_score = $2, total_requests = $3, blocked_requests = $4, last_seen = NOW()"
+        ).bind(ip).bind(score).bind(total as i64).bind(blocked as i64).execute(&self.pg).await.ok();
     }
 
     fn get_or_create_reputation(&self, ip: &str) -> IPReputation {

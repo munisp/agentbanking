@@ -43,6 +43,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -128,6 +134,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishresilienceMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `resilience.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `resilience_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `resilience_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("resilience", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const resilienceRouter = router({
   // ── Go: connection probe ──────────────────────────────────────────────────
@@ -332,6 +379,14 @@ export const resilienceRouter = router({
             `${OFFLINE_URL}/queue/dequeue/${input.id}`,
             { method: "POST" }
           );
+          // Middleware fan-out (fail-open)
+          await publishresilienceMiddleware("enqueueOffline", `${Date.now()}`, { action: "enqueueOffline" }).catch(() => {});
+
+          // Middleware fan-out (fail-open)
+
+          await publishresilienceMiddleware("dequeueOffline", `${Date.now()}`, { action: "dequeueOffline" }).catch(() => {});
+
+
           return { item: null, dequeued: result?.success ?? false };
         }
         // Pop the oldest pending item: list → take first → dequeue it
@@ -607,6 +662,9 @@ export const resilienceRouter = router({
             method: "POST",
           });
         }
+        // Middleware fan-out (fail-open)
+        await publishresilienceMiddleware("discardOfflineItem", `${Date.now()}`, { action: "discardOfflineItem" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -652,6 +710,9 @@ export const resilienceRouter = router({
               updatedAt: new Date(),
             },
           });
+        // Middleware fan-out (fail-open)
+        await publishresilienceMiddleware("savePushSubscription", `${Date.now()}`, { action: "savePushSubscription" }).catch(() => {});
+
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -724,6 +785,11 @@ export const resilienceRouter = router({
             )
           );
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishresilienceMiddleware("notifyPendingSync", `${Date.now()}`, { action: "notifyPendingSync" }).catch(() => {});
+
 
         return { sent, failed };
       } catch (error) {
@@ -823,6 +889,9 @@ export const resilienceRouter = router({
         errorMessage: null,
       })
       .where(eq(erpSyncLog.status, "failed"));
+    // Middleware fan-out (fail-open)
+    await publishresilienceMiddleware("retryDeadLetter", `${Date.now()}`, { action: "retryDeadLetter" }).catch(() => {});
+
     return { requeued: result.rowCount ?? 0 };
   }),
 
@@ -845,6 +914,9 @@ export const resilienceRouter = router({
           latencyMs: input.latencyMs ?? undefined,
           recordedAt: new Date(),
         });
+        // Middleware fan-out (fail-open)
+        await publishresilienceMiddleware("logConnectivity", `${Date.now()}`, { action: "logConnectivity" }).catch(() => {});
+
         return { logged: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -927,6 +999,9 @@ export const resilienceRouter = router({
           .limit(200);
 
         if (rows.length < 3) {
+          // Middleware fan-out (fail-open)
+          await publishresilienceMiddleware("alertOnPoorConnectivity", `${Date.now()}`, { action: "alertOnPoorConnectivity" }).catch(() => {});
+
           return {
             alerted: false,
             reason: "insufficient_data" as const,
@@ -1106,6 +1181,14 @@ export const resilienceRouter = router({
           .update(dlqMessages)
           .set({ status: "resolved", resolvedAt: new Date() })
           .where(eq(dlqMessages.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishresilienceMiddleware("createDlqMessage", `${Date.now()}`, { action: "createDlqMessage" }).catch(() => {});
+
+        // Middleware fan-out (fail-open)
+
+        await publishresilienceMiddleware("resolveDlqMessage", `${Date.now()}`, { action: "resolveDlqMessage" }).catch(() => {});
+
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1160,6 +1243,9 @@ export const resilienceRouter = router({
           .from(agentPushSubscriptions)
           .where(eq(agentPushSubscriptions.agentCode, input.agentCode))
           .orderBy(agentPushSubscriptions.createdAt);
+        // Middleware fan-out (fail-open)
+        await publishresilienceMiddleware("retryDlqMessage", `${Date.now()}`, { action: "retryDlqMessage" }).catch(() => {});
+
         return {
           subscriptions: subs.map(s => ({
             id: s.id,
@@ -1327,7 +1413,7 @@ export const resilienceRouter = router({
         queuedTransactions: z.number().optional(),
       })
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       // Detect tier from telemetry
       let tier = "3g";
       if (input.packetLossPct > 30) tier = "offline";
@@ -1346,6 +1432,11 @@ export const resilienceRouter = router({
           : input.packetLossPct > 10
             ? "degraded"
             : "online";
+
+      // Middleware fan-out (fail-open)
+
+      await publishresilienceMiddleware("reportTerminalTelemetry", `${Date.now()}`, { action: "reportTerminalTelemetry" }).catch(() => {});
+
 
       return {
         tier,

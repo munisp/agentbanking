@@ -24,7 +24,7 @@ const AnalyticsDashboardScreen: React.FC = () => {
   const load = useCallback(async () => {
     try {
       setError('');
-      const { data } = await apiClient.get('/dashboard/list?page=1&limit=50');
+      const { data } = await apiClient.get('/analytics/list?page=1&limit=50');
       setItems(data?.items ?? data?.data ?? []);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load');
@@ -35,6 +35,25 @@ const AnalyticsDashboardScreen: React.FC = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleCreate = useCallback(async (data: Record<string, unknown>) => {
+    try {
+      await apiClient.post('/analytics/create', data);
+      load(); // Refresh list
+    } catch (e: any) {
+      setError(e?.message ?? 'Create failed');
+    }
+  }, [load]);
+
+  const handleDelete = useCallback(async (id: string | number) => {
+    try {
+      await apiClient.delete(`/analytics/${id}`);
+      setItems(prev => prev.filter(item => item.id !== id));
+    } catch (e: any) {
+      setError(e?.message ?? 'Delete failed');
+    }
+  }, []);
+
 
   const filtered = items.filter(item => {
     if (!search) return true;
@@ -70,7 +89,7 @@ const AnalyticsDashboardScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Analytics</Text>
+      <Text style={styles.header}>Analytics Dashboard</Text>
 
       {/* Summary */}
       <View style={styles.summaryRow}>

@@ -22,6 +22,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -89,6 +95,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishworkflowEngineMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const workflowEngineRouter = router({
   listDefinitions: protectedProcedure
@@ -215,6 +262,11 @@ export const workflowEngineRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishworkflowEngineMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
+
+
         return { definition: def };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -266,6 +318,9 @@ export const workflowEngineRouter = router({
             slaDeadline,
           })
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware("startInstance", `${Date.now()}`, { action: "startInstance" }).catch(() => {});
+
         return { instance };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -377,6 +432,9 @@ export const workflowEngineRouter = router({
             stepHistory: JSON.stringify(history),
           })
           .where(eq(workflowInstances.id, input.instanceId));
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware("advanceStep", `${Date.now()}`, { action: "advanceStep" }).catch(() => {});
+
         return {
           success: true,
           nextStep,
@@ -407,6 +465,9 @@ export const workflowEngineRouter = router({
           .update(workflowInstances)
           .set({ status: "cancelled", completedAt: new Date() })
           .where(eq(workflowInstances.id, input.instanceId));
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware("cancelInstance", `${Date.now()}`, { action: "cancelInstance" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

@@ -19,6 +19,12 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -94,6 +100,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishagentSuspensionLogCrudMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `agent.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `agent_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `agent_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const agentSuspensionLogRouter = router({
   list: protectedProcedure
@@ -311,6 +358,9 @@ export const agentSuspensionLogRouter = router({
             performedBy: input.performedBy,
           })
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishagentSuspensionLogCrudMiddleware("suspend", `${Date.now()}`, { action: "suspend" }).catch(() => {});
+
         return { ...row, message: "Agent suspended successfully" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -352,6 +402,9 @@ export const agentSuspensionLogRouter = router({
             performedBy: input.performedBy,
           })
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishagentSuspensionLogCrudMiddleware("reinstate", `${Date.now()}`, { action: "reinstate" }).catch(() => {});
+
         return { ...row, message: "Agent reinstated successfully" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

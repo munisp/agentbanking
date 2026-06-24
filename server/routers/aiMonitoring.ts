@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["scheduled", "generating"],
@@ -134,6 +140,47 @@ const _constraints = {
       throw new Error(`Invalid status: ${current}`);
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishaiMonitoringMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const aiMonitoringRouter = router({
   models: protectedProcedure
@@ -329,6 +376,11 @@ export const aiMonitoringRouter = router({
         metadata: { input: typeof input === "object" ? input : {} },
       });
 
+      // Middleware fan-out (fail-open)
+
+      await publishaiMonitoringMiddleware("retrain", `${Date.now()}`, { action: "retrain" }).catch(() => {});
+
+
       return {
         success: true,
         domain: "ai_monitor",
@@ -378,11 +430,17 @@ export const aiMonitoringRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishaiMonitoringMiddleware("throughputTimeSeries", `${Date.now()}`, { action: "throughputTimeSeries" }).catch(() => {});
+
       return { data: null, timestamp: new Date().toISOString() };
     }),
   acknowledgeAlert: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishaiMonitoringMiddleware("acknowledgeAlert", `${Date.now()}`, { action: "acknowledgeAlert" }).catch(() => {});
+
       return {
         success: true,
         action: "acknowledgeAlert",

@@ -21,6 +21,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   not_started: ["documents_submitted"],
@@ -110,6 +116,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishcomplianceFilingMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `compliance.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `compliance_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `compliance_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("compliance", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const complianceFilingRouter = router({
   list: protectedProcedure
@@ -234,6 +281,11 @@ export const complianceFilingRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishcomplianceFilingMiddleware("createFiling", `${Date.now()}`, { action: "createFiling" }).catch(() => {});
+
+
         return { filing };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -258,6 +310,9 @@ export const complianceFilingRouter = router({
             submittedAt: new Date(),
           } as any)
           .where(eq(complianceFilings.id, input.filingId));
+        // Middleware fan-out (fail-open)
+        await publishcomplianceFilingMiddleware("submitFiling", `${Date.now()}`, { action: "submitFiling" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -281,6 +336,9 @@ export const complianceFilingRouter = router({
             status: "acknowledged",
           })
           .where(eq(complianceFilings.id, input.filingId));
+        // Middleware fan-out (fail-open)
+        await publishcomplianceFilingMiddleware("acknowledgeFiling", `${Date.now()}`, { action: "acknowledgeFiling" }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

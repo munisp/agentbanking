@@ -25,6 +25,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["queued", "scheduled"],
@@ -186,6 +192,47 @@ const _txPatterns = {
   },
 };
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishsmsReceiptMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `notifications.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `notifications_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `notifications_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const smsReceiptRouter = router({
   // ── Send receipt SMS for a transaction ───────────────────────────────────
   send: protectedProcedure
@@ -344,6 +391,11 @@ export const smsReceiptRouter = router({
             .where(eq(transactions.ref, input.transactionRef));
         }
 
+        // Middleware fan-out (fail-open)
+
+        await publishsmsReceiptMiddleware("autoSend", `${Date.now()}`, { action: "autoSend" }).catch(() => {});
+
+
         return { success: smsResult.success, messageId: smsResult.messageId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -390,6 +442,9 @@ export const smsReceiptRouter = router({
 
         const message = lines.join("\n");
         const smsResult = await sendTermiiSMS(input.recipientPhone, message);
+        // Middleware fan-out (fail-open)
+        await publishsmsReceiptMiddleware("sendUssd", `${Date.now()}`, { action: "sendUssd" }).catch(() => {});
+
         return {
           success: smsResult.success,
           messageId: smsResult.messageId,
@@ -409,6 +464,9 @@ export const smsReceiptRouter = router({
       z.object({ sessionId: z.string().min(1).max(255), content: z.string() })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsmsReceiptMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+
       return {
         messageId: `msg-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -500,6 +558,9 @@ export const smsReceiptRouter = router({
     };
   }),
   myDisputes: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsmsReceiptMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
+
     return {
       disputes: [] as Array<{
         id: number;
@@ -519,6 +580,9 @@ export const smsReceiptRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsmsReceiptMiddleware("processInput", `${Date.now()}`, { action: "processInput" }).catch(() => {});
+
       return { response: "", type: "text" as const };
     }),
   raise: protectedProcedure
@@ -530,6 +594,9 @@ export const smsReceiptRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsmsReceiptMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
+
       return { ticketId: `ticket-${Date.now()}`, status: "open" as const };
     }),
   recordSwitch: protectedProcedure
@@ -541,6 +608,9 @@ export const smsReceiptRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsmsReceiptMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
+
       return { success: true, switchId: `sw-${Date.now()}` };
     }),
   requestRefund: protectedProcedure
@@ -552,9 +622,15 @@ export const smsReceiptRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsmsReceiptMiddleware("requestRefund", `${Date.now()}`, { action: "requestRefund" }).catch(() => {});
+
       return { refundId: `ref-${Date.now()}`, status: "pending" as const };
     }),
   startSession: protectedProcedure.mutation(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsmsReceiptMiddleware("startSession", `${Date.now()}`, { action: "startSession" }).catch(() => {});
+
     return {
       sessionId: `sess-${Date.now()}`,
       startedAt: new Date().toISOString(),

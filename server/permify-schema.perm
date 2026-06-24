@@ -1,0 +1,116 @@
+// 54Link Platform — Permify Authorization Schema
+// Defines entities, relationships, and permissions for fine-grained access control
+
+entity user {}
+
+entity organization {
+  relation admin @user
+  relation member @user
+  relation viewer @user
+
+  permission manage = admin
+  permission read = admin or member or viewer
+}
+
+entity agent {
+  relation owner @user
+  relation supervisor @user
+  relation organization @organization
+
+  permission manage = owner or supervisor or organization.admin
+  permission view = owner or supervisor or organization.member
+  permission transact = owner
+  permission suspend = supervisor or organization.admin
+}
+
+entity terminal {
+  relation assignee @agent
+  relation organization @organization
+
+  permission operate = assignee.owner or assignee.supervisor
+  permission configure = assignee.supervisor or organization.admin
+  permission view = assignee.owner or assignee.supervisor or organization.member
+}
+
+entity transaction {
+  relation initiator @agent
+  relation approver @user
+  relation organization @organization
+
+  permission view = initiator.owner or initiator.supervisor or organization.member
+  permission approve = approver or organization.admin
+  permission reverse = initiator.supervisor or organization.admin
+  permission dispute = initiator.owner or initiator.supervisor
+}
+
+entity wallet {
+  relation owner @user
+  relation agent @agent
+  relation organization @organization
+
+  permission view_balance = owner or agent.owner or agent.supervisor
+  permission transfer = owner or agent.owner
+  permission freeze = agent.supervisor or organization.admin
+  permission close = organization.admin
+}
+
+entity settlement {
+  relation processor @user
+  relation organization @organization
+
+  permission view = processor or organization.member
+  permission process = processor or organization.admin
+  permission approve = organization.admin
+}
+
+entity kyc_document {
+  relation subject @user
+  relation reviewer @user
+  relation organization @organization
+
+  permission view = subject or reviewer or organization.admin
+  permission review = reviewer or organization.admin
+  permission approve = organization.admin
+}
+
+entity compliance_report {
+  relation author @user
+  relation organization @organization
+
+  permission view = author or organization.admin
+  permission submit = author or organization.admin
+  permission archive = organization.admin
+}
+
+entity stablecoin_wallet {
+  relation owner @user
+  relation organization @organization
+
+  permission mint = organization.admin
+  permission burn = organization.admin
+  permission transfer = owner
+  permission view = owner or organization.member
+  permission freeze = organization.admin
+}
+
+entity loan {
+  relation borrower @agent
+  relation underwriter @user
+  relation organization @organization
+
+  permission view = borrower.owner or underwriter or organization.member
+  permission approve = underwriter or organization.admin
+  permission disburse = organization.admin
+  permission collect = borrower.supervisor or organization.admin
+}
+
+entity ecommerce_order {
+  relation buyer @user
+  relation seller @agent
+  relation organization @organization
+
+  permission view = buyer or seller.owner or organization.member
+  permission cancel = buyer or seller.owner or organization.admin
+  permission refund = seller.owner or seller.supervisor or organization.admin
+  permission ship = seller.owner
+}

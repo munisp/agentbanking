@@ -36,6 +36,25 @@ const SecurityDashboardScreen: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleCreate = useCallback(async (data: Record<string, unknown>) => {
+    try {
+      await apiClient.post('/dashboard/create', data);
+      load(); // Refresh list
+    } catch (e: any) {
+      setError(e?.message ?? 'Create failed');
+    }
+  }, [load]);
+
+  const handleDelete = useCallback(async (id: string | number) => {
+    try {
+      await apiClient.delete(`/dashboard/${id}`);
+      setItems(prev => prev.filter(item => item.id !== id));
+    } catch (e: any) {
+      setError(e?.message ?? 'Delete failed');
+    }
+  }, []);
+
+
   const filtered = items.filter(item => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -70,7 +89,7 @@ const SecurityDashboardScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Security</Text>
+      <Text style={styles.header}>Security Dashboard</Text>
 
       {/* Summary */}
       <View style={styles.summaryRow}>

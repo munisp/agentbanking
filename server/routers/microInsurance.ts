@@ -21,6 +21,12 @@ import {
   withIdempotency,
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 interface InsuranceProduct {
   id: string;
@@ -123,6 +129,47 @@ const PRODUCTS: InsuranceProduct[] = [
   },
 ];
 
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishmicroInsuranceMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `insurance.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `insurance_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `insurance_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("insurance", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
+
 export const microInsuranceRouter = router({
   listProducts: protectedProcedure
     .input(
@@ -206,6 +253,11 @@ export const microInsuranceRouter = router({
         },
       });
 
+      // Middleware fan-out (fail-open)
+
+      await publishmicroInsuranceMiddleware("enroll", `${Date.now()}`, { action: "enroll" }).catch(() => {});
+
+
       return {
         policyNumber: policyRef,
         productId: input.productId,
@@ -255,6 +307,11 @@ export const microInsuranceRouter = router({
           amount: input.amount,
         },
       });
+
+      // Middleware fan-out (fail-open)
+
+      await publishmicroInsuranceMiddleware("fileClaim", `${Date.now()}`, { action: "fileClaim" }).catch(() => {});
+
 
       return {
         claimNumber: claimRef,

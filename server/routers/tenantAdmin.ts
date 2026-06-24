@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   proposed: ["review"],
@@ -85,6 +91,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishtenantAdminMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `admin.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `admin_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `admin_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("admin", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const tenantAdminRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -261,6 +308,11 @@ export const tenantAdminRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishtenantAdminMiddleware("createTenant", `${Date.now()}`, { action: "createTenant" }).catch(() => {});
+
+
         return { success: true, tenant };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -303,6 +355,9 @@ export const tenantAdminRouter = router({
           status: "success",
           metadata: updates,
         });
+        // Middleware fan-out (fail-open)
+        await publishtenantAdminMiddleware("updateTenant", `${Date.now()}`, { action: "updateTenant" }).catch(() => {});
+
         return { success: true, tenant: updated };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -331,6 +386,9 @@ export const tenantAdminRouter = router({
           status: "success",
           metadata: { reason: input.reason },
         });
+        // Middleware fan-out (fail-open)
+        await publishtenantAdminMiddleware("suspendTenant", `${Date.now()}`, { action: "suspendTenant" }).catch(() => {});
+
         return { success: true, tenant: updated };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -343,6 +401,9 @@ export const tenantAdminRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishtenantAdminMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+
     return {
       totalItems: 0,
       activeItems: 0,
@@ -356,10 +417,16 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishtenantAdminMiddleware("inviteUser", `${Date.now()}`, { action: "inviteUser" }).catch(() => {});
+
       return { success: true };
     }),
 
   listUsers: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishtenantAdminMiddleware("listUsers", `${Date.now()}`, { action: "listUsers" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -368,10 +435,16 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishtenantAdminMiddleware("removeUser", `${Date.now()}`, { action: "removeUser" }).catch(() => {});
+
       return { success: true };
     }),
 
   settings: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishtenantAdminMiddleware("settings", `${Date.now()}`, { action: "settings" }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -380,6 +453,9 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishtenantAdminMiddleware("toggleLive", `${Date.now()}`, { action: "toggleLive" }).catch(() => {});
+
       return { success: true };
     }),
   updateUser: protectedProcedure

@@ -56,6 +56,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   not_started: ["documents_submitted"],
@@ -131,6 +137,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishkycMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `kyc.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `kyc_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `kyc_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const kycRouter = router({
   // ─── Retry Cooldown ──────────────────────────────────────────────────────────
@@ -301,6 +348,18 @@ export const kycRouter = router({
         const thresholds = getDeviceThresholds(fingerprint);
         const history = getDeviceLivenessHistory(fingerprint.fingerprintHash);
 
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
+
+
+        // Middleware fan-out (fail-open)
+
+
+        await publishkycMiddleware("registerDevice", `${Date.now()}`, { action: "registerDevice" }).catch(() => {});
+
+
+
         return {
           fingerprint,
           thresholds,
@@ -353,6 +412,9 @@ export const kycRouter = router({
           input.method,
           input.score
         );
+        // Middleware fan-out (fail-open)
+        await publishkycMiddleware("recordDeviceAttempt", `${Date.now()}`, { action: "recordDeviceAttempt" }).catch(() => {});
+
         return { recorded: true, fingerprintHash: fingerprint.fingerprintHash };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -449,6 +511,9 @@ export const kycRouter = router({
 
         if (!challenge) {
           // Service unavailable — return session ID so the client can still proceed
+          // Middleware fan-out (fail-open)
+          await publishkycMiddleware("startLiveness", `${Date.now()}`, { action: "startLiveness" }).catch(() => {});
+
           return {
             sessionId: session.id,
             challengeId: null,
@@ -551,6 +616,11 @@ export const kycRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(kycSessions.id, input.sessionId));
+
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("submitLivenessFrame", `${Date.now()}`, { action: "submitLivenessFrame" }).catch(() => {});
+
 
         return {
           sessionId: input.sessionId,
@@ -847,6 +917,9 @@ export const kycRouter = router({
             Buffer.alloc(0),
             input.mimeType
           );
+          // Middleware fan-out (fail-open)
+          await publishkycMiddleware("requestDocumentUpload", `${Date.now()}`, { action: "requestDocumentUpload" }).catch(() => {});
+
           return {
             uploadUrl: url,
             fileKey,
@@ -909,6 +982,11 @@ export const kycRouter = router({
               `Review in Admin > Liveness Device Analytics.`,
           }).catch(() => {});
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("geoIpCorrelate", `${Date.now()}`, { action: "geoIpCorrelate" }).catch(() => {});
+
 
         return {
           riskScore: correlation.riskScore,

@@ -28,6 +28,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -107,6 +113,28 @@ const KNOWN_GROUPS = [
   { groupId: "webhook-dispatcher", topics: ["pos.webhooks.outbound"] },
   { groupId: "sms-sender", topics: ["pos.sms.receipts"] },
   { groupId: "push-sender", topics: ["pos.push.notifications"] },
+
+  // ── Domain-Specific Consumer Groups (full platform coverage) ──
+  { groupId: "kyc-document-processor", topics: ["pos.kyc.submitted", "pos.kyc.approved", "pos.kyc.rejected"] },
+  { groupId: "kyc-limit-monitor", topics: ["kyc.limit.exceeded", "kyc.tier.upgraded", "kyc.document.expired", "kyc.monitoring.hit"] },
+  { groupId: "float-alert-processor", topics: ["pos.float.topped_up", "pos.float.depleted", "float.alert.warning", "float.alert.critical"] },
+  { groupId: "dispute-processor", topics: ["pos.disputes.opened", "pos.disputes.resolved", "pos.dispute"] },
+  { groupId: "fraud-alert-processor", topics: ["pos.fraud.alert_raised"] },
+  { groupId: "insider-threat-processor", topics: ["insider.approval.requested", "insider.approval.actioned", "insider.threat.velocity", "insider.auth.step-up"] },
+  { groupId: "agent-lifecycle-processor", topics: ["pos.agents.registered", "pos.agents.suspended"] },
+  { groupId: "settlement-processor", topics: ["settlement.fee.split", "settlement.batch.completed", "reconciliation.completed"] },
+  { groupId: "recurring-payment-processor", topics: ["recurring.payment.executed"] },
+  { groupId: "outbox-relay", topics: ["outbox.published", "outbox.dlq.moved"] },
+  { groupId: "saga-monitor", topics: ["saga.workflow.started", "saga.workflow.completed", "saga.workflow.compensated"] },
+  { groupId: "pos-fleet-manager", topics: ["pos.terminal.fleet", "pos.device.fleet", "pos.firmware.ota", "pos.ota.delta.requested"] },
+  { groupId: "pos-batch-processor", topics: ["pos.batch.settlement", "pos.eod.reconciliation"] },
+  { groupId: "mdm-processor", topics: ["pos.mdm"] },
+  { groupId: "leasing-processor", topics: ["pos.terminal.leasing"] },
+  { groupId: "canary-monitor", topics: ["pos.canary.release", "pos.canary.rollback"] },
+  { groupId: "card-payment-processor", topics: ["pos.card.payment"] },
+  { groupId: "geo-velocity-processor", topics: ["pos.geo.velocity.alert"] },
+  { groupId: "sim-failover-processor", topics: ["sim.failover.triggered", "sim.slot.degraded", "sim.carrier.switched"] },
+
 ];
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
@@ -146,6 +174,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishkafkaConsumerMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const kafkaConsumerRouter = router({
   /** Get all consumer groups with lag */
@@ -284,6 +353,9 @@ export const kafkaConsumerRouter = router({
             .set({ status: "retrying" })
             .where(eq(dlqMessages.id, msg.id));
         }
+        // Middleware fan-out (fail-open)
+        await publishkafkaConsumerMiddleware("drainDlq", `${Date.now()}`, { action: "drainDlq" }).catch(() => {});
+
         return { requeued: pending.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -316,6 +388,9 @@ export const kafkaConsumerRouter = router({
         for (const msg of toDelete) {
           await db.delete(dlqMessages).where(eq(dlqMessages.id, msg.id));
         }
+        // Middleware fan-out (fail-open)
+        await publishkafkaConsumerMiddleware("purgeDlq", `${Date.now()}`, { action: "purgeDlq" }).catch(() => {});
+
         return { purged: toDelete.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

@@ -26,6 +26,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   proposed: ["review"],
@@ -81,6 +87,47 @@ const _txPatterns = {
     });
   },
 };
+
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishsprint15FeaturesMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>,
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+}
 
 export const bulkNotifRouter = router({
   sendBulk: protectedProcedure
@@ -140,6 +187,11 @@ export const bulkNotifRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        // Middleware fan-out (fail-open)
+
+        await publishsprint15FeaturesMiddleware("sendBulk", `${Date.now()}`, { action: "sendBulk" }).catch(() => {});
+
+
         return {
           sent: input.agentIds.length,
           channel: input.channel,
@@ -194,11 +246,17 @@ export const bulkNotifRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("listCampaigns", `${Date.now()}`, { action: "listCampaigns" }).catch(() => {});
+
       return { items: [], total: 0 };
     }),
   createCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("createCampaign", `${Date.now()}`, { action: "createCampaign" }).catch(() => {});
+
       return {
         success: true,
         action: "createCampaign",
@@ -209,6 +267,9 @@ export const bulkNotifRouter = router({
   startCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("startCampaign", `${Date.now()}`, { action: "startCampaign" }).catch(() => {});
+
       return {
         success: true,
         action: "startCampaign",
@@ -219,6 +280,9 @@ export const bulkNotifRouter = router({
   pauseCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("pauseCampaign", `${Date.now()}`, { action: "pauseCampaign" }).catch(() => {});
+
       return {
         success: true,
         action: "pauseCampaign",
@@ -237,12 +301,23 @@ export const retryQueueRouter = router({
       .from(transactions)
       .orderBy(desc(transactions.id))
       .limit(10);
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+
+    // Middleware fan-out (fail-open)
+
+    await publishsprint15FeaturesMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+
+
     return { items: rows, total: rows.length };
   }),
   retry: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("retry", `${Date.now()}`, { action: "retry" }).catch(() => {});
+
         return {
           success: true,
           id: input.id,
@@ -260,6 +335,9 @@ export const retryQueueRouter = router({
   retryNow: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("retryNow", `${Date.now()}`, { action: "retryNow" }).catch(() => {});
+
       return {
         success: true,
         action: "retryNow",
@@ -270,6 +348,9 @@ export const retryQueueRouter = router({
   purgeDeadLetters: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("purgeDeadLetters", `${Date.now()}`, { action: "purgeDeadLetters" }).catch(() => {});
+
       return {
         success: true,
         action: "purgeDeadLetters",
@@ -304,6 +385,14 @@ export const digestRouter = router({
 // Rate Limit Dashboard Router
 export const rateLimitDashboardRouter = router({
   getStatus: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
+
+    // Middleware fan-out (fail-open)
+
+    await publishsprint15FeaturesMiddleware("getStatus", `${Date.now()}`, { action: "getStatus" }).catch(() => {});
+
+
     return {
       endpoints: [],
       globalLimit: 1000,
@@ -316,6 +405,9 @@ export const rateLimitDashboardRouter = router({
     .input(z.object({ endpoint: z.string(), limit: z.number() }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("updateLimit", `${Date.now()}`, { action: "updateLimit" }).catch(() => {});
+
         return {
           success: true,
           endpoint: input.endpoint,
@@ -340,12 +432,35 @@ export const sysConfigRouter = router({
       .select({ total: count() })
       .from(tenants)
       .limit(100);
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
+
+    // Middleware fan-out (fail-open)
+
+    await publishsprint15FeaturesMiddleware("getAll", `${Date.now()}`, { action: "getAll" }).catch(() => {});
+
+
     return { configs: [], tenantCount: total };
   }),
   update: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+
+        // Middleware fan-out (fail-open)
+
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+
+
+        // Middleware fan-out (fail-open)
+
+
+        await publishsprint15FeaturesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+
+
+
         return {
           success: true,
           key: input.key,
@@ -365,12 +480,18 @@ export const sysConfigRouter = router({
 // Session Management Router
 export const sessionMgmtRouter = router({
   listActive: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("listActive", `${Date.now()}`, { action: "listActive" }).catch(() => {});
+
     return { sessions: [], total: 0 };
   }),
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+
         return {
           success: true,
           sessionId: input.sessionId,
@@ -388,6 +509,9 @@ export const sessionMgmtRouter = router({
   forceLogout: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("forceLogout", `${Date.now()}`, { action: "forceLogout" }).catch(() => {});
+
       return {
         success: true,
         action: "forceLogout",
@@ -398,6 +522,9 @@ export const sessionMgmtRouter = router({
   logoutAll: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("logoutAll", `${Date.now()}`, { action: "logoutAll" }).catch(() => {});
+
       return {
         success: true,
         action: "logoutAll",
@@ -415,6 +542,9 @@ export const dataExportRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("requestExport", `${Date.now()}`, { action: "requestExport" }).catch(() => {});
+
         return {
           jobId: `export-${Date.now()}`,
           format: input.format,
@@ -463,11 +593,17 @@ export const dataExportRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("listJobs", `${Date.now()}`, { action: "listJobs" }).catch(() => {});
+
       return { items: [], total: 0 };
     }),
   createJob: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("createJob", `${Date.now()}`, { action: "createJob" }).catch(() => {});
+
       return {
         success: true,
         action: "createJob",
@@ -520,12 +656,18 @@ export const webhookRetryRouter = router({
   listFailed: protectedProcedure.query(async () => {
     const db = (await getDb())!;
     const rows = await db.select().from(webhookEndpoints).limit(10);
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("listFailed", `${Date.now()}`, { action: "listFailed" }).catch(() => {});
+
     return { items: rows, total: rows.length };
   }),
   retryWebhook: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("retryWebhook", `${Date.now()}`, { action: "retryWebhook" }).catch(() => {});
+
         return {
           success: true,
           id: input.id,
@@ -545,6 +687,9 @@ export const webhookRetryRouter = router({
 // Event Bus Router
 export const eventBusRouter = router({
   getTopics: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("getTopics", `${Date.now()}`, { action: "getTopics" }).catch(() => {});
+
     return {
       topics: [
         "transactions",
@@ -562,6 +707,9 @@ export const eventBusRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("publish", `${Date.now()}`, { action: "publish" }).catch(() => {});
+
         return {
           success: true,
           topic: input.topic,
@@ -670,6 +818,9 @@ export const cacheRouter = router({
       const count = pattern.includes("*")
         ? await invalidateCacheByPrefix(pattern.replace("*", ""))
         : await invalidateCache(pattern);
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("flush", `${Date.now()}`, { action: "flush" }).catch(() => {});
+
       return { success: true, flushedKeys: count, pattern };
     }),
   invalidate: protectedProcedure
@@ -679,6 +830,9 @@ export const cacheRouter = router({
         const { invalidateCache } = await import("../lib/cacheAside");
         await invalidateCache(input.id);
       }
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("invalidate", `${Date.now()}`, { action: "invalidate" }).catch(() => {});
+
       return {
         success: true,
         action: "invalidate",
@@ -691,6 +845,9 @@ export const cacheRouter = router({
     .mutation(async ({ input }) => {
       const { invalidateCacheByPrefix } = await import("../lib/cacheAside");
       await invalidateCacheByPrefix("");
+      // Middleware fan-out (fail-open)
+      await publishsprint15FeaturesMiddleware("invalidateAll", `${Date.now()}`, { action: "invalidateAll" }).catch(() => {});
+
       return {
         success: true,
         action: "invalidateAll",
@@ -750,6 +907,9 @@ export const notificationAnalyticsRouter = router({
 // User Quiet Hours Router
 export const userQuietHoursRouter = router({
   get: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishsprint15FeaturesMiddleware("get", `${Date.now()}`, { action: "get" }).catch(() => {});
+
     return {
       enabled: false,
       startHour: 22,
@@ -796,6 +956,9 @@ export const notifTemplateRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+
         return { success: true, id: `tpl-${Date.now()}`, ...input };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -834,6 +997,9 @@ export const notifTemplateRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       try {
+        // Middleware fan-out (fail-open)
+        await publishsprint15FeaturesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+
         return {
           success: true,
           id: input.id,

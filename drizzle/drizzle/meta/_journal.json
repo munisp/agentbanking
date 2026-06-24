@@ -295,6 +295,13 @@
       "when": 1779465600000,
       "tag": "0043_tigerbeetle_bidir_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782320100000,
+      "tag": "0044_full_platform_production_hardening",
+      "breakpoints": true
     }
   ]
 }

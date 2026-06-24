@@ -8,24 +8,29 @@ class EcommerceProductCatalogScreen extends StatefulWidget {
 }
 
 class _EcommerceProductCatalogScreenState extends State<EcommerceProductCatalogScreen> {
-  Map<String, dynamic> _data = {};
-  List<dynamic> _items = [];
+  List<dynamic> _products = [];
+  List<dynamic> _categories = [];
   bool _loading = true;
   String _error = '';
   String _search = '';
+  int? _selectedCategory;
+  String _sortBy = 'newest';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadData();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadData() async {
     try {
-      final result = await ApiService.instance.get('/general/list', queryParams: {'page': '1', 'limit': '50'});
+      final results = await Future.wait([
+        ApiService.instance.get('/ecommerceCatalog/listProducts', queryParams: {'limit': '50'}),
+        ApiService.instance.get('/ecommerceCatalog/listCategories'),
+      ]);
       setState(() {
-        _data = result ?? {};
-        _items = result['items'] ?? result['data'] ?? [];
+        _products = results[0]?['products'] ?? [];
+        _categories = results[1]?['categories'] ?? [];
         _loading = false;
       });
     } catch (e) {
@@ -33,19 +38,54 @@ class _EcommerceProductCatalogScreenState extends State<EcommerceProductCatalogS
     }
   }
 
-  List<dynamic> get _filtered => _items.where((item) {
-    if (_search.isEmpty) return true;
-    final q = _search.toLowerCase();
-    return (item['name'] ?? item['title'] ?? item['id'] ?? '').toString().toLowerCase().contains(q);
-  }).toList();
+  Future<void> _searchProducts(String query) async {
+    if (query.length < 2) return;
+    setState(() => _loading = true);
+    try {
+      final result = await ApiService.instance.get('/ecommerceCatalog/searchProducts', queryParams: {'query': query, 'limit': '30'});
+      setState(() { _products = result?['products'] ?? []; _loading = false; });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _addToCart(dynamic product) async {
+    try {
+      await ApiService.instance.post('/ecommerceCart/addItem', body: {
+        'customerId': 1,
+        'sku': product['sku'],
+        'productId': product['id'],
+        'name': product['name'],
+        'quantity': 1,
+        'unitPrice': product['price'],
+        'merchantId': product['merchantId'] ?? 1,
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${product['name']} added to cart')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+    }
+  }
+
+  List<dynamic> get _filtered {
+    var list = _products;
+    if (_selectedCategory != null) {
+      list = list.where((p) => p['categoryId'] == _selectedCategory).toList();
+    }
+    if (_search.isNotEmpty) {
+      final q = _search.toLowerCase();
+      list = list.where((p) => (p['name'] ?? '').toString().toLowerCase().contains(q)).toList();
+    }
+    return list;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ecommerce Product Catalog'),
+        title: const Text('Product Catalog'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _load(); }),
+          IconButton(icon: const Icon(Icons.shopping_cart), onPressed: () => Navigator.pushNamed(context, '/ecommerce-cart')),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: () { setState(() => _loading = true); _loadData(); }),
         ],
       ),
       body: _loading
@@ -53,79 +93,107 @@ class _EcommerceProductCatalogScreenState extends State<EcommerceProductCatalogS
           : _error.isNotEmpty
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 8),
                   Text(_error, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _load(); }, child: const Text('Retry')),
+                  ElevatedButton(onPressed: () { setState(() { _error = ''; _loading = true; }); _loadData(); }, child: const Text('Retry')),
                 ]))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: Column(children: [
-                    // Search bar
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
+              : Column(children: [
+                  // Search + Filter bar
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(children: [
+                      Expanded(child: TextField(
                         decoration: InputDecoration(
-                          hintText: 'Search...',
-                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Search products...', prefixIcon: const Icon(Icons.search),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                          isDense: true,
                         ),
-                        onChanged: (v) => setState(() => _search = v),
+                        onChanged: (v) { setState(() => _search = v); if (v.length >= 2) _searchProducts(v); },
+                      )),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.sort),
+                        onSelected: (v) => setState(() => _sortBy = v),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'newest', child: Text('Newest')),
+                          const PopupMenuItem(value: 'price_low', child: Text('Price: Low to High')),
+                          const PopupMenuItem(value: 'price_high', child: Text('Price: High to Low')),
+                          const PopupMenuItem(value: 'name', child: Text('Name A-Z')),
+                        ],
                       ),
-                    ),
-                    // Summary cards
-                    Padding(
+                    ]),
+                  ),
+                  // Categories horizontal scroll
+                  if (_categories.isNotEmpty) SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        _summaryCard('Total', _items.length.toString(), Colors.blue),
-                        const SizedBox(width: 8),
-                        _summaryCard('Filtered', _filtered.length.toString(), Colors.green),
-                      ]),
+                      itemCount: _categories.length + 1,
+                      itemBuilder: (ctx, i) {
+                        if (i == 0) return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(label: const Text('All'), selected: _selectedCategory == null, onSelected: (_) => setState(() => _selectedCategory = null)),
+                        );
+                        final cat = _categories[i - 1];
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(label: Text(cat['name'] ?? ''), selected: _selectedCategory == cat['id'], onSelected: (_) => setState(() => _selectedCategory = cat['id'])),
+                        );
+                      },
                     ),
-                    const SizedBox(height: 8),
-                    // List
-                    Expanded(
-                      child: _filtered.isEmpty
-                          ? const Center(child: Text('No items found'))
-                          : ListView.builder(
-                              itemCount: _filtered.length,
-                              itemBuilder: (ctx, i) {
-                                final item = _filtered[i];
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  child: ListTile(
-                                    leading: CircleAvatar(child: Text('${i + 1}')),
-                                    title: Text(item['name'] ?? item['title'] ?? item['id']?.toString() ?? 'Item ${i + 1}'),
-                                    subtitle: Text(item['status'] ?? item['type'] ?? ''),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Selected: ${item['name'] ?? item['id']}')),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
+                  ),
+                  const SizedBox(height: 8),
+                  // Product grid
+                  Expanded(
+                    child: _filtered.isEmpty
+                        ? const Center(child: Text('No products found'))
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(8),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2, childAspectRatio: 0.7,
+                              crossAxisSpacing: 8, mainAxisSpacing: 8,
                             ),
-                    ),
-                  ]),
-                ),
-    );
-  }
-
-  Widget _summaryCard(String label, String value, Color color) {
-    return Expanded(
-      child: Card(
-        color: color.withOpacity(0.1),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: TextStyle(color: color.withOpacity(0.8))),
-          ]),
-        ),
-      ),
+                            itemCount: _filtered.length,
+                            itemBuilder: (ctx, i) {
+                              final product = _filtered[i];
+                              final price = product['price'] ?? '0';
+                              return Card(
+                                elevation: 2,
+                                child: InkWell(
+                                  onTap: () {},
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Container(
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(color: Colors.grey[200], borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
+                                        child: product['imageUrl'] != null
+                                            ? Image.network(product['imageUrl'], fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 48))
+                                            : const Icon(Icons.inventory_2, size: 48, color: Colors.grey),
+                                      ),
+                                    ),
+                                    Expanded(flex: 2, child: Padding(
+                                      padding: const EdgeInsets.all(8),
+                                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                        Text(product['name'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                        const SizedBox(height: 4),
+                                        Text('NGN $price', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
+                                        const Spacer(),
+                                        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+                                          onPressed: () => _addToCart(product),
+                                          icon: const Icon(Icons.add_shopping_cart, size: 16),
+                                          label: const Text('Add', style: TextStyle(fontSize: 12)),
+                                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 4)),
+                                        )),
+                                      ]),
+                                    )),
+                                  ]),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ]),
     );
   }
 }

@@ -22,6 +22,21 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { TRPCError } from "@trpc/server";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
+
+
+async function publishPromoMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("ecommerce.promotions", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: "system", amount: Number(payload.amount ?? payload.discountAmount ?? 0), type: `ecommerce.promotions.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `ecommerce.promotions.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("ecommerce_promotions", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+}
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -220,6 +235,9 @@ export const promotionsRouter = router({
           endDate: new Date(input.endDate),
         })
         .returning();
+      publishPromoMiddleware("promo.created", code, { promoId: promo.id, name: input.name, type: input.type, value: input.value });
+      cacheSet(`promo:${code}`, JSON.stringify(promo), 3600).catch(() => {});
+
       return promo;
     }),
 
@@ -293,6 +311,8 @@ export const promotionsRouter = router({
         .update(promotions)
         .set({ usedCount: sql`${promotions.usedCount} + 1` })
         .where(eq(promotions.code, input.code));
+      publishPromoMiddleware("coupon.redeemed", input.code, { code: input.code });
+
       return { success: true };
     }),
 
@@ -392,6 +412,8 @@ export const promotionsRouter = router({
           .where(eq(loyaltyAccounts.customerId, input.customerId));
       }
 
+      publishPromoMiddleware("points.earned", String(input.customerId), { customerId: input.customerId, points: input.points, type: input.type, newTier: tier });
+
       return {
         points: input.points,
         newTier: tier,
@@ -435,6 +457,8 @@ export const promotionsRouter = router({
 
       // Convert points to value: 100 points = ₦100
       const value = input.points;
+      publishPromoMiddleware("points.redeemed", String(input.customerId), { customerId: input.customerId, points: input.points, discountAmount: value });
+
       return {
         redeemed: input.points,
         value,
@@ -479,6 +503,8 @@ export const promotionsRouter = router({
         .update(loyaltyAccounts)
         .set({ referredBy: referrer.customerId })
         .where(eq(loyaltyAccounts.customerId, input.customerId));
+
+      publishPromoMiddleware("referral.applied", input.referralCode, { customerId: input.customerId, referrerId: referrer.customerId, bonus: referralBonus });
 
       return {
         success: true,

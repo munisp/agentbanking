@@ -23,6 +23,13 @@ import {
   asc,
 } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -36,6 +43,14 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+
+
+async function publishStoreMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("ecommerce.store", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.store.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `ecommerce.store.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("ecommerce_store", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+}
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -208,6 +223,9 @@ export const agentStoreRouter = router({
         })
         .returning();
 
+      publishStoreMiddleware("store.registered", store.slug, { storeId: store.id, agentId: input.agentId, agentCode: input.agentCode, storeName: input.storeName });
+      cacheSet(`store:${store.slug}`, JSON.stringify(store), 3600).catch(() => {});
+
       return store;
     }),
 
@@ -269,6 +287,8 @@ export const agentStoreRouter = router({
         .set(updates)
         .where(eq(agentStores.id, storeId))
         .returning();
+
+      publishStoreMiddleware("store.updated", String(storeId), { storeId, changes: Object.keys(fields) });
 
       return updated;
     }),
@@ -561,6 +581,8 @@ export const agentStoreRouter = router({
         })
         .returning();
 
+      publishStoreMiddleware("delivery_zone.created", String(zone.id), { storeId: input.storeId, zoneName: input.zoneName });
+
       return zone;
     }),
 
@@ -744,6 +766,8 @@ export const agentStoreRouter = router({
           taxAmount: vatOnFee.toFixed(2),
         })
         .returning();
+
+      publishStoreMiddleware("payment_split.created", String(split.id), { storeId: input.storeId, amount: input.orderTotal });
 
       return split;
     }),

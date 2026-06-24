@@ -1,20 +1,18 @@
 use actix_web::{web, HttpResponse};
-use chrono::Utc;
 use sha2::{Digest, Sha256};
+use sqlx::Row;
 
-use crate::cart::CartStore;
-use crate::models::{Cart, MergeRequest, MergeStrategy, OfflineCart};
+use crate::AppState;
+use crate::models::{MergeRequest, MergeStrategy, OfflineCart};
 
-/// Sync offline carts back to server when connectivity is restored
 pub async fn sync_carts(
-    store: web::Data<CartStore>,
+    state: web::Data<AppState>,
     body: web::Json<Vec<OfflineCart>>,
 ) -> HttpResponse {
     let offline_carts = body.into_inner();
     let mut results = Vec::new();
 
     for offline in &offline_carts {
-        // Verify checksum integrity
         let computed = compute_checksum(&offline.items);
         if computed != offline.checksum {
             results.push(serde_json::json!({
@@ -25,55 +23,52 @@ pub async fn sync_carts(
             continue;
         }
 
-        // Check if online cart exists
-        let has_online = store.carts.contains_key(&offline.customer_id);
+        let has_online = sqlx::query("SELECT 1 FROM ecom_carts WHERE customer_id = $1")
+            .bind(offline.customer_id)
+            .fetch_optional(&state.pool).await
+            .ok().flatten().is_some();
 
-        if has_online {
-            // Merge with existing online cart (sum quantities)
-            if let Some(mut cart) = store.carts.get_mut(&offline.customer_id) {
-                for offline_item in &offline.items {
-                    if let Some(existing) = cart.items.iter_mut().find(|i| i.sku == offline_item.sku)
-                    {
-                        existing.quantity = existing.quantity.max(offline_item.quantity);
-                    } else {
-                        cart.items.push(offline_item.clone());
-                    }
-                }
-                recalculate_cart(&mut cart);
+        // Ensure cart row exists
+        sqlx::query(
+            "INSERT INTO ecom_carts (customer_id, currency, expires_at)
+             VALUES ($1, 'NGN', NOW() + INTERVAL '24 hours')
+             ON CONFLICT (customer_id) DO UPDATE SET updated_at = NOW()"
+        ).bind(offline.customer_id).execute(&state.pool).await.ok();
+
+        for item in &offline.items {
+            if has_online {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO UPDATE SET quantity = GREATEST(ecom_cart_items.quantity, $5)"
+                )
+                .bind(offline.customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
+            } else {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO NOTHING"
+                )
+                .bind(offline.customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
             }
-            results.push(serde_json::json!({
-                "clientId": offline.client_id,
-                "status": "merged",
-                "strategy": "max_quantity",
-            }));
-        } else {
-            // Create new cart from offline data
-            let mut cart = Cart {
-                customer_id: offline.customer_id,
-                items: offline.items.clone(),
-                coupon_code: None,
-                discount_amount: 0.0,
-                sub_total: 0.0,
-                item_count: 0,
-                currency: "NGN".to_string(),
-                created_at: offline.created_at,
-                updated_at: Utc::now(),
-                expires_at: Utc::now() + chrono::Duration::hours(24),
-            };
-            recalculate_cart(&mut cart);
-            store.carts.insert(offline.customer_id, cart);
-
-            results.push(serde_json::json!({
-                "clientId": offline.client_id,
-                "status": "synced",
-            }));
         }
+
+        recalculate(&state.pool, offline.customer_id).await;
+
+        results.push(serde_json::json!({
+            "clientId": offline.client_id,
+            "status": if has_online { "merged" } else { "synced" },
+            "strategy": if has_online { "max_quantity" } else { "created" },
+        }));
     }
 
-    let synced = results
-        .iter()
-        .filter(|r| r["status"] == "synced" || r["status"] == "merged")
-        .count();
+    let synced = results.iter().filter(|r| r["status"] == "synced" || r["status"] == "merged").count();
 
     HttpResponse::Ok().json(serde_json::json!({
         "results": results,
@@ -83,73 +78,84 @@ pub async fn sync_carts(
     }))
 }
 
-/// Merge offline cart items with online cart using specified strategy
 pub async fn merge_carts(
-    store: web::Data<CartStore>,
+    state: web::Data<AppState>,
     body: web::Json<MergeRequest>,
 ) -> HttpResponse {
     let req = body.into_inner();
     let customer_id = req.customer_id;
 
-    let mut cart = store
-        .carts
-        .entry(customer_id)
-        .or_insert_with(|| Cart {
-            customer_id,
-            items: Vec::new(),
-            coupon_code: None,
-            discount_amount: 0.0,
-            sub_total: 0.0,
-            item_count: 0,
-            currency: "NGN".to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            expires_at: Utc::now() + chrono::Duration::hours(24),
-        })
-        .clone();
+    sqlx::query(
+        "INSERT INTO ecom_carts (customer_id, currency, expires_at)
+         VALUES ($1, 'NGN', NOW() + INTERVAL '24 hours')
+         ON CONFLICT (customer_id) DO UPDATE SET updated_at = NOW()"
+    ).bind(customer_id).execute(&state.pool).await.ok();
 
-    for offline_item in &req.offline_items {
-        if let Some(existing) = cart.items.iter_mut().find(|i| i.sku == offline_item.sku) {
-            match req.strategy {
-                MergeStrategy::PreferOnline => {
-                    // Keep online version — no change
-                }
-                MergeStrategy::PreferOffline => {
-                    existing.quantity = offline_item.quantity;
-                    existing.unit_price = offline_item.unit_price;
-                }
-                MergeStrategy::SumQuantities => {
-                    existing.quantity += offline_item.quantity;
-                }
-                MergeStrategy::MaxQuantity => {
-                    existing.quantity = existing.quantity.max(offline_item.quantity);
-                }
+    for item in &req.offline_items {
+        match req.strategy {
+            MergeStrategy::PreferOnline => {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO NOTHING"
+                )
+                .bind(customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
             }
-        } else {
-            cart.items.push(offline_item.clone());
+            MergeStrategy::PreferOffline => {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO UPDATE SET quantity = $5, unit_price = $6"
+                )
+                .bind(customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
+            }
+            MergeStrategy::SumQuantities => {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO UPDATE SET quantity = ecom_cart_items.quantity + $5"
+                )
+                .bind(customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
+            }
+            MergeStrategy::MaxQuantity => {
+                sqlx::query(
+                    "INSERT INTO ecom_cart_items (customer_id, sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (customer_id, sku) DO UPDATE SET quantity = GREATEST(ecom_cart_items.quantity, $5)"
+                )
+                .bind(customer_id).bind(&item.sku).bind(item.product_id)
+                .bind(&item.name).bind(item.quantity as i32).bind(item.unit_price)
+                .bind(&item.currency).bind(&item.image_url).bind(item.merchant_id)
+                .execute(&state.pool).await.ok();
+            }
         }
     }
 
-    recalculate_cart(&mut cart);
-    store.carts.insert(customer_id, cart.clone());
+    recalculate(&state.pool, customer_id).await;
 
     HttpResponse::Ok().json(serde_json::json!({
         "status": "merged",
         "strategy": format!("{:?}", req.strategy),
-        "cart": cart,
     }))
 }
 
-fn recalculate_cart(cart: &mut Cart) {
-    let mut sub_total = 0.0;
-    let mut item_count = 0u32;
-    for item in &cart.items {
-        sub_total += item.unit_price * item.quantity as f64;
-        item_count += item.quantity;
-    }
-    cart.sub_total = sub_total - cart.discount_amount;
-    cart.item_count = item_count;
-    cart.updated_at = Utc::now();
+async fn recalculate(pool: &sqlx::PgPool, customer_id: i64) {
+    sqlx::query(
+        "UPDATE ecom_carts SET
+            sub_total = COALESCE((SELECT SUM(unit_price * quantity) FROM ecom_cart_items WHERE customer_id = $1), 0) - discount_amount,
+            item_count = COALESCE((SELECT SUM(quantity) FROM ecom_cart_items WHERE customer_id = $1), 0),
+            updated_at = NOW()
+         WHERE customer_id = $1"
+    ).bind(customer_id).execute(pool).await.ok();
 }
 
 fn compute_checksum(items: &[crate::models::CartItem]) -> String {

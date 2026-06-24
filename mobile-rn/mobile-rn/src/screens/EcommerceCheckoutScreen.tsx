@@ -1,163 +1,150 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextInput,
-} from 'react-native';
-import { apiClient } from '../api/APIClient';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { apiService } from '../services/apiService';
 
-interface ListItem {
-  id: string | number;
-  name?: string;
-  title?: string;
-  status?: string;
-  type?: string;
-  [key: string]: unknown;
-}
-
-const EcommerceCheckoutScreen: React.FC = () => {
-  const [items, setItems] = useState<ListItem[]>([]);
+export default function EcommerceCheckoutScreen({ navigation }: { navigation: any }) {
+  const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
+  const [items, setItems] = useState<any[]>([]);
+  const [subTotal, setSubTotal] = useState(0);
+  const [currency, setCurrency] = useState('NGN');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [orderId, setOrderId] = useState('');
+  const shippingFee = 500;
+  const tax = subTotal * 0.075;
+  const total = subTotal + shippingFee + tax;
 
-  const load = useCallback(async () => {
-    try {
-      setError('');
-      const { data } = await apiClient.get('/general/list?page=1&limit=50');
-      setItems(data?.items ?? data?.data ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to load');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await apiService.get('/ecommerceCart/getCart', { customerId: 1 });
+        setItems(result?.items ?? []);
+        setSubTotal(result?.subTotal ?? 0);
+        setCurrency(result?.currency ?? 'NGN');
+      } catch (e) {
+        Alert.alert('Error', String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const placeOrder = async () => {
+    if (!name || !address) { Alert.alert('Required', 'Please fill name and address'); return; }
+    setLoading(true);
+    try {
+      const result = await apiService.post('/ecommerceOrders/createOrder', {
+        customerId: 1,
+        items: items.map(i => ({ sku: i.sku, productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, merchantId: i.merchantId || 1 })),
+        shippingAddress: address, phone, paymentMethod, currency,
+      });
+      setOrderId(result?.orderId?.toString() ?? '');
+      setStep(2);
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filtered = items.filter(item => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    const label = (item.name ?? item.title ?? String(item.id)).toLowerCase();
-    return label.includes(q);
-  });
+  if (loading) return <ActivityIndicator style={styles.loader} size="large" />;
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, [load]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={load}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const paymentMethods = [
+    { key: 'card', label: 'Card (Paystack/Flutterwave)' },
+    { key: 'bank_transfer', label: 'Bank Transfer' },
+    { key: 'ussd', label: 'USSD' },
+    { key: 'cod', label: 'Cash on Delivery' },
+  ];
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Ecommerce Checkout</Text>
-
-      {/* Summary */}
-      <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { backgroundColor: '#eff6ff' }]}>
-          <Text style={[styles.summaryValue, { color: '#2563eb' }]}>{items.length}</Text>
-          <Text style={styles.summaryLabel}>Total</Text>
-        </View>
-        <View style={[styles.summaryCard, { backgroundColor: '#f0fdf4' }]}>
-          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>{filtered.length}</Text>
-          <Text style={styles.summaryLabel}>Filtered</Text>
-        </View>
+    <ScrollView style={styles.container}>
+      {/* Step indicators */}
+      <View style={styles.steps}>
+        {['Shipping', 'Payment', 'Done'].map((s, i) => (
+          <View key={s} style={[styles.stepDot, i <= step && styles.stepDotActive]}>
+            <Text style={[styles.stepText, i <= step && styles.stepTextActive]}>{s}</Text>
+          </View>
+        ))}
       </View>
 
-      {/* Search */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search..."
-        value={search}
-        onChangeText={setSearch}
-      />
-
-      {/* List */}
-      <FlatList
-        data={filtered}
-        keyExtractor={(item, i) => String(item.id ?? i)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        renderItem={({ item, index }) => (
-          <TouchableOpacity style={styles.card}>
-            <View style={styles.cardLeft}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{index + 1}</Text>
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>
-                  {item.name ?? item.title ?? `Item ${index + 1}`}
-                </Text>
-                <Text style={styles.cardSubtitle}>
-                  {item.status ?? item.type ?? ''}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.chevron}>{'›'}</Text>
+      {step === 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Shipping Details</Text>
+          <TextInput style={styles.input} placeholder="Full Name" value={name} onChangeText={setName} />
+          <TextInput style={styles.input} placeholder="Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <TextInput style={styles.input} placeholder="Delivery Address" value={address} onChangeText={setAddress} multiline />
+          <TouchableOpacity style={styles.nextBtn} onPress={() => name && address ? setStep(1) : Alert.alert('Required', 'Fill name and address')}>
+            <Text style={styles.nextBtnText}>Continue to Payment</Text>
           </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={styles.emptyText}>No items found</Text>
+        </View>
+      )}
+
+      {step === 1 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Payment Method</Text>
+          {paymentMethods.map(pm => (
+            <TouchableOpacity key={pm.key} style={[styles.paymentOption, paymentMethod === pm.key && styles.paymentOptionActive]} onPress={() => setPaymentMethod(pm.key)}>
+              <View style={[styles.radio, paymentMethod === pm.key && styles.radioActive]} />
+              <Text style={styles.paymentLabel}>{pm.label}</Text>
+            </TouchableOpacity>
+          ))}
+          <View style={styles.summarySection}>
+            <View style={styles.row}><Text>Subtotal</Text><Text>{currency} {subTotal.toFixed(2)}</Text></View>
+            <View style={styles.row}><Text>Shipping</Text><Text>{currency} {shippingFee.toFixed(2)}</Text></View>
+            <View style={styles.row}><Text>VAT (7.5%)</Text><Text>{currency} {tax.toFixed(2)}</Text></View>
+            <View style={[styles.row, styles.totalRow]}><Text style={styles.totalLabel}>Total</Text><Text style={styles.totalValue}>{currency} {total.toFixed(2)}</Text></View>
           </View>
-        }
-      />
-    </View>
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => setStep(0)}><Text>Back</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.nextBtn} onPress={placeOrder}><Text style={styles.nextBtnText}>Place Order</Text></TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {step === 2 && (
+        <View style={styles.confirmation}>
+          <Text style={styles.checkIcon}>✓</Text>
+          <Text style={styles.confirmTitle}>Order Placed!</Text>
+          {orderId ? <Text style={styles.orderId}>Order #{orderId}</Text> : null}
+          <TouchableOpacity style={styles.nextBtn} onPress={() => navigation.navigate('EcommerceOrderManagement')}>
+            <Text style={styles.nextBtnText}>View My Orders</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  header: { fontSize: 22, fontWeight: '700', padding: 16, color: '#1e293b' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#dc2626', fontSize: 16, textAlign: 'center', marginBottom: 12 },
-  retryBtn: { backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  summaryRow: { flexDirection: 'row', paddingHorizontal: 12, gap: 8 },
-  summaryCard: { flex: 1, borderRadius: 12, padding: 12, alignItems: 'center' },
-  summaryValue: { fontSize: 24, fontWeight: '700' },
-  summaryLabel: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  searchInput: {
-    margin: 12, padding: 12, backgroundColor: '#fff',
-    borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0',
-  },
-  card: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#fff', marginHorizontal: 12, marginVertical: 4,
-    padding: 14, borderRadius: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-  },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#e0e7ff',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  avatarText: { color: '#4f46e5', fontWeight: '600' },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
-  cardSubtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  chevron: { fontSize: 22, color: '#94a3b8' },
-  emptyText: { color: '#94a3b8', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  loader: { flex: 1, justifyContent: 'center' },
+  steps: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 16, gap: 24 },
+  stepDot: { alignItems: 'center' },
+  stepDotActive: {},
+  stepText: { color: '#999', fontSize: 13 },
+  stepTextActive: { color: '#007AFF', fontWeight: '600' },
+  section: { padding: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, fontSize: 15 },
+  paymentOption: { flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#eee', borderRadius: 8, marginBottom: 8 },
+  paymentOptionActive: { borderColor: '#007AFF', backgroundColor: '#F0F7FF' },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#ccc', marginRight: 12 },
+  radioActive: { borderColor: '#007AFF', backgroundColor: '#007AFF' },
+  paymentLabel: { fontSize: 15 },
+  summarySection: { marginTop: 16, padding: 12, backgroundColor: '#f9f9f9', borderRadius: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  totalRow: { borderTopWidth: 1, borderTopColor: '#ddd', paddingTop: 8, marginTop: 4 },
+  totalLabel: { fontWeight: 'bold', fontSize: 16 },
+  totalValue: { fontWeight: 'bold', fontSize: 16 },
+  btnRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  backBtn: { flex: 1, padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
+  nextBtn: { flex: 1, backgroundColor: '#007AFF', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 16 },
+  nextBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  confirmation: { alignItems: 'center', paddingTop: 60 },
+  checkIcon: { fontSize: 64, color: '#34C759', marginBottom: 16 },
+  confirmTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 8 },
+  orderId: { color: '#999', marginBottom: 24 },
 });
-
-export default EcommerceCheckoutScreen;

@@ -1,192 +1,201 @@
 use actix_web::{web, HttpResponse};
-use chrono::{Duration, Utc};
-use dashmap::DashMap;
+use chrono::Utc;
+use sqlx::Row;
 use uuid::Uuid;
 
-use crate::cart::CartStore;
-use crate::models::{CheckoutConfirmRequest, CheckoutSession, CheckoutStatus};
+use crate::AppState;
+use crate::models::CheckoutConfirmRequest;
 
-pub struct CheckoutEngine {
-    sessions: DashMap<String, CheckoutSession>,
-}
-
-impl CheckoutEngine {
-    pub fn new() -> Self {
-        CheckoutEngine {
-            sessions: DashMap::new(),
-        }
-    }
-}
-
-/// Initiate a checkout session from the current cart
 pub async fn initiate(
-    cart_store: web::Data<CartStore>,
-    checkout: web::Data<CheckoutEngine>,
+    state: web::Data<AppState>,
     path: web::Path<i64>,
 ) -> HttpResponse {
     let customer_id = path.into_inner();
 
-    // Get cart — fail if empty
-    let cart = match cart_store.carts.get(&customer_id) {
-        Some(c) => c.clone(),
-        None => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "Cart is empty or not found"}));
-        }
+    let cart_row = sqlx::query(
+        "SELECT sub_total, item_count, currency, discount_amount FROM ecom_carts WHERE customer_id = $1"
+    ).bind(customer_id).fetch_optional(&state.pool).await;
+
+    let cart = match cart_row {
+        Ok(Some(r)) => r,
+        _ => return HttpResponse::BadRequest().json(serde_json::json!({"error": "Cart is empty or not found"})),
     };
 
-    if cart.items.is_empty() {
-        return HttpResponse::BadRequest()
-            .json(serde_json::json!({"error": "Cannot checkout with empty cart"}));
+    let item_count: i32 = cart.get("item_count");
+    if item_count == 0 {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "Cannot checkout with empty cart"}));
     }
 
+    let sub_total: f64 = cart.get("sub_total");
+    let currency: String = cart.get("currency");
+    let tax = sub_total * 0.075;
+    let shipping_fee = calculate_shipping(sub_total, item_count);
+    let total = sub_total + tax + shipping_fee;
     let session_id = Uuid::new_v4().to_string();
-    let tax = cart.sub_total * 0.075; // 7.5% VAT (Nigeria)
-    let shipping_fee = calculate_shipping(&cart);
-    let total = cart.sub_total + tax + shipping_fee;
 
-    let session = CheckoutSession {
-        session_id: session_id.clone(),
-        customer_id,
-        cart: cart.clone(),
-        shipping_fee,
-        tax,
-        total,
-        payment_method: None,
-        shipping_address: None,
-        status: CheckoutStatus::Initiated,
-        created_at: Utc::now(),
-        expires_at: Utc::now() + Duration::minutes(30),
-    };
+    // Load items for snapshot
+    let items = sqlx::query(
+        "SELECT sku, product_id, name, quantity, unit_price, currency, image_url, merchant_id
+         FROM ecom_cart_items WHERE customer_id = $1"
+    ).bind(customer_id).fetch_all(&state.pool).await.unwrap_or_default();
 
-    checkout.sessions.insert(session_id.clone(), session.clone());
+    let item_list: Vec<serde_json::Value> = items.iter().map(|r| {
+        serde_json::json!({
+            "sku": r.get::<String, _>("sku"),
+            "product_id": r.get::<i64, _>("product_id"),
+            "name": r.get::<String, _>("name"),
+            "quantity": r.get::<i32, _>("quantity"),
+            "unit_price": r.get::<f64, _>("unit_price"),
+            "merchant_id": r.get::<i64, _>("merchant_id"),
+        })
+    }).collect();
 
-    HttpResponse::Ok().json(session)
-}
+    let cart_snapshot = serde_json::json!({
+        "customer_id": customer_id,
+        "items": item_list,
+        "sub_total": sub_total,
+        "item_count": item_count,
+        "currency": currency,
+    });
 
-/// Calculate totals without creating a session
-pub async fn calculate_totals(
-    cart_store: web::Data<CartStore>,
-    path: web::Path<i64>,
-) -> HttpResponse {
-    let customer_id = path.into_inner();
-
-    let cart = match cart_store.carts.get(&customer_id) {
-        Some(c) => c.clone(),
-        None => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "Cart not found"}));
-        }
-    };
-
-    let tax = cart.sub_total * 0.075;
-    let shipping_fee = calculate_shipping(&cart);
-    let total = cart.sub_total + tax + shipping_fee;
+    sqlx::query(
+        "INSERT INTO ecom_checkout_sessions (session_id, customer_id, cart_snapshot, shipping_fee, tax, total, status, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'initiated', NOW() + INTERVAL '30 minutes')"
+    )
+    .bind(&session_id).bind(customer_id).bind(&cart_snapshot)
+    .bind(shipping_fee).bind(tax).bind(total)
+    .execute(&state.pool).await.ok();
 
     HttpResponse::Ok().json(serde_json::json!({
-        "subTotal": cart.sub_total,
+        "session_id": session_id,
+        "customer_id": customer_id,
+        "sub_total": sub_total,
         "tax": tax,
-        "taxRate": 0.075,
-        "shippingFee": shipping_fee,
-        "discount": cart.discount_amount,
+        "shipping_fee": shipping_fee,
         "total": total,
-        "currency": cart.currency,
-        "itemCount": cart.item_count,
+        "currency": currency,
+        "status": "initiated",
+        "items": item_list,
     }))
 }
 
-/// Confirm checkout — triggers payment and order creation via Go catalog service
+pub async fn calculate_totals(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> HttpResponse {
+    let customer_id = path.into_inner();
+
+    let cart_row = sqlx::query(
+        "SELECT sub_total, item_count, discount_amount, currency FROM ecom_carts WHERE customer_id = $1"
+    ).bind(customer_id).fetch_optional(&state.pool).await;
+
+    let cart = match cart_row {
+        Ok(Some(r)) => r,
+        _ => return HttpResponse::BadRequest().json(serde_json::json!({"error": "Cart not found"})),
+    };
+
+    let sub_total: f64 = cart.get("sub_total");
+    let item_count: i32 = cart.get("item_count");
+    let discount: f64 = cart.get("discount_amount");
+    let currency: String = cart.get("currency");
+    let tax = sub_total * 0.075;
+    let shipping_fee = calculate_shipping(sub_total, item_count);
+    let total = sub_total + tax + shipping_fee;
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "subTotal": sub_total,
+        "tax": tax,
+        "taxRate": 0.075,
+        "shippingFee": shipping_fee,
+        "discount": discount,
+        "total": total,
+        "currency": currency,
+        "itemCount": item_count,
+    }))
+}
+
 pub async fn confirm(
-    cart_store: web::Data<CartStore>,
-    checkout: web::Data<CheckoutEngine>,
+    state: web::Data<AppState>,
     path: web::Path<i64>,
     body: web::Json<CheckoutConfirmRequest>,
 ) -> HttpResponse {
     let customer_id = path.into_inner();
     let req = body.into_inner();
 
-    // Find the active session for this customer
-    let session_id = {
-        let mut found: Option<String> = None;
-        for entry in checkout.sessions.iter() {
-            if entry.customer_id == customer_id {
-                match entry.status {
-                    CheckoutStatus::Initiated | CheckoutStatus::PaymentPending => {
-                        found = Some(entry.session_id.clone());
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        match found {
-            Some(id) => id,
-            None => {
-                return HttpResponse::BadRequest()
-                    .json(serde_json::json!({"error": "No active checkout session"}));
-            }
-        }
+    let session_row = sqlx::query(
+        "SELECT session_id, total, cart_snapshot FROM ecom_checkout_sessions
+         WHERE customer_id = $1 AND status = 'initiated' AND expires_at > NOW()
+         ORDER BY created_at DESC LIMIT 1"
+    ).bind(customer_id).fetch_optional(&state.pool).await;
+
+    let session = match session_row {
+        Ok(Some(r)) => r,
+        _ => return HttpResponse::BadRequest().json(serde_json::json!({"error": "No active checkout session"})),
     };
 
-    // Update session with payment details
-    if let Some(mut session) = checkout.sessions.get_mut(&session_id) {
-        session.payment_method = Some(req.payment_method.clone());
-        session.shipping_address = Some(req.shipping_address);
-        session.status = CheckoutStatus::Confirmed;
-    }
+    let session_id: String = session.get("session_id");
+    let total: f64 = session.get("total");
+    let shipping_addr = serde_json::to_value(&req.shipping_address).unwrap_or_default();
 
-    // Clear the cart after successful checkout
-    cart_store.carts.remove(&customer_id);
+    sqlx::query(
+        "UPDATE ecom_checkout_sessions SET status = 'confirmed', payment_method = $2, shipping_address = $3
+         WHERE session_id = $1"
+    )
+    .bind(&session_id).bind(&req.payment_method).bind(&shipping_addr)
+    .execute(&state.pool).await.ok();
 
-    let session = checkout.sessions.get(&session_id).unwrap().clone();
+    // Clear cart after checkout
+    sqlx::query("DELETE FROM ecom_cart_items WHERE customer_id = $1")
+        .bind(customer_id).execute(&state.pool).await.ok();
+    sqlx::query("DELETE FROM ecom_carts WHERE customer_id = $1")
+        .bind(customer_id).execute(&state.pool).await.ok();
 
     HttpResponse::Ok().json(serde_json::json!({
         "status": "confirmed",
-        "sessionId": session.session_id,
-        "total": session.total,
-        "currency": session.cart.currency,
+        "sessionId": session_id,
+        "total": total,
         "paymentMethod": req.payment_method,
         "orderCreationPending": true,
-        "message": "Order will be created via catalog service"
     }))
 }
 
-/// Get checkout session by ID
 pub async fn get_session(
-    checkout: web::Data<CheckoutEngine>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> HttpResponse {
     let session_id = path.into_inner();
 
-    match checkout.sessions.get(&session_id) {
-        Some(session) => {
-            let s = session.clone();
-            // Check expiration
-            if Utc::now() > s.expires_at {
-                return HttpResponse::Gone()
-                    .json(serde_json::json!({"error": "Checkout session expired"}));
+    let row = sqlx::query(
+        "SELECT session_id, customer_id, cart_snapshot, shipping_fee, tax, total, payment_method, shipping_address, status, created_at, expires_at
+         FROM ecom_checkout_sessions WHERE session_id = $1"
+    ).bind(&session_id).fetch_optional(&state.pool).await;
+
+    match row {
+        Ok(Some(r)) => {
+            let expires_at: chrono::DateTime<Utc> = r.get("expires_at");
+            if Utc::now() > expires_at {
+                return HttpResponse::Gone().json(serde_json::json!({"error": "Checkout session expired"}));
             }
-            HttpResponse::Ok().json(s)
+            HttpResponse::Ok().json(serde_json::json!({
+                "session_id": r.get::<String, _>("session_id"),
+                "customer_id": r.get::<i64, _>("customer_id"),
+                "cart": r.get::<serde_json::Value, _>("cart_snapshot"),
+                "shipping_fee": r.get::<f64, _>("shipping_fee"),
+                "tax": r.get::<f64, _>("tax"),
+                "total": r.get::<f64, _>("total"),
+                "payment_method": r.get::<Option<String>, _>("payment_method"),
+                "shipping_address": r.get::<Option<serde_json::Value>, _>("shipping_address"),
+                "status": r.get::<String, _>("status"),
+                "created_at": r.get::<chrono::DateTime<Utc>, _>("created_at").to_rfc3339(),
+                "expires_at": expires_at.to_rfc3339(),
+            }))
         }
-        None => HttpResponse::NotFound()
-            .json(serde_json::json!({"error": "Session not found"})),
+        _ => HttpResponse::NotFound().json(serde_json::json!({"error": "Session not found"})),
     }
 }
 
-/// Calculate shipping based on cart contents
-fn calculate_shipping(cart: &crate::models::Cart) -> f64 {
-    let base_fee = 500.0; // ₦500 base shipping
-    let per_item = 100.0; // ₦100 per additional item
-    let item_count = cart.item_count as f64;
-
-    if item_count == 0.0 {
-        return 0.0;
-    }
-
-    // Free shipping above ₦50,000
-    if cart.sub_total >= 50000.0 {
-        return 0.0;
-    }
-
-    base_fee + (item_count - 1.0) * per_item
+fn calculate_shipping(sub_total: f64, item_count: i32) -> f64 {
+    if item_count == 0 { return 0.0; }
+    if sub_total >= 50000.0 { return 0.0; }
+    500.0 + (item_count as f64 - 1.0) * 100.0
 }

@@ -231,6 +231,7 @@ export const posFirmwareOTARouter = router({
           metadata: { version: input.version, forceUpdate: input.forceUpdate },
         });
 
+        publishPosMiddleware("publishVersion", input.version, { action: "publishVersion", ...input });
         return entry;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -274,6 +275,7 @@ export const posFirmwareOTARouter = router({
           },
         });
 
+        publishPosMiddleware("startRollout", input.version, { action: "startRollout", ...input });
         return {
           rolloutId,
           version: input.version,
@@ -379,6 +381,7 @@ export const posFirmwareOTARouter = router({
           },
         });
 
+        publishPosMiddleware("reportUpdateResult", String(input.terminalId), { action: "reportUpdateResult", ...input });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

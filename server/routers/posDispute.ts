@@ -221,6 +221,8 @@ export const posDisputeRouter = router({
           },
         });
 
+        publishPosMiddleware("fileDispute", input.transactionRef, { action: "fileDispute", disputeId: dispute.id, reason: input.reason, transactionRef: input.transactionRef });
+
         return {
           disputeId: dispute.id,
           transactionRef: input.transactionRef,

@@ -207,6 +207,8 @@ export const terminalLeasingRouter = router({
           },
         });
 
+        publishPosMiddleware("createLease", String(input.terminalId ?? "unknown"), { action: "createLease" });
+
         return {
           success: true,
           message: "Lease created successfully",
@@ -350,6 +352,7 @@ export const terminalLeasingRouter = router({
           metadata: { amount: input.amount, paymentRef: input.paymentRef },
         });
 
+        publishPosMiddleware("recordPayment", String(input.leaseId), { action: "recordPayment", ...input });
         return {
           success: true,
           message: "Payment recorded",
@@ -436,6 +439,7 @@ export const terminalLeasingRouter = router({
           },
         });
 
+        publishPosMiddleware("terminateLease", String(input.leaseId), { action: "terminateLease", ...input });
         return {
           success: true,
           message: "Lease terminated",

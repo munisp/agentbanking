@@ -288,6 +288,13 @@
       "when": 1778948926315,
       "tag": "0042_bouncy_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1779465600000,
+      "tag": "0043_tigerbeetle_bidir_persistence",
+      "breakpoints": true
     }
   ]
 }

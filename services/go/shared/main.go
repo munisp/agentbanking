@@ -200,7 +200,7 @@ func logAudit(action, entityID, data string) {
 
 func setState(key, value string) {
 	if db != nil {
-		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+		db.Exec("INSERT INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()", key, value)
 	}
 }
 

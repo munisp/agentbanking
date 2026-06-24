@@ -1,16 +1,19 @@
 /**
  * Internationalization (i18n) System
- * Supports: English (en), Hausa (ha), Yoruba (yo), Pidgin English (pcm)
- * Covers 85%+ of Nigerian agent population
+ * Supports: English (en), Hausa (ha), Yoruba (yo), Pidgin English (pcm),
+ *           French (fr), Igbo (ig)
+ * Covers 85%+ of Nigerian agent population + regional languages
  */
 
-export type Locale = "en" | "ha" | "yo" | "pcm";
+export type Locale = "en" | "ha" | "yo" | "pcm" | "fr" | "ig";
 
 export const SUPPORTED_LOCALES: Record<Locale, string> = {
   en: "English",
   ha: "Hausa",
   yo: "Yorùbá",
   pcm: "Pidgin",
+  fr: "Français",
+  ig: "Igbo",
 };
 
 type TranslationKey = keyof typeof translations.en;
@@ -302,6 +305,134 @@ const translations = {
     "offline.syncing": "E dey sync transactions...",
     "offline.synced": "All transactions don sync",
   },
+
+  fr: {
+    "common.loading": "Chargement...",
+    "common.error": "Une erreur est survenue",
+    "common.success": "Succès",
+    "common.cancel": "Annuler",
+    "common.confirm": "Confirmer",
+    "common.back": "Retour",
+    "common.next": "Suivant",
+    "common.submit": "Soumettre",
+    "common.retry": "Réessayer",
+    "common.done": "Terminé",
+    "common.search": "Rechercher",
+    "common.amount": "Montant",
+    "common.balance": "Solde",
+    "auth.login": "Connexion",
+    "auth.logout": "Déconnexion",
+    "auth.pin": "Entrer le PIN",
+    "auth.biometric": "Utiliser l'empreinte",
+    "dashboard.title": "Tableau de bord",
+    "dashboard.float_balance": "Solde flottant",
+    "dashboard.today_transactions": "Transactions du jour",
+    "dashboard.float_low": "Flottant bas!",
+    "dashboard.float_critical": "Flottant critique — rechargez maintenant!",
+    "tx.cash_in": "Dépôt",
+    "tx.cash_out": "Retrait",
+    "tx.transfer": "Transfert",
+    "tx.airtime": "Crédit téléphone",
+    "tx.bills": "Paiement factures",
+    "tx.amount_label": "Entrer le montant (₦)",
+    "tx.recipient": "Destinataire",
+    "tx.phone_number": "Numéro de téléphone",
+    "tx.confirm_transaction": "Confirmer la transaction",
+    "tx.processing": "Traitement...",
+    "tx.success": "Transaction réussie",
+    "tx.failed": "Transaction échouée",
+    "tx.receipt": "Reçu",
+    "tx.share_receipt": "Partager le reçu",
+    "kyc.title": "Vérification KYC",
+    "kyc.tier1": "Niveau 1 — Basique (₦50K/jour)",
+    "kyc.tier2": "Niveau 2 — Standard (₦200K/jour)",
+    "kyc.tier3": "Niveau 3 — Amélioré (₦5M/jour)",
+    "kyc.upgrade": "Améliorer KYC",
+    "kyc.scan_nin": "Scanner la carte NIN",
+    "kyc.enter_bvn": "Entrer le BVN",
+    "kyc.take_selfie": "Prendre un selfie",
+    "kyc.upload_document": "Télécharger un document",
+    "kyc.liveness_check": "Vérification de vivacité",
+    "kyc.status": "Statut KYC",
+    "kyc.verified": "Vérifié",
+    "kyc.pending": "En attente",
+    "kyc.expired": "Document expiré",
+    "settings.title": "Paramètres",
+    "settings.language": "Langue",
+    "settings.notifications": "Notifications",
+    "settings.security": "Sécurité",
+    "settings.theme": "Thème",
+    "settings.printer": "Configuration imprimante",
+    "settings.about": "À propos",
+    "offline.title": "Vous êtes hors ligne",
+    "offline.queued": "Transaction en file d'attente — synchronisation au retour en ligne",
+    "offline.syncing": "Synchronisation des transactions...",
+    "offline.synced": "Toutes les transactions synchronisées",
+  },
+
+  ig: {
+    "common.loading": "Na-ebu...",
+    "common.error": "Mperi mere",
+    "common.success": "Ọ gaara nke ọma",
+    "common.cancel": "Kagbuo",
+    "common.confirm": "Kwenye",
+    "common.back": "Azụ",
+    "common.next": "Ọzọ",
+    "common.submit": "Zipu",
+    "common.retry": "Nwaa ọzọ",
+    "common.done": "Emechara",
+    "common.search": "Chọọ",
+    "common.amount": "Ego ole",
+    "common.balance": "Ego fọdụrụ",
+    "auth.login": "Banye",
+    "auth.logout": "Pụọ",
+    "auth.pin": "Tinye PIN",
+    "auth.biometric": "Jiri mkpịsị aka",
+    "dashboard.title": "Isi ibe",
+    "dashboard.float_balance": "Float fọdụrụ",
+    "dashboard.today_transactions": "Azụmahịa taa",
+    "dashboard.float_low": "Float na-agwụ!",
+    "dashboard.float_critical": "Float dị ala — kụọ ugbu a!",
+    "tx.cash_in": "Tinye Ego",
+    "tx.cash_out": "Wepụ Ego",
+    "tx.transfer": "Bufee Ego",
+    "tx.airtime": "Zụta Airtime",
+    "tx.bills": "Kwụọ Ụgwọ",
+    "tx.amount_label": "Tinye ego ole (₦)",
+    "tx.recipient": "Onye na-anata",
+    "tx.phone_number": "Nọmba ekwentị",
+    "tx.confirm_transaction": "Kwenye azụmahịa",
+    "tx.processing": "Na-arụ ọrụ...",
+    "tx.success": "Azụmahịa gara nke ọma",
+    "tx.failed": "Azụmahịa adaghị",
+    "tx.receipt": "Risịtị",
+    "tx.share_receipt": "Kekọrịta risịtị",
+    "kyc.title": "Nyocha KYC",
+    "kyc.tier1": "Ọkwa 1 — Ndabere (₦50K/ụbọchị)",
+    "kyc.tier2": "Ọkwa 2 — Nkịtị (₦200K/ụbọchị)",
+    "kyc.tier3": "Ọkwa 3 — Nke ukwuu (₦5M/ụbọchị)",
+    "kyc.upgrade": "Kwalite KYC",
+    "kyc.scan_nin": "Nyochaa kaadị NIN",
+    "kyc.enter_bvn": "Tinye BVN",
+    "kyc.take_selfie": "See foto",
+    "kyc.upload_document": "Bulite akwụkwọ",
+    "kyc.liveness_check": "Nyocha ndụ",
+    "kyc.status": "Ọnọdụ KYC",
+    "kyc.verified": "Emechara nyocha",
+    "kyc.pending": "Na-eche",
+    "kyc.expired": "Akwụkwọ agwụla",
+    "settings.title": "Ntọala",
+    "settings.language": "Asụsụ",
+    "settings.notifications": "Ozi",
+    "settings.security": "Nchekwa",
+    "settings.theme": "Ụdị",
+    "settings.printer": "Nhazi printer",
+    "settings.about": "Maka",
+    "offline.title": "Ị nọghị n'ịntanetị",
+    "offline.queued": "Azụmahịa dị na kwụ — ga-sync mgbe ị lọghachiri",
+    "offline.syncing": "Na-emekọrịta azụmahịa...",
+    "offline.synced": "Azụmahịa niile emekọrịtara",
+  },
 } as const;
 
 // ── Hook & Utilities ────────────────────────────────────────────────────────
@@ -334,3 +465,24 @@ export function t(key: string): string {
 export function getTranslations(locale?: Locale): Record<string, string> {
   return translations[locale || getLocale()] as unknown as Record<string, string>;
 }
+
+// ── Backward-Compatible Exports ─────────────────────────────────────────────
+
+export const SUPPORTED_LANGUAGES = Object.entries(SUPPORTED_LOCALES).map(([code, name]) => ({ code, name }));
+
+export function changeLanguage(code: string): void {
+  if (code in translations) {
+    setLocale(code as Locale);
+  }
+}
+
+const i18n = {
+  t,
+  locale: getLocale,
+  setLocale,
+  changeLanguage,
+  getTranslations,
+  supportedLocales: SUPPORTED_LOCALES,
+};
+
+export default i18n;

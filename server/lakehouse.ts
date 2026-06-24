@@ -289,6 +289,76 @@ export async function promoteLakehouseTable(
   }
 }
 
+/**
+ * Lakehouse Partitioning Strategy — ensures data is organized for efficient query patterns.
+ * Tables are partitioned by date (yyyy/MM/dd) and optionally by region/agent.
+ */
+const PARTITION_CONFIG: Record<string, { partitionBy: string[]; retention: string; compactionInterval: string }> = {
+  transactions: { partitionBy: ["date", "region"], retention: "7y", compactionInterval: "daily" },
+  settlements: { partitionBy: ["date", "settlement_type"], retention: "7y", compactionInterval: "daily" },
+  fraud_alerts: { partitionBy: ["date", "severity"], retention: "5y", compactionInterval: "hourly" },
+  agent_metrics: { partitionBy: ["date", "agent_code"], retention: "3y", compactionInterval: "daily" },
+  compliance_reports: { partitionBy: ["date", "report_type"], retention: "10y", compactionInterval: "weekly" },
+  kyc_documents: { partitionBy: ["date", "kyc_tier"], retention: "10y", compactionInterval: "weekly" },
+  ecommerce_orders: { partitionBy: ["date", "store_id"], retention: "5y", compactionInterval: "daily" },
+  stablecoin_events: { partitionBy: ["date", "event_type"], retention: "7y", compactionInterval: "daily" },
+  audit_logs: { partitionBy: ["date"], retention: "7y", compactionInterval: "daily" },
+  pos_transactions: { partitionBy: ["date", "terminal_id"], retention: "5y", compactionInterval: "daily" },
+};
+
+export function getPartitionConfig(table: string) {
+  return PARTITION_CONFIG[table] ?? { partitionBy: ["date"], retention: "3y", compactionInterval: "daily" };
+}
+
+export async function ingestToLakehousePartitioned(
+  table: string,
+  data: Record<string, unknown> | Record<string, unknown>[],
+  source: string = "typescript-minio"
+): Promise<boolean> {
+  const config = getPartitionConfig(table);
+  const now = new Date();
+  const partition = {
+    year: now.getUTCFullYear(),
+    month: String(now.getUTCMonth() + 1).padStart(2, "0"),
+    day: String(now.getUTCDate()).padStart(2, "0"),
+  };
+  try {
+    const res = await fetch(`${LAKEHOUSE_API_URL}/v1/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table,
+        data,
+        source,
+        partition,
+        partitionBy: config.partitionBy,
+        retention: config.retention,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function compactLakehousePartition(
+  table: string,
+  date: string
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${LAKEHOUSE_API_URL}/v1/compact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table, date, strategy: "zorder" }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default {
   uploadTransactionSnapshot,
   uploadSettlementSummary,
@@ -296,8 +366,12 @@ export default {
   listSnapshots,
   getSnapshotDownloadUrl,
   ingestToLakehouse,
+  ingestToLakehousePartitioned,
   queryLakehouse,
   getLakehouseCatalog,
   promoteLakehouseTable,
+  compactLakehousePartition,
+  getPartitionConfig,
+  PARTITION_CONFIG,
   BUCKETS,
 };

@@ -34,6 +34,21 @@ import {
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { validateInput } from "../lib/routerHelpers";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.batch.settlement", key, { eventType, ...payload });
+  fluvioPublish("pos.batch.settlement", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.batch.settlement.completed", { eventType, ...payload }).catch(() => {});
+  lakehouseIngest("pos_batch_settlements", { event_type: eventType, ...payload, source: "posBatchSettlement" }).catch(() => {});
+}
+
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing"],
   processing: ["settled", "failed", "partially_settled"],

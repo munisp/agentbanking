@@ -471,6 +471,7 @@ import { recurringPaymentsRouter } from "./routers/recurringPayments";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
 import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
+import { posMiddlewareIntegration } from "./routers/posMiddlewareIntegration";
 import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
@@ -1153,6 +1154,7 @@ export const appRouter = router({
   predictiveFloat: predictiveFloatRouter,
   insiderThreatManagement: insiderThreatManagementRouter,
   temporalSagaOrchestrator: temporalSagaOrchestratorRouter,
+  posMiddlewareIntegration: posMiddlewareIntegration,
 });
 
 export type AppRouter = typeof appRouter;

@@ -30,6 +30,21 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.dispute", key, { eventType, ...payload });
+  fluvioPublish("pos.dispute", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.dispute.filed", { eventType, ...payload }).catch(() => {});
+  lakehouseIngest("pos_disputes", { event_type: eventType, ...payload, source: "posDispute" }).catch(() => {});
+}
+
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   open: ["investigating", "resolved", "rejected"],
   investigating: ["resolved", "rejected", "escalated"],

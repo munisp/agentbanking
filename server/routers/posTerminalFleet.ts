@@ -33,6 +33,21 @@ import {
 } from "../lib/domainCalculations";
 import { checkDailyLimit } from "../lib/cbnLimits";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.terminal.fleet", key, { eventType, ...payload });
+  fluvioPublish("pos.terminal.fleet", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.terminal.fleet.updated", { eventType, ...payload }).catch(() => {});
+  lakehouseIngest("pos_terminal_fleet_events", { event_type: eventType, ...payload, source: "posTerminalFleet" }).catch(() => {});
+}
+
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
   under_review: ["approved", "rejected", "additional_info"],

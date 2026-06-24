@@ -106,7 +106,20 @@ export type KafkaTopic =
   | "outbox.dlq.moved"
   | "saga.workflow.started"
   | "saga.workflow.completed"
-  | "saga.workflow.compensated";
+  | "saga.workflow.compensated"
+  | "pos.terminal.fleet"
+  | "pos.batch.settlement"
+  | "pos.firmware.ota"
+  | "pos.dispute"
+  | "pos.mdm"
+  | "pos.terminal.leasing"
+  | "pos.canary.release"
+  | "pos.device.fleet"
+  | "pos.card.payment"
+  | "pos.eod.reconciliation"
+  | "pos.geo.velocity.alert"
+  | "pos.ota.delta.requested"
+  | "pos.canary.rollback";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

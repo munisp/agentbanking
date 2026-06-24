@@ -156,5 +156,42 @@ All financial events publish to `pos.transactions.created` with a `type` field d
 - **Pre-existing TS errors** — 6 errors in `client/src/components/LanguageSelector.tsx` and `client/src/pages/POSShell.tsx` for missing `react-i18next` and `@dnd-kit` type declarations. These are NOT from your changes.
 - **Pre-existing test failures** — `db-performance.test.ts` (4 failures, fetch failed) and `sprint46.test.ts` (1 failure, activePairs 48 vs expected 42).
 
+## POS Router Middleware Testing
+
+POS routers (posTerminalFleet, posBatchSettlement, posFirmwareOTA, posDispute, canaryReleaseManager, deviceFleetManager, mdm, terminalLeasing) use a `publishPosMiddleware` helper pattern instead of inline calls:
+
+```ts
+function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.<domain>", key, { eventType, ...payload });
+  fluvioPublish("pos.<domain>", { key: "pos", value: JSON.stringify({...}) }).catch(() => {});
+  dapr.publishEvent("pubsub", "pos.<domain>.updated", {...}).catch(() => {});
+  lakehouseIngest("pos_<table>", {...}).catch(() => {});
+}
+```
+
+**Critical test:** Verify the helper is actually CALLED from mutation handlers, not just defined. Use:
+```bash
+DEFN=$(grep -c 'function publishPosMiddleware' "$FILE")
+TOTAL=$(grep -c 'publishPosMiddleware' "$FILE")
+CALLS=$((TOTAL - DEFN))
+# CALLS must be >= 1 — if 0, the helper is dead code
+```
+
+**Fluvio shape:** POS routers use `fluvioProduce` (aliased as `fluvioPublish`) which requires `FluvioRecord = {key?: string, value: string}`. This is different from `publishTxToFluvio` used by fund flow routers. Verify all calls pass `{ key: "pos", value: JSON.stringify(...) }`.
+
+**KafkaTopic:** POS topics must be in the KafkaTopic union in `server/kafkaClient.ts`. Check for all 13: pos.terminal.fleet, pos.batch.settlement, pos.firmware.ota, pos.dispute, pos.mdm, pos.terminal.leasing, pos.canary.release, pos.device.fleet, pos.card.payment, pos.eod.reconciliation, pos.geo.velocity.alert, pos.ota.delta.requested, pos.canary.rollback.
+
+## Polyglot Service Persistence Testing
+
+When verifying Go/Rust/Python services have no in-memory state:
+
+| Language | In-Memory Red Flags | PostgreSQL Green Flags |
+|----------|--------------------|-----------------------|
+| Go | `var x map[...]` (exclude static config) | `"database/sql"`, `lib/pq`, `db.Query/Exec` |
+| Rust | `Mutex<Vec/HashMap>`, `static mut`, `lazy_static` | `PgPool`, `sqlx::query`, `ON CONFLICT` (UPSERT) |
+| Python | Module-level `dict/list/set` assignments | `import asyncpg`, `CREATE TABLE IF NOT EXISTS`, `conn.execute/fetch` |
+
+**False positives to exclude:** Go `allPermissions`/`allRoles` (static config), Python `_pool: Optional[asyncpg.Pool]` (connection pool, not state), Rust `web::Data<AppState>` with only PgPool (infrastructure, not state).
+
 ## Recording
 No recording needed for fund flow testing — all validation is shell-based. Only record if testing involves browser UI interactions (e.g., testing the PWA QR scanner page or NFC settings dashboard).

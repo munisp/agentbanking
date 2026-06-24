@@ -51,7 +51,7 @@ export const cashOutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: "0", permission: "create" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
 
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);

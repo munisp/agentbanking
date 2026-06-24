@@ -80,7 +80,7 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: "0", permission: "reverse" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
 
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
@@ -198,6 +198,7 @@ const reject = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
+    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;
@@ -255,6 +256,7 @@ const escalate = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
+    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;

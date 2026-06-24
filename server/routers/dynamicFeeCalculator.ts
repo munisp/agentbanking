@@ -299,7 +299,7 @@ export const dynamicFeeCalculatorRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
-        await publishdynamicFeeCalculatorMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+        await publishdynamicFeeCalculatorMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
 
 
         return { success: true };

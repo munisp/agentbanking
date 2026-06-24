@@ -191,7 +191,7 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "dispute", entityId: "0", permission: "create" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -256,6 +256,7 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       return withTransaction(async (tx) => {
         const db = tx ?? (await getDb())!;
         await db

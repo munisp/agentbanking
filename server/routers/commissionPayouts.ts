@@ -160,7 +160,7 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "commission", entityId: "0", permission: "payout" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -291,6 +291,7 @@ export const commissionPayoutsRouter = router({
   approve: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -339,6 +340,7 @@ export const commissionPayoutsRouter = router({
   reject: protectedProcedure
     .input(z.object({ id: z.number(), reason: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -369,6 +371,7 @@ export const commissionPayoutsRouter = router({
   process: protectedProcedure
     .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
     .mutation(async ({ input }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

@@ -514,7 +514,7 @@ export const tigerBeetleRouter = router({
           `Transfer ${input.amount} via middleware fan-out`
         );
       } catch {}
-      await publishtigerBeetleMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+      await publishtigerBeetleMiddleware("middlewareTransfer", `${Date.now()}`, { action: "middlewareTransfer" }).catch(() => {});
 
       return result;
     }),

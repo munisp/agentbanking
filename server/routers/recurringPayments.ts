@@ -124,7 +124,7 @@ export const recurringPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: "0", permission: "create" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -264,6 +264,7 @@ export const recurringPaymentsRouter = router({
   cancel: protectedProcedure
     .input(z.object({ scheduleId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });

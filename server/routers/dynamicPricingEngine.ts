@@ -228,7 +228,7 @@ export const dynamicPricingEngineRouter = router({
           status: "success",
           metadata: { transactionType: input.transactionType },
         } as any);
-        await publishdynamicPricingEngineMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+        await publishdynamicPricingEngineMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
 
         return rule;
       } catch (error) {

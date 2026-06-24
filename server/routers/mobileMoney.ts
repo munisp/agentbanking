@@ -248,7 +248,7 @@ export const mobileMoneyRouter = router({
           },
         });
 
-        await publishmobileMoneyMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+        await publishmobileMoneyMiddleware("sendMoney", `${Date.now()}`, { action: "sendMoney" }).catch(() => {});
 
 
         return {

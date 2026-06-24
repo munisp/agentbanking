@@ -142,7 +142,7 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "float_account", entityId: "0", permission: "topup" }).catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "float_account", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "topup" }).catch(() => {});
 
       const session = await getAgentFromCookie(ctx.req);
       if (!session)
@@ -234,7 +234,7 @@ export const floatTopUpRouter = router({
 
         floatTopupRequestsTotal.labels("submitted").inc();
 
-        await publishfloatTopUpMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+        await publishfloatTopUpMiddleware("submit", `${Date.now()}`, { action: "submit" }).catch(() => {});
 
 
         return {
@@ -382,6 +382,7 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)

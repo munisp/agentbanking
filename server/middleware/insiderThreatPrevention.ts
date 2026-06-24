@@ -1,6 +1,8 @@
 /**
  * Insider Threat Prevention Middleware
  *
+ * All state persisted to PostgreSQL — zero in-memory mutable state.
+ *
  * Controls:
  * 1. Separation of duties (self-approval blocking)
  * 2. Maker-checker dual-control for high-value operations
@@ -279,11 +281,9 @@ export async function processApproval(params: {
   };
 }
 
-// ── 4. Step-Up Authentication ────────────────────────────────────────────────
+// ── 4. Step-Up Authentication (PostgreSQL-backed) ────────────────────────────
 
-const stepUpTokens = new Map<string, { agentId: number; expiresAt: number }>();
-
-export function requireStepUpAuth(agentId: number, token?: string): void {
+export async function requireStepUpAuth(agentId: number, token?: string): Promise<void> {
   if (!token) {
     throw new TRPCError({
       code: "FORBIDDEN",
@@ -291,9 +291,20 @@ export function requireStepUpAuth(agentId: number, token?: string): void {
     });
   }
 
-  const entry = stepUpTokens.get(token);
-  if (!entry || entry.agentId !== agentId || entry.expiresAt < Date.now()) {
-    stepUpTokens.delete(token ?? "");
+  const db = await getDb();
+  if (!db) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  }
+
+  const rows = await db.execute(
+    sql`SELECT agent_id, expires_at FROM insider_step_up_tokens
+        WHERE token = ${token} AND agent_id = ${agentId} AND expires_at > NOW()`
+  );
+  const row = (rows as any).rows?.[0] ?? (rows as any)[0];
+
+  if (!row) {
+    // Clean up expired token if it exists
+    await db.execute(sql`DELETE FROM insider_step_up_tokens WHERE token = ${token}`).catch(() => {});
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Step-up token invalid or expired. Please re-authenticate.",
@@ -301,43 +312,63 @@ export function requireStepUpAuth(agentId: number, token?: string): void {
   }
 }
 
-export function issueStepUpToken(agentId: number): string {
+export async function issueStepUpToken(agentId: number): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
-  stepUpTokens.set(token, {
-    agentId,
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 min validity
-  });
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min
+
+  const db = await getDb();
+  if (db) {
+    await db.execute(
+      sql`INSERT INTO insider_step_up_tokens (token, agent_id, expires_at)
+          VALUES (${token}, ${agentId}, ${expiresAt}::timestamptz)
+          ON CONFLICT (token) DO UPDATE SET agent_id = EXCLUDED.agent_id, expires_at = EXCLUDED.expires_at`
+    );
+
+    // Clean up expired tokens periodically
+    await db.execute(
+      sql`DELETE FROM insider_step_up_tokens WHERE expires_at < NOW()`
+    ).catch(() => {});
+  }
+
   return token;
 }
 
-// Cleanup expired step-up tokens
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of stepUpTokens) {
-    if (val.expiresAt < now) stepUpTokens.delete(key);
-  }
-}, 60_000);
+// ── 5. Privileged Session Timeout (PostgreSQL-backed) ────────────────────────
 
-// ── 5. Privileged Session Timeout ────────────────────────────────────────────
-
-const adminLastActivity = new Map<number, number>();
 const ADMIN_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
-export function checkAdminSessionTimeout(agentId: number, role: string): void {
+export async function checkAdminSessionTimeout(agentId: number, role: string): Promise<void> {
   if (role !== "admin" && role !== "super_admin") return;
 
-  const lastActivity = adminLastActivity.get(agentId);
-  if (lastActivity && Date.now() - lastActivity > ADMIN_IDLE_TIMEOUT) {
-    adminLastActivity.delete(agentId);
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Admin session expired due to inactivity. Please re-authenticate.",
-    });
+  const db = await getDb();
+  if (!db) return;
+
+  const rows = await db.execute(
+    sql`SELECT last_activity FROM insider_admin_sessions WHERE agent_id = ${agentId}`
+  );
+  const row = (rows as any).rows?.[0] ?? (rows as any)[0];
+
+  if (row) {
+    const lastActivity = new Date(row.last_activity).getTime();
+    if (Date.now() - lastActivity > ADMIN_IDLE_TIMEOUT) {
+      // Session expired — delete it
+      await db.execute(sql`DELETE FROM insider_admin_sessions WHERE agent_id = ${agentId}`);
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Admin session expired due to inactivity. Please re-authenticate.",
+      });
+    }
   }
-  adminLastActivity.set(agentId, Date.now());
+
+  // Upsert last activity
+  await db.execute(
+    sql`INSERT INTO insider_admin_sessions (agent_id, last_activity)
+        VALUES (${agentId}, NOW())
+        ON CONFLICT (agent_id) DO UPDATE SET last_activity = NOW()`
+  );
 }
 
-// ── 6. Staff Velocity Detection ──────────────────────────────────────────────
+// ── 6. Staff Velocity Detection (PostgreSQL-backed) ──────────────────────────
 
 interface StaffAction {
   agentId: number;
@@ -346,7 +377,6 @@ interface StaffAction {
   timestamp: number;
 }
 
-const staffActions: StaffAction[] = [];
 const VELOCITY_WINDOW = 60 * 60 * 1000; // 1 hour
 const MAX_REVERSALS_PER_HOUR = 5;
 const MAX_HIGH_VALUE_PER_HOUR = 3;
@@ -358,26 +388,35 @@ export async function checkStaffVelocity(
   action: string,
   amount: number
 ): Promise<void> {
-  const now = Date.now();
+  const db = await getDb();
+  if (!db) return;
 
-  // Clean old entries
-  while (staffActions.length > 0 && now - staffActions[0].timestamp > VELOCITY_WINDOW) {
-    staffActions.shift();
-  }
-
-  // Record this action
-  staffActions.push({ agentId, action, amount, timestamp: now });
-
-  // Check reversal velocity
-  const agentReversals = staffActions.filter(
-    a => a.agentId === agentId && a.action.includes("reversal")
+  // Record this action in PostgreSQL
+  await db.execute(
+    sql`INSERT INTO insider_staff_actions (agent_id, action, amount, recorded_at)
+        VALUES (${agentId}, ${action}, ${amount}, NOW())`
   );
-  if (agentReversals.length > MAX_REVERSALS_PER_HOUR) {
-    publishEvent("insider.threat.velocity", `VEL-${agentId}-${now}`, {
+
+  // Prune old entries (> 1 hour)
+  await db.execute(
+    sql`DELETE FROM insider_staff_actions WHERE recorded_at < NOW() - INTERVAL '1 hour'`
+  ).catch(() => {});
+
+  // Check reversal velocity from PostgreSQL
+  const reversalRows = await db.execute(
+    sql`SELECT COUNT(*) as cnt FROM insider_staff_actions
+        WHERE agent_id = ${agentId}
+        AND action ILIKE '%reversal%'
+        AND recorded_at > NOW() - INTERVAL '1 hour'`
+  );
+  const reversalCount = Number((reversalRows as any).rows?.[0]?.cnt ?? (reversalRows as any)[0]?.cnt ?? 0);
+
+  if (reversalCount > MAX_REVERSALS_PER_HOUR) {
+    publishEvent("insider.threat.velocity", `VEL-${agentId}-${Date.now()}`, {
       type: "excessive_reversals",
       agentId,
       agentCode,
-      count: agentReversals.length,
+      count: reversalCount,
       window: "1h",
       severity: "high",
     }).catch(() => {});
@@ -385,22 +424,28 @@ export async function checkStaffVelocity(
     dapr.publishEvent("pubsub", "insider.threat.detected", {
       type: "excessive_reversals",
       agentCode,
-      count: agentReversals.length,
+      count: reversalCount,
       severity: "high",
     }).catch(() => {});
   }
 
-  // Check high-value transaction velocity
-  const agentHighValue = staffActions.filter(
-    a => a.agentId === agentId && a.amount > HIGH_VALUE_THRESHOLD
+  // Check high-value transaction velocity from PostgreSQL
+  const hvRows = await db.execute(
+    sql`SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total FROM insider_staff_actions
+        WHERE agent_id = ${agentId}
+        AND amount > ${HIGH_VALUE_THRESHOLD}
+        AND recorded_at > NOW() - INTERVAL '1 hour'`
   );
-  if (agentHighValue.length > MAX_HIGH_VALUE_PER_HOUR) {
-    publishEvent("insider.threat.velocity", `VEL-HV-${agentId}-${now}`, {
+  const hvCount = Number((hvRows as any).rows?.[0]?.cnt ?? (hvRows as any)[0]?.cnt ?? 0);
+  const hvTotal = Number((hvRows as any).rows?.[0]?.total ?? (hvRows as any)[0]?.total ?? 0);
+
+  if (hvCount > MAX_HIGH_VALUE_PER_HOUR) {
+    publishEvent("insider.threat.velocity", `VEL-HV-${agentId}-${Date.now()}`, {
       type: "excessive_high_value",
       agentId,
       agentCode,
-      count: agentHighValue.length,
-      totalAmount: agentHighValue.reduce((s, a) => s + a.amount, 0),
+      count: hvCount,
+      totalAmount: hvTotal,
       window: "1h",
       severity: "critical",
     }).catch(() => {});
@@ -408,7 +453,7 @@ export async function checkStaffVelocity(
     dapr.publishEvent("pubsub", "insider.threat.detected", {
       type: "excessive_high_value",
       agentCode,
-      totalAmount: agentHighValue.reduce((s, a) => s + a.amount, 0),
+      totalAmount: hvTotal,
       severity: "critical",
     }).catch(() => {});
   }

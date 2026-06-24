@@ -1,22 +1,14 @@
 // Insider Threat RBAC Service (Go)
 //
 // Provides granular permission management using Permify (Zanzibar-style ReBAC).
-// Replaces binary admin/non-admin with fine-grained permissions:
-// - can_approve_reversals
-// - can_disburse_loans
-// - can_modify_fees
-// - can_payout_commissions
-// - can_adjust_float
-// - can_convert_fx
-// - can_change_privileges
-// - can_access_break_glass
-//
-// Enforces: no single role has both CREATE and APPROVE on financial mutations.
+// Replaces binary admin/non-admin with fine-grained permissions.
+// All state persisted to PostgreSQL — zero in-memory mutable state.
 
 package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 // Permission represents a granular access control permission
@@ -47,11 +41,11 @@ type Role struct {
 
 // PolicyCheck represents a permission check request
 type PolicyCheck struct {
-	AgentID    int64  `json:"agentId"`
-	AgentCode  string `json:"agentCode"`
-	Permission string `json:"permission"`
-	Resource   string `json:"resource"`
-	ResourceID string `json:"resourceId"`
+	AgentID    int64                  `json:"agentId"`
+	AgentCode  string                 `json:"agentCode"`
+	Permission string                 `json:"permission"`
+	Resource   string                 `json:"resource"`
+	ResourceID string                 `json:"resourceId"`
 	Context    map[string]interface{} `json:"context"`
 }
 
@@ -203,9 +197,102 @@ var incompatiblePairs = [][2]string{
 	{"fin.create.chargeback", "fin.approve.chargeback"},
 }
 
-// ── In-memory permission store (production: use Permify/Redis) ───────────────
+// ── PostgreSQL persistence ───────────────────────────────────────────────────
 
-var agentPermissions = map[int64][]string{}
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("POSTGRES_URL")
+	}
+	if dsn == "" {
+		dsn = "postgres://postgres:postgres@localhost:5432/agentbanking?sslmode=disable"
+	}
+
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+	}
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("Failed to ping PostgreSQL: %v", err)
+	}
+
+	// Create table if not exists
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS rbac_agent_permissions (
+			agent_id   BIGINT NOT NULL,
+			permission VARCHAR(128) NOT NULL,
+			assigned_by BIGINT NOT NULL DEFAULT 0,
+			assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (agent_id, permission)
+		);
+		CREATE INDEX IF NOT EXISTS idx_rbac_agent_permissions_agent
+			ON rbac_agent_permissions (agent_id);
+	`)
+	if err != nil {
+		log.Fatalf("Failed to create rbac_agent_permissions table: %v", err)
+	}
+
+	log.Println("PostgreSQL connected — rbac_agent_permissions table ready")
+}
+
+// getAgentPermissions fetches all permissions for an agent from PostgreSQL
+func getAgentPermissions(ctx context.Context, agentID int64) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT permission FROM rbac_agent_permissions WHERE agent_id = $1
+	`, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var perms []string
+	for rows.Next() {
+		var perm string
+		if err := rows.Scan(&perm); err != nil {
+			return nil, err
+		}
+		perms = append(perms, perm)
+	}
+	return perms, rows.Err()
+}
+
+// assignAgentPermissions inserts permissions for an agent into PostgreSQL
+func assignAgentPermissions(ctx context.Context, agentID int64, permissions []string, assignedBy int64) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO rbac_agent_permissions (agent_id, permission, assigned_by)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (agent_id, permission) DO NOTHING
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, perm := range permissions {
+		if _, err := stmt.ExecContext(ctx, agentID, perm, assignedBy); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -216,8 +303,14 @@ func checkPermissionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	perms, exists := agentPermissions[req.AgentID]
-	if !exists {
+	ctx := r.Context()
+	perms, err := getAgentPermissions(ctx, req.AgentID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Database error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if len(perms) == 0 {
 		json.NewEncoder(w).Encode(PolicyResult{
 			Allowed: false,
 			Reason:  "Agent has no permissions assigned",
@@ -311,10 +404,18 @@ func assignPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for conflicts before assigning
-	existing := agentPermissions[req.AgentID]
+	ctx := r.Context()
+
+	// Fetch existing permissions from PostgreSQL
+	existing, err := getAgentPermissions(ctx, req.AgentID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Database error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	combined := append(existing, req.Permissions...)
 
+	// Check for conflicts before assigning
 	for _, pair := range incompatiblePairs {
 		hasFirst := false
 		hasSecond := false
@@ -341,7 +442,11 @@ func assignPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agentPermissions[req.AgentID] = combined
+	// Persist to PostgreSQL
+	if err := assignAgentPermissions(ctx, req.AgentID, req.Permissions, req.AssignedBy); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to persist permissions: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":     true,
@@ -359,10 +464,15 @@ func listRolesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
+	status := "healthy"
+	if err := db.Ping(); err != nil {
+		status = "degraded"
+	}
 	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "healthy",
+		"status":  status,
 		"service": "insider-threat-rbac",
-		"version": "1.0.0",
+		"version": "2.0.0",
+		"storage": "postgresql",
 	})
 }
 
@@ -371,6 +481,9 @@ func main() {
 	if port == "" {
 		port = "8261"
 	}
+
+	initDB()
+	defer db.Close()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -387,11 +500,9 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Printf("Insider Threat RBAC Service starting on port %s", port)
+	log.Printf("Insider Threat RBAC Service v2.0.0 starting on port %s (PostgreSQL-backed)", port)
 	log.Printf("Permify integration: %s", os.Getenv("PERMIFY_URL"))
 
-	ctx := context.Background()
-	_ = ctx
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

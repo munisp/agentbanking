@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Configuration

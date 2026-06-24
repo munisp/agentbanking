@@ -3,6 +3,7 @@
 /// Build WASM: cargo build --target wasm32-wasi --release
 use pos_fraud_smartmodule::{evaluate_transaction, FraudAction, TransactionEvent};
 use std::io::{self, BufRead};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 
 async fn health_check() -> impl actix_web::Responder {

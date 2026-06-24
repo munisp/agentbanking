@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::net::SocketAddr;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ── Domain Types ─────────────────────────────────────────────────────────────
 

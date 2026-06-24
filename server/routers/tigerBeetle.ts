@@ -39,6 +39,13 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -140,6 +147,16 @@ const _txPatterns = {
     });
   },
 };
+
+
+async function publishtigerBeetleMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("pos.transactions.created", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `pos.transactions.created.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `pos.transactions.created.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("tigerBeetle", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`tigerBeetle:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
 
 export const tigerBeetleRouter = router({
   /** Health check */
@@ -339,6 +356,9 @@ export const tigerBeetleRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
+        await publishtigerBeetleMiddleware("triggerSync", `${Date.now()}`, { action: "triggerSync" }).catch(() => {});
+
+
         return { triggered: true, timestamp: new Date().toISOString() };
       } catch {
         return {
@@ -355,6 +375,8 @@ export const tigerBeetleRouter = router({
     .mutation(async ({ input }) => {
       try {
         const created = await tbEnsureAgentAccount(input.agentCode);
+        await publishtigerBeetleMiddleware("ensureAccount", `${Date.now()}`, { action: "ensureAccount" }).catch(() => {});
+
         return { created, agentCode: input.agentCode };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -413,6 +435,8 @@ export const tigerBeetleRouter = router({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ limit: input.limit }),
         })) as { retried: number; succeeded: number; failed: number };
+        await publishtigerBeetleMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+
         return data;
       } catch {
         return {
@@ -431,9 +455,13 @@ export const tigerBeetleRouter = router({
   rotateSecret: protectedProcedure
     .input(z.object({ secretName: z.string() }))
     .mutation(async ({ input }) => {
+      await publishtigerBeetleMiddleware("rotateSecret", `${Date.now()}`, { action: "rotateSecret" }).catch(() => {});
+
       return { success: true, rotatedAt: new Date().toISOString() };
     }),
   start: protectedProcedure.mutation(async () => {
+    await publishtigerBeetleMiddleware("start", `${Date.now()}`, { action: "start" }).catch(() => {});
+
     return { success: true, startedAt: new Date().toISOString() };
   }),
 
@@ -487,6 +515,8 @@ export const tigerBeetleRouter = router({
           `Transfer ${input.amount} via middleware fan-out`
         );
       } catch {}
+      await publishtigerBeetleMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+
       return result;
     }),
 
@@ -505,6 +535,8 @@ export const tigerBeetleRouter = router({
         query: input.query || { match_all: {} },
         size: input.size,
       });
+      await publishtigerBeetleMiddleware("middlewareSearch", `${Date.now()}`, { action: "middlewareSearch" }).catch(() => {});
+
       return result.ok
         ? result.data
         : { hits: { hits: [], total: { value: 0 } } };
@@ -515,6 +547,8 @@ export const tigerBeetleRouter = router({
       "../adapters/tigerbeetleMiddlewareAdapter"
     );
     const result = await orchestratorReconcile();
+    await publishtigerBeetleMiddleware("middlewareReconcile", `${Date.now()}`, { action: "middlewareReconcile" }).catch(() => {});
+
     return result.ok ? result.data : { status: "unavailable", total_runs: 0 };
   }),
 });

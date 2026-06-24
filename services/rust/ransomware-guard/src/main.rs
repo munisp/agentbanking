@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 const SERVICE_NAME: &str = "ransomware-guard";
 const SERVICE_VERSION: &str = "1.0.0";

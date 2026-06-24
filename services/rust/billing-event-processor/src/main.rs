@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::sync::{Arc, Mutex};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 /// Billing event types processed by this service
 #[derive(Debug, Clone)]

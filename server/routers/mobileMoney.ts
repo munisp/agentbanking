@@ -123,6 +123,16 @@ const _txPatterns = {
   },
 };
 
+
+async function publishmobileMoneyMiddleware(event: string, key: string, payload: Record<string, unknown>) {
+  publishEvent("payments.initiated", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
+  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
+  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `payments.initiated.${event}`, timestamp: Date.now() }).catch(() => {});
+  dapr.publishEvent("pubsub", `payments.initiated.${event}`, { key, ...payload }).catch(() => {});
+  ingestToLakehouse("mobileMoney", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+  cacheSet(`mobileMoney:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
+
 export const mobileMoneyRouter = router({
   sendMoney: protectedProcedure
     .input(
@@ -235,6 +245,9 @@ export const mobileMoneyRouter = router({
           },
         });
 
+        await publishmobileMoneyMiddleware("unknown", `${Date.now()}`, { action: "unknown" }).catch(() => {});
+
+
         return {
           ref,
           amount: input.amount,
@@ -333,6 +346,9 @@ export const mobileMoneyRouter = router({
           metadata: { amount: input.amount, fee, phone: input.phone },
         });
 
+        await publishmobileMoneyMiddleware("withdrawCash", `${Date.now()}`, { action: "withdrawCash" }).catch(() => {});
+
+
         return {
           ref,
           amount: input.amount,
@@ -417,6 +433,9 @@ export const mobileMoneyRouter = router({
           status: "success",
           metadata: { amount: input.amount, phone: input.phone },
         });
+
+        await publishmobileMoneyMiddleware("depositCash", `${Date.now()}`, { action: "depositCash" }).catch(() => {});
+
 
         return {
           ref,

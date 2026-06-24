@@ -29,6 +29,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, atomic::{AtomicU64, Ordering}};
 use std::time::{SystemTime, UNIX_EPOCH};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

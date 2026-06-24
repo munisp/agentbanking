@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 /// MultiCurrencyEngine — Real-time currency conversion for African markets
 /// Supports NGN, KES, GHS, ZAR, XOF, ETB, TZS, UGX, RWF, USD, EUR, GBP

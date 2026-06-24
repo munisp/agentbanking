@@ -2,6 +2,7 @@
 // Integrations: TigerBeetle, Kafka, Redis, Dapr, PostgreSQL, Mojaloop
 use std::collections::HashMap;
 use std::env;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 /// Fee split configuration for a tenant
 #[derive(Debug, Clone)]

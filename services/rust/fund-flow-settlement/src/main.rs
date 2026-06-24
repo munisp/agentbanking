@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use uuid::Uuid;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ── Domain Types ────────────────────────────────────────────────────────────
 
@@ -110,8 +111,7 @@ pub struct SettlementBatch {
 // ── Application State ───────────────────────────────────────────────────────
 
 pub struct AppState {
-    fx_rates: RwLock<HashMap<String, FXRate>>,
-    schedules: RwLock<HashMap<i64, InstallmentSchedule>>,
+    pool: PgPool,
 }
 
 impl AppState {

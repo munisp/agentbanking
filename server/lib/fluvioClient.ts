@@ -478,3 +478,10 @@ export async function shutdownFluvio(): Promise<void> {
     await flushBuffer();
   }
 }
+
+export async function fluvioPublish(
+  topic: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await fluvioProduce({ topic, payload, timestamp: new Date().toISOString() });
+}

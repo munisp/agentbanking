@@ -12,7 +12,7 @@ import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
-import { publishEvent } from "../kafkaClient";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioPublish } from "../lib/fluvioClient";
@@ -432,5 +432,135 @@ export const temporalSagaRouter = router({
       `);
 
       return rows;
+    }),
+
+  startSettlementSaga: protectedProcedure
+    .input(z.object({
+      terminalId: z.string().min(1),
+      batchRef: z.string().optional(),
+      settlementDate: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const workflowId = `settle_${input.terminalId}_${Date.now()}`;
+
+      const steps: SagaStep[] = [
+        {
+          name: "create_batch",
+          execute: async (ctx) => {
+            const db = (await getDb())!;
+            if (!db) return { batchId: 0 };
+            const batchRef = ctx.data.batchRef || `BATCH-${Date.now()}`;
+            const result = await db.execute(sql`
+              INSERT INTO pos_settlement_batches (batch_ref, terminal_id, status, created_at)
+              VALUES (${batchRef}, ${ctx.data.terminalId}, 'pending', NOW())
+              RETURNING id
+            `);
+            const batchId = Array.isArray(result) && result[0] ? (result[0] as Record<string, unknown>).id : 0;
+            ctx.results.batchId = batchId;
+            ctx.results.batchRef = batchRef;
+            return { batchId, batchRef };
+          },
+          compensate: async (ctx) => {
+            const db = (await getDb())!;
+            if (db && ctx.results.batchId) {
+              await db.execute(sql`DELETE FROM pos_settlement_batches WHERE id = ${ctx.results.batchId}`);
+            }
+          },
+        },
+        {
+          name: "process_transactions",
+          execute: async (ctx) => {
+            const db = (await getDb())!;
+            if (!db) return { processed: 0 };
+            const txResult = await db.execute(sql`
+              SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
+              FROM transactions
+              WHERE terminal_id = ${ctx.data.terminalId}
+                AND status = 'completed'
+            `);
+            const row = Array.isArray(txResult) ? txResult[0] as Record<string, unknown> : {};
+            const cnt = Number(row?.cnt ?? 0);
+            const total = Number(row?.total ?? 0);
+            if (ctx.results.batchId) {
+              await db.execute(sql`
+                UPDATE pos_settlement_batches
+                SET status = 'processing', transaction_count = ${cnt}, total_amount = ${total}
+                WHERE id = ${ctx.results.batchId}
+              `);
+            }
+            return { processed: cnt, totalAmount: total };
+          },
+          compensate: async (ctx) => {
+            const db = (await getDb())!;
+            if (db && ctx.results.batchId) {
+              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'failed' WHERE id = ${ctx.results.batchId}`);
+            }
+          },
+        },
+        {
+          name: "settle_batch",
+          execute: async (ctx) => {
+            const db = (await getDb())!;
+            if (!db) return { settled: false };
+            const settleRef = `SETTLE-${ctx.results.batchRef}-${Date.now()}`;
+            if (ctx.results.batchId) {
+              await db.execute(sql`
+                UPDATE pos_settlement_batches
+                SET status = 'settled', settlement_ref = ${settleRef}, settled_at = NOW()
+                WHERE id = ${ctx.results.batchId}
+              `);
+            }
+            ctx.results.settleRef = settleRef;
+            return { settled: true, settleRef };
+          },
+          compensate: async (ctx) => {
+            const db = (await getDb())!;
+            if (db && ctx.results.batchId) {
+              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'processing', settlement_ref = NULL WHERE id = ${ctx.results.batchId}`);
+            }
+          },
+        },
+        {
+          name: "reconcile_batch",
+          execute: async (ctx) => {
+            const db = (await getDb())!;
+            if (!db) return { reconciled: false };
+            if (ctx.results.batchId) {
+              await db.execute(sql`
+                UPDATE pos_settlement_batches SET status = 'reconciled' WHERE id = ${ctx.results.batchId}
+              `);
+            }
+            return { reconciled: true };
+          },
+          compensate: async (ctx) => {
+            const db = (await getDb())!;
+            if (db && ctx.results.batchId) {
+              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'settled' WHERE id = ${ctx.results.batchId}`);
+            }
+          },
+        },
+      ];
+
+      const sagaCtx: SagaContext = {
+        workflowId,
+        data: {
+          terminalId: input.terminalId,
+          batchRef: input.batchRef,
+          settlementDate: input.settlementDate,
+        },
+        amount: 0,
+        agentId: 0,
+        results: {},
+      };
+
+      const result = await executeSaga("settlement_saga", steps, sagaCtx);
+
+      publishEvent("settlement.saga" as KafkaTopic, workflowId, {
+        workflowId,
+        success: result.success,
+        terminalId: input.terminalId,
+      }).catch(() => {});
+
+      return result;
     }),
 });

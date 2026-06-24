@@ -17,7 +17,7 @@ import (
 	"strings"
 	"os"
 	"os/signal"
-	"sync"
+
 	"syscall"
 	"time"
 )
@@ -116,20 +116,108 @@ type DiscrepancyAlert struct {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type ReconciliationEngine struct {
-	config  *Config
-	mu      sync.RWMutex
-	reports []ReconciliationReport
-	alerts  []DiscrepancyAlert
-	lastRun time.Time
+	config   *Config
+	lastRun  time.Time
 	runCount int64
 }
 
 func NewReconciliationEngine(cfg *Config) *ReconciliationEngine {
-	return &ReconciliationEngine{
-		config:  cfg,
-		reports: make([]ReconciliationReport, 0),
-		alerts:  make([]DiscrepancyAlert, 0),
+	if db != nil {
+		db.Exec(`CREATE TABLE IF NOT EXISTS reconciliation_reports (
+			id BIGINT PRIMARY KEY,
+			period TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			projected_json JSONB NOT NULL DEFAULT '{}',
+			actual_json JSONB NOT NULL DEFAULT '{}',
+			revenue_variance_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+			volume_variance_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+			agent_variance_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+			insights_json JSONB NOT NULL DEFAULT '[]',
+			generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			approved_by TEXT,
+			approved_at TIMESTAMPTZ
+		);
+		CREATE INDEX IF NOT EXISTS idx_recon_reports_period ON reconciliation_reports(period);
+		CREATE INDEX IF NOT EXISTS idx_recon_reports_status ON reconciliation_reports(status);
+
+		CREATE TABLE IF NOT EXISTS discrepancy_alerts (
+			id SERIAL PRIMARY KEY,
+			period TEXT NOT NULL,
+			metric TEXT NOT NULL,
+			projected DOUBLE PRECISION NOT NULL,
+			actual DOUBLE PRECISION NOT NULL,
+			variance_pct DOUBLE PRECISION NOT NULL,
+			severity TEXT NOT NULL DEFAULT 'warning',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_discrepancy_severity ON discrepancy_alerts(severity);`)
 	}
+	return &ReconciliationEngine{
+		config: cfg,
+	}
+}
+
+func (re *ReconciliationEngine) persistReport(report ReconciliationReport) {
+	if db == nil {
+		return
+	}
+	projJSON, _ := json.Marshal(report.Projected)
+	actJSON, _ := json.Marshal(report.Actual)
+	insJSON, _ := json.Marshal(report.Insights)
+	db.Exec(
+		`INSERT INTO reconciliation_reports (id, period, status, projected_json, actual_json, revenue_variance_pct, volume_variance_pct, agent_variance_pct, insights_json, generated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 ON CONFLICT (id) DO UPDATE SET status=$3, actual_json=$5, revenue_variance_pct=$6, volume_variance_pct=$7, agent_variance_pct=$8, insights_json=$9`,
+		report.ID, report.Period, string(report.Status), string(projJSON), string(actJSON),
+		report.RevenueVariancePct, report.VolumeVariancePct, report.AgentVariancePct,
+		string(insJSON), report.GeneratedAt,
+	)
+}
+
+func (re *ReconciliationEngine) persistAlert(alert DiscrepancyAlert) {
+	if db == nil {
+		return
+	}
+	db.Exec(
+		`INSERT INTO discrepancy_alerts (period, metric, projected, actual, variance_pct, severity)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		alert.Period, alert.Metric, alert.Projected, alert.Actual, alert.VariancePct, alert.Severity,
+	)
+}
+
+func (re *ReconciliationEngine) publishReconMiddleware(eventType string, period string, payload map[string]interface{}) {
+	payload["event_type"] = eventType
+	payload["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	payload["source"] = "revenue-reconciler"
+
+	daprPort := re.config.DaprHTTPPort
+	go func() {
+		body, _ := json.Marshal(payload)
+		http.Post(fmt.Sprintf("http://localhost:%s/v1.0/publish/pubsub/reconciliation.%s", daprPort, eventType), "application/json", strings.NewReader(string(body)))
+	}()
+
+	go func() {
+		body, _ := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"key": period, "value": payload}}})
+		req, _ := http.NewRequest("POST", fmt.Sprintf("http://%s/topics/reconciliation.%s", re.config.KafkaBrokers, eventType), strings.NewReader(string(body)))
+		if req != nil {
+			req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+			http.DefaultClient.Do(req)
+		}
+	}()
+
+	go func() {
+		body, _ := json.Marshal(map[string]interface{}{"table": "reconciliation_reports", "source": "revenue-reconciler", "data": payload})
+		http.Post(re.config.LakehouseEndpoint+"/v1/ingest", "application/json", strings.NewReader(string(body)))
+	}()
+
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	go func() {
+		body, _ := json.Marshal(payload)
+		http.Post(osURL+"/reconciliation-reports/_doc", "application/json", strings.NewReader(string(body)))
+	}()
 }
 
 func (re *ReconciliationEngine) RunReconciliation(ctx context.Context, period string) (*ReconciliationReport, error) {
@@ -168,20 +256,23 @@ func (re *ReconciliationEngine) RunReconciliation(ctx context.Context, period st
 		GeneratedAt:        time.Now(),
 	}
 
-	re.mu.Lock()
-	re.reports = append(re.reports, report)
 	re.lastRun = time.Now()
 	re.runCount++
-	re.mu.Unlock()
+
+	// Persist to PostgreSQL
+	re.persistReport(report)
+
+	// Publish to middleware stack (Kafka, Dapr, Lakehouse, OpenSearch)
+	re.publishReconMiddleware("completed", period, map[string]interface{}{
+		"period": period, "status": string(status),
+		"revenue_variance_pct": revenueVar, "volume_variance_pct": volumeVar,
+	})
 
 	// If discrepancy detected, trigger Temporal workflow and alert
 	if status == StatusDiscrepancy {
 		re.triggerDiscrepancyWorkflow(report)
 		re.createAlert(report, revenueVar, volumeVar)
 	}
-
-	// Export to Lakehouse for long-term analytics
-	re.exportToLakehouse(report)
 
 	log.Printf("[Reconciliation] Complete for %s: status=%s, revenueVar=%.2f%%, volumeVar=%.2f%%",
 		period, status, revenueVar, volumeVar)
@@ -190,8 +281,24 @@ func (re *ReconciliationEngine) RunReconciliation(ctx context.Context, period st
 }
 
 func (re *ReconciliationEngine) fetchProjectedMetrics(period string) ProjectedMetrics {
-	// In production: query the billing_reconciliation_reports table for projections
-	// or fetch from the financial model API endpoint
+	if db != nil {
+		var p ProjectedMetrics
+		p.Period = period
+		err := db.QueryRow(
+			`SELECT COALESCE(SUM(projected_tx_count), 0), COALESCE(SUM(projected_volume), 0),
+				COALESCE(SUM(projected_platform_revenue), 0), COALESCE(SUM(projected_client_revenue), 0),
+				COALESCE(COUNT(DISTINCT agent_id), 0)
+			 FROM billing_projections WHERE period = $1`, period,
+		).Scan(&p.Transactions, &p.GrossVolume, &p.PlatformRevenue, &p.ClientRevenue, &p.AgentCount)
+		if err == nil && p.Transactions > 0 {
+			if p.AgentCount > 0 {
+				p.TxPerAgent = float64(p.Transactions) / float64(p.AgentCount)
+			}
+			p.BillingModel = "revenue_share"
+			return p
+		}
+	}
+	// Fallback to default projections
 	return ProjectedMetrics{
 		Period:          period,
 		Transactions:    1500000,
@@ -205,9 +312,25 @@ func (re *ReconciliationEngine) fetchProjectedMetrics(period string) ProjectedMe
 }
 
 func (re *ReconciliationEngine) fetchActualMetrics(period string) ActualMetrics {
-	// In production: aggregate from platform_billing_ledger table
-	// SELECT SUM(platform_revenue), SUM(client_revenue), COUNT(*), COUNT(DISTINCT agent_id)
-	// FROM platform_billing_ledger WHERE processed_at BETWEEN period_start AND period_end
+	if db != nil {
+		var a ActualMetrics
+		a.Period = period
+		err := db.QueryRow(
+			`SELECT COUNT(*), COALESCE(SUM(amount), 0),
+				COALESCE(SUM(platform_fee), 0), COALESCE(SUM(agent_commission), 0),
+				COALESCE(COUNT(DISTINCT agent_id), 0)
+			 FROM transactions
+			 WHERE status = 'success'
+			   AND TO_CHAR(created_at, 'YYYY-MM') = $1`, period,
+		).Scan(&a.Transactions, &a.GrossVolume, &a.PlatformRevenue, &a.ClientRevenue, &a.AgentCount)
+		if err == nil && a.Transactions > 0 {
+			if a.AgentCount > 0 {
+				a.TxPerAgent = float64(a.Transactions) / float64(a.AgentCount)
+			}
+			return a
+		}
+	}
+	// Fallback to default actuals
 	return ActualMetrics{
 		Period:          period,
 		Transactions:    1423000,
@@ -260,18 +383,13 @@ func (re *ReconciliationEngine) createAlert(report ReconciliationReport, revVar,
 		Timestamp:   time.Now(),
 	}
 
-	re.mu.Lock()
-	re.alerts = append(re.alerts, alert)
-	re.mu.Unlock()
+	re.persistAlert(alert)
 
 	log.Printf("[Alert] Discrepancy alert created: %s severity for period %s (%.2f%% variance)",
 		severity, report.Period, revVar)
 }
 
-func (re *ReconciliationEngine) exportToLakehouse(report ReconciliationReport) {
-	log.Printf("[Lakehouse] Exporting reconciliation report for period %s", report.Period)
-	// In production: write Parquet file to Lakehouse S3 bucket for Spark/Trino queries
-}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Scheduled Reconciliation (runs every hour)
@@ -298,15 +416,18 @@ func (re *ReconciliationEngine) StartScheduler(ctx context.Context) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func (re *ReconciliationEngine) handleHealth(w http.ResponseWriter, r *http.Request) {
-	re.mu.RLock()
-	defer re.mu.RUnlock()
+	var reportCount, alertCount int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM reconciliation_reports`).Scan(&reportCount)
+		db.QueryRow(`SELECT COUNT(*) FROM discrepancy_alerts`).Scan(&alertCount)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "healthy",
 		"service":  "revenue-reconciler",
 		"lastRun":  re.lastRun,
 		"runCount": re.runCount,
-		"reports":  len(re.reports),
-		"alerts":   len(re.alerts),
+		"reports":  reportCount,
+		"alerts":   alertCount,
 	})
 }
 
@@ -324,15 +445,59 @@ func (re *ReconciliationEngine) handleRunReconciliation(w http.ResponseWriter, r
 }
 
 func (re *ReconciliationEngine) handleGetReports(w http.ResponseWriter, r *http.Request) {
-	re.mu.RLock()
-	defer re.mu.RUnlock()
-	json.NewEncoder(w).Encode(re.reports)
+	var reports []ReconciliationReport
+	if db != nil {
+		rows, err := db.Query(
+			`SELECT id, period, status, projected_json, actual_json,
+				revenue_variance_pct, volume_variance_pct, agent_variance_pct,
+				insights_json, generated_at, approved_by, approved_at
+			 FROM reconciliation_reports ORDER BY generated_at DESC LIMIT 50`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var r ReconciliationReport
+				var projJSON, actJSON, insJSON, status string
+				var approvedBy sql.NullString
+				var approvedAt sql.NullTime
+				if err := rows.Scan(&r.ID, &r.Period, &status, &projJSON, &actJSON,
+					&r.RevenueVariancePct, &r.VolumeVariancePct, &r.AgentVariancePct,
+					&insJSON, &r.GeneratedAt, &approvedBy, &approvedAt); err == nil {
+					r.Status = ReconciliationStatus(status)
+					_ = json.Unmarshal([]byte(projJSON), &r.Projected)
+					_ = json.Unmarshal([]byte(actJSON), &r.Actual)
+					_ = json.Unmarshal([]byte(insJSON), &r.Insights)
+					if approvedBy.Valid {
+						r.ApprovedBy = approvedBy.String
+					}
+					if approvedAt.Valid {
+						r.ApprovedAt = &approvedAt.Time
+					}
+					reports = append(reports, r)
+				}
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(reports)
 }
 
 func (re *ReconciliationEngine) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
-	re.mu.RLock()
-	defer re.mu.RUnlock()
-	json.NewEncoder(w).Encode(re.alerts)
+	var alerts []DiscrepancyAlert
+	if db != nil {
+		rows, err := db.Query(
+			`SELECT period, metric, projected, actual, variance_pct, severity, created_at
+			 FROM discrepancy_alerts ORDER BY created_at DESC LIMIT 100`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var a DiscrepancyAlert
+				if err := rows.Scan(&a.Period, &a.Metric, &a.Projected, &a.Actual,
+					&a.VariancePct, &a.Severity, &a.Timestamp); err == nil {
+					alerts = append(alerts, a)
+				}
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(alerts)
 }
 
 

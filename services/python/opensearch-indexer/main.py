@@ -369,13 +369,119 @@ async def get_metrics():
         ),
     }
 
+# ── Settlement & Reconciliation Indexing Pipeline ────────────────────────────
+
+SETTLEMENT_MAPPING = {
+    "mappings": {
+        "properties": {
+            "batch_id": {"type": "keyword"},
+            "batch_ref": {"type": "keyword"},
+            "terminal_id": {"type": "keyword"},
+            "agent_id": {"type": "keyword"},
+            "status": {"type": "keyword"},
+            "total_amount": {"type": "float"},
+            "net_amount": {"type": "float"},
+            "total_fees": {"type": "float"},
+            "transaction_count": {"type": "integer"},
+            "settlement_ref": {"type": "keyword"},
+            "settled_at": {"type": "date"},
+            "created_at": {"type": "date"},
+            "indexed_at": {"type": "date"},
+        }
+    },
+    "settings": {"number_of_shards": 2, "number_of_replicas": 1, "refresh_interval": "5s"},
+}
+
+RECONCILIATION_MAPPING = {
+    "mappings": {
+        "properties": {
+            "reconciliation_id": {"type": "keyword"},
+            "period": {"type": "keyword"},
+            "status": {"type": "keyword"},
+            "revenue_variance_pct": {"type": "float"},
+            "volume_variance_pct": {"type": "float"},
+            "agent_variance_pct": {"type": "float"},
+            "projected_revenue": {"type": "float"},
+            "actual_revenue": {"type": "float"},
+            "generated_at": {"type": "date"},
+            "indexed_at": {"type": "date"},
+        }
+    },
+    "settings": {"number_of_shards": 1, "number_of_replicas": 1, "refresh_interval": "10s"},
+}
+
+class SettlementIndexRequest(BaseModel):
+    documents: list[dict[str, Any]]
+
+class ReconciliationIndexRequest(BaseModel):
+    documents: list[dict[str, Any]]
+
+@app.post("/index/settlements")
+async def index_settlements(req: SettlementIndexRequest):
+    """Index settlement batch documents into OpenSearch."""
+    if not req.documents:
+        return {"indexed": 0, "errors": 0}
+
+    start = time.monotonic()
+    try:
+        result = await bulk_index("settlement-batches", req.documents)
+        elapsed = time.monotonic() - start
+        indexed = len(req.documents)
+        metrics["total_indexed"] += indexed
+        metrics["total_batches"] += 1
+        logger.info(f"Indexed {indexed} settlement docs in {elapsed:.2f}s")
+        log_audit("INDEX_SETTLEMENTS", f"batch_{indexed}", json.dumps({"count": indexed}))
+        return {"indexed": indexed, "errors": 0, "elapsed_ms": round(elapsed * 1000)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        metrics["total_errors"] += len(req.documents)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/index/reconciliations")
+async def index_reconciliations(req: ReconciliationIndexRequest):
+    """Index reconciliation report documents into OpenSearch."""
+    if not req.documents:
+        return {"indexed": 0, "errors": 0}
+
+    start = time.monotonic()
+    try:
+        result = await bulk_index("reconciliation-reports", req.documents)
+        elapsed = time.monotonic() - start
+        indexed = len(req.documents)
+        metrics["total_indexed"] += indexed
+        metrics["total_batches"] += 1
+        logger.info(f"Indexed {indexed} reconciliation docs in {elapsed:.2f}s")
+        log_audit("INDEX_RECONCILIATIONS", f"recon_{indexed}", json.dumps({"count": indexed}))
+        return {"indexed": indexed, "errors": 0, "elapsed_ms": round(elapsed * 1000)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        metrics["total_errors"] += len(req.documents)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/create-settlement-index")
+async def create_settlement_index():
+    """Create the settlement-batches index with proper mappings."""
+    result = await os_request("PUT", "settlement-batches", SETTLEMENT_MAPPING)
+    logger.info(f"Created settlement-batches index: {result}")
+    return result
+
+@app.post("/create-reconciliation-index")
+async def create_reconciliation_index():
+    """Create the reconciliation-reports index with proper mappings."""
+    result = await os_request("PUT", "reconciliation-reports", RECONCILIATION_MAPPING)
+    logger.info(f"Created reconciliation-reports index: {result}")
+    return result
+
 if __name__ == "__main__":
     import uvicorn
 
     logger.info("=" * 60)
-    logger.info("  54Link OpenSearch Indexer v1.0.0")
+    logger.info("  54Link OpenSearch Indexer v2.0.0")
     logger.info(f"  OpenSearch: {OPENSEARCH_URL}")
     logger.info(f"  Port: {PORT}")
+    logger.info(f"  Settlement & Reconciliation pipeline: enabled")
     logger.info("=" * 60)
 
     uvicorn.run(app, host="0.0.0.0", port=PORT)

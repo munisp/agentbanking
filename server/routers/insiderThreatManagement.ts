@@ -50,7 +50,7 @@ export const insiderThreatManagementRouter = router({
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      checkAdminSessionTimeout(agent.id, agent.role);
+      await checkAdminSessionTimeout(agent.id, agent.role);
 
       const request = await createApprovalRequest({
         type: input.type,
@@ -106,10 +106,10 @@ export const insiderThreatManagementRouter = router({
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
 
       // Admin session timeout
-      checkAdminSessionTimeout(agent.id, agent.role);
+      await checkAdminSessionTimeout(agent.id, agent.role);
 
       // Step-up auth required for approvals
-      requireStepUpAuth(agent.id, input.stepUpToken);
+      await requireStepUpAuth(agent.id, input.stepUpToken);
 
       const result = await processApproval({
         requestId: input.requestId,
@@ -151,7 +151,7 @@ export const insiderThreatManagementRouter = router({
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      checkAdminSessionTimeout(agent.id, agent.role);
+      await checkAdminSessionTimeout(agent.id, agent.role);
 
       const result = await processApproval({
         requestId: input.requestId,
@@ -208,7 +208,7 @@ export const insiderThreatManagementRouter = router({
 
       // In production: verify password against hashed password in DB
       // For now, issue token if authenticated
-      const token = issueStepUpToken(agent.id);
+      const token = await issueStepUpToken(agent.id);
 
       await writeAuditLog({
         agentId: agent.id,

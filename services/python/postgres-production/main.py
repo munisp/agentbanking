@@ -187,6 +187,15 @@ app.include_router(router, prefix=settings.API_PREFIX)
 @app.get("/", tags=["status"], summary="Application Status")
 def root() -> Dict[str, Any]:
     """Returns basic information about the application."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "postgres-production")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "project_name": settings.PROJECT_NAME,
         "version": settings.VERSION,

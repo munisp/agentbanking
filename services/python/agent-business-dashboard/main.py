@@ -127,6 +127,15 @@ init_db()
 
 @app.get("/api/v1/dashboard/{agent_id}")
 async def get_dashboard(agent_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM agent_metrics WHERE agent_id = %s ORDER BY recorded_at DESC LIMIT 1", (agent_id,))
@@ -155,6 +164,15 @@ async def record_metric(request: Request):
 
 @app.get("/api/v1/leaderboard")
 async def get_leaderboard():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_leaderboard", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""SELECT agent_id, SUM(tx_count) as total_tx, SUM(volume) as total_vol, SUM(commission) as total_comm
@@ -183,6 +201,15 @@ async def health_check():
 @app.get("/api/v1/dashboard/{agent_id}/overview")
 async def get_dashboard_overview(agent_id: str):
     """Get agent dashboard overview with key metrics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard_overview", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "revenue": {"today": 0.0, "this_week": 0.0, "this_month": 0.0},
@@ -195,11 +222,29 @@ async def get_dashboard_overview(agent_id: str):
 @app.get("/api/v1/dashboard/{agent_id}/trends")
 async def get_trends(agent_id: str, period: str = "30d"):
     """Get transaction and revenue trends."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_trends", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "period": period, "data_points": [], "trend": "stable"}
 
 @app.get("/api/v1/dashboard/{agent_id}/alerts")
 async def get_dashboard_alerts(agent_id: str):
     """Get actionable alerts for the agent."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard_alerts", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "alerts": [], "unread_count": 0}
 
 if __name__ == "__main__":

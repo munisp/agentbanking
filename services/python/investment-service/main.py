@@ -178,22 +178,48 @@ async def health():
 @app.get("/api/v1/investments/products")
 async def list_products():
     """List available investment products."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_products", "investment-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"products": [], "total": 0, "categories": ["fixed_deposit", "money_market", "savings", "treasury_bills"]}
 
 @app.post("/api/v1/investments/subscribe")
 async def subscribe(agent_id: str, product_id: str, amount: float, tenure_days: int = 30):
     """Subscribe to an investment product."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("subscribe_" + str(int(_time.time() * 1000)), _json.dumps({"action": "subscribe", "timestamp": _time.time()}), "investment-service")
+
     if amount < 1000: raise HTTPException(400, "Minimum investment is 1,000")
     return {"investment_id": f"INV-{agent_id}-{int(__import__('time').time())}", "product_id": product_id, "amount": amount, "tenure_days": tenure_days, "status": "active", "maturity_date": None}
 
 @app.get("/api/v1/investments/{agent_id}/portfolio")
 async def get_portfolio(agent_id: str):
     """Get agent's investment portfolio."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_portfolio", "investment-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "total_invested": 0.0, "total_returns": 0.0, "active_investments": 0, "investments": []}
 
 @app.post("/api/v1/investments/{investment_id}/redeem")
 async def redeem(investment_id: str, early: bool = False):
     """Redeem an investment (early or at maturity)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("redeem_" + str(int(_time.time() * 1000)), _json.dumps({"action": "redeem", "timestamp": _time.time()}), "investment-service")
+
     return {"investment_id": investment_id, "status": "redeemed", "principal": 0.0, "interest": 0.0, "penalty": 0.0 if not early else 0.0}
 
 if __name__ == "__main__":

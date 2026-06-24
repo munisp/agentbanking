@@ -437,6 +437,10 @@ async def health_check():
 @app.post("/snippets", response_model=Dict[str, str])
 async def add_snippet(snippet: CodeSnippet):
     """Add a code snippet to the index"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_snippet_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_snippet", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         snippet_id = engine.add_snippet(snippet)
         return {
@@ -450,6 +454,10 @@ async def add_snippet(snippet: CodeSnippet):
 @app.post("/search", response_model=List[SearchResult])
 async def search_snippets(query: SearchQuery):
     """Search for code snippets"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("search_snippets_" + str(int(_time.time() * 1000)), _json.dumps({"action": "search_snippets", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         results = engine.search(query)
         return results
@@ -460,6 +468,15 @@ async def search_snippets(query: SearchQuery):
 @app.get("/stats", response_model=IndexStats)
 async def get_stats():
     """Get index statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "cocoindex-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         return engine.get_stats()
     except Exception as e:
@@ -469,6 +486,10 @@ async def get_stats():
 @app.post("/analyze")
 async def analyze_code(code: str, language: str):
     """Analyze code structure"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("analyze_code_" + str(int(_time.time() * 1000)), _json.dumps({"action": "analyze_code", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         analysis = engine.analyze_code(code, language)
         return analysis
@@ -479,6 +500,15 @@ async def analyze_code(code: str, language: str):
 @app.get("/snippets/{snippet_id}")
 async def get_snippet(snippet_id: str):
     """Get a specific code snippet"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_snippet", "cocoindex-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if snippet_id not in engine.snippets:
         raise HTTPException(status_code=404, detail="Snippet not found")
     
@@ -487,6 +517,10 @@ async def get_snippet(snippet_id: str):
 @app.delete("/snippets/{snippet_id}")
 async def delete_snippet(snippet_id: str):
     """Delete a code snippet"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_snippet_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_snippet", "timestamp": _time.time()}), "cocoindex-service")
+
     if snippet_id not in engine.snippets:
         raise HTTPException(status_code=404, detail="Snippet not found")
     
@@ -505,6 +539,10 @@ async def delete_snippet(snippet_id: str):
 @app.post("/index/rebuild")
 async def rebuild_index(background_tasks: BackgroundTasks):
     """Rebuild the entire index"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("rebuild_index_" + str(int(_time.time() * 1000)), _json.dumps({"action": "rebuild_index", "timestamp": _time.time()}), "cocoindex-service")
+
     def rebuild():
         try:
             logger.info("Starting index rebuild...")

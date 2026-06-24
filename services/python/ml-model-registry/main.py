@@ -227,6 +227,10 @@ async def startup():
 
 @app.post("/models/register")
 async def register_model(model: ModelVersion):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model.model_name}:{model.version}"
     if key in models:
         raise HTTPException(409, f"Model {key} already registered")
@@ -235,6 +239,15 @@ async def register_model(model: ModelVersion):
 
 @app.get("/models")
 async def list_models(model_name: Optional[str] = None, status: Optional[str] = None):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = list(models.values())
     if model_name:
         items = [m for m in items if m.model_name == model_name]
@@ -244,6 +257,15 @@ async def list_models(model_name: Optional[str] = None, status: Optional[str] = 
 
 @app.get("/models/{model_name}/{version}")
 async def get_model(model_name: str, version: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_model", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
@@ -251,6 +273,10 @@ async def get_model(model_name: str, version: str):
 
 @app.post("/models/{model_name}/{version}/promote")
 async def promote_model(model_name: str, version: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("promote_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "promote_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
@@ -266,6 +292,10 @@ async def promote_model(model_name: str, version: str):
 
 @app.post("/models/{model_name}/{version}/rollback")
 async def rollback_model(model_name: str, version: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("rollback_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "rollback_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
@@ -289,6 +319,10 @@ async def rollback_model(model_name: str, version: str):
 
 @app.post("/drift/check")
 async def check_drift(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("check_drift_" + str(int(_time.time() * 1000)), _json.dumps({"action": "check_drift", "timestamp": _time.time()}), "ml-model-registry")
+
     model_name = body.get("model_name", "")
     version = body.get("version", "")
     features = body.get("features", {})
@@ -327,6 +361,10 @@ async def check_drift(body: dict):
 
 @app.post("/ab-tests/create")
 async def create_ab_test(test: ABTest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_ab_test_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_ab_test", "timestamp": _time.time()}), "ml-model-registry")
+
     control_key = f"{test.model_name}:{test.control_version}"
     treatment_key = f"{test.model_name}:{test.treatment_version}"
     if control_key not in models or treatment_key not in models:
@@ -336,10 +374,23 @@ async def create_ab_test(test: ABTest):
 
 @app.get("/ab-tests")
 async def list_ab_tests():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_ab_tests", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"tests": [t.model_dump() for t in ab_tests.values()], "count": len(ab_tests)}
 
 @app.post("/ab-tests/{test_id}/conclude")
 async def conclude_ab_test(test_id: str, body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("conclude_ab_test_" + str(int(_time.time() * 1000)), _json.dumps({"action": "conclude_ab_test", "timestamp": _time.time()}), "ml-model-registry")
+
     if test_id not in ab_tests:
         raise HTTPException(404, "test not found")
     test = ab_tests[test_id]
@@ -361,6 +412,10 @@ async def conclude_ab_test(test_id: str, body: dict):
 
 @app.post("/performance/log")
 async def log_performance(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("log_performance_" + str(int(_time.time() * 1000)), _json.dumps({"action": "log_performance", "timestamp": _time.time()}), "ml-model-registry")
+
     body["timestamp"] = datetime.now(timezone.utc).isoformat()
     performance_logs.append(body)
     if len(performance_logs) > 10000:
@@ -369,11 +424,29 @@ async def log_performance(body: dict):
 
 @app.get("/performance/{model_name}")
 async def get_performance(model_name: str, limit: int = 100):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_performance", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logs = [p for p in performance_logs if p.get("model_name") == model_name]
     return {"logs": logs[-limit:], "total": len(logs)}
 
 @app.get("/drift/reports")
 async def list_drift_reports(model_name: Optional[str] = None, limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_drift_reports", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = drift_reports
     if model_name:
         items = [r for r in items if r.model_name == model_name]

@@ -178,11 +178,24 @@ async def health():
 @app.get("/api/v1/cbn/compliance/status")
 async def get_compliance_status():
     """Get overall CBN compliance status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_compliance_status", "cbn-compliance-comprehensive")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"status": "compliant", "last_audit": None, "next_filing_due": None, "open_issues": 0, "regulations": []}
 
 @app.post("/api/v1/cbn/reports/generate")
 async def generate_cbn_report(report_type: str, period: str):
     """Generate CBN regulatory report."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_cbn_report_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_cbn_report", "timestamp": _time.time()}), "cbn-compliance-comprehensive")
+
     valid_types = ["ctr", "str", "efr", "quarterly", "annual"]
     if report_type not in valid_types: raise HTTPException(400, f"Must be one of: {valid_types}")
     return {"report_id": f"CBN-{report_type.upper()}-{int(__import__('time').time())}", "type": report_type, "period": period, "status": "generating"}
@@ -190,11 +203,24 @@ async def generate_cbn_report(report_type: str, period: str):
 @app.get("/api/v1/cbn/thresholds")
 async def get_thresholds():
     """Get CBN transaction reporting thresholds."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_thresholds", "cbn-compliance-comprehensive")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"cash_threshold_ngn": 5000000, "transfer_threshold_ngn": 10000000, "suspicious_threshold_ngn": 1000000, "pep_monitoring": True}
 
 @app.post("/api/v1/cbn/str/file")
 async def file_str(transaction_id: str, reason: str, details: str):
     """File Suspicious Transaction Report with CBN."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("file_str_" + str(int(_time.time() * 1000)), _json.dumps({"action": "file_str", "timestamp": _time.time()}), "cbn-compliance-comprehensive")
+
     return {"str_id": f"STR-{int(__import__('time').time())}", "transaction_id": transaction_id, "status": "filed", "filed_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

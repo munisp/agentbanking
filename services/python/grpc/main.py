@@ -153,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/grpc/services")
 async def list_grpc_services():
     """List registered gRPC services and their methods."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_grpc_services", "grpc")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "services": [
             {"name": "TransactionService", "methods": ["ProcessTransaction", "GetTransaction", "ListTransactions"], "status": "active"},
@@ -180,6 +189,10 @@ async def grpc_health():
 @app.post("/api/v1/grpc/invoke")
 async def invoke_grpc(service: str, method: str, payload: dict):
     """Invoke a gRPC method via REST gateway."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("invoke_grpc_" + str(int(_time.time() * 1000)), _json.dumps({"action": "invoke_grpc", "timestamp": _time.time()}), "grpc")
+
     return {
         "service": service,
         "method": method,

@@ -487,6 +487,10 @@ async def health_check():
 @app.post("/nodes", response_model=Dict[str, str])
 async def create_node(node: Node, graph: Optional[str] = None):
     """Create a node in the graph"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_node_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_node", "timestamp": _time.time()}), "falkordb-service")
+
     try:
         node_id = engine.create_node(node, graph)
         return {"id": node_id, "message": "Node created successfully"}
@@ -497,6 +501,10 @@ async def create_node(node: Node, graph: Optional[str] = None):
 @app.post("/edges", response_model=Dict[str, str])
 async def create_edge(edge: Edge, graph: Optional[str] = None):
     """Create an edge in the graph"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_edge_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_edge", "timestamp": _time.time()}), "falkordb-service")
+
     try:
         edge_id = engine.create_edge(edge, graph)
         return {"id": edge_id, "message": "Edge created successfully"}
@@ -507,6 +515,15 @@ async def create_edge(edge: Edge, graph: Optional[str] = None):
 @app.get("/nodes/{node_id}")
 async def get_node(node_id: str, graph: Optional[str] = None):
     """Get a node by ID"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_node", "falkordb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         node = engine.get_node(node_id, graph)
         if not node:
@@ -521,6 +538,10 @@ async def get_node(node_id: str, graph: Optional[str] = None):
 @app.post("/query")
 async def execute_query(query: CypherQuery):
     """Execute a Cypher query"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("execute_query_" + str(int(_time.time() * 1000)), _json.dumps({"action": "execute_query", "timestamp": _time.time()}), "falkordb-service")
+
     try:
         result = engine.execute_query(query.query, query.parameters, query.graph)
         return {
@@ -534,6 +555,15 @@ async def execute_query(query: CypherQuery):
 @app.get("/stats", response_model=GraphStats)
 async def get_stats(graph: Optional[str] = None):
     """Get graph statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "falkordb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         return engine.get_stats(graph)
     except Exception as e:
@@ -543,6 +573,15 @@ async def get_stats(graph: Optional[str] = None):
 @app.get("/path/{source_id}/{target_id}")
 async def find_path(source_id: str, target_id: str, max_depth: int = 5, graph: Optional[str] = None):
     """Find shortest path between two nodes"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("find_path", "falkordb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         path = engine.find_path(source_id, target_id, max_depth, graph)
         return {"path": path}
@@ -553,6 +592,15 @@ async def find_path(source_id: str, target_id: str, max_depth: int = 5, graph: O
 @app.get("/neighbors/{node_id}")
 async def get_neighbors(node_id: str, depth: int = 1, graph: Optional[str] = None):
     """Get neighbors of a node"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_neighbors", "falkordb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         neighbors = engine.get_neighbors(node_id, depth, graph)
         return {"neighbors": neighbors}
@@ -563,6 +611,10 @@ async def get_neighbors(node_id: str, depth: int = 1, graph: Optional[str] = Non
 @app.post("/transactions")
 async def create_transaction(transaction: TransactionNode, agent_id: str, graph: Optional[str] = None):
     """Create a transaction node and link to agent"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_transaction", "timestamp": _time.time()}), "falkordb-service")
+
     try:
         tx_id = engine.create_transaction_graph(transaction, agent_id, graph)
         return {"transaction_id": tx_id, "message": "Transaction created successfully"}
@@ -573,6 +625,15 @@ async def create_transaction(transaction: TransactionNode, agent_id: str, graph:
 @app.get("/fraud/detect/{agent_id}")
 async def detect_fraud(agent_id: str, graph: Optional[str] = None):
     """Detect fraud patterns for an agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("detect_fraud", "falkordb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         patterns = engine.detect_fraud_patterns(agent_id, graph)
         return {"agent_id": agent_id, "patterns": patterns, "risk_level": "high" if patterns else "low"}

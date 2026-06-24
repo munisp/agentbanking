@@ -142,6 +142,10 @@ CBN_MAX_RATES = {
 
 @app.post("/api/v1/calculate")
 async def calculate_interest(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("calculate_interest_" + str(int(_time.time() * 1000)), _json.dumps({"action": "calculate_interest", "timestamp": _time.time()}), "interest-calculation")
+
     body = await request.json()
     principal = float(body.get("principal", 0))
     rate = float(body.get("rate", 0))
@@ -177,6 +181,15 @@ async def calculate_interest(request: Request):
 
 @app.get("/api/v1/amortization/{calc_id}")
 async def get_amortization(calc_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_amortization", "interest-calculation")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM calculations WHERE id = %s", (calc_id,))
@@ -188,6 +201,15 @@ async def get_amortization(calc_id: int):
 
 @app.get("/api/v1/cbn-rates")
 async def get_cbn_rates():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_cbn_rates", "interest-calculation")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"rates": CBN_MAX_RATES, "effective_date": "2026-01-01", "regulator": "CBN"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -223,6 +245,10 @@ class InterestService:
 
 @app.post("/api/v1/calculate", response_model=InterestCalculation)
 async def calculate(request: CalculateRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("calculate_" + str(int(_time.time() * 1000)), _json.dumps({"action": "calculate", "timestamp": _time.time()}), "interest-calculation")
+
     return await InterestService.calculate(request)
 
 @app.get("/health")

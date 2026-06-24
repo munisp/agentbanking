@@ -178,21 +178,52 @@ async def health():
 @app.post("/api/v1/targets/set")
 async def set_target(entity_id: str, entity_type: str, metric: str, target_value: float, period: str):
     """Set a performance target."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("set_target_" + str(int(_time.time() * 1000)), _json.dumps({"action": "set_target", "timestamp": _time.time()}), "projections-targets")
+
     return {"target_id": f"TGT-{entity_id}-{metric}", "entity_id": entity_id, "entity_type": entity_type, "metric": metric, "target_value": target_value, "period": period, "status": "active"}
 
 @app.get("/api/v1/targets/{entity_id}/progress")
 async def get_progress(entity_id: str, period: str = "current_month"):
     """Get target progress for an entity."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_progress", "projections-targets")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"entity_id": entity_id, "period": period, "targets": [], "overall_achievement_pct": 0.0}
 
 @app.get("/api/v1/projections/forecast")
 async def get_forecast(entity_id: str, metric: str, horizon_days: int = 30):
     """Get revenue/transaction forecast."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_forecast", "projections-targets")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"entity_id": entity_id, "metric": metric, "horizon_days": horizon_days, "projected_value": 0.0, "confidence_interval": {"low": 0.0, "high": 0.0}, "trend": "stable"}
 
 @app.get("/api/v1/projections/variance")
 async def get_variance(entity_id: str, period: str = "current_month"):
     """Get variance analysis (actual vs target)."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_variance", "projections-targets")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"entity_id": entity_id, "period": period, "metrics": [], "overall_variance_pct": 0.0}
 
 if __name__ == "__main__":

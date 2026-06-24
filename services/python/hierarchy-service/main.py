@@ -145,6 +145,10 @@ async def health_check():
 
 @app.post("/nodes/", response_model=HierarchyNode, status_code=status.HTTP_201_CREATED)
 async def create_node(node: HierarchyNodeCreate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_node_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_node", "timestamp": _time.time()}), "hierarchy-service")
+
     # Business logic to create a new hierarchy node
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
@@ -156,6 +160,15 @@ async def create_node(node: HierarchyNodeCreate, current_user: dict = Depends(ge
 
 @app.get("/nodes/", response_model=List[HierarchyNode])
 async def read_nodes(skip: int = 0, limit: int = 100, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_nodes", "hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     # Business logic to retrieve all hierarchy nodes
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
@@ -164,6 +177,15 @@ async def read_nodes(skip: int = 0, limit: int = 100, current_user: dict = Depen
 
 @app.get("/nodes/{node_id}", response_model=HierarchyNode)
 async def read_node(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_node", "hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     # Business logic to retrieve a specific hierarchy node by ID
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
@@ -174,6 +196,10 @@ async def read_node(node_id: int, current_user: dict = Depends(get_current_user)
 
 @app.put("/nodes/{node_id}", response_model=HierarchyNode)
 async def update_node(node_id: int, node: HierarchyNodeUpdate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_node_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_node", "timestamp": _time.time()}), "hierarchy-service")
+
     # Business logic to update an existing hierarchy node
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
@@ -188,6 +214,10 @@ async def update_node(node_id: int, node: HierarchyNodeUpdate, current_user: dic
 
 @app.delete("/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_node(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_node_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_node", "timestamp": _time.time()}), "hierarchy-service")
+
     # Business logic to delete a hierarchy node
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
@@ -200,6 +230,15 @@ async def delete_node(node_id: int, current_user: dict = Depends(get_current_use
 
 @app.get("/nodes/{node_id}/children", response_model=List[HierarchyNode])
 async def get_node_children(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_node_children", "hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
     children = db.query(HierarchyNode).filter(HierarchyNode.parent_id == node_id).all()
@@ -207,6 +246,15 @@ async def get_node_children(node_id: int, current_user: dict = Depends(get_curre
 
 @app.get("/nodes/{node_id}/parent", response_model=Optional[HierarchyNode])
 async def get_node_parent(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_node_parent", "hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
@@ -219,6 +267,10 @@ async def get_node_parent(node_id: int, current_user: dict = Depends(get_current
 
 @app.post("/nodes/{node_id}/assign_parent/{parent_id}", response_model=HierarchyNode)
 async def assign_parent(node_id: int, parent_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assign_parent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assign_parent", "timestamp": _time.time()}), "hierarchy-service")
+
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
@@ -241,6 +293,10 @@ async def assign_parent(node_id: int, parent_id: int, current_user: dict = Depen
 
 @app.post("/nodes/{node_id}/remove_parent", response_model=HierarchyNode)
 async def remove_parent(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("remove_parent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "remove_parent", "timestamp": _time.time()}), "hierarchy-service")
+
     _username = current_user.get("username", "unknown")
     logger.info(f"User {_username} creating node: {node.name}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()

@@ -142,6 +142,10 @@ REPORT_TYPES = ["daily_returns", "weekly_summary", "monthly_prudential", "quarte
 
 @app.post("/api/v1/reports/generate")
 async def generate_report(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_report_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_report", "timestamp": _time.time()}), "cbn-reporting-engine")
+
     body = await request.json()
     report_type = body.get("type", "daily_returns")
     if report_type not in REPORT_TYPES:
@@ -158,6 +162,15 @@ async def generate_report(request: Request):
 
 @app.get("/api/v1/reports")
 async def list_reports():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_reports", "cbn-reporting-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, report_type, period, status, generated_at FROM reports ORDER BY generated_at DESC LIMIT 50")
@@ -167,6 +180,15 @@ async def list_reports():
 
 @app.get("/api/v1/reports/{report_id}")
 async def get_report(report_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_report", "cbn-reporting-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM reports WHERE id = %s", (report_id,))

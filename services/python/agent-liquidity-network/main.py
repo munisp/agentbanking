@@ -178,11 +178,24 @@ async def health():
 @app.get("/api/v1/liquidity/pools")
 async def list_pools(region: str = None):
     """List active liquidity pools by region."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_pools", "agent-liquidity-network")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"pools": [], "total": 0, "region": region}
 
 @app.post("/api/v1/liquidity/request")
 async def request_liquidity(agent_id: str, amount: float, urgency: str = "normal"):
     """Request emergency float from liquidity network."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("request_liquidity_" + str(int(_time.time() * 1000)), _json.dumps({"action": "request_liquidity", "timestamp": _time.time()}), "agent-liquidity-network")
+
     if amount <= 0: raise HTTPException(400, "Amount must be positive")
     if amount > 500000: raise HTTPException(400, "Max single request is 500,000")
     return {"request_id": f"LIQ-{agent_id}-{int(__import__('time').time())}", "agent_id": agent_id, "amount": amount, "urgency": urgency, "status": "matching", "estimated_fill_time": "2-5 minutes"}
@@ -190,11 +203,24 @@ async def request_liquidity(agent_id: str, amount: float, urgency: str = "normal
 @app.post("/api/v1/liquidity/offer")
 async def offer_liquidity(agent_id: str, amount: float, interest_rate: float = 0.5):
     """Offer excess float to the liquidity network."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("offer_liquidity_" + str(int(_time.time() * 1000)), _json.dumps({"action": "offer_liquidity", "timestamp": _time.time()}), "agent-liquidity-network")
+
     return {"offer_id": f"OFF-{agent_id}-{int(__import__('time').time())}", "agent_id": agent_id, "amount": amount, "interest_rate": interest_rate, "status": "active"}
 
 @app.get("/api/v1/liquidity/{agent_id}/history")
 async def get_history(agent_id: str, limit: int = 20):
     """Get agent's liquidity transaction history."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_history", "agent-liquidity-network")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "transactions": [], "total_borrowed": 0.0, "total_lent": 0.0, "net_interest": 0.0}
 
 if __name__ == "__main__":

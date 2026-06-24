@@ -510,6 +510,15 @@ async def publish_to_kafka_via_dapr(topic: str, data: dict):
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "kyb-analytics")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "kyb-analytics",
         "description": "ML-based KYB fraud detection, compliance reporting, Lakehouse ETL",
@@ -683,6 +692,10 @@ async def detect_fraud(
 @app.post("/fraud/anomaly")
 async def detect_anomaly(req: AnomalyDetectionRequest):
     """Isolation Forest anomaly detection on KYB features."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("detect_anomaly_" + str(int(_time.time() * 1000)), _json.dumps({"action": "detect_anomaly", "timestamp": _time.time()}), "kyb-analytics")
+
     anomaly_data = detect_anomalies(req.features)
 
     result = AnomalyResult(
@@ -860,6 +873,15 @@ async def run_lakehouse_etl(
 @app.get("/analytics/dashboard")
 async def get_analytics_dashboard():
     """Get KYB analytics dashboard data for frontend."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_analytics_dashboard", "kyb-analytics")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     fraud_data = analytics_store["fraud_detections"]
     total = len(fraud_data)
 
@@ -900,6 +922,15 @@ async def get_analytics_dashboard():
 @app.get("/analytics/opensearch/query")
 async def query_opensearch(index: str = "kyb-fraud-analytics", q: str = "*", size: int = 10):
     """Proxy OpenSearch queries for KYB analytics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("query_opensearch", "kyb-analytics")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -919,6 +950,15 @@ async def query_opensearch(index: str = "kyb-fraud-analytics", q: str = "*", siz
 
 @app.get("/stats")
 async def get_stats():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "kyb-analytics")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return analytics_store["stats"]
 
 if __name__ == "__main__":

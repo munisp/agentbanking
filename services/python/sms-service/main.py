@@ -190,6 +190,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "sms-service")
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -205,6 +209,10 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
 @app.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_user_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_user", "timestamp": _time.time()}), "sms-service")
+
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
@@ -218,6 +226,15 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/users/me/", response_model=UserResponse)
 async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_users_me", "sms-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return current_user
 
 @app.post("/sms/send", response_model=MessageResponse, status_code=status.HTTP_202_ACCEPTED)

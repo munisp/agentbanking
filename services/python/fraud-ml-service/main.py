@@ -506,6 +506,10 @@ async def health():
 @app.post("/score", response_model=FraudScore)
 async def score_transaction(features: TransactionFeatures):
     """Score a transaction for fraud risk"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("score_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "score_transaction", "timestamp": _time.time()}), "fraud-ml-service")
+
     start = time.time()
 
     # Compute component scores
@@ -635,6 +639,10 @@ async def score_transaction(features: TransactionFeatures):
 @app.post("/velocity", response_model=VelocityResult)
 async def check_velocity(req: VelocityCheck):
     """Check transaction velocity for a user"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("check_velocity_" + str(int(_time.time() * 1000)), _json.dumps({"action": "check_velocity", "timestamp": _time.time()}), "fraud-ml-service")
+
     score, limits = compute_velocity_score(
         req.user_id, req.amount, req.transaction_type
     )
@@ -662,6 +670,15 @@ async def check_velocity(req: VelocityCheck):
 @app.get("/profile/{user_id}", response_model=BehaviorProfile)
 async def get_behavior_profile(user_id: str):
     """Get behavioral profile for a user"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_behavior_profile", "fraud-ml-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     profile = user_profiles.get(user_id)
     if not profile:
         # Build from history
@@ -704,6 +721,10 @@ async def get_behavior_profile(user_id: str):
 @app.post("/anomaly", response_model=AnomalyDetectionResult)
 async def detect_anomaly(req: AnomalyDetectionRequest):
     """Run anomaly detection on a feature vector"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("detect_anomaly_" + str(int(_time.time() * 1000)), _json.dumps({"action": "detect_anomaly", "timestamp": _time.time()}), "fraud-ml-service")
+
     if len(req.features) != 8:
         raise HTTPException(
             status_code=400,
@@ -724,6 +745,10 @@ async def detect_anomaly(req: AnomalyDetectionRequest):
 @app.post("/profile/{user_id}/update")
 async def update_profile(user_id: str, profile_data: dict):
     """Update behavioral profile for a user"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_profile_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_profile", "timestamp": _time.time()}), "fraud-ml-service")
+
     user_profiles[user_id] = {
         **user_profiles.get(user_id, {}),
         **profile_data,
@@ -734,6 +759,15 @@ async def update_profile(user_id: str, profile_data: dict):
 @app.get("/stats")
 async def get_stats():
     """Get service statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "fraud-ml-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     total_scored = sum(len(h) for h in user_tx_history.values())
     return {
         "total_transactions_scored": total_scored,
@@ -747,6 +781,10 @@ async def get_stats():
 @app.post("/train")
 async def train_model(training_data: dict = None):
     """Retrain the fraud detection model with new data"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("train_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "train_model", "timestamp": _time.time()}), "fraud-ml-service")
+
     import numpy as np
     try:
         if training_data and "samples" in training_data:

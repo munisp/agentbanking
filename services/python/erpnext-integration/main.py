@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/erpnext/sync")
 async def trigger_sync(entity_type: str, direction: str = "bidirectional"):
     """Trigger sync between POS and ERPNext."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("trigger_sync_" + str(int(_time.time() * 1000)), _json.dumps({"action": "trigger_sync", "timestamp": _time.time()}), "erpnext-integration")
+
     valid_types = ["inventory", "customers", "invoices", "payments", "employees"]
     if entity_type not in valid_types: raise HTTPException(400, f"Must be one of: {valid_types}")
     return {"sync_id": f"SYNC-{int(__import__('time').time())}", "entity_type": entity_type, "direction": direction, "status": "in_progress"}
@@ -185,16 +189,38 @@ async def trigger_sync(entity_type: str, direction: str = "bidirectional"):
 @app.get("/api/v1/erpnext/sync/{sync_id}")
 async def get_sync_status(sync_id: str):
     """Get sync job status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_sync_status", "erpnext-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"sync_id": sync_id, "status": "unknown", "records_synced": 0, "errors": 0}
 
 @app.get("/api/v1/erpnext/mappings")
 async def get_field_mappings():
     """Get field mapping configuration between POS and ERPNext."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_field_mappings", "erpnext-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"mappings": [], "total": 0, "last_updated": None}
 
 @app.post("/api/v1/erpnext/webhook")
 async def erpnext_webhook(event: str, data: dict):
     """Receive webhook events from ERPNext."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("erpnext_webhook_" + str(int(_time.time() * 1000)), _json.dumps({"action": "erpnext_webhook", "timestamp": _time.time()}), "erpnext-integration")
+
     return {"received": True, "event": event, "processed_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

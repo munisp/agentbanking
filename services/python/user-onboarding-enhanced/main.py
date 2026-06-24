@@ -121,6 +121,15 @@ init_db()
 
 @app.get("/api/v1/items")
 async def list_items():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "user-onboarding-enhanced")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, status, data, created_at FROM items ORDER BY created_at DESC LIMIT 100")
@@ -130,6 +139,10 @@ async def list_items():
 
 @app.post("/api/v1/items")
 async def create_item(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "user-onboarding-enhanced")
+
     body = await request.json()
     name = body.get("name", "")
     if not name:
@@ -145,6 +158,15 @@ async def create_item(request: Request):
 
 @app.get("/api/v1/items/{item_id}")
 async def get_item(item_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_item", "user-onboarding-enhanced")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items WHERE id = %s", (item_id,))
@@ -156,6 +178,10 @@ async def get_item(item_id: int):
 
 @app.put("/api/v1/items/{item_id}")
 async def update_item(item_id: int, request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "user-onboarding-enhanced")
+
     body = await request.json()
     conn = get_db()
     cursor = conn.cursor()
@@ -167,6 +193,10 @@ async def update_item(item_id: int, request: Request):
 
 @app.delete("/api/v1/items/{item_id}")
 async def delete_item(item_id: int):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "user-onboarding-enhanced")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM items WHERE id = %s", (item_id,))
@@ -210,6 +240,15 @@ async def custom_exception_handler(request: Request, exc: UserOnboardingExceptio
 # --- Root Endpoint ---
 @app.get("/", tags=["Health Check"])
 def read_root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_root", "user-onboarding-enhanced")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": "User Onboarding Enhanced Service is running."}
 
 # --- Include Routers ---

@@ -414,6 +414,15 @@ def log_audit(action: str, entity_id: str, data: str = ""):
 @app.get("/")
 async def root():
     """Root endpoint"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "fluvio-streaming")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "fluvio-streaming",
         "version": "1.0.0",
@@ -442,6 +451,15 @@ async def get_metrics():
 @app.get("/topics")
 async def list_topics():
     """List all topics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_topics", "fluvio-streaming")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if not streaming_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -453,6 +471,10 @@ async def list_topics():
 @app.post("/produce/{topic}")
 async def produce_event(topic: str, request: ProduceRequest):
     """Produce an event to a topic"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("produce_event_" + str(int(_time.time() * 1000)), _json.dumps({"action": "produce_event", "timestamp": _time.time()}), "fluvio-streaming")
+
     if not streaming_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     

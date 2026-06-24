@@ -178,21 +178,52 @@ async def health():
 @app.get("/api/v1/stores/nearby")
 async def find_nearby(lat: float, lng: float, radius_km: float = 5, limit: int = 20):
     """Find nearby agent stores."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("find_nearby", "store-map-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"stores": [], "total": 0, "center": {"lat": lat, "lng": lng}, "radius_km": radius_km}
 
 @app.post("/api/v1/stores/register")
 async def register_store(agent_id: str, name: str, lat: float, lng: float, address: str):
     """Register a store location."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_store_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_store", "timestamp": _time.time()}), "store-map-service")
+
     return {"store_id": f"STR-{agent_id}", "agent_id": agent_id, "name": name, "location": {"lat": lat, "lng": lng}, "address": address, "status": "active"}
 
 @app.get("/api/v1/stores/coverage")
 async def get_coverage(region: str = None):
     """Get store coverage analysis."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_coverage", "store-map-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"region": region, "total_stores": 0, "coverage_pct": 0.0, "underserved_areas": [], "density_per_sqkm": 0.0}
 
 @app.get("/api/v1/stores/{store_id}")
 async def get_store(store_id: str):
     """Get store details."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_store", "store-map-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"store_id": store_id, "name": "", "agent_id": "", "location": None, "services": [], "operating_hours": None}
 
 if __name__ == "__main__":

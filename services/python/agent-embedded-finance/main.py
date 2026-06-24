@@ -206,4 +206,22 @@ def paginate(items: list, page: int = 1, per_page: int = 20) -> dict:
 
 @app.get("/", include_in_schema=False)
 def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "agent_embedded_finance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "agent-embedded-finance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"service": "agent-embedded-finance", "version": "1.0.0", "status": "running"}

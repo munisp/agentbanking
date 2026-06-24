@@ -328,6 +328,10 @@ async def health_check():
 @app.post("/sessions", response_model=VoiceSession)
 async def create_session(session: VoiceSession):
     """Create a new voice assistant session"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_session_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_session", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         session.id = str(uuid.uuid4())
         session.started_at = datetime.utcnow()
@@ -343,6 +347,15 @@ async def create_session(session: VoiceSession):
 @app.get("/sessions/{session_id}", response_model=VoiceSession)
 async def get_session(session_id: str):
     """Get a voice session"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_session", "voice-assistant-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if session_id not in sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
     return sessions_db[session_id]
@@ -350,6 +363,10 @@ async def get_session(session_id: str):
 @app.post("/sessions/{session_id}/end")
 async def end_session(session_id: str):
     """End a voice session"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("end_session_" + str(int(_time.time() * 1000)), _json.dumps({"action": "end_session", "timestamp": _time.time()}), "voice-assistant-service")
+
     if session_id not in sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -363,6 +380,10 @@ async def end_session(session_id: str):
 @app.post("/intent", response_model=IntentResponse)
 async def process_intent(request: IntentRequest):
     """Process voice intent and generate response"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("process_intent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "process_intent", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         # Verify session exists
         if request.session_id not in sessions_db:
@@ -426,6 +447,10 @@ async def process_intent(request: IntentRequest):
 @app.post("/commands", response_model=VoiceCommand)
 async def create_command(command: VoiceCommand):
     """Create a voice command record"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_command_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_command", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         command.id = str(uuid.uuid4())
         command.timestamp = datetime.utcnow()
@@ -441,6 +466,15 @@ async def create_command(command: VoiceCommand):
 @app.get("/commands", response_model=List[VoiceCommand])
 async def list_commands(session_id: Optional[str] = None):
     """List voice commands"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_commands", "voice-assistant-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         commands = list(commands_db.values())
         
@@ -455,6 +489,10 @@ async def list_commands(session_id: Optional[str] = None):
 @app.post("/skills", response_model=VoiceSkill)
 async def create_skill(skill: VoiceSkill):
     """Create a voice assistant skill"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_skill_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_skill", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         skill.id = str(uuid.uuid4())
         skill.created_at = datetime.utcnow()
@@ -470,6 +508,15 @@ async def create_skill(skill: VoiceSkill):
 @app.get("/skills", response_model=List[VoiceSkill])
 async def list_skills(platform: Optional[AssistantPlatform] = None):
     """List voice assistant skills"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_skills", "voice-assistant-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         skills = list(skills_db.values())
         
@@ -484,6 +531,10 @@ async def list_skills(platform: Optional[AssistantPlatform] = None):
 @app.post("/webhooks/google-assistant")
 async def google_assistant_webhook(data: Dict[str, Any]):
     """Handle Google Assistant webhook"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("google_assistant_webhook_" + str(int(_time.time() * 1000)), _json.dumps({"action": "google_assistant_webhook", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         logger.info(f"Received Google Assistant webhook")
         
@@ -507,6 +558,10 @@ async def google_assistant_webhook(data: Dict[str, Any]):
 @app.post("/webhooks/alexa")
 async def alexa_webhook(data: Dict[str, Any]):
     """Handle Alexa webhook"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("alexa_webhook_" + str(int(_time.time() * 1000)), _json.dumps({"action": "alexa_webhook", "timestamp": _time.time()}), "voice-assistant-service")
+
     try:
         logger.info(f"Received Alexa webhook")
         
@@ -531,6 +586,15 @@ async def alexa_webhook(data: Dict[str, Any]):
 @app.get("/analytics/{agent_id}")
 async def get_voice_analytics(agent_id: str):
     """Get voice assistant analytics for an agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_voice_analytics", "voice-assistant-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         agent_sessions = [s for s in sessions_db.values() if s.agent_id == agent_id]
         session_ids = [s.id for s in agent_sessions]

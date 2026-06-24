@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/translate")
 async def translate(text: str, source_lang: str = "en", target_lang: str = "yo"):
     """Translate text between languages."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("translate_" + str(int(_time.time() * 1000)), _json.dumps({"action": "translate", "timestamp": _time.time()}), "realtime-translation")
+
     supported = ["en", "yo", "ha", "ig", "pcm", "fr", "ar", "sw"]
     if source_lang not in supported or target_lang not in supported: raise HTTPException(400, f"Supported: {supported}")
     return {"original": text, "translated": "", "source_lang": source_lang, "target_lang": target_lang, "confidence": 0.0}
@@ -185,16 +189,33 @@ async def translate(text: str, source_lang: str = "en", target_lang: str = "yo")
 @app.post("/api/v1/translate/batch")
 async def batch_translate(texts: list, source_lang: str = "en", target_lang: str = "yo"):
     """Batch translate multiple texts."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("batch_translate_" + str(int(_time.time() * 1000)), _json.dumps({"action": "batch_translate", "timestamp": _time.time()}), "realtime-translation")
+
     return {"translations": [], "count": len(texts), "source_lang": source_lang, "target_lang": target_lang}
 
 @app.get("/api/v1/translate/languages")
 async def list_languages():
     """List supported languages."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_languages", "realtime-translation")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"languages": [{"code": "en", "name": "English"}, {"code": "yo", "name": "Yoruba"}, {"code": "ha", "name": "Hausa"}, {"code": "ig", "name": "Igbo"}, {"code": "pcm", "name": "Nigerian Pidgin"}, {"code": "fr", "name": "French"}, {"code": "ar", "name": "Arabic"}, {"code": "sw", "name": "Swahili"}]}
 
 @app.post("/api/v1/translate/detect")
 async def detect_language(text: str):
     """Detect language of input text."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("detect_language_" + str(int(_time.time() * 1000)), _json.dumps({"action": "detect_language", "timestamp": _time.time()}), "realtime-translation")
+
     return {"text": text[:50], "detected_language": "en", "confidence": 0.0, "alternatives": []}
 
 if __name__ == "__main__":

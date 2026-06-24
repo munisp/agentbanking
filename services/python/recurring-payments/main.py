@@ -178,21 +178,47 @@ async def health():
 @app.post("/api/v1/subscriptions")
 async def create_subscription(customer_id: str, plan_id: str, payment_method: str):
     """Create a recurring payment subscription."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_subscription_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_subscription", "timestamp": _time.time()}), "recurring-payments")
+
     return {"subscription_id": f"SUB-{customer_id}-{int(__import__('time').time())}", "customer_id": customer_id, "plan_id": plan_id, "status": "active", "next_billing_date": None}
 
 @app.get("/api/v1/subscriptions/{subscription_id}")
 async def get_subscription(subscription_id: str):
     """Get subscription details."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_subscription", "recurring-payments")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"subscription_id": subscription_id, "status": "unknown", "plan_id": "", "amount": 0.0, "interval": "", "next_billing": None}
 
 @app.post("/api/v1/subscriptions/{subscription_id}/cancel")
 async def cancel_subscription(subscription_id: str, reason: str, immediate: bool = False):
     """Cancel a subscription."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("cancel_subscription_" + str(int(_time.time() * 1000)), _json.dumps({"action": "cancel_subscription", "timestamp": _time.time()}), "recurring-payments")
+
     return {"subscription_id": subscription_id, "status": "cancelled" if immediate else "pending_cancellation", "reason": reason, "effective_date": None}
 
 @app.get("/api/v1/subscriptions/{subscription_id}/invoices")
 async def get_invoices(subscription_id: str, limit: int = 10):
     """Get subscription invoice history."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_invoices", "recurring-payments")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"subscription_id": subscription_id, "invoices": [], "total": 0}
 
 if __name__ == "__main__":

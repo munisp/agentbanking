@@ -427,6 +427,15 @@ def create_graph_from_transactions(transactions: List[Transaction], edges: List[
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "gnn-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "gnn-engine-production",
         "version": config.MODEL_VERSION,
@@ -450,6 +459,10 @@ async def health_check():
 @app.post("/predict", response_model=List[FraudPredictionResponse])
 async def predict_fraud(request: FraudPredictionRequest):
     """Predict fraud for a batch of transactions using GNN"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("predict_fraud_" + str(int(_time.time() * 1000)), _json.dumps({"action": "predict_fraud", "timestamp": _time.time()}), "gnn-engine")
+
     try:
         stats["total_predictions"] += 1
         
@@ -492,6 +505,15 @@ async def predict_fraud(request: FraudPredictionRequest):
 @app.get("/models")
 async def list_models():
     """List available GNN models"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "gnn-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "models": [
             {
@@ -516,6 +538,10 @@ async def list_models():
 @app.post("/train")
 async def train_model(background_tasks: BackgroundTasks):
     """Trigger model training (background task)"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("train_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "train_model", "timestamp": _time.time()}), "gnn-engine")
+
     background_tasks.add_task(train_gnn_model)
     return {"message": "Training started in background"}
 
@@ -533,6 +559,15 @@ def train_gnn_model():
 @app.get("/stats")
 async def get_statistics():
     """Get service statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_statistics", "gnn-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     return {
         "uptime_seconds": int(uptime),

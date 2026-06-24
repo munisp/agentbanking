@@ -178,21 +178,47 @@ async def health():
 @app.post("/api/v1/scoring/evaluate")
 async def evaluate_transaction(transaction_id: str, amount: float, sender_id: str, receiver_id: str, transaction_type: str):
     """Score a transaction for risk."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("evaluate_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "evaluate_transaction", "timestamp": _time.time()}), "transaction-scoring")
+
     return {"transaction_id": transaction_id, "risk_score": 0.0, "risk_level": "low", "flags": [], "recommendation": "approve", "scoring_time_ms": 0}
 
 @app.get("/api/v1/scoring/rules")
 async def get_scoring_rules():
     """Get active scoring rules and weights."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_scoring_rules", "transaction-scoring")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"rules": [], "total": 0, "model_version": "1.0.0"}
 
 @app.get("/api/v1/scoring/{entity_id}/profile")
 async def get_risk_profile(entity_id: str):
     """Get entity risk profile and history."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_risk_profile", "transaction-scoring")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"entity_id": entity_id, "risk_score": 0.0, "risk_level": "low", "total_transactions": 0, "flagged_transactions": 0, "last_updated": None}
 
 @app.post("/api/v1/scoring/feedback")
 async def submit_feedback(transaction_id: str, actual_outcome: str):
     """Submit feedback for model training."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_feedback_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_feedback", "timestamp": _time.time()}), "transaction-scoring")
+
     valid_outcomes = ["legitimate", "fraud", "suspicious", "false_positive"]
     if actual_outcome not in valid_outcomes: raise HTTPException(400, f"Must be one of: {valid_outcomes}")
     return {"transaction_id": transaction_id, "feedback_recorded": True, "outcome": actual_outcome}

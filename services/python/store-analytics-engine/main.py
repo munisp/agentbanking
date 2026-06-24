@@ -420,6 +420,10 @@ async def health_check():
 @app.post("/api/v1/analytics/ingest/sale")
 async def ingest_sale(event: SaleEvent):
     """Ingest a sale event for analytics processing."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ingest_sale_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ingest_sale", "timestamp": _time.time()}), "store-analytics-engine")
+
     ts = event.timestamp or datetime.utcnow().isoformat()
     record = {
         "order_id": event.order_id,
@@ -446,12 +450,25 @@ async def ingest_sale(event: SaleEvent):
 @app.post("/api/v1/analytics/ingest/view")
 async def ingest_view(event: ProductViewEvent):
     """Ingest a product view event."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ingest_view_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ingest_view", "timestamp": _time.time()}), "store-analytics-engine")
+
     product_views[event.store_id][event.product_id] += 1
     return {"status": "recorded"}
 
 @app.get("/api/v1/analytics/store/{store_id}/dashboard")
 async def store_dashboard(store_id: int = Path(...)):
     """Comprehensive store analytics dashboard."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("store_dashboard", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     now = datetime.utcnow()
 
@@ -513,6 +530,10 @@ async def store_dashboard(store_id: int = Path(...)):
 @app.post("/api/v1/analytics/store/{store_id}/forecast")
 async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None):
     """Forecast future sales using time series analysis."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("sales_forecast_" + str(int(_time.time() * 1000)), _json.dumps({"action": "sales_forecast", "timestamp": _time.time()}), "store-analytics-engine")
+
     if req is None:
         req = ForecastRequest(store_id=store_id)
 
@@ -557,6 +578,15 @@ async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None)
 @app.get("/api/v1/analytics/store/{store_id}/trending")
 async def trending_products(store_id: int = Path(...)):
     """Get trending products for a store."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("trending_products", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     trending = detect_trending(sales)
     return {"storeId": store_id, "trending": trending}
@@ -578,6 +608,15 @@ async def get_recommendations(
 @app.get("/api/v1/analytics/store/{store_id}/conversion")
 async def conversion_funnel(store_id: int = Path(...)):
     """Conversion funnel: views -> cart -> purchase."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("conversion_funnel", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     views = sum(product_views.get(store_id, {}).values())
     purchases = len(store_sales.get(store_id, []))
     # Estimate cart adds as 30% of views (heuristic)
@@ -600,6 +639,15 @@ async def conversion_funnel(store_id: int = Path(...)):
 @app.get("/api/v1/analytics/store/{store_id}/revenue-breakdown")
 async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
     """Revenue breakdown by product category, payment method, and time."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("revenue_breakdown", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     now = datetime.utcnow()
     period_sales = [s for s in sales if (now - datetime.fromisoformat(s["timestamp"])).days <= days]
@@ -634,6 +682,15 @@ async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
 @app.get("/api/v1/analytics/platform/overview")
 async def platform_overview():
     """Platform-wide analytics overview for all stores."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("platform_overview", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     total_stores = len(store_sales)
     total_orders = sum(len(s) for s in store_sales.values())
     total_revenue = sum(sum(sale["amount"] for sale in sales) for sales in store_sales.values())

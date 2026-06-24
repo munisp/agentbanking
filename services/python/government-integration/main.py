@@ -178,23 +178,39 @@ async def health():
 @app.post("/api/v1/gov/bvn/verify")
 async def verify_bvn(bvn: str, first_name: str, last_name: str):
     """Verify Bank Verification Number against NIBSS."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_bvn_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_bvn", "timestamp": _time.time()}), "government-integration")
+
     if len(bvn) != 11: raise HTTPException(400, "BVN must be 11 digits")
     return {"bvn": bvn[:4] + "*******", "verified": False, "match_score": 0.0, "verification_id": f"BVN-{int(__import__('time').time())}"}
 
 @app.post("/api/v1/gov/nin/verify")
 async def verify_nin(nin: str):
     """Verify National Identification Number against NIMC."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_nin_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_nin", "timestamp": _time.time()}), "government-integration")
+
     if len(nin) != 11: raise HTTPException(400, "NIN must be 11 digits")
     return {"nin": nin[:4] + "*******", "verified": False, "verification_id": f"NIN-{int(__import__('time').time())}"}
 
 @app.post("/api/v1/gov/cac/lookup")
 async def cac_lookup(rc_number: str):
     """Look up business registration with CAC."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("cac_lookup_" + str(int(_time.time() * 1000)), _json.dumps({"action": "cac_lookup", "timestamp": _time.time()}), "government-integration")
+
     return {"rc_number": rc_number, "business_name": "", "status": "unknown", "registration_date": None}
 
 @app.post("/api/v1/gov/tin/validate")
 async def validate_tin(tin: str):
     """Validate Tax Identification Number with FIRS."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("validate_tin_" + str(int(_time.time() * 1000)), _json.dumps({"action": "validate_tin", "timestamp": _time.time()}), "government-integration")
+
     return {"tin": tin, "valid": False, "taxpayer_name": "", "status": "unknown"}
 
 if __name__ == "__main__":

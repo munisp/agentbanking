@@ -153,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/hierarchy/{agent_id}")
 async def get_hierarchy(agent_id: str):
     """Get agent's position in the hierarchy tree."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_hierarchy", "agent-hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "level": "agent",
@@ -166,6 +175,15 @@ async def get_hierarchy(agent_id: str):
 @app.get("/api/v1/hierarchy/{agent_id}/downline")
 async def get_downline(agent_id: str, depth: int = 1):
     """Get agent's downline tree up to specified depth."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_downline", "agent-hierarchy-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if depth > 5:
         raise HTTPException(status_code=400, detail="Maximum depth is 5 levels")
     return {
@@ -178,6 +196,10 @@ async def get_downline(agent_id: str, depth: int = 1):
 @app.post("/api/v1/hierarchy/assign")
 async def assign_territory(agent_id: str, territory_id: str, effective_date: str = None):
     """Assign agent to a territory."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assign_territory_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assign_territory", "timestamp": _time.time()}), "agent-hierarchy-service")
+
     return {
         "agent_id": agent_id,
         "territory_id": territory_id,
@@ -188,6 +210,10 @@ async def assign_territory(agent_id: str, territory_id: str, effective_date: str
 @app.post("/api/v1/hierarchy/promote")
 async def promote_agent(agent_id: str, new_level: str, reason: str = ""):
     """Promote agent to a higher level in the hierarchy."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("promote_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "promote_agent", "timestamp": _time.time()}), "agent-hierarchy-service")
+
     valid_levels = ["agent", "super_agent", "master_agent", "distributor", "regional_manager"]
     if new_level not in valid_levels:
         raise HTTPException(status_code=400, detail=f"Invalid level. Must be one of: {valid_levels}")

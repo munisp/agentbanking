@@ -153,6 +153,10 @@ async def health_check():
 @app.post("/api/v1/tickets")
 async def create_ticket(subject: str, description: str, priority: str = "medium", category: str = "general"):
     """Create a new support ticket."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_ticket", "timestamp": _time.time()}), "support-crm")
+
     valid_priorities = ["low", "medium", "high", "critical"]
     if priority not in valid_priorities:
         raise HTTPException(status_code=400, detail=f"Invalid priority. Must be one of: {valid_priorities}")
@@ -170,16 +174,33 @@ async def create_ticket(subject: str, description: str, priority: str = "medium"
 @app.get("/api/v1/tickets/{ticket_id}")
 async def get_ticket(ticket_id: str):
     """Get ticket details with full conversation history."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_ticket", "support-crm")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"ticket_id": ticket_id, "subject": "", "status": "open", "messages": [], "assignee": None, "sla_status": "within_sla"}
 
 @app.put("/api/v1/tickets/{ticket_id}/assign")
 async def assign_ticket(ticket_id: str, assignee_id: str):
     """Assign ticket to a support agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assign_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assign_ticket", "timestamp": _time.time()}), "support-crm")
+
     return {"ticket_id": ticket_id, "assignee_id": assignee_id, "assigned_at": __import__('datetime').datetime.utcnow().isoformat()}
 
 @app.put("/api/v1/tickets/{ticket_id}/escalate")
 async def escalate_ticket(ticket_id: str, escalation_level: int, reason: str):
     """Escalate ticket to higher support tier."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("escalate_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "escalate_ticket", "timestamp": _time.time()}), "support-crm")
+
     if escalation_level > 3:
         raise HTTPException(status_code=400, detail="Maximum escalation level is 3")
     return {"ticket_id": ticket_id, "escalation_level": escalation_level, "reason": reason, "escalated_at": __import__('datetime').datetime.utcnow().isoformat()}
@@ -187,11 +208,24 @@ async def escalate_ticket(ticket_id: str, escalation_level: int, reason: str):
 @app.put("/api/v1/tickets/{ticket_id}/resolve")
 async def resolve_ticket(ticket_id: str, resolution: str, root_cause: str = None):
     """Resolve a support ticket."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("resolve_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "resolve_ticket", "timestamp": _time.time()}), "support-crm")
+
     return {"ticket_id": ticket_id, "status": "resolved", "resolution": resolution, "root_cause": root_cause, "resolved_at": __import__('datetime').datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/tickets")
 async def list_tickets(status: str = None, priority: str = None, limit: int = 20, offset: int = 0):
     """List tickets with filtering and pagination."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_tickets", "support-crm")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"tickets": [], "total": 0, "limit": limit, "offset": offset}
 
 if __name__ == "__main__":

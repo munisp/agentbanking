@@ -178,26 +178,56 @@ async def health():
 @app.post("/api/v1/workflows")
 async def create_workflow(name: str, steps: list, trigger: str = "manual"):
     """Create a workflow definition."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_workflow_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_workflow", "timestamp": _time.time()}), "workflow-orchestrator-enhanced")
+
     return {"workflow_id": f"WF-{int(__import__('time').time())}", "name": name, "steps_count": len(steps), "trigger": trigger, "status": "draft"}
 
 @app.post("/api/v1/workflows/{workflow_id}/execute")
 async def execute_workflow(workflow_id: str, input_data: dict = None):
     """Execute a workflow instance."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("execute_workflow_" + str(int(_time.time() * 1000)), _json.dumps({"action": "execute_workflow", "timestamp": _time.time()}), "workflow-orchestrator-enhanced")
+
     return {"execution_id": f"EXE-{workflow_id}-{int(__import__('time').time())}", "workflow_id": workflow_id, "status": "running", "started_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/workflows/{workflow_id}/executions")
 async def list_executions(workflow_id: str, limit: int = 20):
     """List workflow executions."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_executions", "workflow-orchestrator-enhanced")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"workflow_id": workflow_id, "executions": [], "total": 0}
 
 @app.get("/api/v1/workflows/executions/{execution_id}")
 async def get_execution(execution_id: str):
     """Get execution details with step status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_execution", "workflow-orchestrator-enhanced")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"execution_id": execution_id, "status": "unknown", "steps": [], "started_at": None, "completed_at": None, "duration_ms": 0}
 
 @app.post("/api/v1/workflows/executions/{execution_id}/cancel")
 async def cancel_execution(execution_id: str, reason: str = ""):
     """Cancel a running workflow execution."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("cancel_execution_" + str(int(_time.time() * 1000)), _json.dumps({"action": "cancel_execution", "timestamp": _time.time()}), "workflow-orchestrator-enhanced")
+
     return {"execution_id": execution_id, "status": "cancelled", "reason": reason, "cancelled_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

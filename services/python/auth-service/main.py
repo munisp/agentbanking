@@ -178,6 +178,10 @@ TOKEN_EXPIRY = 3600  # 1 hour
 
 @app.post("/api/v1/login")
 async def login(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login", "timestamp": _time.time()}), "auth-service")
+
     body = await request.json()
     username = body.get("username", "")
     password = body.get("password", "")
@@ -200,6 +204,10 @@ async def login(request: Request):
 
 @app.post("/api/v1/validate")
 async def validate_token(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("validate_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "validate_token", "timestamp": _time.time()}), "auth-service")
+
     body = await request.json()
     token = body.get("token", "")
     conn = get_db()
@@ -213,6 +221,10 @@ async def validate_token(request: Request):
 
 @app.post("/api/v1/logout")
 async def logout(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("logout_" + str(int(_time.time() * 1000)), _json.dumps({"action": "logout", "timestamp": _time.time()}), "auth-service")
+
     body = await request.json()
     token = body.get("token", "")
     conn = get_db()

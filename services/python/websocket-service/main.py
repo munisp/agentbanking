@@ -312,6 +312,15 @@ async def health_check():
 @app.get("/connections")
 async def list_connections():
     """List all active connections"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_connections", "websocket-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     connections = []
     for agent_id, agent_connections in manager.active_connections.items():
         for connection in agent_connections:
@@ -327,6 +336,15 @@ async def list_connections():
 @app.get("/connections/{agent_id}")
 async def get_agent_connections(agent_id: str):
     """Get connections for a specific agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_connections", "websocket-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     count = manager.get_agent_connections_count(agent_id)
     return {
         "agent_id": agent_id,
@@ -337,6 +355,10 @@ async def get_agent_connections(agent_id: str):
 @app.post("/send/agent/{agent_id}")
 async def send_to_agent(agent_id: str, message: Message):
     """Send a message to a specific agent"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_to_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_to_agent", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({
@@ -359,6 +381,10 @@ async def send_to_agent(agent_id: str, message: Message):
 @app.post("/send/broadcast")
 async def broadcast_message(message: Message):
     """Broadcast a message to all connected clients"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("broadcast_message_" + str(int(_time.time() * 1000)), _json.dumps({"action": "broadcast_message", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({
@@ -381,6 +407,10 @@ async def broadcast_message(message: Message):
 @app.post("/send/room/{room_id}")
 async def send_to_room(room_id: str, message: Message):
     """Send a message to all clients in a room"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_to_room_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_to_room", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({

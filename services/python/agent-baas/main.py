@@ -153,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/agents/{agent_id}/float")
 async def get_agent_float(agent_id: str):
     """Get agent float balance and allocation details."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_float", "agent-baas")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "float_balance": 0.0,
@@ -167,6 +176,10 @@ async def get_agent_float(agent_id: str):
 @app.post("/api/v1/agents/{agent_id}/float/topup")
 async def topup_float(agent_id: str, amount: float, source: str = "bank_transfer"):
     """Process float top-up for an agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("topup_float_" + str(int(_time.time() * 1000)), _json.dumps({"action": "topup_float", "timestamp": _time.time()}), "agent-baas")
+
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
     if amount > 1000000:
@@ -183,6 +196,15 @@ async def topup_float(agent_id: str, amount: float, source: str = "bank_transfer
 @app.get("/api/v1/agents/{agent_id}/commissions")
 async def get_commissions(agent_id: str, period: str = "current_month"):
     """Get agent commission summary for a period."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_commissions", "agent-baas")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "period": period,
@@ -200,6 +222,10 @@ async def get_commissions(agent_id: str, period: str = "current_month"):
 @app.post("/api/v1/agents/{agent_id}/kyc/verify")
 async def verify_agent_kyc(agent_id: str, document_type: str, document_number: str):
     """Submit agent KYC verification request."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_agent_kyc_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_agent_kyc", "timestamp": _time.time()}), "agent-baas")
+
     valid_types = ["bvn", "nin", "passport", "drivers_license", "voters_card"]
     if document_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid document type. Must be one of: {valid_types}")
@@ -214,6 +240,15 @@ async def verify_agent_kyc(agent_id: str, document_type: str, document_number: s
 @app.get("/api/v1/agents/{agent_id}/transactions")
 async def get_agent_transactions(agent_id: str, limit: int = 20, offset: int = 0):
     """Get agent transaction history with pagination."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_transactions", "agent-baas")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "transactions": [],

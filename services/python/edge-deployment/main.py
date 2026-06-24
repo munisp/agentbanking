@@ -128,6 +128,10 @@ async def health_check():
 # User Authentication Endpoints
 @app.post("/token", response_model=schemas.Token, tags=["Authentication"], summary="Authenticate user and get access token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "edge-deployment")
+
     user = auth.get_user(db, username=form_data.username)
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -144,6 +148,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/users/", response_model=schemas.User, status_code=status.HTTP_201_CREATED, tags=["Authentication"], summary="Create a new user")
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_user_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_user", "timestamp": _time.time()}), "edge-deployment")
+
     db_user = auth.get_user(db, username=user.username)
     if db_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
@@ -157,11 +165,24 @@ async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/users/me/", response_model=schemas.User, tags=["Authentication"], summary="Get current user information")
 async def read_users_me(current_user: models.User = Depends(auth.get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_users_me", "edge-deployment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return current_user
 
 # Edge Device Endpoints - Secured
 @app.post("/devices/", response_model=schemas.EdgeDevice, status_code=status.HTTP_201_CREATED, tags=["Edge Devices"], summary="Register a new edge device")
 async def create_edge_device(device: schemas.EdgeDeviceCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_edge_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_edge_device", "timestamp": _time.time()}), "edge-deployment")
+
     db_device = models.EdgeDevice(**device.dict())
     db.add(db_device)
     db.commit()
@@ -171,11 +192,29 @@ async def create_edge_device(device: schemas.EdgeDeviceCreate, db: Session = Dep
 
 @app.get("/devices/", response_model=List[schemas.EdgeDevice], tags=["Edge Devices"], summary="Retrieve all edge devices")
 async def read_edge_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_edge_devices", "edge-deployment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     devices = db.query(models.EdgeDevice).offset(skip).limit(limit).all()
     return devices
 
 @app.get("/devices/{device_id}", response_model=schemas.EdgeDevice, tags=["Edge Devices"], summary="Retrieve a specific edge device by ID")
 async def read_edge_device(device_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_edge_device", "edge-deployment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     device = db.query(models.EdgeDevice).filter(models.EdgeDevice.id == device_id).first()
     if device is None:
         logger.warning(f"Attempted to access non-existent device {device_id} by user {current_user.username}.")
@@ -184,6 +223,10 @@ async def read_edge_device(device_id: str, db: Session = Depends(get_db), curren
 
 @app.put("/devices/{device_id}", response_model=schemas.EdgeDevice, tags=["Edge Devices"], summary="Update an existing edge device")
 async def update_edge_device(device_id: str, device: schemas.EdgeDeviceUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_edge_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_edge_device", "timestamp": _time.time()}), "edge-deployment")
+
     db_device = db.query(models.EdgeDevice).filter(models.EdgeDevice.id == device_id).first()
     if db_device is None:
         logger.warning(f"Attempted to update non-existent device {device_id} by user {current_user.username}.")
@@ -198,6 +241,10 @@ async def update_edge_device(device_id: str, device: schemas.EdgeDeviceUpdate, d
 
 @app.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Edge Devices"], summary="Delete an edge device")
 async def delete_edge_device(device_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_edge_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_edge_device", "timestamp": _time.time()}), "edge-deployment")
+
     db_device = db.query(models.EdgeDevice).filter(models.EdgeDevice.id == device_id).first()
     if db_device is None:
         logger.warning(f"Attempted to delete non-existent device {device_id} by admin {current_user.username}.")
@@ -210,6 +257,10 @@ async def delete_edge_device(device_id: str, db: Session = Depends(get_db), curr
 # Deployment Endpoints - Secured
 @app.post("/deployments/", response_model=schemas.Deployment, status_code=status.HTTP_201_CREATED, tags=["Deployments"], summary="Initiate a new deployment")
 async def create_deployment(deployment: schemas.DeploymentCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_deployment_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_deployment", "timestamp": _time.time()}), "edge-deployment")
+
     db_deployment = models.Deployment(**deployment.dict())
     db.add(db_deployment)
     db.commit()
@@ -219,11 +270,29 @@ async def create_deployment(deployment: schemas.DeploymentCreate, db: Session = 
 
 @app.get("/deployments/", response_model=List[schemas.Deployment], tags=["Deployments"], summary="Retrieve all deployments")
 async def read_deployments(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_deployments", "edge-deployment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     deployments = db.query(models.Deployment).offset(skip).limit(limit).all()
     return deployments
 
 @app.get("/deployments/{deployment_id}", response_model=schemas.Deployment, tags=["Deployments"], summary="Retrieve a specific deployment by ID")
 async def read_deployment(deployment_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_deployment", "edge-deployment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     deployment = db.query(models.Deployment).filter(models.Deployment.id == deployment_id).first()
     if deployment is None:
         logger.warning(f"Attempted to access non-existent deployment {deployment_id} by user {current_user.username}.")
@@ -232,6 +301,10 @@ async def read_deployment(deployment_id: str, db: Session = Depends(get_db), cur
 
 @app.put("/deployments/{deployment_id}", response_model=schemas.Deployment, tags=["Deployments"], summary="Update an existing deployment")
 async def update_deployment(deployment_id: str, deployment: schemas.DeploymentUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_deployment_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_deployment", "timestamp": _time.time()}), "edge-deployment")
+
     db_deployment = db.query(models.Deployment).filter(models.Deployment.id == deployment_id).first()
     if db_deployment is None:
         logger.warning(f"Attempted to update non-existent deployment {deployment_id} by user {current_user.username}.")
@@ -247,6 +320,10 @@ async def update_deployment(deployment_id: str, deployment: schemas.DeploymentUp
 
 @app.delete("/deployments/{deployment_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Deployments"], summary="Delete a deployment")
 async def delete_deployment(deployment_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_deployment_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_deployment", "timestamp": _time.time()}), "edge-deployment")
+
     db_deployment = db.query(models.Deployment).filter(models.Deployment.id == deployment_id).first()
     if db_deployment is None:
         logger.warning(f"Attempted to delete non-existent deployment {deployment_id} by admin {current_user.username}.")

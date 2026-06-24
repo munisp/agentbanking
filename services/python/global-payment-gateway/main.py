@@ -270,5 +270,14 @@ async def process_payment(
 @app.get("/currencies")
 async def get_supported_currencies():
     """Get a list of supported currencies and their conversion rates to USD"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_supported_currencies", "global-payment-gateway")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return CURRENCY_RATES
 

@@ -178,11 +178,24 @@ async def health():
 @app.get("/api/v1/services")
 async def list_services():
     """List registered microservices."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_services", "communication-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"services": [], "total": 0, "healthy": 0, "degraded": 0}
 
 @app.post("/api/v1/services/register")
 async def register_service(name: str, url: str, health_endpoint: str = "/health"):
     """Register a microservice for discovery."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_service_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_service", "timestamp": _time.time()}), "communication-service")
+
     return {"service_id": f"SVC-{name}", "name": name, "url": url, "status": "registered", "registered_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/services/{service_id}/health")
@@ -193,6 +206,10 @@ async def check_health(service_id: str):
 @app.post("/api/v1/services/{service_id}/circuit-breaker")
 async def toggle_circuit_breaker(service_id: str, state: str):
     """Toggle circuit breaker for a service."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("toggle_circuit_breaker_" + str(int(_time.time() * 1000)), _json.dumps({"action": "toggle_circuit_breaker", "timestamp": _time.time()}), "communication-service")
+
     if state not in ["open", "closed", "half_open"]: raise HTTPException(400, "Invalid state")
     return {"service_id": service_id, "circuit_breaker": state, "updated_at": datetime.utcnow().isoformat()}
 

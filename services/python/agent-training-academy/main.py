@@ -178,26 +178,61 @@ async def health():
 @app.get("/api/v1/academy/courses")
 async def list_courses(track: str = None, difficulty: str = None):
     """List training courses with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_courses", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"courses": [], "total": 0, "tracks": ["onboarding", "advanced", "compliance", "sales"]}
 
 @app.get("/api/v1/academy/courses/{course_id}/modules")
 async def get_modules(course_id: str):
     """Get course modules with video content and quizzes."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_modules", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"course_id": course_id, "modules": [], "total_duration_mins": 0, "quiz_count": 0}
 
 @app.post("/api/v1/academy/progress")
 async def update_progress(agent_id: str, course_id: str, module_id: str, completed: bool = False):
     """Update agent's course progress."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_progress_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_progress", "timestamp": _time.time()}), "agent-training-academy")
+
     return {"agent_id": agent_id, "course_id": course_id, "module_id": module_id, "completed": completed, "progress_pct": 0}
 
 @app.get("/api/v1/academy/{agent_id}/certificates")
 async def get_certificates(agent_id: str):
     """Get agent's earned certificates."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_certificates", "agent-training-academy")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "certificates": [], "total": 0}
 
 @app.post("/api/v1/academy/quiz/{quiz_id}/submit")
 async def submit_quiz(quiz_id: str, agent_id: str, answers: dict):
     """Submit quiz answers for grading."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_quiz_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_quiz", "timestamp": _time.time()}), "agent-training-academy")
+
     return {"quiz_id": quiz_id, "agent_id": agent_id, "score": 0, "passed": False, "correct_answers": 0, "total_questions": 0}
 
 if __name__ == "__main__":

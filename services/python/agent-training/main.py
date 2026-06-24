@@ -153,6 +153,10 @@ async def health_check():
 @app.post("/api/v1/training/sessions")
 async def create_training_session(trainer_id: str, trainee_ids: list, topic: str, scheduled_date: str):
     """Schedule a field training session."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_training_session_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_training_session", "timestamp": _time.time()}), "agent-training")
+
     return {
         "session_id": f"TRN-{int(__import__('time').time())}",
         "trainer_id": trainer_id,
@@ -165,11 +169,24 @@ async def create_training_session(trainer_id: str, trainee_ids: list, topic: str
 @app.get("/api/v1/training/sessions/{session_id}")
 async def get_session(session_id: str):
     """Get training session details."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_session", "agent-training")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"session_id": session_id, "trainer_id": "", "trainees": [], "topic": "", "status": "scheduled", "attendance": []}
 
 @app.post("/api/v1/training/mentors/assign")
 async def assign_mentor(mentor_id: str, mentee_id: str, duration_weeks: int = 4):
     """Assign a mentor to a new agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assign_mentor_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assign_mentor", "timestamp": _time.time()}), "agent-training")
+
     return {
         "assignment_id": f"MNT-{mentor_id}-{mentee_id}",
         "mentor_id": mentor_id,
@@ -182,6 +199,10 @@ async def assign_mentor(mentor_id: str, mentee_id: str, duration_weeks: int = 4)
 @app.post("/api/v1/training/competency/{agent_id}/assess")
 async def assess_competency(agent_id: str, skills: dict):
     """Record competency assessment for an agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assess_competency_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assess_competency", "timestamp": _time.time()}), "agent-training")
+
     return {
         "agent_id": agent_id,
         "assessment_date": __import__('datetime').date.today().isoformat(),

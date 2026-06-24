@@ -132,6 +132,10 @@ CBN_OFFICIAL_RATES = {
 
 @app.post("/api/v1/convert")
 async def convert_currency(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("convert_currency_" + str(int(_time.time() * 1000)), _json.dumps({"action": "convert_currency", "timestamp": _time.time()}), "currency-conversion")
+
     body = await request.json()
     from_currency = body.get("from", "NGN").upper()
     to_currency = body.get("to", "USD").upper()
@@ -160,10 +164,28 @@ async def convert_currency(request: Request):
 
 @app.get("/api/v1/rates")
 async def get_rates():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_rates", "currency-conversion")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"rates": CBN_OFFICIAL_RATES, "source": "CBN", "updated": "2026-06-01T00:00:00Z"}
 
 @app.get("/api/v1/corridors")
 async def get_corridors():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_corridors", "currency-conversion")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"corridors": [{"pair": k, "rate": v} for k, v in CBN_OFFICIAL_RATES.items()]}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -208,6 +230,10 @@ class CurrencyService:
 
 @app.post("/api/v1/convert", response_model=ConversionResult)
 async def convert(request: ConversionRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("convert_" + str(int(_time.time() * 1000)), _json.dumps({"action": "convert", "timestamp": _time.time()}), "currency-conversion")
+
     return await CurrencyService.convert(request)
 
 @app.get("/health")

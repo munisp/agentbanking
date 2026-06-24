@@ -264,6 +264,10 @@ TRANSACTION_MAPPING = {
 @app.post("/index")
 async def index_documents(req: IndexRequest):
     """Bulk index documents from Fluvio consumer."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("index_documents_" + str(int(_time.time() * 1000)), _json.dumps({"action": "index_documents", "timestamp": _time.time()}), "opensearch-indexer")
+
     if not req.documents:
         return {"indexed": 0, "errors": 0}
 
@@ -305,6 +309,10 @@ async def index_documents(req: IndexRequest):
 @app.post("/search")
 async def search_documents(req: SearchRequest):
     """Proxy search request to OpenSearch."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("search_documents_" + str(int(_time.time() * 1000)), _json.dumps({"action": "search_documents", "timestamp": _time.time()}), "opensearch-indexer")
+
     body = {
         "query": req.query,
         "size": req.size,
@@ -316,6 +324,10 @@ async def search_documents(req: SearchRequest):
 @app.post("/create-index")
 async def create_index(req: CreateIndexRequest):
     """Create an OpenSearch index with optional mappings."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_index_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_index", "timestamp": _time.time()}), "opensearch-indexer")
+
     body = req.mappings or TRANSACTION_MAPPING
     if req.settings:
         body["settings"] = req.settings

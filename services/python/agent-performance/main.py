@@ -153,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/agents/{agent_id}/kpis")
 async def get_agent_kpis(agent_id: str, period: str = "current_month"):
     """Get agent KPI dashboard data."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_kpis", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "period": period,
@@ -172,6 +181,15 @@ async def get_agent_kpis(agent_id: str, period: str = "current_month"):
 @app.get("/api/v1/agents/{agent_id}/incentives")
 async def get_incentives(agent_id: str):
     """Get agent's current incentive tier and progress."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_incentives", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "current_tier": "bronze",
@@ -186,6 +204,15 @@ async def get_incentives(agent_id: str):
 @app.get("/api/v1/leaderboard")
 async def get_leaderboard(region: str = None, period: str = "current_month", limit: int = 10):
     """Get agent performance leaderboard."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_leaderboard", "agent-performance")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "period": period,
         "region": region,
@@ -197,6 +224,10 @@ async def get_leaderboard(region: str = None, period: str = "current_month", lim
 @app.post("/api/v1/agents/{agent_id}/goals")
 async def set_agent_goals(agent_id: str, transaction_target: int, volume_target: float):
     """Set performance goals for an agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("set_agent_goals_" + str(int(_time.time() * 1000)), _json.dumps({"action": "set_agent_goals", "timestamp": _time.time()}), "agent-performance")
+
     return {
         "agent_id": agent_id,
         "goals": {

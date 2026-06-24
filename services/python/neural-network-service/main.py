@@ -465,6 +465,15 @@ class PredictionResponse(BaseModel):
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "neural-network-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "neural-network-service",
         "version": config.MODEL_VERSION,
@@ -487,6 +496,10 @@ async def health_check():
 @app.post("/predict/sequence", response_model=PredictionResponse)
 async def predict_sequence(request: SequencePredictionRequest):
     """Predict using sequence models (LSTM, CNN, Transformer)"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("predict_sequence_" + str(int(_time.time() * 1000)), _json.dumps({"action": "predict_sequence", "timestamp": _time.time()}), "neural-network-service")
+
     try:
         stats["total_predictions"] += 1
         
@@ -502,6 +515,10 @@ async def predict_sequence(request: SequencePredictionRequest):
 @app.post("/predict/text", response_model=PredictionResponse)
 async def predict_text(request: TextPredictionRequest):
     """Predict using BERT text classifier"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("predict_text_" + str(int(_time.time() * 1000)), _json.dumps({"action": "predict_text", "timestamp": _time.time()}), "neural-network-service")
+
     try:
         stats["total_predictions"] += 1
         
@@ -516,6 +533,15 @@ async def predict_text(request: TextPredictionRequest):
 @app.get("/models")
 async def list_models():
     """List available models"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "neural-network-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     models_info = []
     for name, model in model_manager.models.items():
         params = sum(p.numel() for p in model.parameters())
@@ -530,6 +556,15 @@ async def list_models():
 @app.get("/stats")
 async def get_statistics():
     """Get service statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_statistics", "neural-network-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     return {
         "uptime_seconds": int(uptime),

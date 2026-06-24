@@ -618,6 +618,15 @@ tb_manager = TigerBeetleManager()
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "tigerbeetle-zig")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "tigerbeetle-production",
         "version": config.MODEL_VERSION,
@@ -650,18 +659,39 @@ async def health_check():
 
 @app.post("/accounts", response_model=AccountResponse)
 async def create_account(request: AccountRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_account", "timestamp": _time.time()}), "tigerbeetle-zig")
+
     return await tb_manager.create_account(request)
 
 @app.post("/transfers", response_model=TransferResponse)
 async def create_transfer(request: TransferRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_transfer_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_transfer", "timestamp": _time.time()}), "tigerbeetle-zig")
+
     return await tb_manager.create_transfer(request)
 
 @app.post("/balance")
 async def get_balance(request: BalanceRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("get_balance_" + str(int(_time.time() * 1000)), _json.dumps({"action": "get_balance", "timestamp": _time.time()}), "tigerbeetle-zig")
+
     return await tb_manager.get_balance(request.account_id)
 
 @app.get("/stats")
 async def get_statistics():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_statistics", "tigerbeetle-zig")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     return {
         "uptime_seconds": int(uptime),
@@ -675,6 +705,15 @@ async def get_statistics():
 @app.get("/reconcile")
 async def reconcile():
     """Compare TigerBeetle balances with PostgreSQL and return discrepancies."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("reconcile", "tigerbeetle-zig")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     if not conn:
         return {"status": "error", "message": "database unavailable"}

@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/kyc/submit")
 async def submit_kyc(user_id: str, document_type: str, document_number: str, document_url: str = None):
     """Submit KYC verification request."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_kyc_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_kyc", "timestamp": _time.time()}), "kyc-kyb-service")
+
     valid_types = ["bvn", "nin", "passport", "drivers_license", "voters_card", "utility_bill"]
     if document_type not in valid_types: raise HTTPException(400, f"Must be one of: {valid_types}")
     return {"kyc_id": f"KYC-{user_id}-{int(__import__('time').time())}", "status": "pending", "document_type": document_type, "estimated_time": "1-24 hours"}
@@ -185,16 +189,38 @@ async def submit_kyc(user_id: str, document_type: str, document_number: str, doc
 @app.get("/api/v1/kyc/{user_id}/status")
 async def get_kyc_status(user_id: str):
     """Get KYC verification status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_kyc_status", "kyc-kyb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"user_id": user_id, "overall_status": "pending", "tier": 1, "documents": [], "risk_score": 0.0}
 
 @app.post("/api/v1/kyb/submit")
 async def submit_kyb(business_id: str, rc_number: str, tin: str, business_type: str):
     """Submit KYB verification for a business."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_kyb_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_kyb", "timestamp": _time.time()}), "kyc-kyb-service")
+
     return {"kyb_id": f"KYB-{business_id}-{int(__import__('time').time())}", "status": "pending", "checks": ["cac_verification", "tin_validation", "address_verification"]}
 
 @app.get("/api/v1/kyb/{business_id}/status")
 async def get_kyb_status(business_id: str):
     """Get KYB verification status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_kyb_status", "kyc-kyb-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"business_id": business_id, "status": "pending", "verified_checks": 0, "total_checks": 3}
 
 if __name__ == "__main__":

@@ -178,6 +178,10 @@ async def health_check():
 # Authentication Endpoint
 @app.post("/token", summary="Get Access Token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "offline-sync")
+
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -255,6 +259,15 @@ async def sync_offline_data(
 # Example of a protected endpoint (requires authentication)
 @app.get("/protected-data", summary="Get Protected Data", response_model=Dict[str, str])
 async def get_protected_data(current_user: User = Depends(get_current_active_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_protected_data", "offline-sync")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": f"Hello {current_user.username}, you have access to protected data!", "role": current_user.roles[0]}
 
 # Error Handling (example for a specific HTTPException)

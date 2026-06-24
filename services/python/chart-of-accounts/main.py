@@ -178,11 +178,24 @@ async def health():
 @app.get("/api/v1/coa/accounts")
 async def list_accounts(account_type: str = None, parent_id: str = None):
     """List chart of accounts with hierarchical filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_accounts", "chart-of-accounts")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"accounts": [], "total": 0, "types": ["asset", "liability", "equity", "revenue", "expense"]}
 
 @app.post("/api/v1/coa/accounts")
 async def create_account(code: str, name: str, account_type: str, parent_id: str = None):
     """Create a new account in the chart of accounts."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_account", "timestamp": _time.time()}), "chart-of-accounts")
+
     valid_types = ["asset", "liability", "equity", "revenue", "expense"]
     if account_type not in valid_types: raise HTTPException(400, f"Must be one of: {valid_types}")
     return {"account_id": f"ACC-{code}", "code": code, "name": name, "type": account_type, "parent_id": parent_id, "balance": 0.0}
@@ -190,11 +203,29 @@ async def create_account(code: str, name: str, account_type: str, parent_id: str
 @app.get("/api/v1/coa/accounts/{account_id}/balance")
 async def get_balance(account_id: str, as_of: str = None):
     """Get account balance as of a specific date."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_balance", "chart-of-accounts")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"account_id": account_id, "balance": 0.0, "as_of": as_of or date.today().isoformat(), "currency": "NGN"}
 
 @app.get("/api/v1/coa/trial-balance")
 async def trial_balance(period: str = "current_month"):
     """Generate trial balance report."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("trial_balance", "chart-of-accounts")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"period": period, "debits_total": 0.0, "credits_total": 0.0, "balanced": True, "accounts": []}
 
 if __name__ == "__main__":

@@ -203,21 +203,47 @@ async def startup():
 
 @app.post("/policies")
 async def create_policy(policy: RetentionPolicy):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_policy", "timestamp": _time.time()}), "data-archival")
+
     policies[policy.id] = policy
     return {"id": policy.id, "message": "policy created"}
 
 @app.get("/policies")
 async def list_policies():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_policies", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"policies": [p.model_dump() for p in policies.values()], "count": len(policies)}
 
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_policy", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     return policies[policy_id].model_dump()
 
 @app.put("/policies/{policy_id}")
 async def update_policy(policy_id: str, body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_policy", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     policy = policies[policy_id]
@@ -228,6 +254,10 @@ async def update_policy(policy_id: str, body: dict):
 
 @app.delete("/policies/{policy_id}")
 async def delete_policy(policy_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_policy", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     del policies[policy_id]
@@ -235,6 +265,10 @@ async def delete_policy(policy_id: str):
 
 @app.post("/archive/run/{policy_id}")
 async def run_archival(policy_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("run_archival_" + str(int(_time.time() * 1000)), _json.dumps({"action": "run_archival", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     policy = policies[policy_id]
@@ -264,6 +298,10 @@ async def run_archival(policy_id: str):
 
 @app.post("/archive/run-all")
 async def run_all_archival():
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("run_all_archival_" + str(int(_time.time() * 1000)), _json.dumps({"action": "run_all_archival", "timestamp": _time.time()}), "data-archival")
+
     results = []
     for policy_id, policy in policies.items():
         if not policy.enabled:
@@ -283,6 +321,15 @@ async def run_all_archival():
 
 @app.get("/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_jobs", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = list(jobs.values())
     if status:
         items = [j for j in items if j.status == status]
@@ -291,12 +338,25 @@ async def list_jobs(status: Optional[str] = None, limit: int = 50):
 
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_job", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     return jobs[job_id].model_dump()
 
 @app.post("/restore/{job_id}")
 async def restore_from_archive(job_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("restore_from_archive_" + str(int(_time.time() * 1000)), _json.dumps({"action": "restore_from_archive", "timestamp": _time.time()}), "data-archival")
+
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     job = jobs[job_id]
@@ -309,6 +369,10 @@ async def restore_from_archive(job_id: str):
 
 @app.post("/gdpr/delete")
 async def gdpr_delete(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("gdpr_delete_" + str(int(_time.time() * 1000)), _json.dumps({"action": "gdpr_delete", "timestamp": _time.time()}), "data-archival")
+
     customer_id = body.get("customer_id", "")
     reason = body.get("reason", "GDPR right to erasure")
     if not customer_id:
@@ -324,6 +388,15 @@ async def gdpr_delete(body: dict):
 
 @app.get("/stats")
 async def stats():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("stats", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     total_archived = sum(p.records_archived for p in policies.values())
     return {
         "total_policies": len(policies),

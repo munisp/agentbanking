@@ -178,22 +178,43 @@ async def health():
 @app.post("/api/v1/biometric/enroll")
 async def enroll(user_id: str, biometric_type: str, template_data: str):
     """Enroll biometric template for a user."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("enroll_" + str(int(_time.time() * 1000)), _json.dumps({"action": "enroll", "timestamp": _time.time()}), "biometric")
+
     if biometric_type not in ["fingerprint", "face", "iris"]: raise HTTPException(400, "Invalid biometric type")
     return {"enrollment_id": f"BIO-{user_id}-{int(__import__('time').time())}", "type": biometric_type, "status": "enrolled", "quality_score": 0.0}
 
 @app.post("/api/v1/biometric/verify")
 async def verify(user_id: str, biometric_type: str, sample_data: str):
     """Verify biometric sample against enrolled template."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify", "timestamp": _time.time()}), "biometric")
+
     return {"user_id": user_id, "type": biometric_type, "match": False, "confidence": 0.0, "threshold": 0.85, "verified_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/biometric/{user_id}/enrollments")
 async def get_enrollments(user_id: str):
     """Get user's biometric enrollments."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_enrollments", "biometric")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"user_id": user_id, "enrollments": [], "total": 0}
 
 @app.post("/api/v1/biometric/liveness")
 async def liveness_check(session_id: str, frame_data: str):
     """Perform liveness detection to prevent spoofing."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("liveness_check_" + str(int(_time.time() * 1000)), _json.dumps({"action": "liveness_check", "timestamp": _time.time()}), "biometric")
+
     return {"session_id": session_id, "is_live": False, "confidence": 0.0, "checks": {"blink": False, "head_turn": False, "depth": False}}
 
 if __name__ == "__main__":

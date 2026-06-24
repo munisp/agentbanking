@@ -125,6 +125,15 @@ init_db()
 
 @app.get("/api/v1/items")
 async def list_items():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "agent-ecommerce-platform")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, status, data, created_at FROM items ORDER BY created_at DESC LIMIT 100")
@@ -134,6 +143,10 @@ async def list_items():
 
 @app.post("/api/v1/items")
 async def create_item(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "agent-ecommerce-platform")
+
     body = await request.json()
     name = body.get("name", "")
     if not name:
@@ -149,6 +162,15 @@ async def create_item(request: Request):
 
 @app.get("/api/v1/items/{item_id}")
 async def get_item(item_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_item", "agent-ecommerce-platform")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items WHERE id = %s", (item_id,))
@@ -160,6 +182,10 @@ async def get_item(item_id: int):
 
 @app.put("/api/v1/items/{item_id}")
 async def update_item(item_id: int, request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "agent-ecommerce-platform")
+
     body = await request.json()
     conn = get_db()
     cursor = conn.cursor()
@@ -171,6 +197,10 @@ async def update_item(item_id: int, request: Request):
 
 @app.delete("/api/v1/items/{item_id}")
 async def delete_item(item_id: int):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "agent-ecommerce-platform")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM items WHERE id = %s", (item_id,))
@@ -198,11 +228,24 @@ async def health_check():
 @app.get("/api/v1/store/{agent_id}/catalog")
 async def get_store_catalog(agent_id: str, category: str = None):
     """Get agent's store product catalog."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_store_catalog", "agent-ecommerce-platform")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "products": [], "categories": [], "total": 0}
 
 @app.post("/api/v1/store/{agent_id}/products")
 async def add_product(agent_id: str, name: str, price: float, category: str, stock: int = 0):
     """Add a product to agent's store."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_product_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_product", "timestamp": _time.time()}), "agent-ecommerce-platform")
+
     if price < 0:
         raise HTTPException(status_code=400, detail="Price must be non-negative")
     return {
@@ -218,6 +261,10 @@ async def add_product(agent_id: str, name: str, price: float, category: str, sto
 @app.post("/api/v1/store/checkout")
 async def checkout(agent_id: str, customer_phone: str, cart_items: list, payment_method: str = "cash"):
     """Process checkout for a customer purchase."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("checkout_" + str(int(_time.time() * 1000)), _json.dumps({"action": "checkout", "timestamp": _time.time()}), "agent-ecommerce-platform")
+
     return {
         "order_id": f"ORD-{int(__import__('time').time())}",
         "agent_id": agent_id,

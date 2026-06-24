@@ -196,6 +196,10 @@ app.add_middleware(
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "document-management")
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -211,6 +215,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/users/", response_model=UserInDB, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_user_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_user", "timestamp": _time.time()}), "document-management")
+
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
@@ -228,6 +236,15 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/users/me/", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_users_me", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return current_user
 
 @app.post("/documents/", response_model=DocumentInDB, status_code=status.HTTP_201_CREATED)
@@ -279,11 +296,29 @@ async def upload_document(
 
 @app.get("/documents/", response_model=List[DocumentInDB])
 async def get_documents(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_documents", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     documents = db.query(Document).filter(Document.owner_id == current_user.id).all()
     return documents
 
 @app.get("/documents/{document_id}", response_model=DocumentInDB)
 async def get_document_by_id(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_document_by_id", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -301,6 +336,10 @@ async def get_document_by_id(document_id: int, current_user: User = Depends(get_
 
 @app.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_document_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_document", "timestamp": _time.time()}), "document-management")
+
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")

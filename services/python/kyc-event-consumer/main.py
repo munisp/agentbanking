@@ -439,12 +439,20 @@ class DaprEvent(BaseModel):
 @app.post("/api/v1/events/process")
 async def receive_event(event: DaprEvent, background_tasks: BackgroundTasks):
     """Receive events from Dapr pub/sub (Kafka via sidecar)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("receive_event_" + str(int(_time.time() * 1000)), _json.dumps({"action": "receive_event", "timestamp": _time.time()}), "kyc-event-consumer")
+
     background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted"}
 
 @app.post("/api/v1/events/batch")
 async def receive_batch(events: list[DaprEvent], background_tasks: BackgroundTasks):
     """Receive a batch of events."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("receive_batch_" + str(int(_time.time() * 1000)), _json.dumps({"action": "receive_batch", "timestamp": _time.time()}), "kyc-event-consumer")
+
     for event in events:
         background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted", "count": len(events)}
@@ -453,6 +461,15 @@ async def receive_batch(events: list[DaprEvent], background_tasks: BackgroundTas
 @app.get("/dapr/subscribe")
 async def dapr_subscribe():
     """Tell Dapr which topics we subscribe to."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("dapr_subscribe", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return [
         {"pubsubname": "kafka-pubsub", "topic": topic, "route": "/api/v1/events/process"}
         for topic in SUBSCRIBED_TOPICS
@@ -461,6 +478,15 @@ async def dapr_subscribe():
 @app.get("/api/v1/rules")
 async def get_trigger_rules():
     """List all configured trigger rules."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_trigger_rules", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     rules = {}
     for topic, rule in TRIGGER_RULES.items():
         rules[topic] = {
@@ -473,6 +499,15 @@ async def get_trigger_rules():
 @app.get("/api/v1/stats")
 async def get_stats():
     """Get processing statistics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "events_received": stats.events_received,
         "events_processed": stats.events_processed,
@@ -487,6 +522,10 @@ async def get_stats():
 @app.delete("/api/v1/cooldowns/{customer_id}")
 async def clear_cooldown(customer_id: str):
     """Clear all cooldowns for a customer (admin use for re-verification)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("clear_cooldown_" + str(int(_time.time() * 1000)), _json.dumps({"action": "clear_cooldown", "timestamp": _time.time()}), "kyc-event-consumer")
+
     cleared = 0
     keys_to_remove = [k for k in cooldown_store if k.startswith(f"{customer_id}:")]
     for k in keys_to_remove:

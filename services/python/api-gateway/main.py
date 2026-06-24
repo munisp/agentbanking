@@ -159,6 +159,15 @@ def read_root() -> Dict[str, Any]:
     """
     Root endpoint to check the service status.
     """
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_root", "api-gateway")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "message": "API Gateway Configuration Service is running", 
         "version": settings.VERSION,

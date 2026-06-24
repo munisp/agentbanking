@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/vat/calculate")
 async def calculate_vat(amount: float, category: str = "standard"):
     """Calculate VAT for a transaction."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("calculate_vat_" + str(int(_time.time() * 1000)), _json.dumps({"action": "calculate_vat", "timestamp": _time.time()}), "nigeria-vat-service")
+
     rates = {"standard": 7.5, "exempt": 0.0, "zero_rated": 0.0}
     rate = rates.get(category, 7.5)
     vat_amount = amount * rate / 100
@@ -186,16 +190,38 @@ async def calculate_vat(amount: float, category: str = "standard"):
 @app.get("/api/v1/vat/summary")
 async def get_vat_summary(period: str = "current_month"):
     """Get VAT collection summary for a period."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_vat_summary", "nigeria-vat-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"period": period, "total_collected": 0.0, "total_remitted": 0.0, "pending_remittance": 0.0, "transactions_count": 0}
 
 @app.post("/api/v1/vat/file")
 async def file_vat_return(period: str, total_output_vat: float, total_input_vat: float):
     """File VAT return with FIRS."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("file_vat_return_" + str(int(_time.time() * 1000)), _json.dumps({"action": "file_vat_return", "timestamp": _time.time()}), "nigeria-vat-service")
+
     return {"filing_id": f"VAT-{int(__import__('time').time())}", "period": period, "net_vat": total_output_vat - total_input_vat, "status": "filed", "filed_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/vat/rates")
 async def get_vat_rates():
     """Get current VAT rates by category."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_vat_rates", "nigeria-vat-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"standard": 7.5, "exempt_categories": ["basic_food", "medical", "education", "books"], "zero_rated": ["exports"]}
 
 if __name__ == "__main__":

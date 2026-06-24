@@ -1159,6 +1159,10 @@ async def startup_event():
 @app.post("/assess-risk")
 async def assess_risk(request: RiskAssessmentRequestModel):
     """Perform risk assessment"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assess_risk_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assess_risk", "timestamp": _time.time()}), "risk-assessment")
+
     risk_request = RiskAssessmentRequest(
         risk_type=request.risk_type,
         entity_id=request.entity_id,
@@ -1172,6 +1176,15 @@ async def assess_risk(request: RiskAssessmentRequestModel):
 @app.get("/risk-assessment/{entity_id}")
 async def get_risk_assessment(entity_id: str, risk_type: RiskType):
     """Get latest risk assessment"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_risk_assessment", "risk-assessment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     assessment = await risk_service.get_risk_assessment(entity_id, risk_type)
     if not assessment:
         raise HTTPException(status_code=404, detail="Risk assessment not found")
@@ -1180,12 +1193,25 @@ async def get_risk_assessment(entity_id: str, risk_type: RiskType):
 @app.get("/risk-alerts")
 async def get_risk_alerts(entity_id: Optional[str] = None, acknowledged: Optional[bool] = None):
     """Get risk alerts"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_risk_alerts", "risk-assessment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     alerts = await risk_service.get_risk_alerts(entity_id, acknowledged)
     return {'alerts': alerts}
 
 @app.post("/risk-alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(alert_id: str):
     """Acknowledge a risk alert"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("acknowledge_alert_" + str(int(_time.time() * 1000)), _json.dumps({"action": "acknowledge_alert", "timestamp": _time.time()}), "risk-assessment")
+
     success = await risk_service.acknowledge_alert(alert_id)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")

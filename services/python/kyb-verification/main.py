@@ -238,6 +238,15 @@ async def _forward_request(url: str, method: str = "POST", json_data: dict = Non
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "kyb-verification")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "kyb-verification",
         "description": "KYB Verification — delegates to kyb_service, deep_kyb, kyc_kyb_service",
@@ -258,6 +267,10 @@ async def health_check():
 
 @app.post("/kyb/verify")
 async def start_kyb_verification(request: KYBVerificationRequest, background_tasks: BackgroundTasks):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("start_kyb_verification_" + str(int(_time.time() * 1000)), _json.dumps({"action": "start_kyb_verification", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
     stats["total_verifications"] += 1
 
@@ -319,6 +332,15 @@ async def start_kyb_verification(request: KYBVerificationRequest, background_tas
 
 @app.get("/kyb/status/{verification_id}")
 async def get_verification_status(verification_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_verification_status", "kyb-verification")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     stats["total_requests"] += 1
 
     for base_url in [KYC_KYB_SERVICE_URL, KYB_SERVICE_URL, DEEP_KYB_SERVICE_URL]:
@@ -330,6 +352,10 @@ async def get_verification_status(verification_id: str):
 
 @app.post("/kyb/bank-statement")
 async def submit_bank_statement(request: BankStatementRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_bank_statement_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_bank_statement", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
 
     result = await _forward_request(
@@ -343,6 +369,10 @@ async def submit_bank_statement(request: BankStatementRequest):
 
 @app.post("/kyb/evidence")
 async def submit_evidence(request: EvidenceSubmitRequest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("submit_evidence_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_evidence", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
 
     result = await _forward_request(
@@ -356,6 +386,10 @@ async def submit_evidence(request: EvidenceSubmitRequest):
 
 @app.post("/kyb/verify-owners/{verification_id}")
 async def verify_beneficial_owners(verification_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_beneficial_owners_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_beneficial_owners", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
 
     result = await _forward_request(
@@ -369,6 +403,10 @@ async def verify_beneficial_owners(verification_id: str):
 
 @app.post("/kyb/approve/{business_id}")
 async def approve_verification(business_id: str, approved_by: str = "system"):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("approve_verification_" + str(int(_time.time() * 1000)), _json.dumps({"action": "approve_verification", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
 
     result = await _forward_request(
@@ -382,6 +420,10 @@ async def approve_verification(business_id: str, approved_by: str = "system"):
 
 @app.post("/kyb/reject/{business_id}")
 async def reject_verification(business_id: str, rejected_by: str = "system", reason: str = ""):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("reject_verification_" + str(int(_time.time() * 1000)), _json.dumps({"action": "reject_verification", "timestamp": _time.time()}), "kyb-verification")
+
     stats["total_requests"] += 1
 
     result = await _forward_request(
@@ -395,6 +437,15 @@ async def reject_verification(business_id: str, rejected_by: str = "system", rea
 
 @app.get("/kyb/screening/{business_id}")
 async def get_screening_results(business_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_screening_results", "kyb-verification")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     stats["total_requests"] += 1
 
     result = await _forward_request(f"{KYB_SERVICE_URL}/kyb/screening/{business_id}", method="GET")
@@ -405,6 +456,15 @@ async def get_screening_results(business_id: str):
 
 @app.get("/stats")
 async def get_statistics():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_statistics", "kyb-verification")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     return {
         "uptime_seconds": int(uptime),

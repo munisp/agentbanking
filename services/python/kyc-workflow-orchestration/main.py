@@ -776,6 +776,10 @@ class ManualDecisionRequest(BaseModel):
 @app.post("/api/v1/workflow/start")
 async def start_workflow(req: StartWorkflowRequest, background_tasks: BackgroundTasks):
     """Start a new KYC verification workflow."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("start_workflow_" + str(int(_time.time() * 1000)), _json.dumps({"action": "start_workflow", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     workflow_id = str(uuid.uuid4())
     sla_hours = SLA_HOURS.get(req.target_tier, 24)
     deadline = datetime.now(timezone.utc) + timedelta(hours=sla_hours)
@@ -813,6 +817,15 @@ async def start_workflow(req: StartWorkflowRequest, background_tasks: Background
 @app.get("/api/v1/workflow/{workflow_id}")
 async def get_workflow(workflow_id: str):
     """Get workflow status and results."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -821,6 +834,15 @@ async def get_workflow(workflow_id: str):
 @app.get("/api/v1/workflow/{workflow_id}/stages")
 async def get_workflow_stages(workflow_id: str):
     """Get detailed stage results for a workflow."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow_stages", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -834,6 +856,10 @@ async def get_workflow_stages(workflow_id: str):
 @app.post("/api/v1/workflow/{workflow_id}/manual-decision")
 async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
     """Override auto-decision with manual review decision (requires compliance role)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("manual_decision_" + str(int(_time.time() * 1000)), _json.dumps({"action": "manual_decision", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -858,6 +884,15 @@ async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
 @app.get("/api/v1/workflows")
 async def list_workflows(status: Optional[str] = None, customer_id: Optional[str] = None):
     """List all workflows with optional filters."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_workflows", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     results = []
     for wf in workflows.values():
         if status and wf.status != status:

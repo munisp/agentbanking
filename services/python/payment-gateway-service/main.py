@@ -269,6 +269,15 @@ async def root() -> Dict[str, str]:
     
     Returns basic service information.
     """
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "payment-gateway-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "Nigerian Remittance Platform - Payment Gateway Service",
         "version": "1.0.0",

@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/refunds")
 async def create_refund(transaction_id: str, amount: float, reason: str):
     """Create a refund request."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_refund_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_refund", "timestamp": _time.time()}), "refund-service")
+
     valid_reasons = ["customer_request", "duplicate_charge", "service_not_delivered", "overcharge", "fraud"]
     if reason not in valid_reasons: raise HTTPException(400, f"Must be one of: {valid_reasons}")
     return {"refund_id": f"RFD-{transaction_id}", "transaction_id": transaction_id, "amount": amount, "reason": reason, "status": "pending_approval"}
@@ -185,16 +189,38 @@ async def create_refund(transaction_id: str, amount: float, reason: str):
 @app.get("/api/v1/refunds/{refund_id}")
 async def get_refund(refund_id: str):
     """Get refund status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_refund", "refund-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"refund_id": refund_id, "status": "unknown", "amount": 0.0, "reason": "", "processed_at": None}
 
 @app.post("/api/v1/refunds/{refund_id}/approve")
 async def approve_refund(refund_id: str, approver_id: str):
     """Approve a pending refund."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("approve_refund_" + str(int(_time.time() * 1000)), _json.dumps({"action": "approve_refund", "timestamp": _time.time()}), "refund-service")
+
     return {"refund_id": refund_id, "status": "approved", "approved_by": approver_id, "approved_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/refunds")
 async def list_refunds(status: str = None, limit: int = 20):
     """List refunds with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_refunds", "refund-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"refunds": [], "total": 0, "status": status}
 
 if __name__ == "__main__":

@@ -494,6 +494,10 @@ async def health_check():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """Chat with Ollama"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("chat_" + str(int(_time.time() * 1000)), _json.dumps({"action": "chat", "timestamp": _time.time()}), "ollama-service")
+
     try:
         if request.stream:
             return StreamingResponse(
@@ -510,6 +514,10 @@ async def chat(request: ChatRequest):
 @app.post("/completions")
 async def generate(request: CompletionRequest):
     """Generate completion"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.generate(request)
         return response
@@ -520,6 +528,10 @@ async def generate(request: CompletionRequest):
 @app.post("/embeddings")
 async def embeddings(request: EmbeddingRequest):
     """Generate embeddings"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("embeddings_" + str(int(_time.time() * 1000)), _json.dumps({"action": "embeddings", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.embeddings(request)
         return response
@@ -530,6 +542,15 @@ async def embeddings(request: EmbeddingRequest):
 @app.get("/models", response_model=List[ModelInfo])
 async def list_models():
     """List available models"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "ollama-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         models = await engine.list_models()
         return models
@@ -540,6 +561,10 @@ async def list_models():
 @app.post("/models/pull")
 async def pull_model(model_name: str, background_tasks: BackgroundTasks):
     """Pull a model from Ollama registry"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("pull_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "pull_model", "timestamp": _time.time()}), "ollama-service")
+
     try:
         background_tasks.add_task(engine.pull_model, model_name)
         return {"message": f"Pulling model {model_name} in background", "status": "started"}
@@ -550,6 +575,10 @@ async def pull_model(model_name: str, background_tasks: BackgroundTasks):
 @app.post("/banking/assistant")
 async def banking_assistant(query: BankingQuery):
     """Banking-specific AI assistant"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("banking_assistant_" + str(int(_time.time() * 1000)), _json.dumps({"action": "banking_assistant", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.banking_assistant(query)
         return response
@@ -560,6 +589,10 @@ async def banking_assistant(query: BankingQuery):
 @app.post("/banking/fraud-analysis")
 async def fraud_analysis(transaction_data: Dict[str, Any]):
     """Analyze transaction for fraud"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("fraud_analysis_" + str(int(_time.time() * 1000)), _json.dumps({"action": "fraud_analysis", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.fraud_analysis(transaction_data)
         return response
@@ -570,6 +603,10 @@ async def fraud_analysis(transaction_data: Dict[str, Any]):
 @app.post("/banking/classify-query")
 async def classify_query(query: str):
     """Classify customer query"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("classify_query_" + str(int(_time.time() * 1000)), _json.dumps({"action": "classify_query", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.customer_query_classifier(query)
         return response

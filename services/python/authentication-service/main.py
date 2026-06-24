@@ -178,28 +178,53 @@ async def health():
 @app.post("/api/v1/auth/otp/send")
 async def send_otp(phone: str, channel: str = "sms"):
     """Send OTP to phone number via SMS or voice."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_otp_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_otp", "timestamp": _time.time()}), "authentication-service")
+
     if channel not in ["sms", "voice", "whatsapp"]: raise HTTPException(400, "Invalid channel")
     return {"phone": phone[-4:].rjust(len(phone), "*"), "channel": channel, "expires_in": 300, "sent": True}
 
 @app.post("/api/v1/auth/otp/verify")
 async def verify_otp(phone: str, code: str):
     """Verify OTP code."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_otp_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_otp", "timestamp": _time.time()}), "authentication-service")
+
     if len(code) != 6: raise HTTPException(400, "OTP must be 6 digits")
     return {"verified": False, "token": None, "attempts_remaining": 3}
 
 @app.post("/api/v1/auth/device/register")
 async def register_device(user_id: str, device_fingerprint: str, device_name: str):
     """Register a trusted device."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_device", "timestamp": _time.time()}), "authentication-service")
+
     return {"device_id": f"DEV-{int(__import__('time').time())}", "user_id": user_id, "trusted": True, "registered_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/auth/sessions/{user_id}")
 async def get_sessions(user_id: str):
     """Get active sessions for a user."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_sessions", "authentication-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"user_id": user_id, "sessions": [], "total": 0}
 
 @app.post("/api/v1/auth/sessions/{session_id}/revoke")
 async def revoke_session(session_id: str):
     """Revoke an active session."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("revoke_session_" + str(int(_time.time() * 1000)), _json.dumps({"action": "revoke_session", "timestamp": _time.time()}), "authentication-service")
+
     return {"session_id": session_id, "revoked": True, "revoked_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

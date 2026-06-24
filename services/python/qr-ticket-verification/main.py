@@ -178,21 +178,42 @@ async def health():
 @app.post("/api/v1/tickets/generate")
 async def generate_ticket(event_id: str, holder_name: str, ticket_type: str = "standard"):
     """Generate a QR ticket."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_ticket", "timestamp": _time.time()}), "qr-ticket-verification")
+
     return {"ticket_id": f"TKT-{int(__import__('time').time())}", "event_id": event_id, "holder": holder_name, "type": ticket_type, "qr_data": "", "status": "valid"}
 
 @app.post("/api/v1/tickets/verify")
 async def verify_ticket(qr_data: str):
     """Verify a QR ticket at point of entry."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("verify_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "verify_ticket", "timestamp": _time.time()}), "qr-ticket-verification")
+
     return {"valid": False, "ticket_id": "", "holder": "", "event_id": "", "already_used": False, "verified_at": datetime.utcnow().isoformat()}
 
 @app.post("/api/v1/tickets/{ticket_id}/void")
 async def void_ticket(ticket_id: str, reason: str):
     """Void a ticket."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("void_ticket_" + str(int(_time.time() * 1000)), _json.dumps({"action": "void_ticket", "timestamp": _time.time()}), "qr-ticket-verification")
+
     return {"ticket_id": ticket_id, "status": "voided", "reason": reason, "voided_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/tickets/event/{event_id}/stats")
 async def get_event_stats(event_id: str):
     """Get ticket stats for an event."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_event_stats", "qr-ticket-verification")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"event_id": event_id, "total_issued": 0, "total_verified": 0, "total_voided": 0}
 
 if __name__ == "__main__":

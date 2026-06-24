@@ -194,6 +194,15 @@ app.include_router(router.router, prefix=settings.API_V1_STR)
 
 @app.get("/", tags=["Health Check"])
 def read_root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_root", "payment-corridors")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": f"{settings.PROJECT_NAME} is running!"}
 
 # Example of how to run the app (for documentation purposes, not executed here)

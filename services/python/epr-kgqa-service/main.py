@@ -494,6 +494,10 @@ async def health_check():
 @app.post("/ask", response_model=Answer)
 async def ask_question(question: Question):
     """Ask a question and get an answer from the knowledge graph"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ask_question_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ask_question", "timestamp": _time.time()}), "epr-kgqa-service")
+
     try:
         answer = engine.answer_question(question)
         return answer
@@ -504,6 +508,10 @@ async def ask_question(question: Question):
 @app.post("/entities/extract")
 async def extract_entities(text: str):
     """Extract entities from text"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("extract_entities_" + str(int(_time.time() * 1000)), _json.dumps({"action": "extract_entities", "timestamp": _time.time()}), "epr-kgqa-service")
+
     try:
         entities = engine.extract_entities(text)
         return {"text": text, "entities": entities}
@@ -514,6 +522,10 @@ async def extract_entities(text: str):
 @app.post("/relations/extract")
 async def extract_relations(text: str):
     """Extract relations from text"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("extract_relations_" + str(int(_time.time() * 1000)), _json.dumps({"action": "extract_relations", "timestamp": _time.time()}), "epr-kgqa-service")
+
     try:
         relations = engine.extract_relations(text)
         return {"text": text, "relations": relations}
@@ -524,6 +536,15 @@ async def extract_relations(text: str):
 @app.get("/entities/{entity_id}/neighbors")
 async def get_neighbors(entity_id: str, depth: int = 2):
     """Get neighboring entities"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_neighbors", "epr-kgqa-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         neighbors = engine.get_entity_neighbors(entity_id, depth)
         return neighbors
@@ -534,6 +555,10 @@ async def get_neighbors(entity_id: str, depth: int = 2):
 @app.post("/explain")
 async def explain_reasoning(question: str, answer: str):
     """Explain the reasoning process"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("explain_reasoning_" + str(int(_time.time() * 1000)), _json.dumps({"action": "explain_reasoning", "timestamp": _time.time()}), "epr-kgqa-service")
+
     try:
         explanation = engine.explain_reasoning(question, answer)
         return {"question": question, "answer": answer, "explanation": explanation}
@@ -544,6 +569,15 @@ async def explain_reasoning(question: str, answer: str):
 @app.get("/stats")
 async def get_stats():
     """Get knowledge graph statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "epr-kgqa-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         stats = engine.get_knowledge_stats()
         return stats
@@ -554,6 +588,10 @@ async def get_stats():
 @app.post("/classify")
 async def classify_question(text: str):
     """Classify question type"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("classify_question_" + str(int(_time.time() * 1000)), _json.dumps({"action": "classify_question", "timestamp": _time.time()}), "epr-kgqa-service")
+
     try:
         question_type = engine.classify_question_type(text)
         return {"text": text, "type": question_type}

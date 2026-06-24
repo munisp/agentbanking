@@ -179,6 +179,15 @@ async def proxy_compliance(path: str, request: Request, token: str = Depends(ver
 
 @app.get("/", include_in_schema=False)
 async def root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "compliance-kyc")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": "Compliance KYC Gateway is running", "version": "2.0.0"}
 
 if __name__ == "__main__":

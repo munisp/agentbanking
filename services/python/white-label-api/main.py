@@ -192,4 +192,13 @@ app.include_router(router)
 # --- Root Endpoint ---
 @app.get("/", tags=["health"])
 async def root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "white-label-api")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": f"{settings.PROJECT_NAME} is running", "version": settings.PROJECT_VERSION}

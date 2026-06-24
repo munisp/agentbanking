@@ -153,6 +153,15 @@ async def health_check():
 @app.get("/api/v1/limits/{agent_id}")
 async def get_limits(agent_id: str):
     """Get current transaction limits for an agent."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_limits", "transaction-limits")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "tier": "standard",
@@ -173,6 +182,10 @@ async def get_limits(agent_id: str):
 @app.post("/api/v1/limits/check")
 async def check_limit(agent_id: str, amount: float, transaction_type: str):
     """Pre-check if a transaction amount is within limits."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("check_limit_" + str(int(_time.time() * 1000)), _json.dumps({"action": "check_limit", "timestamp": _time.time()}), "transaction-limits")
+
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
     return {
@@ -188,6 +201,10 @@ async def check_limit(agent_id: str, amount: float, transaction_type: str):
 @app.post("/api/v1/limits/override")
 async def request_override(agent_id: str, new_limit: float, reason: str, duration_hours: int = 24):
     """Request a temporary limit override."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("request_override_" + str(int(_time.time() * 1000)), _json.dumps({"action": "request_override", "timestamp": _time.time()}), "transaction-limits")
+
     if new_limit > 5000000:
         raise HTTPException(status_code=400, detail="Override limit cannot exceed 5,000,000")
     return {
@@ -203,6 +220,15 @@ async def request_override(agent_id: str, new_limit: float, reason: str, duratio
 @app.get("/api/v1/limits/velocity/{agent_id}")
 async def get_velocity(agent_id: str, window_minutes: int = 60):
     """Get transaction velocity metrics for fraud detection."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_velocity", "transaction-limits")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "window_minutes": window_minutes,

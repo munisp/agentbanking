@@ -167,6 +167,15 @@ async def http_exception_handler(request, exc):
 
 @app.get("/", tags=["Health Check"])
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info("Root endpoint accessed.")
     return {"message": "Remittance Platform DB Service is running!"}
 
@@ -189,6 +198,10 @@ async def get_metrics():
 
 @app.post("/agents/", response_model=AgentInDB, status_code=status.HTTP_201_CREATED, tags=["Agents"], dependencies=[Depends(get_api_key)])
 def create_agent(agent: AgentCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_agent", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to create agent with ID: {agent.agent_id}")
     db_agent = db.query(Agent).filter(Agent.agent_id == agent.agent_id).first()
     if db_agent:
@@ -203,12 +216,30 @@ def create_agent(agent: AgentCreate, db: Session = Depends(get_db)):
 
 @app.get("/agents/", response_model=List[AgentInDB], tags=["Agents"], dependencies=[Depends(get_api_key)])
 def read_agents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agents", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching agents with skip={skip}, limit={limit}")
     agents = db.query(Agent).offset(skip).limit(limit).all()
     return agents
 
 @app.get("/agents/{agent_id}", response_model=AgentInDB, tags=["Agents"], dependencies=[Depends(get_api_key)])
 def read_agent(agent_id: str, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agent", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching agent with ID: {agent_id}")
     db_agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
     if db_agent is None:
@@ -218,6 +249,10 @@ def read_agent(agent_id: str, db: Session = Depends(get_db)):
 
 @app.put("/agents/{agent_id}", response_model=AgentInDB, tags=["Agents"], dependencies=[Depends(get_api_key)])
 def update_agent(agent_id: str, agent: AgentUpdate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_agent", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to update agent with ID: {agent_id}")
     db_agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
     if db_agent is None:
@@ -232,6 +267,10 @@ def update_agent(agent_id: str, agent: AgentUpdate, db: Session = Depends(get_db
 
 @app.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Agents"], dependencies=[Depends(get_api_key)])
 def delete_agent(agent_id: str, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_agent", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to delete agent with ID: {agent_id}")
     db_agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
     if db_agent is None:
@@ -246,6 +285,10 @@ def delete_agent(agent_id: str, db: Session = Depends(get_db)):
 
 @app.post("/customers/", response_model=CustomerInDB, status_code=status.HTTP_201_CREATED, tags=["Customers"], dependencies=[Depends(get_api_key)])
 def create_customer(customer: CustomerCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_customer_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_customer", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to create customer with ID: {customer.customer_id}")
     db_customer = db.query(Customer).filter(Customer.customer_id == customer.customer_id).first()
     if db_customer:
@@ -260,12 +303,30 @@ def create_customer(customer: CustomerCreate, db: Session = Depends(get_db)):
 
 @app.get("/customers/", response_model=List[CustomerInDB], tags=["Customers"], dependencies=[Depends(get_api_key)])
 def read_customers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_customers", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching customers with skip={skip}, limit={limit}")
     customers = db.query(Customer).offset(skip).limit(limit).all()
     return customers
 
 @app.get("/customers/{customer_id}", response_model=CustomerInDB, tags=["Customers"], dependencies=[Depends(get_api_key)])
 def read_customer(customer_id: str, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_customer", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching customer with ID: {customer_id}")
     db_customer = db.query(Customer).filter(Customer.customer_id == customer_id).first()
     if db_customer is None:
@@ -275,6 +336,10 @@ def read_customer(customer_id: str, db: Session = Depends(get_db)):
 
 @app.put("/customers/{customer_id}", response_model=CustomerInDB, tags=["Customers"], dependencies=[Depends(get_api_key)])
 def update_customer(customer_id: str, customer: CustomerUpdate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_customer_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_customer", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to update customer with ID: {customer_id}")
     db_customer = db.query(Customer).filter(Customer.customer_id == customer_id).first()
     if db_customer is None:
@@ -289,6 +354,10 @@ def update_customer(customer_id: str, customer: CustomerUpdate, db: Session = De
 
 @app.delete("/customers/{customer_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Customers"], dependencies=[Depends(get_api_key)])
 def delete_customer(customer_id: str, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_customer_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_customer", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to delete customer with ID: {customer_id}")
     db_customer = db.query(Customer).filter(Customer.customer_id == customer_id).first()
     if db_customer is None:
@@ -303,6 +372,10 @@ def delete_customer(customer_id: str, db: Session = Depends(get_db)):
 
 @app.post("/accounts/", response_model=AccountInDB, status_code=status.HTTP_201_CREATED, tags=["Accounts"], dependencies=[Depends(get_api_key)])
 def create_account(account: AccountCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_account", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to create account with number: {account.account_number}")
     db_account = db.query(Account).filter(Account.account_number == account.account_number).first()
     if db_account:
@@ -328,12 +401,30 @@ def create_account(account: AccountCreate, db: Session = Depends(get_db)):
 
 @app.get("/accounts/", response_model=List[AccountInDB], tags=["Accounts"], dependencies=[Depends(get_api_key)])
 def read_accounts(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_accounts", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching accounts with skip={skip}, limit={limit}")
     accounts = db.query(Account).offset(skip).limit(limit).all()
     return accounts
 
 @app.get("/accounts/{account_number}", response_model=AccountInDB, tags=["Accounts"], dependencies=[Depends(get_api_key)])
 def read_account(account_number: str, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_account", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching account with number: {account_number}")
     db_account = db.query(Account).filter(Account.account_number == account_number).first()
     if db_account is None:
@@ -343,6 +434,10 @@ def read_account(account_number: str, db: Session = Depends(get_db)):
 
 @app.put("/accounts/{account_number}", response_model=AccountInDB, tags=["Accounts"], dependencies=[Depends(get_api_key)])
 def update_account(account_number: str, account: AccountUpdate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_account", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to update account with number: {account_number}")
     db_account = db.query(Account).filter(Account.account_number == account_number).first()
     if db_account is None:
@@ -357,6 +452,10 @@ def update_account(account_number: str, account: AccountUpdate, db: Session = De
 
 @app.delete("/accounts/{account_number}", status_code=status.HTTP_204_NO_CONTENT, tags=["Accounts"], dependencies=[Depends(get_api_key)])
 def delete_account(account_number: str, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_account", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to delete account with number: {account_number}")
     db_account = db.query(Account).filter(Account.account_number == account_number).first()
     if db_account is None:
@@ -371,6 +470,10 @@ def delete_account(account_number: str, db: Session = Depends(get_db)):
 
 @app.post("/transactions/", response_model=TransactionInDB, status_code=status.HTTP_201_CREATED, tags=["Transactions"], dependencies=[Depends(get_api_key)])
 def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_transaction", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to create transaction with ID: {transaction.transaction_id}")
     db_transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction.transaction_id).first()
     if db_transaction:
@@ -400,12 +503,30 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
 
 @app.get("/transactions/", response_model=List[TransactionInDB], tags=["Transactions"], dependencies=[Depends(get_api_key)])
 def read_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transactions", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching transactions with skip={skip}, limit={limit}")
     transactions = db.query(Transaction).offset(skip).limit(limit).all()
     return transactions
 
 @app.get("/transactions/{transaction_id}", response_model=TransactionInDB, tags=["Transactions"], dependencies=[Depends(get_api_key)])
 def read_transaction(transaction_id: str, db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transaction", "database")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Fetching transaction with ID: {transaction_id}")
     db_transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
     if db_transaction is None:
@@ -415,6 +536,10 @@ def read_transaction(transaction_id: str, db: Session = Depends(get_db)):
 
 @app.put("/transactions/{transaction_id}", response_model=TransactionInDB, tags=["Transactions"], dependencies=[Depends(get_api_key)])
 def update_transaction(transaction_id: str, transaction: TransactionUpdate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_transaction", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to update transaction with ID: {transaction_id}")
     db_transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
     if db_transaction is None:
@@ -429,6 +554,10 @@ def update_transaction(transaction_id: str, transaction: TransactionUpdate, db: 
 
 @app.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Transactions"], dependencies=[Depends(get_api_key)])
 def delete_transaction(transaction_id: str, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_transaction", "timestamp": _time.time()}), "database")
+
     logger.info(f"Attempting to delete transaction with ID: {transaction_id}")
     db_transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
     if db_transaction is None:

@@ -178,22 +178,48 @@ async def health():
 @app.get("/api/v1/sim/{terminal_id}/status")
 async def get_sim_status(terminal_id: str):
     """Get SIM status for all slots in a terminal."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_sim_status", "multi-sim-failover")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"terminal_id": terminal_id, "active_sim": 1, "sims": [], "failover_enabled": True}
 
 @app.post("/api/v1/sim/{terminal_id}/switch")
 async def switch_sim(terminal_id: str, target_slot: int, reason: str = "manual"):
     """Switch active SIM to specified slot."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("switch_sim_" + str(int(_time.time() * 1000)), _json.dumps({"action": "switch_sim", "timestamp": _time.time()}), "multi-sim-failover")
+
     if target_slot not in [1, 2, 3]: raise HTTPException(400, "Slot must be 1, 2, or 3")
     return {"terminal_id": terminal_id, "previous_slot": 1, "new_slot": target_slot, "reason": reason, "switched_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/sim/{terminal_id}/signal-history")
 async def get_signal_history(terminal_id: str, hours: int = 24):
     """Get signal strength history for failover analysis."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_signal_history", "multi-sim-failover")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"terminal_id": terminal_id, "hours": hours, "data_points": [], "avg_signal": 0}
 
 @app.post("/api/v1/sim/failover-policy")
 async def set_failover_policy(terminal_id: str, min_signal: int = -90, max_retries: int = 3):
     """Configure failover policy for a terminal."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("set_failover_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "set_failover_policy", "timestamp": _time.time()}), "multi-sim-failover")
+
     return {"terminal_id": terminal_id, "min_signal_dbm": min_signal, "max_retries": max_retries, "policy_updated": True}
 
 if __name__ == "__main__":

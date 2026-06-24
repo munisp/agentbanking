@@ -723,6 +723,10 @@ async def startup_event():
 @app.post("/credit-score")
 async def calculate_credit_score(request: CreditScoreRequestModel):
     """Calculate credit score for a customer"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("calculate_credit_score_" + str(int(_time.time() * 1000)), _json.dumps({"action": "calculate_credit_score", "timestamp": _time.time()}), "credit-scoring")
+
     credit_request = CreditScoreRequest(
         customer_id=request.customer_id,
         personal_info=request.personal_info,
@@ -737,6 +741,15 @@ async def calculate_credit_score(request: CreditScoreRequestModel):
 @app.get("/credit-profile/{customer_id}")
 async def get_credit_profile(customer_id: str):
     """Get existing credit profile"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_credit_profile", "credit-scoring")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     profile = await credit_service.get_credit_profile(customer_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Credit profile not found")
@@ -745,6 +758,15 @@ async def get_credit_profile(customer_id: str):
 @app.get("/credit-history/{customer_id}")
 async def get_score_history(customer_id: str):
     """Get credit score history"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_score_history", "credit-scoring")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     history = await credit_service.get_score_history(customer_id)
     return {'customer_id': customer_id, 'history': history}
 

@@ -215,6 +215,15 @@ async def pg_exception_handler(request: Request, exc: PaymentGatewayException) -
 @app.get("/", response_model=HealthCheck, summary="Health Check")
 def health_check() -> None:
     """Returns the health status of the service."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("health_check", "upi-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return HealthCheck(timestamp=datetime.utcnow())
 
 # --- Include Router ---

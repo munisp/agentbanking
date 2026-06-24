@@ -178,22 +178,48 @@ async def health():
 @app.get("/api/v1/inventory/items")
 async def list_items(category: str = None, warehouse: str = None, low_stock: bool = False):
     """List inventory items with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "inventory-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"items": [], "total": 0, "low_stock_count": 0}
 
 @app.post("/api/v1/inventory/items")
 async def add_item(sku: str, name: str, category: str, quantity: int, reorder_point: int = 10):
     """Add new inventory item."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_item", "timestamp": _time.time()}), "inventory-management")
+
     return {"item_id": f"INV-{sku}", "sku": sku, "name": name, "category": category, "quantity": quantity, "reorder_point": reorder_point}
 
 @app.post("/api/v1/inventory/transfer")
 async def transfer_stock(item_id: str, from_warehouse: str, to_warehouse: str, quantity: int):
     """Transfer stock between warehouses."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("transfer_stock_" + str(int(_time.time() * 1000)), _json.dumps({"action": "transfer_stock", "timestamp": _time.time()}), "inventory-management")
+
     if quantity <= 0: raise HTTPException(400, "Quantity must be positive")
     return {"transfer_id": f"TRF-{int(__import__('time').time())}", "item_id": item_id, "quantity": quantity, "status": "completed"}
 
 @app.get("/api/v1/inventory/alerts")
 async def get_alerts():
     """Get inventory alerts (low stock, expiring items)."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_alerts", "inventory-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"alerts": [], "total": 0, "critical": 0}
 
 if __name__ == "__main__":

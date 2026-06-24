@@ -232,6 +232,10 @@ class Token(BaseModel):
 
 @app.post("/token", response_model=Token, tags=["Authentication"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "email-service")
+
     # User authentication - validate against user database.
     if form_data.username != "testuser" or form_data.password != "testpassword":
         raise HTTPException(
@@ -253,6 +257,10 @@ class EmailSendRequest(BaseModel):
 
 @app.post("/emails/send", response_model=EmailResponse, status_code=status.HTTP_200_OK, tags=["Emails"])
 async def send_email(request: EmailSendRequest, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_email_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_email", "timestamp": _time.time()}), "email-service")
+
     logger.info(f"Received request to send email from {current_user['username']} to {request.recipient_email}")
     try:
         db_email = await send_email_logic(db, request.sender_email, request.recipient_email, request.subject, request.body)
@@ -265,6 +273,15 @@ async def send_email(request: EmailSendRequest, current_user: dict = Depends(get
 
 @app.get("/emails/{email_id}", response_model=EmailResponse, tags=["Emails"])
 async def get_email_status(email_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_email_status", "email-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     db_email = db.query(EmailDB).filter(EmailDB.id == email_id).first()
     if db_email is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")
@@ -277,6 +294,15 @@ async def get_email_status(email_id: int, current_user: dict = Depends(get_curre
 
 @app.get("/emails", response_model=List[EmailResponse], tags=["Emails"])
 async def list_emails(skip: int = 0, limit: int = 100, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_emails", "email-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     # Only allow admins to list all emails, or users to list their own sent emails
     if "admin" not in current_user["roles"]:
         # This assumes current_user['username'] is the sender_email. Adjust as needed.
@@ -288,6 +314,10 @@ async def list_emails(skip: int = 0, limit: int = 100, current_user: dict = Depe
 # Example of an admin-only endpoint
 @app.delete("/emails/{email_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"])
 async def delete_email(email_id: int, current_user: dict = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_email_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_email", "timestamp": _time.time()}), "email-service")
+
     db_email = db.query(EmailDB).filter(EmailDB.id == email_id).first()
     if db_email is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not found")

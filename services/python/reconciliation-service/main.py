@@ -147,6 +147,15 @@ class StatusResponse(BaseModel):
 @app.get("/")
 async def root():
     """Root endpoint"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "reconciliation-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "reconciliation-service",
         "version": "1.0.0",
@@ -168,6 +177,15 @@ async def health_check():
 @app.get("/api/v1/status", response_model=StatusResponse)
 async def get_status():
     """Get service status"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_status", "reconciliation-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = datetime.now() - service_start_time
     return {
         "service": "reconciliation-service",

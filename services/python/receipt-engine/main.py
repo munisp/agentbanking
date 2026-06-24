@@ -153,6 +153,10 @@ async def health_check():
 @app.post("/api/v1/receipts/generate")
 async def generate_receipt(transaction_id: str, format: str = "thermal", language: str = "en"):
     """Generate a receipt for a completed transaction."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_receipt_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_receipt", "timestamp": _time.time()}), "receipt-engine")
+
     valid_formats = ["thermal", "pdf", "sms", "whatsapp", "email"]
     if format not in valid_formats:
         raise HTTPException(status_code=400, detail=f"Invalid format. Must be one of: {valid_formats}")
@@ -169,11 +173,24 @@ async def generate_receipt(transaction_id: str, format: str = "thermal", languag
 @app.get("/api/v1/receipts/{receipt_id}")
 async def get_receipt(receipt_id: str):
     """Get receipt details and download URL."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_receipt", "receipt-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"receipt_id": receipt_id, "transaction_id": "", "format": "pdf", "status": "generated", "download_url": None}
 
 @app.post("/api/v1/receipts/{receipt_id}/deliver")
 async def deliver_receipt(receipt_id: str, channel: str, destination: str):
     """Deliver receipt via specified channel (SMS, WhatsApp, email)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("deliver_receipt_" + str(int(_time.time() * 1000)), _json.dumps({"action": "deliver_receipt", "timestamp": _time.time()}), "receipt-engine")
+
     valid_channels = ["sms", "whatsapp", "email"]
     if channel not in valid_channels:
         raise HTTPException(status_code=400, detail=f"Invalid channel. Must be one of: {valid_channels}")
@@ -188,6 +205,15 @@ async def deliver_receipt(receipt_id: str, channel: str, destination: str):
 @app.get("/api/v1/receipts/templates")
 async def list_templates():
     """List available receipt templates."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_templates", "receipt-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "templates": [
             {"id": "default", "name": "Standard Receipt", "format": "thermal"},

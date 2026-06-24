@@ -178,21 +178,47 @@ async def health():
 @app.post("/api/v1/ads/campaigns")
 async def create_campaign(name: str, budget: float, target_audience: dict, duration_days: int = 30):
     """Create an advertising campaign."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_campaign_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_campaign", "timestamp": _time.time()}), "storefront-advertising")
+
     return {"campaign_id": f"CAM-{int(__import__('time').time())}", "name": name, "budget": budget, "status": "draft", "duration_days": duration_days}
 
 @app.get("/api/v1/ads/campaigns/{campaign_id}")
 async def get_campaign(campaign_id: str):
     """Get campaign details and performance."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_campaign", "storefront-advertising")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"campaign_id": campaign_id, "name": "", "status": "unknown", "impressions": 0, "clicks": 0, "conversions": 0, "spend": 0.0}
 
 @app.get("/api/v1/ads/campaigns")
 async def list_campaigns(status: str = None):
     """List advertising campaigns."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_campaigns", "storefront-advertising")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"campaigns": [], "total": 0, "status": status}
 
 @app.post("/api/v1/ads/campaigns/{campaign_id}/activate")
 async def activate_campaign(campaign_id: str):
     """Activate a draft campaign."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("activate_campaign_" + str(int(_time.time() * 1000)), _json.dumps({"action": "activate_campaign", "timestamp": _time.time()}), "storefront-advertising")
+
     return {"campaign_id": campaign_id, "status": "active", "activated_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

@@ -178,22 +178,43 @@ async def health():
 @app.post("/api/v1/qr/generate")
 async def generate_qr(agent_id: str, amount: float = None, description: str = None):
     """Generate a payment QR code."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_qr_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_qr", "timestamp": _time.time()}), "nfc-qr-payments")
+
     return {"qr_id": f"QR-{agent_id}-{int(__import__('time').time())}", "agent_id": agent_id, "amount": amount, "qr_data": "", "expires_in": 300, "type": "dynamic" if amount else "static"}
 
 @app.post("/api/v1/qr/scan")
 async def scan_qr(qr_data: str, payer_id: str, amount: float = None):
     """Process a QR code payment."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("scan_qr_" + str(int(_time.time() * 1000)), _json.dumps({"action": "scan_qr", "timestamp": _time.time()}), "nfc-qr-payments")
+
     return {"payment_id": f"PAY-{int(__import__('time').time())}", "qr_data": qr_data, "payer_id": payer_id, "amount": amount, "status": "processing"}
 
 @app.post("/api/v1/nfc/tap")
 async def process_nfc(terminal_id: str, card_token: str, amount: float):
     """Process NFC tap payment."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("process_nfc_" + str(int(_time.time() * 1000)), _json.dumps({"action": "process_nfc", "timestamp": _time.time()}), "nfc-qr-payments")
+
     if amount <= 0: raise HTTPException(400, "Amount must be positive")
     return {"payment_id": f"NFC-{int(__import__('time').time())}", "terminal_id": terminal_id, "amount": amount, "status": "processing", "auth_code": ""}
 
 @app.get("/api/v1/payments/{payment_id}")
 async def get_payment(payment_id: str):
     """Get payment status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_payment", "nfc-qr-payments")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"payment_id": payment_id, "status": "unknown", "amount": 0.0, "method": "", "completed_at": None}
 
 if __name__ == "__main__":

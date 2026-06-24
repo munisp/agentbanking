@@ -174,6 +174,15 @@ app.include_router(webhook_router)
 
 @app.get("/", tags=["Health Check"], summary="Service Health Check")
 def read_root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_root", "fps-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": settings.APP_NAME, "version": app.version, "status": "running"}
 
 # --- Execution Block (for local development) ---

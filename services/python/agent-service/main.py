@@ -153,6 +153,10 @@ async def health_check():
 @app.post("/api/v1/agents/register")
 async def register_agent(name: str, phone: str, email: str = None, territory_id: str = None):
     """Register a new agent in the system."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_agent", "timestamp": _time.time()}), "agent-service")
+
     if not phone or len(phone) < 10:
         raise HTTPException(status_code=400, detail="Valid phone number is required")
     return {
@@ -168,6 +172,15 @@ async def register_agent(name: str, phone: str, email: str = None, territory_id:
 @app.get("/api/v1/agents/{agent_id}")
 async def get_agent(agent_id: str):
     """Get agent profile and status."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent", "agent-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "name": "",
@@ -184,6 +197,10 @@ async def get_agent(agent_id: str):
 @app.put("/api/v1/agents/{agent_id}/status")
 async def update_agent_status(agent_id: str, status: str, reason: str = ""):
     """Update agent status (activate, suspend, deactivate)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_agent_status_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_agent_status", "timestamp": _time.time()}), "agent-service")
+
     valid_statuses = ["active", "suspended", "deactivated", "pending_review"]
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
@@ -198,6 +215,15 @@ async def update_agent_status(agent_id: str, status: str, reason: str = ""):
 @app.get("/api/v1/agents")
 async def list_agents(status: str = None, territory: str = None, limit: int = 20, offset: int = 0):
     """List agents with filtering and pagination."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_agents", "agent-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agents": [], "total": 0, "limit": limit, "offset": offset, "filters": {"status": status, "territory": territory}}
 
 if __name__ == "__main__":

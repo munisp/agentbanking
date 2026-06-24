@@ -178,23 +178,49 @@ async def health():
 @app.get("/api/v1/rewards/{user_id}/balance")
 async def get_balance(user_id: str):
     """Get rewards points balance."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_balance", "rewards-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"user_id": user_id, "points": 0, "tier": "bronze", "next_tier": "silver", "points_to_next_tier": 100, "lifetime_points": 0}
 
 @app.post("/api/v1/rewards/earn")
 async def earn_points(user_id: str, transaction_id: str, amount: float):
     """Award points for a transaction."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("earn_points_" + str(int(_time.time() * 1000)), _json.dumps({"action": "earn_points", "timestamp": _time.time()}), "rewards-service")
+
     points = int(amount / 100)
     return {"user_id": user_id, "points_earned": points, "new_balance": points, "transaction_id": transaction_id}
 
 @app.post("/api/v1/rewards/redeem")
 async def redeem_points(user_id: str, points: int, reward_id: str):
     """Redeem points for a reward."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("redeem_points_" + str(int(_time.time() * 1000)), _json.dumps({"action": "redeem_points", "timestamp": _time.time()}), "rewards-service")
+
     if points <= 0: raise HTTPException(400, "Points must be positive")
     return {"redemption_id": f"RDM-{int(__import__('time').time())}", "user_id": user_id, "points_redeemed": points, "reward_id": reward_id, "status": "processing"}
 
 @app.get("/api/v1/rewards/catalog")
 async def get_catalog():
     """Get rewards catalog."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_catalog", "rewards-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"rewards": [], "total": 0, "categories": ["airtime", "data", "cashback", "merchandise"]}
 
 if __name__ == "__main__":

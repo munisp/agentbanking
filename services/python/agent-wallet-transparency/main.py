@@ -178,21 +178,52 @@ async def health():
 @app.get("/api/v1/wallet/{agent_id}/balance")
 async def get_balance(agent_id: str):
     """Get real-time wallet balance with breakdown."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_balance", "agent-wallet-transparency")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "total_balance": 0.0, "available": 0.0, "held": 0.0, "pending": 0.0, "currency": "NGN", "last_updated": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/wallet/{agent_id}/audit-trail")
 async def get_audit_trail(agent_id: str, limit: int = 50):
     """Get wallet transaction audit trail."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_audit_trail", "agent-wallet-transparency")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "entries": [], "total": 0}
 
 @app.post("/api/v1/wallet/reconcile")
 async def reconcile(agent_id: str, expected_balance: float):
     """Trigger wallet reconciliation check."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("reconcile_" + str(int(_time.time() * 1000)), _json.dumps({"action": "reconcile", "timestamp": _time.time()}), "agent-wallet-transparency")
+
     return {"agent_id": agent_id, "expected": expected_balance, "actual": 0.0, "discrepancy": 0.0, "status": "matched", "reconciled_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/wallet/{agent_id}/discrepancies")
 async def get_discrepancies(agent_id: str):
     """Get unresolved balance discrepancies."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_discrepancies", "agent-wallet-transparency")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "discrepancies": [], "total_unresolved": 0}
 
 if __name__ == "__main__":

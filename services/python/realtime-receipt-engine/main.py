@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/receipts/instant")
 async def instant_receipt(transaction_id: str, agent_id: str, format: str = "thermal"):
     """Generate instant receipt for a transaction."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("instant_receipt_" + str(int(_time.time() * 1000)), _json.dumps({"action": "instant_receipt", "timestamp": _time.time()}), "realtime-receipt-engine")
+
     valid_formats = ["thermal", "a4_pdf", "sms_text", "whatsapp", "email_html"]
     if format not in valid_formats: raise HTTPException(400, f"Must be one of: {valid_formats}")
     return {"receipt_id": f"RCT-{transaction_id}", "format": format, "status": "generated", "content": "", "generated_at": datetime.utcnow().isoformat()}
@@ -185,16 +189,33 @@ async def instant_receipt(transaction_id: str, agent_id: str, format: str = "the
 @app.post("/api/v1/receipts/batch")
 async def batch_receipts(transaction_ids: list, format: str = "pdf"):
     """Generate receipts for multiple transactions."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("batch_receipts_" + str(int(_time.time() * 1000)), _json.dumps({"action": "batch_receipts", "timestamp": _time.time()}), "realtime-receipt-engine")
+
     return {"batch_id": f"BATCH-{int(__import__('time').time())}", "count": len(transaction_ids), "format": format, "status": "processing"}
 
 @app.get("/api/v1/receipts/{receipt_id}/download")
 async def download_receipt(receipt_id: str):
     """Download a generated receipt."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("download_receipt", "realtime-receipt-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"receipt_id": receipt_id, "download_url": None, "expires_in": 3600}
 
 @app.post("/api/v1/receipts/customize")
 async def customize_template(agent_id: str, logo_url: str = None, footer_text: str = None):
     """Customize receipt template for an agent."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("customize_template_" + str(int(_time.time() * 1000)), _json.dumps({"action": "customize_template", "timestamp": _time.time()}), "realtime-receipt-engine")
+
     return {"agent_id": agent_id, "template_updated": True, "logo_url": logo_url, "footer_text": footer_text}
 
 if __name__ == "__main__":

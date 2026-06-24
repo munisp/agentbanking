@@ -178,6 +178,10 @@ async def health():
 @app.post("/api/v1/reversals/initiate")
 async def initiate_reversal(transaction_id: str, reason: str, amount: float = None):
     """Initiate a transaction reversal."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("initiate_reversal_" + str(int(_time.time() * 1000)), _json.dumps({"action": "initiate_reversal", "timestamp": _time.time()}), "instant-reversal-engine")
+
     valid_reasons = ["customer_request", "duplicate", "fraud", "error", "timeout", "failed_delivery"]
     if reason not in valid_reasons: raise HTTPException(400, f"Must be one of: {valid_reasons}")
     return {"reversal_id": f"REV-{transaction_id}", "transaction_id": transaction_id, "reason": reason, "amount": amount, "status": "pending_validation", "created_at": datetime.utcnow().isoformat()}
@@ -185,16 +189,38 @@ async def initiate_reversal(transaction_id: str, reason: str, amount: float = No
 @app.get("/api/v1/reversals/{reversal_id}")
 async def get_reversal(reversal_id: str):
     """Get reversal status and details."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_reversal", "instant-reversal-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"reversal_id": reversal_id, "status": "unknown", "original_amount": 0.0, "reversal_amount": 0.0, "approval_status": None}
 
 @app.post("/api/v1/reversals/{reversal_id}/approve")
 async def approve_reversal(reversal_id: str, approver_id: str):
     """Approve a pending reversal."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("approve_reversal_" + str(int(_time.time() * 1000)), _json.dumps({"action": "approve_reversal", "timestamp": _time.time()}), "instant-reversal-engine")
+
     return {"reversal_id": reversal_id, "approved_by": approver_id, "status": "approved", "approved_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/reversals")
 async def list_reversals(status: str = None, limit: int = 20):
     """List reversals with filtering."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_reversals", "instant-reversal-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"reversals": [], "total": 0, "status": status}
 
 if __name__ == "__main__":

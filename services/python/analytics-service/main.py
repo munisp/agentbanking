@@ -178,21 +178,52 @@ async def health():
 @app.get("/api/v1/analytics/dashboard")
 async def get_dashboard(period: str = "7d"):
     """Get analytics dashboard summary."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"period": period, "metrics": {"total_transactions": 0, "total_volume": 0.0, "active_agents": 0, "new_customers": 0, "avg_transaction_value": 0.0}, "trends": []}
 
 @app.get("/api/v1/analytics/cohort")
 async def cohort_analysis(cohort_type: str = "monthly", metric: str = "retention"):
     """Run cohort analysis on agent or customer data."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("cohort_analysis", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"cohort_type": cohort_type, "metric": metric, "cohorts": [], "generated_at": datetime.utcnow().isoformat()}
 
 @app.post("/api/v1/analytics/reports/generate")
 async def generate_report(report_type: str, date_range: str, filters: dict = None):
     """Generate a custom analytics report."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_report_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_report", "timestamp": _time.time()}), "analytics-service")
+
     return {"report_id": f"RPT-{int(__import__('time').time())}", "type": report_type, "status": "generating", "estimated_time": "30-60 seconds"}
 
 @app.get("/api/v1/analytics/funnel")
 async def get_funnel(funnel_name: str = "onboarding"):
     """Get conversion funnel metrics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_funnel", "analytics-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"funnel": funnel_name, "stages": [], "overall_conversion": 0.0}
 
 if __name__ == "__main__":

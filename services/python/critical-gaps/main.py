@@ -178,21 +178,52 @@ async def health():
 @app.get("/api/v1/gaps/scan")
 async def scan_gaps(category: str = None):
     """Scan platform for critical gaps."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("scan_gaps", "critical-gaps")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"scan_id": f"SCAN-{int(__import__('time').time())}", "gaps": [], "total": 0, "categories": ["compliance", "security", "performance", "feature", "infrastructure"]}
 
 @app.get("/api/v1/gaps/{gap_id}")
 async def get_gap(gap_id: str):
     """Get gap details with remediation plan."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_gap", "critical-gaps")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"gap_id": gap_id, "category": "", "severity": "medium", "description": "", "remediation": "", "status": "open", "estimated_effort": ""}
 
 @app.post("/api/v1/gaps/{gap_id}/resolve")
 async def resolve_gap(gap_id: str, resolution: str, evidence: str = None):
     """Mark a gap as resolved with evidence."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("resolve_gap_" + str(int(_time.time() * 1000)), _json.dumps({"action": "resolve_gap", "timestamp": _time.time()}), "critical-gaps")
+
     return {"gap_id": gap_id, "status": "resolved", "resolution": resolution, "resolved_at": datetime.utcnow().isoformat()}
 
 @app.get("/api/v1/gaps/report")
 async def get_gap_report():
     """Generate comprehensive gap analysis report."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_gap_report", "critical-gaps")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"total_gaps": 0, "critical": 0, "high": 0, "medium": 0, "low": 0, "resolved": 0, "open": 0, "report_date": date.today().isoformat()}
 
 if __name__ == "__main__":

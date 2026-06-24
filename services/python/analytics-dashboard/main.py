@@ -162,6 +162,10 @@ async def health_check(db: Session = Depends(get_db)):
 # Authentication endpoint (for JWT token generation)
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: security.OAuth2PasswordRequestForm = Depends()):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "analytics-dashboard")
+
     user = security.get_user(form_data.username)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(

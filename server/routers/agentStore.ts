@@ -43,14 +43,6 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
-import { publishEvent } from "../kafkaClient";
-import { tbCreateTransfer } from "../tbClient";
-import { cacheSet } from "../redisClient";
-import { publishTxToFluvio } from "../fluvio";
-import { ingestToLakehouse } from "../lakehouse";
-import { dapr } from "../middleware/middlewareConnectors";
-
-
 async function publishStoreMiddleware(event: string, key: string, payload: Record<string, unknown>) {
   publishEvent("ecommerce.store", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
   publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.store.${event}`, timestamp: Date.now() }).catch(() => {});

@@ -224,6 +224,144 @@ async def root():
         "seller_id": config.SELLER_ID
     }
 
+
+# ── Real Marketplace API Integration ──────────────────────────────────────────
+import httpx
+from typing import Optional, Dict, Any
+
+MARKETPLACE_API_BASE = os.getenv("EBAY_API_URL", "https://api.ebay.com")
+MARKETPLACE_API_KEY = os.getenv("EBAY_API_KEY", "")
+MARKETPLACE_SELLER_ID = os.getenv("EBAY_SELLER_ID", "")
+
+async def marketplace_request(method: str, path: str, params: Optional[Dict] = None, body: Optional[Dict] = None) -> Dict[str, Any]:
+    """Make authenticated request to eBay API."""
+    url = f"{MARKETPLACE_API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {MARKETPLACE_API_KEY}",
+        "Content-Type": "application/json",
+        "X-Seller-Id": MARKETPLACE_SELLER_ID,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if method == "GET":
+                resp = await client.get(url, params=params, headers=headers)
+            elif method == "POST":
+                resp = await client.post(url, json=body, headers=headers)
+            elif method == "PUT":
+                resp = await client.put(url, json=body, headers=headers)
+            else:
+                resp = await client.request(method, url, json=body, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        # Log to PostgreSQL for observability
+        pool = await get_pg_pool()
+        if pool:
+            await pool.execute(
+                "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+                f"api_error_{path}", json.dumps({"error": str(e), "path": path, "method": method}), "ebay-service"
+            )
+        raise
+
+
+@app.get("/marketplace/search_items")
+async def search_items(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real eBay API: search_items"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/buy/browse/v1/item_summary/search", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("ebay-service", "search_items_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("ebay-service", "search_items_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/get_item")
+async def get_item(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real eBay API: get_item"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/buy/browse/v1/item/{itemId}", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("ebay-service", "get_item_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("ebay-service", "get_item_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.post("/marketplace/create_listing")
+async def create_listing(body: dict):
+    """Real eBay API: create_listing"""
+    try:
+        result = await marketplace_request("PUT", "/sell/inventory/v1/inventory_item/{sku}", body=body)
+        return result
+    except Exception as e:
+        raise HTTPException(503, f"Marketplace API error: {e}")
+
+
+@app.get("/marketplace/get_orders")
+async def get_orders(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real eBay API: get_orders"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/sell/fulfillment/v1/order", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("ebay-service", "get_orders_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("ebay-service", "get_orders_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.post("/marketplace/create_offer")
+async def create_offer(body: dict):
+    """Real eBay API: create_offer"""
+    try:
+        result = await marketplace_request("POST", "/sell/inventory/v1/offer", body=body)
+        return result
+    except Exception as e:
+        raise HTTPException(503, f"Marketplace API error: {e}")
+
+
+@app.get("/marketplace/status")
+async def marketplace_status():
+    """Check marketplace API connectivity."""
+    try:
+        result = await marketplace_request("GET", "/health")
+        return {"status": "connected", "marketplace": "eBay", "response": result}
+    except Exception as e:
+        return {"status": "disconnected", "marketplace": "eBay", "error": str(e)}
+
 @app.get("/health")
 async def health_check():
     uptime = (datetime.now() - service_start_time).total_seconds()

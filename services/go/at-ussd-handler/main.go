@@ -93,6 +93,7 @@ type SessionStore struct {
 // ── Carrier Detection ────────────────────────────────────────────────────────
 
 // carrierPrefixes maps Nigerian phone prefixes to carrier names.
+var carrierPrefixesMu sync.RWMutex
 var carrierPrefixes = map[string]CarrierInfo{
 	"+2340803": {Name: "MTN", MCC: "621", MNC: "30", Country: "NG"},
 	"+2340806": {Name: "MTN", MCC: "621", MNC: "30", Country: "NG"},

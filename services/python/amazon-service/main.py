@@ -224,6 +224,180 @@ async def root():
         "seller_id": config.SELLER_ID
     }
 
+
+# ── Real Marketplace API Integration ──────────────────────────────────────────
+import httpx
+from typing import Optional, Dict, Any
+
+MARKETPLACE_API_BASE = os.getenv("AMAZON_API_URL", "https://sellingpartnerapi-na.amazon.com")
+MARKETPLACE_API_KEY = os.getenv("AMAZON_API_KEY", "")
+MARKETPLACE_SELLER_ID = os.getenv("AMAZON_SELLER_ID", "")
+
+async def marketplace_request(method: str, path: str, params: Optional[Dict] = None, body: Optional[Dict] = None) -> Dict[str, Any]:
+    """Make authenticated request to Amazon SP-API API."""
+    url = f"{MARKETPLACE_API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {MARKETPLACE_API_KEY}",
+        "Content-Type": "application/json",
+        "X-Seller-Id": MARKETPLACE_SELLER_ID,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if method == "GET":
+                resp = await client.get(url, params=params, headers=headers)
+            elif method == "POST":
+                resp = await client.post(url, json=body, headers=headers)
+            elif method == "PUT":
+                resp = await client.put(url, json=body, headers=headers)
+            else:
+                resp = await client.request(method, url, json=body, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        # Log to PostgreSQL for observability
+        pool = await get_pg_pool()
+        if pool:
+            await pool.execute(
+                "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+                f"api_error_{path}", json.dumps({"error": str(e), "path": path, "method": method}), "amazon-service"
+            )
+        raise
+
+
+@app.get("/marketplace/search_catalog")
+async def search_catalog(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Amazon SP-API API: search_catalog"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/catalog/2022-04-01/items", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("amazon-service", "search_catalog_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("amazon-service", "search_catalog_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/get_item")
+async def get_item(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Amazon SP-API API: get_item"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/catalog/2022-04-01/items/{asin}", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("amazon-service", "get_item_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("amazon-service", "get_item_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/list_orders")
+async def list_orders(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Amazon SP-API API: list_orders"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/orders/v0/orders", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("amazon-service", "list_orders_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("amazon-service", "list_orders_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/get_order")
+async def get_order(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Amazon SP-API API: get_order"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/orders/v0/orders/{orderId}", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("amazon-service", "get_order_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("amazon-service", "get_order_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.post("/marketplace/create_feed")
+async def create_feed(body: dict):
+    """Real Amazon SP-API API: create_feed"""
+    try:
+        result = await marketplace_request("POST", "/feeds/2021-06-30/feeds", body=body)
+        return result
+    except Exception as e:
+        raise HTTPException(503, f"Marketplace API error: {e}")
+
+
+@app.get("/marketplace/get_pricing")
+async def get_pricing(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Amazon SP-API API: get_pricing"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/products/pricing/v0/price", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("amazon-service", "get_pricing_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("amazon-service", "get_pricing_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/status")
+async def marketplace_status():
+    """Check marketplace API connectivity."""
+    try:
+        result = await marketplace_request("GET", "/health")
+        return {"status": "connected", "marketplace": "Amazon SP-API", "response": result}
+    except Exception as e:
+        return {"status": "disconnected", "marketplace": "Amazon SP-API", "error": str(e)}
+
 @app.get("/health")
 async def health_check():
     uptime = (datetime.now() - service_start_time).total_seconds()

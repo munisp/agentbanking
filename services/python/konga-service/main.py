@@ -224,6 +224,144 @@ async def root():
         "seller_id": config.SELLER_ID
     }
 
+
+# ── Real Marketplace API Integration ──────────────────────────────────────────
+import httpx
+from typing import Optional, Dict, Any
+
+MARKETPLACE_API_BASE = os.getenv("KONGA_API_URL", "https://api.konga.com/v1")
+MARKETPLACE_API_KEY = os.getenv("KONGA_API_KEY", "")
+MARKETPLACE_SELLER_ID = os.getenv("KONGA_SELLER_ID", "")
+
+async def marketplace_request(method: str, path: str, params: Optional[Dict] = None, body: Optional[Dict] = None) -> Dict[str, Any]:
+    """Make authenticated request to Konga API."""
+    url = f"{MARKETPLACE_API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {MARKETPLACE_API_KEY}",
+        "Content-Type": "application/json",
+        "X-Seller-Id": MARKETPLACE_SELLER_ID,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if method == "GET":
+                resp = await client.get(url, params=params, headers=headers)
+            elif method == "POST":
+                resp = await client.post(url, json=body, headers=headers)
+            elif method == "PUT":
+                resp = await client.put(url, json=body, headers=headers)
+            else:
+                resp = await client.request(method, url, json=body, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        # Log to PostgreSQL for observability
+        pool = await get_pg_pool()
+        if pool:
+            await pool.execute(
+                "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+                f"api_error_{path}", json.dumps({"error": str(e), "path": path, "method": method}), "konga-service"
+            )
+        raise
+
+
+@app.get("/marketplace/search_products")
+async def search_products(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Konga API: search_products"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/products/search", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("konga-service", "search_products_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("konga-service", "search_products_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.get("/marketplace/get_product")
+async def get_product(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Konga API: get_product"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/products/{product_id}", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("konga-service", "get_product_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("konga-service", "get_product_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.post("/marketplace/create_listing")
+async def create_listing(body: dict):
+    """Real Konga API: create_listing"""
+    try:
+        result = await marketplace_request("POST", "/seller/products", body=body)
+        return result
+    except Exception as e:
+        raise HTTPException(503, f"Marketplace API error: {e}")
+
+
+@app.get("/marketplace/get_orders")
+async def get_orders(q: Optional[str] = None, page: int = 1, limit: int = 20):
+    """Real Konga API: get_orders"""
+    params = {"page": page, "limit": limit}
+    if q:
+        params["query"] = q
+    try:
+        result = await marketplace_request("GET", "/seller/orders", params=params)
+        # Persist results to PostgreSQL
+        pool = await get_pg_pool()
+        if pool:
+            await pg_set_dict("konga-service", "get_orders_cache", result)
+        return result
+    except Exception as e:
+        # Fallback to cached results
+        pool = await get_pg_pool()
+        if pool:
+            cached = await pg_get_dict("konga-service", "get_orders_cache")
+            if cached:
+                return {**cached, "_cached": True}
+        raise HTTPException(503, f"Marketplace API unavailable: {e}")
+
+
+@app.post("/marketplace/update_order")
+async def update_order(body: dict):
+    """Real Konga API: update_order"""
+    try:
+        result = await marketplace_request("PUT", "/seller/orders/{order_id}", body=body)
+        return result
+    except Exception as e:
+        raise HTTPException(503, f"Marketplace API error: {e}")
+
+
+@app.get("/marketplace/status")
+async def marketplace_status():
+    """Check marketplace API connectivity."""
+    try:
+        result = await marketplace_request("GET", "/health")
+        return {"status": "connected", "marketplace": "Konga", "response": result}
+    except Exception as e:
+        return {"status": "disconnected", "marketplace": "Konga", "error": str(e)}
+
 @app.get("/health")
 async def health_check():
     uptime = (datetime.now() - service_start_time).total_seconds()

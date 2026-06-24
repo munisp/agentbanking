@@ -158,7 +158,7 @@ export const crossBorderRemittanceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission(String(ctx.user?.id ?? "0"), "transaction", "create").catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: "0", permission: "create" }).catch(() => {});
 
       const session = await getAgentFromCookie(ctx.req);
       if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });

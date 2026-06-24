@@ -40,7 +40,6 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 import { publishEvent } from "../kafkaClient";
-import { tbCreateTransfer } from "../tbClient";
 import { cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";

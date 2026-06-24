@@ -160,7 +160,7 @@ export const agentLoanFacilityRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission(String(ctx.user?.id ?? "0"), "loan", "create").catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "loan", entityId: "0", permission: "create" }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {

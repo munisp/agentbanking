@@ -237,7 +237,7 @@ export const airtimeVendingRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission(String(ctx.user?.id ?? "0"), "transaction", "create").catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: "0", permission: "create" }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {

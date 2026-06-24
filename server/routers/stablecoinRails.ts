@@ -203,7 +203,7 @@ export const stablecoinRailsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission(String(ctx.user?.id ?? "0"), "stablecoin_wallet", "transact").catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: "0", permission: "transact" }).catch(() => {});
 
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {

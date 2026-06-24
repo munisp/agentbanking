@@ -44,6 +44,9 @@ import {
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
 import { enforcePermission } from "../_core/permify";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -139,7 +142,7 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission(String(ctx.user?.id ?? "0"), "float_account", "topup").catch(() => {});
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "float_account", entityId: "0", permission: "topup" }).catch(() => {});
 
       const session = await getAgentFromCookie(ctx.req);
       if (!session)

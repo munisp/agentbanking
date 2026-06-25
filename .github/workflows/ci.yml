@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/
@@ -177,7 +177,7 @@ jobs:
 
       - name: Upload Snyk JSON report as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snyk-vulnerability-report
           path: snyk-report.json
@@ -222,7 +222,7 @@ jobs:
         run: pnpm build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -342,7 +342,7 @@ jobs:
 
       - name: Upload k6 smoke summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-smoke-summary
           path: k6-smoke-summary.json
@@ -436,7 +436,7 @@ jobs:
 
       - name: Upload Playwright report (shard ${{ matrix.shardIndex }})
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-shard-${{ matrix.shardIndex }}
           path: playwright-report/
@@ -444,7 +444,7 @@ jobs:
 
       - name: Upload Playwright test results (shard ${{ matrix.shardIndex }})
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-shard-${{ matrix.shardIndex }}
           path: test-results/
@@ -488,7 +488,7 @@ jobs:
             ./all-playwright-reports
 
       - name: Upload merged Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-merged
           path: playwright-report/
@@ -545,7 +545,7 @@ jobs:
 
       - name: Upload Go test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-test-logs
           path: /tmp/go-*-test.log
@@ -608,7 +608,7 @@ jobs:
 
       - name: Upload Python test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-test-logs
           path: /tmp/py-*-test.log
@@ -744,7 +744,7 @@ jobs:
 
       - name: Upload k6 OTA load test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-ota-results
           path: k6/results/
@@ -857,7 +857,7 @@ jobs:
 
       - name: Upload ZAP reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zap-security-reports
           path: |

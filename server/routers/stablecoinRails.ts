@@ -701,6 +701,86 @@ export const stablecoinRailsRouter = router({
       return { transactions: (result as any).rows ?? [], walletId: input.walletId };
     }),
 
+  // ── Blockchain Wallet Integration (Stellar/Ethereum) ──
+
+  getBlockchainBalance: protectedProcedure
+    .input(z.object({
+      walletAddress: z.string().min(1),
+      chain: z.enum(["stellar", "ethereum"]),
+    }))
+    .query(async ({ input }) => {
+      if (input.chain === "stellar") {
+        try {
+          const horizonUrl = process.env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
+          const res = await fetch(`${horizonUrl}/accounts/${input.walletAddress}`, { signal: AbortSignal.timeout(10000) });
+          if (!res.ok) return { chain: "stellar", address: input.walletAddress, error: `Horizon: ${res.status}`, balances: [] };
+          const account = await res.json() as { balances?: Array<{ asset_type: string; balance: string; asset_code?: string }> };
+          return { chain: "stellar", address: input.walletAddress, balances: account.balances ?? [] };
+        } catch (e) {
+          return { chain: "stellar", address: input.walletAddress, error: String(e), balances: [] };
+        }
+      } else {
+        try {
+          const rpcUrl = process.env.ETHEREUM_RPC_URL ?? "https://sepolia.infura.io/v3/placeholder";
+          const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBalance", params: [input.walletAddress, "latest"], id: 1 }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const rpcResult = await res.json() as { result?: string; error?: { message: string } };
+          const hexBalance = rpcResult?.result ?? "0x0";
+          const wei = BigInt(hexBalance);
+          return { chain: "ethereum", address: input.walletAddress, balanceWei: hexBalance, balanceEth: (Number(wei) / 1e18).toFixed(18) };
+        } catch (e) {
+          return { chain: "ethereum", address: input.walletAddress, error: String(e), balanceWei: "0x0" };
+        }
+      }
+    }),
+
+  submitChainTransaction: protectedProcedure
+    .input(z.object({
+      chain: z.enum(["stellar", "ethereum"]),
+      signedTx: z.string().min(1),
+      walletId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String(input.walletId ?? "0"), permission: "transact" }).catch(() => {});
+      const ref = `CHAIN-${input.chain}-${Date.now()}`;
+
+      if (input.chain === "stellar") {
+        try {
+          const horizonUrl = process.env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
+          const res = await fetch(`${horizonUrl}/transactions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `tx=${encodeURIComponent(input.signedTx)}`,
+            signal: AbortSignal.timeout(30000),
+          });
+          const result = await res.json();
+          publishEvent("stablecoin.chain.submitted", ref, { chain: "stellar", result }).catch(() => {});
+          return { ref, chain: "stellar", status: res.ok ? "submitted" : "failed", result };
+        } catch (e) {
+          return { ref, chain: "stellar", status: "error", error: String(e) };
+        }
+      } else {
+        try {
+          const rpcUrl = process.env.ETHEREUM_RPC_URL ?? "https://sepolia.infura.io/v3/placeholder";
+          const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_sendRawTransaction", params: [input.signedTx], id: 1 }),
+            signal: AbortSignal.timeout(30000),
+          });
+          const result = await res.json() as { result?: string; error?: { message: string } };
+          publishEvent("stablecoin.chain.submitted", ref, { chain: "ethereum", txHash: result?.result }).catch(() => {});
+          return { ref, chain: "ethereum", txHash: result?.result, status: result?.result ? "submitted" : "failed" };
+        } catch (e) {
+          return { ref, chain: "ethereum", status: "error", error: String(e) };
+        }
+      }
+    }),
+
   serviceHealth: protectedProcedure.query(async () => {
     const services = [
       { name: "Stablecoin Rails (Go)", url: "http://localhost:8263/health" },

@@ -663,6 +663,8 @@ export class MojalloopConnector {
   private tlsKey: string | undefined;
   private tlsCa: string | undefined;
   private jwsSigningKey: string | undefined;
+  private mtlsAgent: import("https").Agent | null = null;
+  private settlementTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.hubUrl = process.env.MOJALOOP_HUB_URL ?? "http://localhost:4000";
@@ -673,6 +675,44 @@ export class MojalloopConnector {
     this.tlsCa = process.env.MOJALOOP_TLS_CA;
     // JWS signing key for FSPIOP message integrity
     this.jwsSigningKey = process.env.MOJALOOP_JWS_SIGNING_KEY;
+    // Wire mtlsAgent from lib/mtlsAgent for production hub mTLS
+    try {
+      const { getMtlsAgent } = require("../lib/mtlsAgent");
+      this.mtlsAgent = getMtlsAgent();
+    } catch { /* mtlsAgent unavailable — fallback to plain HTTPS */ }
+  }
+
+  private getFetchOptions(base: RequestInit = {}): RequestInit {
+    if (this.mtlsAgent) {
+      return { ...base, agent: this.mtlsAgent } as any;
+    }
+    return base;
+  }
+
+  startSettlementWindowAutomation(intervalMs: number = 86_400_000): void {
+    if (this.settlementTimer) return;
+    this.settlementTimer = setInterval(async () => {
+      try {
+        const windows = await this.getSettlementWindows("OPEN");
+        if (!windows || !Array.isArray(windows)) return;
+        for (const win of windows) {
+          if (win.state === "OPEN" && win.settlementWindowId) {
+            const createdAt = new Date(win.createdDate ?? 0).getTime();
+            const ageMs = Date.now() - createdAt;
+            if (ageMs > intervalMs * 0.9) {
+              await this.closeSettlementWindow(
+                String(win.settlementWindowId),
+                `Auto-closed: window exceeded ${Math.round(intervalMs / 3_600_000)}h threshold`
+              );
+            }
+          }
+        }
+      } catch { /* settlement automation is best-effort */ }
+    }, Math.min(intervalMs / 4, 3_600_000));
+  }
+
+  stopSettlementWindowAutomation(): void {
+    if (this.settlementTimer) { clearInterval(this.settlementTimer); this.settlementTimer = null; }
   }
 
   private getHeaders(destination?: string): Record<string, string> {
@@ -714,12 +754,12 @@ export class MojalloopConnector {
         ...transfer,
         expiration: transfer.expiration ?? new Date(Date.now() + 30000).toISOString(),
       };
-      const res = await fetch(`${this.hubUrl}/transfers`, {
+      const res = await fetch(`${this.hubUrl}/transfers`, this.getFetchOptions({
         method: "POST",
         headers,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(30000),
-      });
+      }));
       if (res.ok || res.status === 202) {
         recordSuccess("mojaloop");
         return res.json();
@@ -746,12 +786,12 @@ export class MojalloopConnector {
         ...this.getHeaders(quote.payee?.partyIdInfo?.fspId),
         "Content-Type": "application/vnd.interoperability.quotes+json;version=1.1",
       };
-      const res = await fetch(`${this.hubUrl}/quotes`, {
+      const res = await fetch(`${this.hubUrl}/quotes`, this.getFetchOptions({
         method: "POST",
         headers,
         body: JSON.stringify(quote),
         signal: AbortSignal.timeout(15000),
-      });
+      }));
       if (res.ok || res.status === 202) {
         recordSuccess("mojaloop");
         return res.json();
@@ -770,10 +810,10 @@ export class MojalloopConnector {
         ...this.getHeaders(),
         Accept: "application/vnd.interoperability.parties+json;version=1.1",
       };
-      const res = await fetch(`${this.hubUrl}/parties/${type}/${id}`, {
+      const res = await fetch(`${this.hubUrl}/parties/${type}/${id}`, this.getFetchOptions({
         headers,
         signal: AbortSignal.timeout(10000),
-      });
+      }));
       if (res.ok) {
         recordSuccess("mojaloop");
         return res.json();
@@ -791,10 +831,10 @@ export class MojalloopConnector {
       const url = state
         ? `${this.hubUrl}/settlementWindows?state=${state}`
         : `${this.hubUrl}/settlementWindows`;
-      const res = await fetch(url, {
+      const res = await fetch(url, this.getFetchOptions({
         headers: this.getHeaders(),
         signal: AbortSignal.timeout(10000),
-      });
+      }));
       if (res.ok) {
         recordSuccess("mojaloop");
         return res.json();
@@ -809,12 +849,12 @@ export class MojalloopConnector {
   async closeSettlementWindow(windowId: string, reason: string): Promise<any> {
     if (!canAttempt("mojaloop")) return null;
     try {
-      const res = await fetch(`${this.hubUrl}/settlementWindows/${windowId}`, {
+      const res = await fetch(`${this.hubUrl}/settlementWindows/${windowId}`, this.getFetchOptions({
         method: "POST",
         headers: { ...this.getHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ state: "CLOSED", reason }),
         signal: AbortSignal.timeout(10000),
-      });
+      }));
       if (res.ok) {
         recordSuccess("mojaloop");
         return res.json();

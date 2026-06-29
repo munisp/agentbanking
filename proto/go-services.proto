@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package posshell.services;
 
-option go_package = "github.com/54link/pos-shell/proto";
+option go_package = "github.com/54agent/pos-shell/proto";
 
 // ─── Workflow Orchestrator ───────────────────────────────────────
 service WorkflowOrchestrator {

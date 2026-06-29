@@ -1,0 +1,29 @@
+[server]
+host = "0.0.0.0"
+port = 50051
+
+[metrics]
+enabled = true
+port    = 9090
+
+[security]
+enforce_api_key = false
+api_key = ""
+
+[rails.cips]
+currencies      = ["CNY"]
+settlement_ttl_s = 30
+
+[rails.papss]
+settlement_ttl_s = 120
+member_countries = [
+  "NG", "GH", "KE", "ZA", "EG", "ET", "TZ", "UG",
+  "SN", "CI", "CM", "AO", "MZ", "ZM", "ZW", "RW",
+  "TN", "MA", "DZ", "LY", "SD", "ML", "BF", "NE",
+  "TD", "MR", "GM", "SL", "LR", "GN", "GW", "CV",
+  "ST", "GA", "CG", "CD", "CF", "BI", "DJ", "ER",
+  "SO", "KM", "MG", "MU", "SC", "NA", "BW", "LS", "SZ"
+]
+
+[rails.swift]
+settlement_ttl_s = 86400

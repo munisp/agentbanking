@@ -1,0 +1,11 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: payment-hub-local
+spec:
+  tracing:
+    samplingRate: "0"
+  metric:
+    enabled: true
+    http:
+      increasedCardinality: false

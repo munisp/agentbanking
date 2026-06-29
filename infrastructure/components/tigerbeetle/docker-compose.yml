@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  tigerbeetle-format:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+    volumes:
+      - tb_data:/data
+    command: >
+      format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
+    profiles:
+      - init
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - tb_data:/data
+    command: start --addresses=0.0.0.0:3001 /data/0_0.tigerbeetle
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "3001"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tb_data:

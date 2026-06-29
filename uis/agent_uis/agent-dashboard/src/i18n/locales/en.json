@@ -1,0 +1,80 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "cash_in": "Cash In",
+    "cash_out": "Cash Out",
+    "float": "Float Requests",
+    "commission": "Commission",
+    "loyalty": "Loyalty",
+    "transactions": "Transactions",
+    "transfer": "Transfer",
+    "bills": "Bill Payment & VAT",
+    "pos": "POS Terminals",
+    "orders": "Orders",
+    "profile": "Profile",
+    "training": "Training Academy",
+    "performance": "My Performance",
+    "disputes": "Disputes",
+    "messages": "Messages",
+    "savings": "Savings Goals",
+    "virtual_cards": "Virtual Cards",
+    "beneficiaries": "Beneficiaries",
+    "compliance": "Compliance"
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "submit": "Submit",
+    "search": "Search",
+    "refresh": "Refresh",
+    "back": "Back",
+    "next": "Next",
+    "success": "Success",
+    "error": "Error",
+    "amount": "Amount",
+    "account": "Account",
+    "phone": "Phone Number",
+    "balance": "Balance",
+    "date": "Date",
+    "status": "Status",
+    "actions": "Actions",
+    "no_data": "No data found",
+    "logout": "Logout"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "type": "Transaction Type",
+    "reference": "Reference",
+    "debit": "Debit",
+    "credit": "Credit",
+    "pending": "Pending",
+    "completed": "Completed",
+    "failed": "Failed",
+    "reversed": "Reversed"
+  },
+  "float": {
+    "title": "Float Management",
+    "request": "Request Float",
+    "current_balance": "Current Float Balance",
+    "low_warning": "Float balance is low. Please replenish."
+  },
+  "cash_in": {
+    "title": "Cash In",
+    "customer_account": "Customer Account Number",
+    "verify": "Verify Account",
+    "deposit": "Deposit Cash",
+    "enter_amount": "Enter amount"
+  },
+  "cash_out": {
+    "title": "Cash Out",
+    "customer_account": "Customer Account Number",
+    "verify": "Verify Account",
+    "withdraw": "Withdraw Cash",
+    "enter_amount": "Enter amount"
+  }
+}

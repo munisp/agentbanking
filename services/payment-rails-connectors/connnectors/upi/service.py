@@ -1,0 +1,48 @@
+"""
+UPI Payment Gateway Service
+"""
+
+from .client import UpiClient
+from typing import Dict
+import os
+
+class UpiService:
+    def __init__(self):
+        self.client = UpiClient(
+            api_key=os.getenv("UPI_API_KEY", "test_key")
+        )
+    
+    async def process_transfer(self, transfer_data: Dict) -> Dict:
+        """Process a transfer through upi"""
+        try:
+            result = await self.client.initiate_transfer(transfer_data)
+            return {
+                "success": True,
+                "gateway": "upi",
+                "transfer_id": result.get("id"),
+                "status": result.get("status"),
+                "data": result
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "gateway": "upi",
+                "error": str(e)
+            }
+    
+    async def check_status(self, transfer_id: str) -> Dict:
+        """Check transfer status"""
+        try:
+            result = await self.client.get_transfer_status(transfer_id)
+            return {
+                "success": True,
+                "gateway": "upi",
+                "status": result.get("status"),
+                "data": result
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "gateway": "upi",
+                "error": str(e)
+            }

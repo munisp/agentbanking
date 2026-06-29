@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pbac-engine
+description: 54agent PBAC Engine — temporal access grants and policy enforcement
+type: application
+version: 0.0.1
+appVersion: "1.0.0"

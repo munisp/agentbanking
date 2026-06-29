@@ -1,0 +1,6 @@
+apiVersion: v2
+name: lending-credit
+description: 54agent Lending Credit Consolidated Helm Chart
+type: application
+version: 0.0.3
+appVersion: "1.0.0"

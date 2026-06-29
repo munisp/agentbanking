@@ -1,0 +1,125 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-backend-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-backend-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: 54agent.upi.dev
+  dnsNames:
+    - "54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-agent-dashboard-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-agent-dashboard-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: agent.54agent.upi.dev
+  dnsNames:
+    - "agent.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-admin-dashboard-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-admin-dashboard-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: admin.54agent.upi.dev
+  dnsNames:
+    - "admin.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-customer-dashboard-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-customer-dashboard-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: customer.54agent.upi.dev
+  dnsNames:
+    - "customer.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-verification-ui-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-verification-ui-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: kyc.54agent.upi.dev
+  dnsNames:
+    - "kyc.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-client-web-app-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-client-web-app-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: app.54agent.upi.dev
+  dnsNames:
+    - "app.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-tenant-web-app-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-tenant-web-app-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: tenant.54agent.upi.dev
+  dnsNames:
+    - "tenant.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-admin-web-app-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-admin-web-app-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: admin.54agent.upi.dev
+  dnsNames:
+    - "admin.54agent.upi.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: 54agent-compliance-ui-cert
+  namespace: 54agent
+spec:
+  secretName: 54agent-compliance-ui-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: compliance.54agent.upi.dev
+  dnsNames:
+    - "compliance.54agent.upi.dev"

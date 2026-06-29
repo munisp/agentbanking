@@ -1,0 +1,80 @@
+{
+  "nav": {
+    "dashboard": "Main Page",
+    "cash_in": "Put Money",
+    "cash_out": "Withdraw Money",
+    "float": "Float Request",
+    "commission": "My Commission",
+    "loyalty": "Loyalty Points",
+    "transactions": "Transactions",
+    "transfer": "Send Money",
+    "bills": "Pay Bills",
+    "pos": "POS Machine",
+    "orders": "Orders",
+    "profile": "My Profile",
+    "training": "Training",
+    "performance": "My Performance",
+    "disputes": "Disputes",
+    "messages": "Messages",
+    "savings": "Savings",
+    "virtual_cards": "Virtual Card",
+    "beneficiaries": "People Wey I Dey Send To",
+    "compliance": "Compliance"
+  },
+  "common": {
+    "loading": "E dey load...",
+    "save": "Save Am",
+    "cancel": "Cancel",
+    "confirm": "Yes Confirm",
+    "delete": "Delete Am",
+    "edit": "Change Am",
+    "close": "Close",
+    "submit": "Submit",
+    "search": "Search",
+    "refresh": "Refresh",
+    "back": "Go Back",
+    "next": "Continue",
+    "success": "E don work!",
+    "error": "E get error",
+    "amount": "How Much",
+    "account": "Account Number",
+    "phone": "Phone Number",
+    "balance": "Account Balance",
+    "date": "Date",
+    "status": "Status",
+    "actions": "Actions",
+    "no_data": "Nothing dey here",
+    "logout": "Logout"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "type": "Type",
+    "reference": "Reference",
+    "debit": "Debit",
+    "credit": "Credit",
+    "pending": "Pending",
+    "completed": "E don complete",
+    "failed": "E fail",
+    "reversed": "E don reverse"
+  },
+  "float": {
+    "title": "Float",
+    "request": "Request Float",
+    "current_balance": "Float Balance Wey Remain",
+    "low_warning": "Your float don finish. Abeg topup."
+  },
+  "cash_in": {
+    "title": "Put Money",
+    "customer_account": "Customer Account Number",
+    "verify": "Check Account",
+    "deposit": "Put the Money",
+    "enter_amount": "Enter amount"
+  },
+  "cash_out": {
+    "title": "Withdraw Money",
+    "customer_account": "Customer Account Number",
+    "verify": "Check Account",
+    "withdraw": "Give Out Money",
+    "enter_amount": "Enter amount"
+  }
+}

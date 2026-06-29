@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sim-orchestrator-service
+description: 54agent SIM Orchestrator Service Helm Chart
+type: application
+version: 0.0.1
+appVersion: "1.0.0"

@@ -1,0 +1,179 @@
+entity user {}
+
+entity platform {
+
+  // ===== ROLES =====
+  relation super_admin @user
+  relation tenant_manager @user
+  relation operations_manager @user
+  relation risk_manager @user
+  relation internal_auditor @user
+  relation it_admin @user
+  relation relationship_manager @user
+  relation compliance_officer @user
+  relation support_agent @user
+
+  // ===== CORE PERMISSIONS =====
+  permission view_all_data =
+    super_admin or internal_auditor
+
+  permission manage_employees =
+    super_admin or it_admin
+
+  permission manage_tenants =
+    super_admin or it_admin or tenant_manager or relationship_manager
+
+  permission provide_support =
+    support_agent or super_admin
+
+  permission enable_features =
+    super_admin or it_admin
+
+  permission system_lockdown =
+    super_admin or compliance_officer
+}
+
+entity tenants {
+
+  // ===== ROLES =====
+  relation super_admin @user
+  relation branch_manager @user
+  relation operations_manager @user
+  relation risk_manager @user
+  relation internal_auditor @user
+  relation it_admin @user
+  relation relationship_manager @user
+  relation trade_finance_admin @user
+  relation vault_manager @user
+  relation treasury_manager @user
+  relation loan_officer @user
+  relation compliance_officer @user
+  relation support_agent @user
+
+  // ===== VISIBILITY =====
+  permission view_all_data =
+    super_admin or internal_auditor or operations_manager
+
+  permission view_branch_data =
+    super_admin or branch_manager
+
+  // ===== STAFF & CUSTOMER MANAGEMENT =====
+  permission manage_employees =
+    super_admin or it_admin
+
+  permission manage_customers =
+    super_admin or relationship_manager or operations_manager
+
+  permission suspend_or_reactivate_customers =
+    super_admin or operations_manager or compliance_officer
+
+  permission verify_kyc =
+    super_admin or compliance_officer
+
+  // ===== TELLER & VAULT =====
+  permission teller_actions =
+    super_admin or branch_manager or operations_manager
+
+  permission teller_management =
+    super_admin or branch_manager or operations_manager
+
+  permission vault_management =
+    super_admin or vault_manager or treasury_manager
+
+  // ===== TRANSACTIONS =====
+  permission initiate_transactions =
+    super_admin or operations_manager
+
+  permission approve_or_reject =
+    super_admin or branch_manager or treasury_manager or risk_manager or loan_officer
+
+  permission reverse_transactions =
+    super_admin or operations_manager or internal_auditor
+
+  permission manage_transaction_limits =
+    super_admin or risk_manager or compliance_officer
+
+  // ===== LOANS & APPLICATIONS =====
+  permission applications =
+    super_admin or loan_officer or relationship_manager
+
+  permission approve_loans =
+    super_admin or risk_manager or compliance_officer or loan_officer
+
+  permission manage_loan_limits =
+    super_admin or risk_manager
+
+  // ===== BANKING PRODUCTS =====
+  permission manage_esusu =
+    super_admin or operations_manager
+
+  permission islamic_banking =
+    super_admin or operations_manager or compliance_officer or loan_officer
+
+  permission agric_banking =
+    super_admin or operations_manager or loan_officer
+
+  permission lpo_management =
+    super_admin or trade_finance_admin or loan_officer
+
+  // ===== CARDS =====
+  permission card_issuance =
+    super_admin or operations_manager
+
+  permission card_management =
+    super_admin or operations_manager
+
+  permission control_cards =
+    super_admin or operations_manager or risk_manager
+
+  permission dispute_management =
+    super_admin or operations_manager or compliance_officer
+
+  // ===== RISK, AUDIT & COMPLIANCE =====
+  permission view_audit_logs =
+    super_admin or internal_auditor or compliance_officer
+
+  permission export_audit_logs =
+    super_admin or internal_auditor
+
+  permission flag_suspicious_activity =
+    super_admin or risk_manager or compliance_officer
+
+  // ===== ANALYTICS & GOVERNANCE =====
+  permission view_analytics =
+    super_admin or operations_manager
+
+  permission temporal_access_management =
+    super_admin or it_admin
+
+  // ===== FINANCE & INTEGRATIONS =====
+  permission billing_management =
+    super_admin or treasury_manager
+
+  permission coa_management =
+    super_admin or treasury_manager
+
+  permission erp_management =
+    super_admin or it_admin
+
+  // ===== COMMUNICATION =====
+  permission communication_hub_management =
+    super_admin or support_agent or operations_manager
+
+  // ===== EMERGENCY =====
+  permission emergency_override =
+    super_admin or compliance_officer
+}
+
+entity esusu_group {
+
+  // ===== ROLES =====
+  relation admin  @user
+  relation owner  @user
+  relation member @user
+
+  // ===== PERMISSIONS =====
+  permission manage    = admin or owner
+  permission view      = admin or owner or member
+  permission contribute = admin or owner or member
+}

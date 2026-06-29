@@ -280,64 +280,6 @@ spec:
 apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
-  name: financial-transaction-protection
-  namespace: 54link-billing
-spec:
-  rateLimiting:
-    rules:
-      - name: cash-in-limit
-        uri: /api/trpc/cashIn.*
-        limit: 30
-        interval: 60
-        scope: source-ip
-      - name: cash-out-limit
-        uri: /api/trpc/cashOut.*
-        limit: 30
-        interval: 60
-        scope: source-ip
-      - name: stablecoin-limit
-        uri: /api/trpc/stablecoinRails.*
-        limit: 10
-        interval: 60
-        scope: source-ip
-      - name: cross-border-limit
-        uri: /api/trpc/crossBorderRemittance.*
-        limit: 10
-        interval: 60
-        scope: source-ip
-      - name: loan-limit
-        uri: /api/trpc/agentLoanFacility.*
-        limit: 5
-        interval: 60
-        scope: source-ip
-      - name: float-topup-limit
-        uri: /api/trpc/floatTopUp.*
-        limit: 10
-        interval: 60
-        scope: source-ip
-      - name: nfc-payment-limit
-        uri: /api/trpc/nfcTapToPay.*
-        limit: 60
-        interval: 60
-        scope: source-ip
-      - name: ecommerce-order-limit
-        uri: /api/trpc/ecommerceOrders.*
-        limit: 30
-        interval: 60
-        scope: source-ip
-  webAttacks:
-    overrideMode: prevent
-    protections:
-      - name: financial-sql-injection
-        mode: prevent
-        sensitivity: critical
-      - name: financial-parameter-tampering
-        mode: prevent
-
----
-apiVersion: openappsec.io/v1beta1
-kind: Practice
-metadata:
   name: api-schema-validation
   namespace: 54link-billing
 spec:

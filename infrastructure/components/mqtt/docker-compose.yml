@@ -1,0 +1,25 @@
+version: "3.9"
+
+# MQTT broker for POS terminal → platform messaging (offline-first, low-bandwidth)
+# Use Mosquitto in dev; EMQX in production for clustering and auth plugins.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT
+      - "8883:8883"   # MQTT over TLS
+      - "9001:9001"   # WebSockets (for browser clients)
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ping", "-q", "0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

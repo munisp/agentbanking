@@ -1,0 +1,116 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-core-accounts
+  pullPolicy: IfNotPresent
+  tag: "0.0.3"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9313
+    - port: 9314
+    - port: 9315
+    - port: 9316
+    - port: 9317
+    - port: 9318
+    - port: 9319
+    - port: 9320
+    - port: 9321
+    - port: 9322
+resources:
+  requests:
+    cpu: 200m
+    memory: 160Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 640Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: core-accounts
+  appPort: 9313
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  DATABASE_URL: "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking"
+  DATABASE_URI: "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking"
+  DATABASE_POOL_SIZE: "3"
+  DATABASE_MAX_OVERFLOW: "2"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_POOL_RECYCLE: "1800"
+  DB_HOST: "db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com"
+  DB_PORT: "25060"
+  DB_NAME: "link_core_banking"
+  DB_USER: "doadmin"
+  DB_PASSWORD: "AVNS_MSy6CW3EGXnA8wJgkLv"
+  REDIS_URL: "redis://redis-master.redis.svc.cluster.local:6379"
+  REDIS_ADDRESS: "redis-master.redis.svc.cluster.local:6379"
+  REDIS_ADDR: "redis-master.redis.svc.cluster.local:6379"
+  REDIS_HOST: "redis-master.redis.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: "3phHSv7qbAuZLb2pi9FWED2X"
+  KAFKA_BROKERS: "mojaloop-kafka-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+  KAFKA_BOOTSTRAP_SERVERS: "mojaloop-kafka-cluster-kafka-bootstrap.kafka.svc:9092"
+  KAFKA_SECURITY_PROTOCOL: "PLAINTEXT"
+  KAFKA_SASL_MECHANISM: ""
+  KAFKA_SASL_USERNAME: ""
+  KAFKA_SASL_PASSWORD: ""
+  FLUVIO_ENDPOINT: "fluvio:9003"
+  FLUVIO_ADDR: "fluvio:9003"
+  DAPR_URL: "http://localhost:3500"
+  DAPR_HTTP_PORT: "3500"
+  DAPR_PUBSUB: "pubsub"
+  DAPR_PUBSUB_NAME: "pubsub"
+  DAPR_PLACEMENT_ADDRESS: "dapr-placement:50005"
+  KEYCLOAK_URL: "https://keycloak.servers.upi.dev"
+  KEYCLOAK_BASE_URL: "https://keycloak.servers.upi.dev"
+  KEYCLOAK_ADMIN_USERNAME: "admin"
+  KEYCLOAK_ADMIN_PASSWORD: "0lQ09=4+Wcpi)DW"
+  DEFAULT_KEYCLOAK_REALM: "54link"
+  ALLOWED_ORIGINS: "*"
+  PERMIFY_URL: "http://permify.permify.svc.cluster.local:3476"
+  PERMIFY_HOST: "permify.54agent.svc.cluster.local"
+  PERMIFY_PORT: "3476"
+  TIGERBEETLE_ADDRESS: "tigerbeetle-0.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000,tigerbeetle-1.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000,tigerbeetle-2.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000"
+  TIGERBEETLE_ADDRESSES: "tigerbeetle-0.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000,tigerbeetle-1.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000,tigerbeetle-2.tigerbeetle-headless.tigerbeetle.svc.cluster.local:3000"
+  TIGERBEETLE_CLUSTER_ID: "af786bfebbbab6fcb3acd4184e6fe4f4"
+  TB_ADDRESS: "10.233.96.59:3000"
+  TB_CLUSTER_ID: "233240165285264747596733200182526600436"
+  TEMPORAL_ADDRESS: "temporal-frontend.temporal.svc:7233"
+  TEMPORAL_NAMESPACE: "54agent-dev"
+  APISIX_ADMIN_URL: "http://apisix-admin.apisix.svc.cluster.local:9180"
+  OPENSEARCH_URL: "http://opensearch:9200"
+  AGENT_NAMESPACE: "54agent"
+  CORE_BANKING_URL: "https://api.54link.ng"
+  TRPC_API_URL: "https://api.54link.ng/api/trpc"
+  LOG_PATH: "./logs"
+  LOG_LEVEL: "INFO"
+  LOG_SILENT: "false"
+  APP_HOST: "0.0.0.0"
+  APP_PORT: "9313"
+  PORT_BASE: "9313"
+  SERVICE_GROUP: core-accounts
+  SERVICES: "account-service,beneficiary-service,multi-currency-accounts,multi-currency-engine,multi-currency-wallet,onboarding-service,open-banking,open-banking-api,settings-service,user-onboarding-enhanced"

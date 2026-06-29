@@ -4,16 +4,13 @@
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
 frontend.rps:
-  - value: 10000
+  - value: 2400
     constraints: {}
 frontend.namespaceRPS:
-  - value: 5000
-    constraints: {}
-frontend.globalNamespaceRPS:
-  - value: 50000
+  - value: 1200
     constraints: {}
 frontend.maxNamespaceVisibilityRPSPerInstance:
-  - value: 500
+  - value: 50
     constraints: {}
 frontend.enableClientVersionCheck:
   - value: true
@@ -33,16 +30,7 @@ history.defaultActivityRetryPolicy.MaximumAttempts:
   - value: 0
     constraints: {}
 history.maximumBufferedEvents:
-  - value: 200
-    constraints: {}
-history.rps:
-  - value: 10000
-    constraints: {}
-history.cacheMaxSize:
-  - value: 65536
-    constraints: {}
-history.cacheTTL:
-  - value: "1h"
+  - value: 100
     constraints: {}
 history.maxWorkflowTaskTimeoutSeconds:
   - value: 120
@@ -53,22 +41,16 @@ history.longPollExpirationInterval:
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 matching.numTaskqueueReadPartitions:
-  - value: 16
+  - value: 8
     constraints: {}
 matching.numTaskqueueWritePartitions:
-  - value: 16
+  - value: 8
     constraints: {}
 matching.forwarderMaxOutstandingPolls:
-  - value: 40
-    constraints: {}
-matching.forwarderMaxRatePerSecond:
-  - value: 10000
-    constraints: {}
-matching.forwarderMaxChildrenPerNode:
   - value: 20
     constraints: {}
-matching.rps:
-  - value: 10000
+matching.forwarderMaxRatePerSecond:
+  - value: 20
     constraints: {}
 
 # ── Worker ────────────────────────────────────────────────────────────────────
@@ -84,16 +66,4 @@ system.archivalStatus:
 # ── Persistence ───────────────────────────────────────────────────────────────
 system.enableEagerNamespaceRefresher:
   - value: true
-    constraints: {}
-system.visibilityPersistenceMaxReadQPS:
-  - value: 10000
-    constraints: {}
-system.visibilityPersistenceMaxWriteQPS:
-  - value: 10000
-    constraints: {}
-system.historyPersistenceMaxReadQPS:
-  - value: 30000
-    constraints: {}
-system.historyPersistenceMaxWriteQPS:
-  - value: 30000
     constraints: {}

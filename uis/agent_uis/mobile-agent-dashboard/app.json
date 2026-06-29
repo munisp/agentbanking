@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "54agent Agent Dashboard",
+    "slug": "mobile-agent-dashboard",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.link54.agentdashboard"
+    },
+    "android": {
+      "package": "com.link54.agentdashboard",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {},
+    "plugins": ["expo-camera", "expo-location", "expo-secure-store"]
+  }
+}

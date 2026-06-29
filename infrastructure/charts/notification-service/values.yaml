@@ -1,0 +1,40 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54link-dev-notification-service
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: "notification-service"
+serviceAccount:
+  create: false
+  name: 54agent
+podLabels: {}
+service:
+  type: ClusterIP
+  port: 8091
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 200m
+    memory: 512Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+nodeSelector: {}
+tolerations: []
+affinity: {}
+secrets:
+  DATABASE_URL: "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking"
+  DB_HOST: "db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com"
+  DB_PORT: "25060"
+  DB_NAME: "link_core_banking"
+  DB_USER: "doadmin"
+  DB_PASSWORD: "AVNS_MSy6CW3EGXnA8wJgkLv"
+  PORT: "8091"
+  ALLOWED_ORIGINS: "*"
+  LOG_LEVEL: "info"

@@ -1,0 +1,117 @@
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-backend-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - 54agent.upi.dev
+  secret:
+    name: 54agent-backend-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-verification-ui-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - kyc.54agent.upi.dev
+  secret:
+    name: 54agent-verification-ui-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-client-web-app-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - app.54agent.upi.dev
+  secret:
+    name: 54agent-client-web-app-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-tenant-web-app-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - tenant.54agent.upi.dev
+  secret:
+    name: 54agent-tenant-web-app-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-admin-web-app-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - admin.54agent.upi.dev
+  secret:
+    name: 54agent-admin-web-app-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-compliance-ui-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - compliance.54agent.upi.dev
+  secret:
+    name: 54agent-compliance-ui-cert
+    namespace: 54agent
+
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-agent-dashboard-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - agent.54agent.upi.dev
+  secret:
+    name: 54agent-agent-dashboard-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-admin-dashboard-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - admin.54agent.upi.dev
+  secret:
+    name: 54agent-admin-dashboard-cert
+    namespace: 54agent
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: 54agent-customer-dashboard-tls
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  hosts:
+    - customer.54agent.upi.dev
+  secret:
+    name: 54agent-customer-dashboard-cert
+    namespace: 54agent

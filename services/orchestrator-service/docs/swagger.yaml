@@ -1,0 +1,18 @@
+openapi: "3.0.0"
+info:
+  title: "orchestrator-service"
+  version: "1.0.0"
+  description: "54agent orchestrator service"
+tags:
+  - name: ""
+    description: ""
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []

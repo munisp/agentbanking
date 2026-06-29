@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ecommerce-marketplace
+description: 54agent Ecommerce Marketplace Consolidated Helm Chart
+type: application
+version: 0.0.6
+appVersion: "1.0.0"

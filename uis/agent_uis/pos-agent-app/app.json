@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "54agent POS Agent App",
+    "slug": "pos-agent-app",
+    "version": "1.0.0",
+    "web": {},
+    "extra": {
+      "eas": {
+        "projectId": "f381dd19-ed49-42f5-beac-34ff7bcf4f97"
+      }
+    },
+    "android": {
+      "package": "com.tani1964.posagentapp"
+    },
+    "ios": {
+      "bundleIdentifier": "com.tani1964.posagentapp"
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
+  }
+}

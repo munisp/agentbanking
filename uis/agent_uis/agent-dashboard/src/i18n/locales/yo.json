@@ -1,0 +1,80 @@
+{
+  "nav": {
+    "dashboard": "Pẹpẹ Iṣẹ",
+    "cash_in": "Fẹ Owo Wọle",
+    "cash_out": "Fẹ Owo Jade",
+    "float": "Bẹbẹ Float",
+    "commission": "Ere Iṣẹ",
+    "loyalty": "Iṣootọ",
+    "transactions": "Awọn Iṣẹ Owo",
+    "transfer": "Firansifẹ Owo",
+    "bills": "Sanwo Inawo",
+    "pos": "Ẹrọ POS",
+    "orders": "Awọn Aṣẹ",
+    "profile": "Alaye Mi",
+    "training": "Ile-ẹkọ Ikọni",
+    "performance": "Iṣẹ Mi",
+    "disputes": "Awọn Ẹdun",
+    "messages": "Awọn Ifiranṣẹ",
+    "savings": "Ifipamọ",
+    "virtual_cards": "Kaadi Digita",
+    "beneficiaries": "Awọn Olugba",
+    "compliance": "Imulo Iṣẹ"
+  },
+  "common": {
+    "loading": "Ẹ duro díẹ...",
+    "save": "Fi Pamọ",
+    "cancel": "Fagilee",
+    "confirm": "Jẹrisi",
+    "delete": "Paarẹ",
+    "edit": "Ṣatunṣe",
+    "close": "Pa",
+    "submit": "Firanṣẹ",
+    "search": "Wa",
+    "refresh": "Tun gba",
+    "back": "Pada",
+    "next": "Tẹle",
+    "success": "Aṣeyọri",
+    "error": "Aṣiṣe",
+    "amount": "Iye Owo",
+    "account": "Akọọlẹ",
+    "phone": "Nọmba Foonu",
+    "balance": "Iyoku Owo",
+    "date": "Ọjọ",
+    "status": "Ipo",
+    "actions": "Awọn Iṣe",
+    "no_data": "Ko si data",
+    "logout": "Jade"
+  },
+  "transactions": {
+    "title": "Awọn Iṣẹ Owo",
+    "type": "Iru Iṣẹ Owo",
+    "reference": "Nọmba Itọkasi",
+    "debit": "Yiyo Kuro",
+    "credit": "Fikun",
+    "pending": "N duro",
+    "completed": "Ti pari",
+    "failed": "Kuna",
+    "reversed": "Ti yipada"
+  },
+  "float": {
+    "title": "Iṣakoso Float",
+    "request": "Bẹbẹ fun Float",
+    "current_balance": "Iyoku Float Lọwọlọwọ",
+    "low_warning": "Owo Float kere. Jọwọ tun kun."
+  },
+  "cash_in": {
+    "title": "Fẹ Owo Wọle",
+    "customer_account": "Nọmba Akọọlẹ Alabára",
+    "verify": "Jẹrisi Akọọlẹ",
+    "deposit": "Fẹ Owo Wọle",
+    "enter_amount": "Tẹ iye owo sii"
+  },
+  "cash_out": {
+    "title": "Fẹ Owo Jade",
+    "customer_account": "Nọmba Akọọlẹ Alabára",
+    "verify": "Jẹrisi Akọọlẹ",
+    "withdraw": "Yọ Owo Jade",
+    "enter_amount": "Tẹ iye owo sii"
+  }
+}

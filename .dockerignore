@@ -1,22 +1,43 @@
-node_modules
-.pnpm-store
-dist
+# Rust build artifacts
+**/target
+
+# Node dependencies and build output (rebuilt inside container)
+**/node_modules
+**/dist
+**/.npm
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.venv
+**/venv
+**/*.egg-info
+
+# Git
 .git
-.github
-coverage
-*.log
-.env*
-.DS_Store
-Thumbs.db
-tb-sidecar/tb-sidecar
-tb-sidecar/vendor
-offline-queue
-analytics-service/__pycache__
-analytics-service/.venv
-resilience-agent/vendor
-k6
-tests/integration
-docs
-archives
-*.tar.gz
-*.zip
+.gitignore
+
+# Logs
+**/logs
+**/*.log
+
+# Test files
+**/*_test.go
+**/test_*.py
+**/*.test.ts
+**/*.spec.ts
+
+# Local env files
+**/.env
+**/.env.*
+
+# Docker files (not needed inside image)
+**/Dockerfile
+**/Dockerfile.*
+docker-compose*.yml
+
+# IDE
+.idea
+.vscode
+**/.DS_Store

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: authentication-service
+description: 54agent Authentication Service Helm Chart
+type: application
+version: 0.0.1
+appVersion: "1.0.0"

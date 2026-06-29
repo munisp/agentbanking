@@ -1,0 +1,37 @@
+# user-service
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-user-service-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /user/*
+      backends:
+        - serviceName: user-service
+          servicePort: 80
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/user(?:/system)?/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+        # - name: ucard-jwt-payload-decoder
+        #   enable: true
+        #   config:
+        #     authorizer_url: "http://ucard-ng-token-svc.ucard.svc.cluster.local"

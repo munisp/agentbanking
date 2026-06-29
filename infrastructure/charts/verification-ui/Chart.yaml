@@ -2,5 +2,5 @@ apiVersion: v2
 name: verification-ui
 description: 54agent Verification UI Helm Chart
 type: application
-version: 0.0.25
+version: 0.0.26
 appVersion: "1.0.0"

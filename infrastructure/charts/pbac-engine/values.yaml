@@ -46,6 +46,3 @@ dapr:
   memory-limit: 256Mi
 secrets:
   PBAC_ENGINE_PORT: "8091"
-  LOG_LEVEL: "INFO"
-  ALLOWED_ORIGINS: "*"
-  DAPR_HTTP_PORT: "3500"

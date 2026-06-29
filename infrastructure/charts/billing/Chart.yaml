@@ -2,5 +2,5 @@ apiVersion: v2
 name: billing
 description: 54agent Billing Consolidated Helm Chart
 type: application
-version: 0.0.5
+version: 0.0.6
 appVersion: "1.0.0"

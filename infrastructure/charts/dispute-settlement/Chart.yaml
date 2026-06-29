@@ -2,5 +2,5 @@ apiVersion: v2
 name: dispute-settlement
 description: 54agent Dispute Settlement Consolidated Helm Chart
 type: application
-version: 0.0.2
+version: 0.0.3
 appVersion: "1.0.0"

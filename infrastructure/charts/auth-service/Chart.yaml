@@ -2,5 +2,5 @@ apiVersion: v2
 name: auth-service
 description: 54agent Auth Service Helm Chart
 type: application
-version: 0.0.26
+version: 0.0.27
 appVersion: "1.0.0"

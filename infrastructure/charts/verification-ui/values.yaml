@@ -45,5 +45,4 @@ dapr:
   memory-request: 250Mi
   memory-limit: 1000Mi
 secrets:
-  ALLOWED_ORIGINS: "*"
   NODE_ENV: "production"

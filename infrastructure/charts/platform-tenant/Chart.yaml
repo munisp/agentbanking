@@ -2,5 +2,5 @@ apiVersion: v2
 name: platform-tenant
 description: 54agent Platform Tenant Consolidated Helm Chart
 type: application
-version: 0.0.2
+version: 0.0.3
 appVersion: "1.0.0"

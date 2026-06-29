@@ -2,5 +2,5 @@ apiVersion: v2
 name: specialized-finance
 description: 54agent Specialized Finance Consolidated Helm Chart
 type: application
-version: 0.0.3
+version: 0.0.4
 appVersion: "1.0.0"

@@ -2,5 +2,5 @@ apiVersion: v2
 name: agent-pos
 description: 54agent Agent Pos Consolidated Helm Chart
 type: application
-version: 0.0.5
+version: 0.0.6
 appVersion: "1.0.0"

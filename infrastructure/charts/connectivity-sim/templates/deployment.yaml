@@ -56,6 +56,24 @@ spec:
             {{- end }}
           envFrom:
             - secretRef:
+                name: 54agent-shared-database-svc-secret
+            - secretRef:
+                name: 54agent-shared-redis-svc-secret
+            - secretRef:
+                name: 54agent-shared-kafka-svc-secret
+            - secretRef:
+                name: 54agent-shared-keycloak-svc-secret
+            - secretRef:
+                name: 54agent-shared-dapr-svc-secret
+            - secretRef:
+                name: 54agent-shared-temporal-svc-secret
+            - secretRef:
+                name: 54agent-shared-tigerbeetle-svc-secret
+            - secretRef:
+                name: 54agent-shared-infrastructure-svc-secret
+            - secretRef:
+                name: 54agent-shared-app-svc-secret
+            - secretRef:
                 name: {{ include "connectivity-sim.fullname" . }}-secrets
           {{- with .Values.resources }}
           resources:

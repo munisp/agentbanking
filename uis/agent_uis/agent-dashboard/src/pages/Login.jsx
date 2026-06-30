@@ -79,19 +79,21 @@ const Login = () => {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src={logo} alt={name} className="h-16 w-auto object-contain" />
+            <img src={logoUrl || logo} alt={name} className="h-16 w-auto object-contain" />
           </div>
-          {/* <h1
-            className="text-3xl font-bold"
-            style={{
-              background: "linear-gradient(to right, var(--tenant-primary-color,#002082), var(--tenant-secondary-color,#6CC049))",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-            }}
-          >
-            {"Fidelity" || "Agent Dashboard"}
-          </h1> */}
+          {name && (
+            <h1
+              className="text-3xl font-bold"
+              style={{
+                background: "linear-gradient(to right, var(--tenant-primary-color,#002082), var(--tenant-secondary-color,#6CC049))",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              {name}
+            </h1>
+          )}
           <p className="text-gray-600 mt-2">Agent Banking Platform</p>
         </div>
 

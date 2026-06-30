@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useTenant } from "../contexts/TenantContext";
 import { accountApi, agentApi, authHeaders } from "../utils/api";
 
 const CORE_BANKING_URL =
@@ -16,6 +17,7 @@ const CORE_BANKING_URL =
 
 const CashIn = () => {
   const { user } = useAuth();
+  const { name: tenantName } = useTenant();
   const [agentProfile, setAgentProfile] = useState(null);
   const [accountDetails, setAccountDetails] = useState(null);
   const [recentDeposits, setRecentDeposits] = useState([]);
@@ -87,17 +89,18 @@ const CashIn = () => {
   };
 
   const shareAccountDetails = () => {
-    const message = `54agent Agent Wallet
+    const bankLabel = tenantName || "Agent";
+    const message = `${bankLabel} Agent Wallet
 
 Account Name: ${accountDetails?.account_name || user?.name || "N/A"}
 Account Number: ${accountDetails?.account_number || "N/A"}
-Bank: 54agent Microfinance Bank
+Bank: ${bankLabel}
 
 Transfer to this account to fund your agent wallet.`;
 
     if (navigator.share) {
       navigator
-        .share({ title: "54agent Agent Wallet", text: message })
+        .share({ title: `${bankLabel} Agent Wallet`, text: message })
         .catch((err) => console.log("Share cancelled", err));
     } else {
       copyToClipboard(message, "details");
@@ -297,7 +300,7 @@ Transfer to this account to fund your agent wallet.`;
                 }}
               >
                 <span className="text-base font-semibold text-gray-900">
-                  54agent Microfinance Bank
+                  {tenantName || "Agent Banking"}
                 </span>
               </div>
             </div>

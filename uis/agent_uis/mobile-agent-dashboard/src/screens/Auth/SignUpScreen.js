@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Button, Text, TextInput, useTheme } from "react-native-paper";
 import { useAuth } from "../../contexts/AuthContext";
+import { useTheme as useAppTheme } from "../../contexts/ThemeContext";
 import { spacing } from "../../theme";
 const logo = require("../../../assets/logo.png");
 
@@ -17,6 +18,7 @@ export default function SignUpScreen({
   const { colors } = useTheme();
   const styles = makeStyles(colors);
   const theme = useTheme();
+  const { tenantConfig } = useAppTheme();
   const { signup } = useAuth();
   const [formData, setFormData] = useState({
     firstName: "",
@@ -65,7 +67,7 @@ export default function SignUpScreen({
             Create Account
           </Text>
           <Text variant="bodyMedium" style={styles.description}>
-            Join Area Konnect by Fidelity Agent Network
+            {tenantConfig?.name ? `Join ${tenantConfig.name} Agent Network` : "Join our Agent Network"}
           </Text>
         </View>
 

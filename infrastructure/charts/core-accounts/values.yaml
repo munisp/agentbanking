@@ -2,7 +2,7 @@ replicaCount: 1
 image:
   repository: registry.digitalocean.com/talentgraph-auth/54agent-core-accounts
   pullPolicy: IfNotPresent
-  tag: "0.0.3"
+  tag: "0.0.4"
 nameOverride: ""
 fullnameOverride: ""
 serviceAccount:

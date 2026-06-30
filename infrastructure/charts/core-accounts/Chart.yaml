@@ -2,5 +2,5 @@ apiVersion: v2
 name: core-accounts
 description: 54agent Core Accounts Consolidated Helm Chart
 type: application
-version: 0.0.7
+version: 0.0.8
 appVersion: "1.0.0"

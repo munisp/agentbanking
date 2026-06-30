@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Application Settings
     SERVICE_NAME: str = "OpenBankingAPI"
     VERSION: str = "1.0.0"
-    SECRET_KEY: str = Field(..., description="Secret key for security purposes, e.g., token signing.")
+    SECRET_KEY: str = Field("change-me-in-production", description="Secret key for security purposes, e.g., token signing.")
     LOG_LEVEL: str = "INFO"
 
     # Database Settings
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Construct the database URL
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

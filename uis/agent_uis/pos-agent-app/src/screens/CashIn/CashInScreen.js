@@ -27,12 +27,14 @@ import {
   ledgerApi,
 } from "../../services/apiService";
 import { spacing } from "../../theme";
+import { useTheme as useAppTheme } from "../../contexts/ThemeContext";
 import { formatCurrency } from "../../utils/formatters";
 import { printTransactionReceipt } from "../../utils/receiptPrinter";
 export default function CashInScreen({
  navigation }) {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
+  const { tenantConfig } = useAppTheme();
   const [agentData, setAgentData] = useState(null);
   const [accountData, setAccountData] = useState(null);
   const [recentDeposits, setRecentDeposits] = useState([]);
@@ -201,11 +203,12 @@ export default function CashInScreen({
 
   const shareAccountDetails = async () => {
     try {
-      const message = `Area Konnect by Fidelity Agent Wallet
-      
+      const tenantName = tenantConfig?.name || "Agent";
+      const message = `${tenantName} Wallet
+
 Account Name: ${accountData?.account_name || "N/A"}
 Account Number: ${accountData?.account_number || "N/A"}
-Bank: Area Konnect by Fidelity
+Bank: ${tenantName}
 
 Transfer to this account to fund your agent wallet.`;
 
@@ -262,7 +265,7 @@ Transfer to this account to fund your agent wallet.`;
       };
 
       await printTransactionReceipt(standardTransaction, {
-        storeName: agentData?.business_name || "Area Konnect by Fidelity Agent",
+        storeName: agentData?.business_name || tenantConfig?.name || "Agent",
         agentName:
           agentData?.full_name ||
           agentData?.first_name + " " + agentData?.last_name,
@@ -390,7 +393,7 @@ Transfer to this account to fund your agent wallet.`;
                 <Text style={styles.labelText}>Bank</Text>
               </View>
               <View style={styles.detailValueContainer}>
-                <Text style={styles.detailValue}>Area Konnect by Fidelity</Text>
+                <Text style={styles.detailValue}>{tenantConfig?.name || "Agent Banking"}</Text>
               </View>
             </View>
 

@@ -1,38 +1,40 @@
 import React, { useState } from "react";
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Text, useTheme } from "react-native-paper";
+import { useTheme as useAppTheme } from "../../contexts/ThemeContext";
 import { spacing } from "../../theme";
 const logo = require("../../../assets/logo.png");
-
-const onboardingSteps = [
-  {
-    title: "Welcome to Area Konnect by Fidelity Agent Banking",
-    description: "Manage your agent banking services efficiently",
-    icon: "account-group",
-  },
-  {
-    title: "Track Transactions",
-    description: "Monitor all your financial transactions in real-time",
-    icon: "chart-line",
-  },
-  {
-    title: "Manage POS Terminals",
-    description: "Handle POS devices and orders seamlessly",
-    icon: "credit-card-outline",
-  },
-  {
-    title: "Grow Your Network",
-    description: "Build and manage your agent hierarchy",
-    icon: "account-network",
-  },
-];
 
 export default function OnboardingScreen({
  navigation }) {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
   const theme = useTheme();
+  const { tenantConfig } = useAppTheme();
   const [currentStep, setCurrentStep] = useState(0);
+
+  const onboardingSteps = [
+    {
+      title: tenantConfig?.name ? `Welcome to ${tenantConfig.name} Agent Banking` : "Welcome to Agent Banking",
+      description: "Manage your agent banking services efficiently",
+      icon: "account-group",
+    },
+    {
+      title: "Track Transactions",
+      description: "Monitor all your financial transactions in real-time",
+      icon: "chart-line",
+    },
+    {
+      title: "Manage POS Terminals",
+      description: "Handle POS devices and orders seamlessly",
+      icon: "credit-card-outline",
+    },
+    {
+      title: "Grow Your Network",
+      description: "Build and manage your agent hierarchy",
+      icon: "account-network",
+    },
+  ];
 
   const handleNext = () => {
     if (currentStep < onboardingSteps.length - 1) {

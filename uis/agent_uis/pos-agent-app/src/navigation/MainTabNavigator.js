@@ -3,6 +3,7 @@ import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { Text, useTheme} from "react-native-paper";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
+import { useTheme as useAppTheme } from "../contexts/ThemeContext";
 
 // Components
 import GeofenceStatusBanner from "../components/GeofenceStatusBanner";
@@ -105,6 +106,7 @@ const Stack = createNativeStackNavigator();
 
 export default function MainTabNavigator() {
   const { colors } = useTheme();
+  const { tenantConfig } = useAppTheme();
 
   // Custom header with geofence banner
   const customHeader = ({ navigation, route, options, back }) => {
@@ -155,7 +157,7 @@ export default function MainTabNavigator() {
       <Stack.Screen
         name="Dashboard"
         component={DashboardScreen}
-        options={{ title: "Area Konnect by Fidelity Agent Dashboard" }}
+        options={{ title: tenantConfig?.name ? `${tenantConfig.name} Agent Dashboard` : "Agent Dashboard" }}
       />
       <Stack.Screen
         name="CashIn"

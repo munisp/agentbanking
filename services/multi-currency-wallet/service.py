@@ -4,7 +4,7 @@ Business logic for multi-currency-wallet
 
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from . import models
+import models
 
 class MulticurrencywalletService:
     """Service class for multi-currency-wallet business logic."""

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Ensure the directory exists for the models file to be imported later
 # This is a good practice for modular projects
-from .models import Base 
+from models import Base
 
 # --- Configuration Settings ---
 

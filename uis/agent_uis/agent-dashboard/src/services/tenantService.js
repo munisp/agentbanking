@@ -151,7 +151,7 @@ class TenantService {
     const tenantId = this.getTenantId() || "momopsb";
     return {
       id: 0,
-      name: "Area Konnect by Fidelity",
+      name: "Agent Dashboard",
       tenant_id: tenantId,
       status: "active",
       branding: {

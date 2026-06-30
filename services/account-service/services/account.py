@@ -276,12 +276,12 @@ class AccountService:
         )
 
         if not account:
-            raise Exception("Account not found.")
+            return None
 
         tigerbeetle_account = self.__tigerbeetle_adapter.get_account(id=account.id)
 
         if not tigerbeetle_account:
-            raise Exception("Account not found.")
+            return None
 
         return {
             **account.to_dict(),

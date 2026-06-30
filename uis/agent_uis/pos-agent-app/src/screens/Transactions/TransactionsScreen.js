@@ -20,6 +20,7 @@ import {
     Snackbar,
     Text, useTheme} from "react-native-paper";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
+import { useTheme as useAppTheme } from "../../contexts/ThemeContext";
 import {
   accountApi,
   agentApi,
@@ -43,6 +44,7 @@ export default function TransactionsScreen({
  navigation }) {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
+  const { tenantConfig } = useAppTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const [transactions, setTransactions] = useState([]);
   const [filter, setFilter] = useState("all");
@@ -164,7 +166,7 @@ export default function TransactionsScreen({
       setPrintingTransactionId(transaction.transaction_id || transaction.id);
 
       await printTransactionReceipt(transaction, {
-        storeName: agentData?.business_name || "Area Konnect by Fidelity Agent",
+        storeName: agentData?.business_name || tenantConfig?.name || "Agent",
         agentName:
           agentData?.full_name ||
           agentData?.first_name + " " + agentData?.last_name,

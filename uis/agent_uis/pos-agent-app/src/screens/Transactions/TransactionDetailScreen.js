@@ -7,6 +7,7 @@ import {
     Card,
     Divider,
     Text, useTheme} from "react-native-paper";
+import { useTheme as useAppTheme } from "../../contexts/ThemeContext";
 import { agentApi } from "../../services/apiService";
 import { spacing } from "../../theme";
 import { printTransactionReceipt } from "../../utils/receiptPrinter";
@@ -15,6 +16,7 @@ export default function TransactionDetailScreen({
  route }) {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
+  const { tenantConfig } = useAppTheme();
   const { transaction } = route.params;
   const [agentData, setAgentData] = useState(null);
   const [printing, setPrinting] = useState(false);
@@ -46,7 +48,7 @@ export default function TransactionDetailScreen({
       setPrinting(true);
 
       await printTransactionReceipt(transaction, {
-        storeName: agentData?.business_name || "Area Konnect by Fidelity Agent",
+        storeName: agentData?.business_name || tenantConfig?.name || "Agent",
         agentName:
           agentData?.full_name ||
           agentData?.first_name + " " + agentData?.last_name,

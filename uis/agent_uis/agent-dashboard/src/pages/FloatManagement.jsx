@@ -161,13 +161,14 @@ const FloatManagement = () => {
             </div>
           ) : (
             loanApplications.map((loan) => {
-              const statusColor =
-                loan.status?.toLowerCase() === "approved" ||
-                loan.status?.toLowerCase() === "active"
-                  ? "bg-green-100 text-green-700"
-                  : loan.status?.toLowerCase() === "rejected"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-yellow-100 text-yellow-700";
+              const s = loan.status?.toLowerCase();
+              const isSuccess = s === "approved" || s === "active" || s === "disbursed" || s === "completed";
+              const isDeclined = s === "declined" || s === "rejected";
+              const statusColor = isSuccess
+                ? "bg-green-100 text-green-700"
+                : isDeclined
+                  ? "bg-red-100 text-red-700"
+                  : "bg-yellow-100 text-yellow-700";
               return (
                 <div
                   key={loan.id}
@@ -175,18 +176,12 @@ const FloatManagement = () => {
                 >
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      loan.status?.toLowerCase() === "approved" ||
-                      loan.status?.toLowerCase() === "active"
-                        ? "bg-green-100"
-                        : loan.status?.toLowerCase() === "rejected"
-                          ? "bg-red-100"
-                          : "bg-yellow-100"
+                      isSuccess ? "bg-green-100" : isDeclined ? "bg-red-100" : "bg-yellow-100"
                     }`}
                   >
-                    {loan.status?.toLowerCase() === "approved" ||
-                    loan.status?.toLowerCase() === "active" ? (
+                    {isSuccess ? (
                       <CheckCircle className="w-5 h-5 text-green-600" />
-                    ) : loan.status?.toLowerCase() === "rejected" ? (
+                    ) : isDeclined ? (
                       <X className="w-5 h-5 text-red-600" />
                     ) : (
                       <Clock className="w-5 h-5 text-yellow-600" />

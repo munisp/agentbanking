@@ -103,18 +103,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishanalyticsDashboardMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `analytics.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -138,10 +139,17 @@ async function publishanalyticsDashboardMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("analytics", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("analytics", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const analyticsDashboardRouter = router({
@@ -296,15 +304,15 @@ export const analyticsDashboardRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishanalyticsDashboardMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+        await publishanalyticsDashboardMiddleware("create", `${Date.now()}`, {
+          action: "create",
+        }).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-
-        await publishanalyticsDashboardMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
-
-
+        await publishanalyticsDashboardMiddleware("update", `${Date.now()}`, {
+          action: "update",
+        }).catch(() => {});
 
         return { success: true, id: input.id };
       } catch (error) {
@@ -332,7 +340,9 @@ export const analyticsDashboardRouter = router({
           metadata: {},
         });
         // Middleware fan-out (fail-open)
-        await publishanalyticsDashboardMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishanalyticsDashboardMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

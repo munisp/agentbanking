@@ -108,18 +108,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishwhiteLabelOnboardingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `onboarding.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -143,10 +144,17 @@ async function publishwhiteLabelOnboardingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("onboarding", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("onboarding", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const whiteLabelOnboardingRouter = router({
@@ -293,8 +301,11 @@ export const whiteLabelOnboardingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishwhiteLabelOnboardingMiddleware("submitApplication", `${Date.now()}`, { action: "submitApplication" }).catch(() => {});
-
+        await publishwhiteLabelOnboardingMiddleware(
+          "submitApplication",
+          `${Date.now()}`,
+          { action: "submitApplication" }
+        ).catch(() => {});
 
         return { success: true, tenant };
       } catch (error) {
@@ -346,7 +357,11 @@ export const whiteLabelOnboardingRouter = router({
           metadata: { notes: input.notes },
         });
         // Middleware fan-out (fail-open)
-        await publishwhiteLabelOnboardingMiddleware("approveApplication", `${Date.now()}`, { action: "approveApplication" }).catch(() => {});
+        await publishwhiteLabelOnboardingMiddleware(
+          "approveApplication",
+          `${Date.now()}`,
+          { action: "approveApplication" }
+        ).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {

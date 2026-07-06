@@ -78,18 +78,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishfxRatesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -113,10 +114,17 @@ async function publishfxRatesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const fxRatesRouter = router({
@@ -253,8 +261,9 @@ export const fxRatesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishfxRatesMiddleware("updateRates", `${Date.now()}`, { action: "updateRates" }).catch(() => {});
-
+        await publishfxRatesMiddleware("updateRates", `${Date.now()}`, {
+          action: "updateRates",
+        }).catch(() => {});
 
         return { success: true, updatedAt: new Date().toISOString() };
       } catch (error) {
@@ -309,7 +318,9 @@ export const fxRatesRouter = router({
     }),
   currencies: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishfxRatesMiddleware("currencies", `${Date.now()}`, { action: "currencies" }).catch(() => {});
+    await publishfxRatesMiddleware("currencies", `${Date.now()}`, {
+      action: "currencies",
+    }).catch(() => {});
 
     return {
       currencies: [] as Array<{
@@ -323,7 +334,9 @@ export const fxRatesRouter = router({
   }),
   refresh: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishfxRatesMiddleware("refresh", `${Date.now()}`, { action: "refresh" }).catch(() => {});
+    await publishfxRatesMiddleware("refresh", `${Date.now()}`, {
+      action: "refresh",
+    }).catch(() => {});
 
     return {
       success: true,

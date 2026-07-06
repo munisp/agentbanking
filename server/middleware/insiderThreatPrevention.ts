@@ -33,7 +33,12 @@ export interface ApprovalRequest {
   status: "pending" | "approved" | "rejected" | "expired";
   requiredApprovals: number;
   approvals: Array<{ agentId: number; agentCode: string; timestamp: string }>;
-  rejections: Array<{ agentId: number; agentCode: string; reason: string; timestamp: string }>;
+  rejections: Array<{
+    agentId: number;
+    agentCode: string;
+    reason: string;
+    timestamp: string;
+  }>;
   expiresAt: string;
   createdAt: string;
 }
@@ -46,7 +51,12 @@ export const APPROVAL_THRESHOLDS = {
   // Tier 2: One additional approver (maker-checker)
   tier2: { min: 500_001, max: 5_000_000, approvals: 1, label: "Dual Control" },
   // Tier 3: Two approvers + compliance + 30-min cooling period
-  tier3: { min: 5_000_001, max: Infinity, approvals: 2, label: "Compliance Review" },
+  tier3: {
+    min: 5_000_001,
+    max: Infinity,
+    approvals: 2,
+    label: "Compliance Review",
+  },
 } as const;
 
 // Operations that ALWAYS require maker-checker regardless of amount
@@ -90,7 +100,11 @@ export function getRequiredApprovals(
   // Operations that always need dual control
   if (ALWAYS_DUAL_CONTROL.includes(operationType as any)) {
     if (amount > APPROVAL_THRESHOLDS.tier3.min) {
-      return { approvals: 2, tier: "tier3", coolingPeriod: TIER3_COOLING_PERIOD };
+      return {
+        approvals: 2,
+        tier: "tier3",
+        coolingPeriod: TIER3_COOLING_PERIOD,
+      };
     }
     return { approvals: 1, tier: "tier2", coolingPeriod: 0 };
   }
@@ -161,14 +175,16 @@ export async function createApprovalRequest(params: {
   }).catch(() => {});
 
   // Dapr pub/sub for real-time notification
-  dapr.publishEvent("pubsub", "insider.approval.pending", {
-    requestId: request.id,
-    type: params.type,
-    amount: params.amount,
-    requestedBy: params.requestedByCode,
-    tier,
-    expiresAt: request.expiresAt,
-  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "insider.approval.pending", {
+      requestId: request.id,
+      type: params.type,
+      amount: params.amount,
+      requestedBy: params.requestedByCode,
+      tier,
+      expiresAt: request.expiresAt,
+    })
+    .catch(() => {});
 
   await writeAuditLog({
     agentId: params.requestedBy,
@@ -199,7 +215,11 @@ export async function processApproval(params: {
     sql`SELECT value FROM platform_settings WHERE key = ${`approval_request_${params.requestId}`}`
   );
   const row = (rows as any).rows?.[0] ?? (rows as any)[0];
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Approval request not found" });
+  if (!row)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Approval request not found",
+    });
 
   const request: ApprovalRequest = JSON.parse(String(row.value));
 
@@ -209,16 +229,28 @@ export async function processApproval(params: {
     await db.execute(
       sql`UPDATE platform_settings SET value = ${JSON.stringify(request)} WHERE key = ${`approval_request_${params.requestId}`}`
     );
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Approval request has expired" });
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Approval request has expired",
+    });
   }
 
   // Separation of duties: approver cannot be the requester
-  enforceSeparationOfDuties(params.approverAgentId, request.requestedBy, request.type);
+  enforceSeparationOfDuties(
+    params.approverAgentId,
+    request.requestedBy,
+    request.type
+  );
 
   // Check if this approver already acted
-  const alreadyApproved = request.approvals.some(a => a.agentId === params.approverAgentId);
+  const alreadyApproved = request.approvals.some(
+    a => a.agentId === params.approverAgentId
+  );
   if (alreadyApproved) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "You have already approved this request" });
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "You have already approved this request",
+    });
   }
 
   if (params.action === "reject") {
@@ -250,7 +282,8 @@ export async function processApproval(params: {
   await writeAuditLog({
     agentId: params.approverAgentId,
     agentCode: params.approverAgentCode,
-    action: params.action === "approve" ? "APPROVAL_GRANTED" : "APPROVAL_REJECTED",
+    action:
+      params.action === "approve" ? "APPROVAL_GRANTED" : "APPROVAL_REJECTED",
     resource: request.resource,
     resourceId: request.resourceId,
     status: "success",
@@ -269,11 +302,13 @@ export async function processApproval(params: {
     status: request.status,
   }).catch(() => {});
 
-  dapr.publishEvent("pubsub", `insider.approval.${params.action}ed`, {
-    requestId: request.id,
-    status: request.status,
-    approverCode: params.approverAgentCode,
-  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `insider.approval.${params.action}ed`, {
+      requestId: request.id,
+      status: request.status,
+      approverCode: params.approverAgentCode,
+    })
+    .catch(() => {});
 
   return {
     status: request.status,
@@ -283,17 +318,24 @@ export async function processApproval(params: {
 
 // ── 4. Step-Up Authentication (PostgreSQL-backed) ────────────────────────────
 
-export async function requireStepUpAuth(agentId: number, token?: string): Promise<void> {
+export async function requireStepUpAuth(
+  agentId: number,
+  token?: string
+): Promise<void> {
   if (!token) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Step-up authentication required for this operation. Please re-authenticate.",
+      message:
+        "Step-up authentication required for this operation. Please re-authenticate.",
     });
   }
 
   const db = await getDb();
   if (!db) {
-    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Database unavailable",
+    });
   }
 
   const rows = await db.execute(
@@ -304,7 +346,9 @@ export async function requireStepUpAuth(agentId: number, token?: string): Promis
 
   if (!row) {
     // Clean up expired token if it exists
-    await db.execute(sql`DELETE FROM insider_step_up_tokens WHERE token = ${token}`).catch(() => {});
+    await db
+      .execute(sql`DELETE FROM insider_step_up_tokens WHERE token = ${token}`)
+      .catch(() => {});
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Step-up token invalid or expired. Please re-authenticate.",
@@ -325,9 +369,9 @@ export async function issueStepUpToken(agentId: number): Promise<string> {
     );
 
     // Clean up expired tokens periodically
-    await db.execute(
-      sql`DELETE FROM insider_step_up_tokens WHERE expires_at < NOW()`
-    ).catch(() => {});
+    await db
+      .execute(sql`DELETE FROM insider_step_up_tokens WHERE expires_at < NOW()`)
+      .catch(() => {});
   }
 
   return token;
@@ -337,7 +381,10 @@ export async function issueStepUpToken(agentId: number): Promise<string> {
 
 const ADMIN_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
-export async function checkAdminSessionTimeout(agentId: number, role: string): Promise<void> {
+export async function checkAdminSessionTimeout(
+  agentId: number,
+  role: string
+): Promise<void> {
   if (role !== "admin" && role !== "super_admin") return;
 
   const db = await getDb();
@@ -352,10 +399,13 @@ export async function checkAdminSessionTimeout(agentId: number, role: string): P
     const lastActivity = new Date(row.last_activity).getTime();
     if (Date.now() - lastActivity > ADMIN_IDLE_TIMEOUT) {
       // Session expired — delete it
-      await db.execute(sql`DELETE FROM insider_admin_sessions WHERE agent_id = ${agentId}`);
+      await db.execute(
+        sql`DELETE FROM insider_admin_sessions WHERE agent_id = ${agentId}`
+      );
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message: "Admin session expired due to inactivity. Please re-authenticate.",
+        message:
+          "Admin session expired due to inactivity. Please re-authenticate.",
       });
     }
   }
@@ -398,9 +448,11 @@ export async function checkStaffVelocity(
   );
 
   // Prune old entries (> 1 hour)
-  await db.execute(
-    sql`DELETE FROM insider_staff_actions WHERE recorded_at < NOW() - INTERVAL '1 hour'`
-  ).catch(() => {});
+  await db
+    .execute(
+      sql`DELETE FROM insider_staff_actions WHERE recorded_at < NOW() - INTERVAL '1 hour'`
+    )
+    .catch(() => {});
 
   // Check reversal velocity from PostgreSQL
   const reversalRows = await db.execute(
@@ -409,7 +461,9 @@ export async function checkStaffVelocity(
         AND action ILIKE '%reversal%'
         AND recorded_at > NOW() - INTERVAL '1 hour'`
   );
-  const reversalCount = Number((reversalRows as any).rows?.[0]?.cnt ?? (reversalRows as any)[0]?.cnt ?? 0);
+  const reversalCount = Number(
+    (reversalRows as any).rows?.[0]?.cnt ?? (reversalRows as any)[0]?.cnt ?? 0
+  );
 
   if (reversalCount > MAX_REVERSALS_PER_HOUR) {
     publishEvent("insider.threat.velocity", `VEL-${agentId}-${Date.now()}`, {
@@ -421,12 +475,14 @@ export async function checkStaffVelocity(
       severity: "high",
     }).catch(() => {});
 
-    dapr.publishEvent("pubsub", "insider.threat.detected", {
-      type: "excessive_reversals",
-      agentCode,
-      count: reversalCount,
-      severity: "high",
-    }).catch(() => {});
+    dapr
+      .publishEvent("pubsub", "insider.threat.detected", {
+        type: "excessive_reversals",
+        agentCode,
+        count: reversalCount,
+        severity: "high",
+      })
+      .catch(() => {});
   }
 
   // Check high-value transaction velocity from PostgreSQL
@@ -436,8 +492,12 @@ export async function checkStaffVelocity(
         AND amount > ${HIGH_VALUE_THRESHOLD}
         AND recorded_at > NOW() - INTERVAL '1 hour'`
   );
-  const hvCount = Number((hvRows as any).rows?.[0]?.cnt ?? (hvRows as any)[0]?.cnt ?? 0);
-  const hvTotal = Number((hvRows as any).rows?.[0]?.total ?? (hvRows as any)[0]?.total ?? 0);
+  const hvCount = Number(
+    (hvRows as any).rows?.[0]?.cnt ?? (hvRows as any)[0]?.cnt ?? 0
+  );
+  const hvTotal = Number(
+    (hvRows as any).rows?.[0]?.total ?? (hvRows as any)[0]?.total ?? 0
+  );
 
   if (hvCount > MAX_HIGH_VALUE_PER_HOUR) {
     publishEvent("insider.threat.velocity", `VEL-HV-${agentId}-${Date.now()}`, {
@@ -450,12 +510,14 @@ export async function checkStaffVelocity(
       severity: "critical",
     }).catch(() => {});
 
-    dapr.publishEvent("pubsub", "insider.threat.detected", {
-      type: "excessive_high_value",
-      agentCode,
-      totalAmount: hvTotal,
-      severity: "critical",
-    }).catch(() => {});
+    dapr
+      .publishEvent("pubsub", "insider.threat.detected", {
+        type: "excessive_high_value",
+        agentCode,
+        totalAmount: hvTotal,
+        severity: "critical",
+      })
+      .catch(() => {});
   }
 }
 
@@ -469,7 +531,8 @@ export function blockSelfTransfer(
   if (agentLinkedAccounts.includes(recipientIdentifier)) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Self-transfer detected: cannot transfer to your own linked account",
+      message:
+        "Self-transfer detected: cannot transfer to your own linked account",
     });
   }
 }

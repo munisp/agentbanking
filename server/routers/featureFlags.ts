@@ -97,18 +97,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishfeatureFlagsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -132,10 +133,17 @@ async function publishfeatureFlagsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const featureFlagsRouter = router({
@@ -246,8 +254,9 @@ export const featureFlagsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishfeatureFlagsMiddleware("toggleFlag", `${Date.now()}`, { action: "toggleFlag" }).catch(() => {});
-
+        await publishfeatureFlagsMiddleware("toggleFlag", `${Date.now()}`, {
+          action: "toggleFlag",
+        }).catch(() => {});
 
         return { success: true, id: input.id, enabled: input.enabled };
       } catch (error) {
@@ -303,7 +312,9 @@ export const featureFlagsRouter = router({
       .from(tenantFeatureToggles)
       .limit(100);
     // Middleware fan-out (fail-open)
-    await publishfeatureFlagsMiddleware("createFlag", `${Date.now()}`, { action: "createFlag" }).catch(() => {});
+    await publishfeatureFlagsMiddleware("createFlag", `${Date.now()}`, {
+      action: "createFlag",
+    }).catch(() => {});
 
     return {
       totalFlags: Number(total.value),

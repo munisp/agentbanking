@@ -1,6 +1,6 @@
 /**
  * Runtime Middleware Integration Test
- * 
+ *
  * Validates that all middleware clients work correctly at runtime:
  * 1. Redis — real connection to local Redis (cacheSet/cacheGet)
  * 2. TigerBeetle — mock HTTP server validates payload structure
@@ -29,7 +29,7 @@ function createMockServer(port: number): {
   const captured: CapturedRequest[] = [];
   const server = http.createServer((req, res) => {
     let body = "";
-    req.on("data", (chunk) => (body += chunk));
+    req.on("data", chunk => (body += chunk));
     req.on("end", () => {
       try {
         captured.push({
@@ -38,18 +38,29 @@ function createMockServer(port: number): {
           body: body ? JSON.parse(body) : {},
         });
       } catch {
-        captured.push({ method: req.method ?? "GET", url: req.url ?? "/", body: {} });
+        captured.push({
+          method: req.method ?? "GET",
+          url: req.url ?? "/",
+          body: {},
+        });
       }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ id: "mock-id", status: "committed", syncStatus: "pending", amount: 100 }));
+      res.end(
+        JSON.stringify({
+          id: "mock-id",
+          status: "committed",
+          syncStatus: "pending",
+          amount: 100,
+        })
+      );
     });
   });
 
   return {
     server,
     captured,
-    start: () => new Promise((resolve) => server.listen(port, () => resolve())),
-    stop: () => new Promise((resolve) => server.close(() => resolve())),
+    start: () => new Promise(resolve => server.listen(port, () => resolve())),
+    stop: () => new Promise(resolve => server.close(() => resolve())),
   };
 }
 
@@ -122,7 +133,7 @@ describe("Runtime Middleware Integration", () => {
       expect(after).toBe("");
 
       // After 1.5s the key should expire
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1500));
       const expired = await cacheGet(key);
       expect(expired).toBeNull();
     });
@@ -222,7 +233,9 @@ describe("Runtime Middleware Integration", () => {
       expect(lastReq.method).toBe("POST");
       expect(lastReq.url).toBe("/v1/ingest");
       expect(lastReq.body.table).toBe("cash_in_transactions");
-      expect((lastReq.body.data as Record<string, unknown>).ref).toBe("TEST-LH-001");
+      expect((lastReq.body.data as Record<string, unknown>).ref).toBe(
+        "TEST-LH-001"
+      );
       expect(lastReq.body.source).toBe("typescript-minio");
     });
 
@@ -236,7 +249,9 @@ describe("Runtime Middleware Integration", () => {
       // the existing module's behavior when the server goes down
       // We verify the function doesn't throw
       try {
-        const result = await mod.ingestToLakehouse("test_table", { test: true });
+        const result = await mod.ingestToLakehouse("test_table", {
+          test: true,
+        });
         // Result should be true (hitting our mock) or false (if unreachable)
         expect(typeof result).toBe("boolean");
       } finally {

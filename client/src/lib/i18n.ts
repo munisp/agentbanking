@@ -231,7 +231,8 @@ const translations = {
     "settings.about": "Nípa",
 
     "offline.title": "O kò sí lórí ayélujára",
-    "offline.queued": "Ìṣòwò wà ní ìtọ́jú — yóò sync nígbà tí o bá padà sí ayélujára",
+    "offline.queued":
+      "Ìṣòwò wà ní ìtọ́jú — yóò sync nígbà tí o bá padà sí ayélujára",
     "offline.syncing": "Ń ṣe sync ìṣòwò...",
     "offline.synced": "Gbogbo ìṣòwò ti sync",
   },
@@ -301,7 +302,8 @@ const translations = {
     "settings.about": "About",
 
     "offline.title": "You no dey online",
-    "offline.queued": "Transaction dey queue — e go sync when you come back online",
+    "offline.queued":
+      "Transaction dey queue — e go sync when you come back online",
     "offline.syncing": "E dey sync transactions...",
     "offline.synced": "All transactions don sync",
   },
@@ -365,7 +367,8 @@ const translations = {
     "settings.printer": "Configuration imprimante",
     "settings.about": "À propos",
     "offline.title": "Vous êtes hors ligne",
-    "offline.queued": "Transaction en file d'attente — synchronisation au retour en ligne",
+    "offline.queued":
+      "Transaction en file d'attente — synchronisation au retour en ligne",
     "offline.syncing": "Synchronisation des transactions...",
     "offline.synced": "Toutes les transactions synchronisées",
   },
@@ -459,17 +462,36 @@ export function getLocale(): Locale {
 export function t(key: string): string {
   const locale = getLocale();
   const localeTranslations = translations[locale] as Record<string, string>;
-  return localeTranslations[key] || translations.en[key as TranslationKey] || key;
+  return (
+    localeTranslations[key] || translations.en[key as TranslationKey] || key
+  );
 }
 
 export function getTranslations(locale?: Locale): Record<string, string> {
-  return translations[locale || getLocale()] as unknown as Record<string, string>;
+  return translations[locale || getLocale()] as unknown as Record<
+    string,
+    string
+  >;
 }
 
 // ── Backward-Compatible Exports ─────────────────────────────────────────────
 
-const LOCALE_FLAGS: Record<string, string> = { en: "🇬🇧", ha: "🇳🇬", yo: "🇳🇬", pcm: "🇳🇬", fr: "🇫🇷", ig: "🇳🇬" };
-export const SUPPORTED_LANGUAGES = Object.entries(SUPPORTED_LOCALES).map(([code, name]) => ({ code, name, label: name, flag: LOCALE_FLAGS[code] ?? "🌐" }));
+const LOCALE_FLAGS: Record<string, string> = {
+  en: "🇬🇧",
+  ha: "🇳🇬",
+  yo: "🇳🇬",
+  pcm: "🇳🇬",
+  fr: "🇫🇷",
+  ig: "🇳🇬",
+};
+export const SUPPORTED_LANGUAGES = Object.entries(SUPPORTED_LOCALES).map(
+  ([code, name]) => ({
+    code,
+    name,
+    label: name,
+    flag: LOCALE_FLAGS[code] ?? "🌐",
+  })
+);
 
 export function changeLanguage(code: string): void {
   if (code in translations) {

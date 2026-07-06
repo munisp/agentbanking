@@ -104,18 +104,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishinsuranceProductsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `insurance.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -139,10 +140,17 @@ async function publishinsuranceProductsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("insurance", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("insurance", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const insuranceProductsRouter = router({
@@ -293,8 +301,11 @@ export const insuranceProductsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishinsuranceProductsMiddleware("createProduct", `${Date.now()}`, { action: "createProduct" }).catch(() => {});
-
+        await publishinsuranceProductsMiddleware(
+          "createProduct",
+          `${Date.now()}`,
+          { action: "createProduct" }
+        ).catch(() => {});
 
         return { success: true, productId };
       } catch (error) {
@@ -327,9 +338,13 @@ export const insuranceProductsRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishinsuranceProductsMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
+          await publishinsuranceProductsMiddleware(
+            "updateProduct",
+            `${Date.now()}`,
+            { action: "updateProduct" }
+          ).catch(() => {});
 
-          return { success: false, error: "Product not found" };
+        return { success: false, error: "Product not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const updated = {
           ...existing,

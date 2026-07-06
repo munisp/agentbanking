@@ -100,18 +100,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishreferralsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -135,10 +136,17 @@ async function publishreferralsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const referralsRouter = router({
@@ -226,8 +234,9 @@ export const referralsRouter = router({
 
           // Middleware fan-out (fail-open)
 
-          await publishreferralsMiddleware("generateCode", `${Date.now()}`, { action: "generateCode" }).catch(() => {});
-
+          await publishreferralsMiddleware("generateCode", `${Date.now()}`, {
+            action: "generateCode",
+          }).catch(() => {});
 
           return { referralCode: existing[0].referralCode, existing: true };
         }
@@ -321,8 +330,9 @@ export const referralsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishreferralsMiddleware("useCode", `${Date.now()}`, { action: "useCode" }).catch(() => {});
-
+        await publishreferralsMiddleware("useCode", `${Date.now()}`, {
+          action: "useCode",
+        }).catch(() => {});
 
         return { success: true, message: "Referral code applied successfully" };
       } catch (error) {
@@ -392,8 +402,9 @@ export const referralsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishreferralsMiddleware("awardBonus", `${Date.now()}`, { action: "awardBonus" }).catch(() => {});
-
+        await publishreferralsMiddleware("awardBonus", `${Date.now()}`, {
+          action: "awardBonus",
+        }).catch(() => {});
 
         return {
           awarded: true,

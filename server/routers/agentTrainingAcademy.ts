@@ -112,18 +112,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentTrainingAcademyMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -147,10 +148,14 @@ async function publishagentTrainingAcademyMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentTrainingAcademyRouter = router({
@@ -270,8 +275,11 @@ export const agentTrainingAcademyRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishagentTrainingAcademyMiddleware("enrollAgent", `${Date.now()}`, { action: "enrollAgent" }).catch(() => {});
-
+        await publishagentTrainingAcademyMiddleware(
+          "enrollAgent",
+          `${Date.now()}`,
+          { action: "enrollAgent" }
+        ).catch(() => {});
 
         return { success: true, enrollment };
       } catch (error) {
@@ -304,7 +312,11 @@ export const agentTrainingAcademyRouter = router({
           .where(eq(trainingEnrollments.id, input.enrollmentId))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishagentTrainingAcademyMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
+        await publishagentTrainingAcademyMiddleware(
+          "updateProgress",
+          `${Date.now()}`,
+          { action: "updateProgress" }
+        ).catch(() => {});
 
         return { success: true, enrollment: updated };
       } catch (error) {

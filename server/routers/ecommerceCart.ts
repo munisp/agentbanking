@@ -144,18 +144,19 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   }
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishecommerceCartMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `ecommerce.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -179,10 +180,17 @@ async function publishecommerceCartMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("ecommerce", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("ecommerce", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const ecommerceCartRouter = router({
@@ -410,8 +418,9 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishecommerceCartMiddleware("updateItem", `${Date.now()}`, { action: "updateItem" }).catch(() => {});
-
+      await publishecommerceCartMiddleware("updateItem", `${Date.now()}`, {
+        action: "updateItem",
+      }).catch(() => {});
 
       return { status: "updated" };
     }),
@@ -441,8 +450,9 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishecommerceCartMiddleware("removeItem", `${Date.now()}`, { action: "removeItem" }).catch(() => {});
-
+      await publishecommerceCartMiddleware("removeItem", `${Date.now()}`, {
+        action: "removeItem",
+      }).catch(() => {});
 
       return { status: "removed" };
     }),
@@ -470,8 +480,9 @@ export const ecommerceCartRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishecommerceCartMiddleware("clearCart", `${Date.now()}`, { action: "clearCart" }).catch(() => {});
-
+      await publishecommerceCartMiddleware("clearCart", `${Date.now()}`, {
+        action: "clearCart",
+      }).catch(() => {});
 
       return { status: "cleared" };
     }),

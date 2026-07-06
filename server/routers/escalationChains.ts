@@ -114,18 +114,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishescalationChainsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -149,10 +150,17 @@ async function publishescalationChainsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const escalationChainsRouter = router({
@@ -297,8 +305,11 @@ export const escalationChainsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishescalationChainsMiddleware("acknowledgeEvent", `${Date.now()}`, { action: "acknowledgeEvent" }).catch(() => {});
-
+      await publishescalationChainsMiddleware(
+        "acknowledgeEvent",
+        `${Date.now()}`,
+        { action: "acknowledgeEvent" }
+      ).catch(() => {});
 
       return { success: true, eventId: input.eventId };
     }),
@@ -315,7 +326,9 @@ export const escalationChainsRouter = router({
   }),
   listEvents: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishescalationChainsMiddleware("listEvents", `${Date.now()}`, { action: "listEvents" }).catch(() => {});
+    await publishescalationChainsMiddleware("listEvents", `${Date.now()}`, {
+      action: "listEvents",
+    }).catch(() => {});
 
     return {
       events: [] as Array<{
@@ -337,13 +350,19 @@ export const escalationChainsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishescalationChainsMiddleware("resolveEvent", `${Date.now()}`, { action: "resolveEvent" }).catch(() => {});
+      await publishescalationChainsMiddleware("resolveEvent", `${Date.now()}`, {
+        action: "resolveEvent",
+      }).catch(() => {});
 
       return { success: true, eventId: input.eventId };
     }),
   runEscalationCheck: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishescalationChainsMiddleware("runEscalationCheck", `${Date.now()}`, { action: "runEscalationCheck" }).catch(() => {});
+    await publishescalationChainsMiddleware(
+      "runEscalationCheck",
+      `${Date.now()}`,
+      { action: "runEscalationCheck" }
+    ).catch(() => {});
 
     return { triggered: 0, checked: 0 };
   }),
@@ -353,7 +372,9 @@ export const escalationChainsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishescalationChainsMiddleware("toggleChain", `${Date.now()}`, { action: "toggleChain" }).catch(() => {});
+      await publishescalationChainsMiddleware("toggleChain", `${Date.now()}`, {
+        action: "toggleChain",
+      }).catch(() => {});
 
       return { success: true, chainId: input.chainId, enabled: input.enabled };
     }),

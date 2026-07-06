@@ -218,7 +218,7 @@ export const transactionReversalManagerRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return withTransaction(async (tx) => {
+      return withTransaction(async tx => {
         const db = tx ?? (await getDb())!;
 
         // Lock and fetch original transaction
@@ -227,10 +227,16 @@ export const transactionReversalManagerRouter = router({
         );
         const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
         if (!originalTx) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Transaction not found" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Transaction not found",
+          });
         }
         if (originalTx.status === "reversed") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction already reversed" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Transaction already reversed",
+          });
         }
 
         const amount = Number(originalTx.amount);
@@ -295,20 +301,16 @@ export const transactionReversalManagerRouter = router({
         });
 
         // Kafka event
-        publishEvent(
-          "pos.transactions.reversed",
+        publishEvent("pos.transactions.reversed", reversalRef, {
           reversalRef,
-          {
-            reversalRef,
-            originalRef: originalTx.ref,
-            originalTransactionId: input.transactionId,
-            amount,
-            type: txType,
-            reason: input.reason,
-            agentId,
-            timestamp: new Date().toISOString(),
-          }
-        ).catch(() => {});
+          originalRef: originalTx.ref,
+          originalTransactionId: input.transactionId,
+          amount,
+          type: txType,
+          reason: input.reason,
+          agentId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return {
           success: true,

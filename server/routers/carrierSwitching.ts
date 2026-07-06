@@ -114,18 +114,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishcarrierSwitchingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `network.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -149,10 +150,17 @@ async function publishcarrierSwitchingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("network", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("network", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const carrierSwitchingRouter = router({
@@ -264,19 +272,28 @@ export const carrierSwitchingRouter = router({
           .groupBy(simOrchestratorConfig.terminalId)
           .orderBy(desc(count()));
 
-        const { getCarrierProfiles } = await import("../middleware/carrierAwareFailover");
+        const { getCarrierProfiles } = await import(
+          "../middleware/carrierAwareFailover"
+        );
         const profiles = getCarrierProfiles();
-        const rankings = profiles.map((p, i) => ({
-          rank: i + 1,
-          carrier: p.code,
-          name: p.name,
-          reliabilityPct: p.reliabilityPct,
-          avgLatencyMs: p.avgLatencyMs,
-          costPerMbNgn: p.costPerMbNgn,
-          slaUptimePct: p.slaUptimePct,
-          preferredForFinancial: p.preferredForFinancial,
-          score: Math.round(p.reliabilityPct * 0.4 + (100 - p.avgLatencyMs / 10) * 0.3 + (100 - p.costPerMbNgn * 200) * 0.3),
-        })).sort((a, b) => b.score - a.score).map((r, i) => ({ ...r, rank: i + 1 }));
+        const rankings = profiles
+          .map((p, i) => ({
+            rank: i + 1,
+            carrier: p.code,
+            name: p.name,
+            reliabilityPct: p.reliabilityPct,
+            avgLatencyMs: p.avgLatencyMs,
+            costPerMbNgn: p.costPerMbNgn,
+            slaUptimePct: p.slaUptimePct,
+            preferredForFinancial: p.preferredForFinancial,
+            score: Math.round(
+              p.reliabilityPct * 0.4 +
+                (100 - p.avgLatencyMs / 10) * 0.3 +
+                (100 - p.costPerMbNgn * 200) * 0.3
+            ),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .map((r, i) => ({ ...r, rank: i + 1 }));
         return { data: rankings, rankings };
       } catch {
         return { data: [], rankings: [] };
@@ -287,41 +304,72 @@ export const carrierSwitchingRouter = router({
       z
         .object({
           terminalId: z.string().optional(),
-          transactionType: z.enum(["financial", "payment", "transfer", "settlement", "general", "telemetry"]).optional(),
+          transactionType: z
+            .enum([
+              "financial",
+              "payment",
+              "transfer",
+              "settlement",
+              "general",
+              "telemetry",
+            ])
+            .optional(),
         })
         .optional()
     )
     .query(async ({ input }) => {
-      const { getCarrierProfiles } = await import("../middleware/carrierAwareFailover");
+      const { getCarrierProfiles } = await import(
+        "../middleware/carrierAwareFailover"
+      );
       const profiles = getCarrierProfiles();
       const txType = input?.transactionType ?? "general";
-      const isFinancial = ["financial", "payment", "transfer", "settlement"].includes(txType);
+      const isFinancial = [
+        "financial",
+        "payment",
+        "transfer",
+        "settlement",
+      ].includes(txType);
 
       const recommended = isFinancial
-        ? profiles.filter(p => p.preferredForFinancial).sort((a, b) => b.reliabilityPct - a.reliabilityPct)[0]
+        ? profiles
+            .filter(p => p.preferredForFinancial)
+            .sort((a, b) => b.reliabilityPct - a.reliabilityPct)[0]
         : profiles.sort((a, b) => {
-            const scoreA = a.reliabilityPct * 0.3 + (100 - a.costPerMbNgn * 200) * 0.4 + (100 - a.avgLatencyMs / 10) * 0.3;
-            const scoreB = b.reliabilityPct * 0.3 + (100 - b.costPerMbNgn * 200) * 0.4 + (100 - b.avgLatencyMs / 10) * 0.3;
+            const scoreA =
+              a.reliabilityPct * 0.3 +
+              (100 - a.costPerMbNgn * 200) * 0.4 +
+              (100 - a.avgLatencyMs / 10) * 0.3;
+            const scoreB =
+              b.reliabilityPct * 0.3 +
+              (100 - b.costPerMbNgn * 200) * 0.4 +
+              (100 - b.avgLatencyMs / 10) * 0.3;
             return scoreB - scoreA;
           })[0];
 
       return {
         data: recommended ?? null,
-        recommendation: recommended ? {
-          carrier: recommended.code,
-          name: recommended.name,
-          reason: isFinancial
-            ? `${recommended.code} recommended for ${txType}: ${recommended.reliabilityPct}% reliability, ${recommended.slaUptimePct}% SLA uptime`
-            : `${recommended.code} recommended for ${txType}: best cost/performance (₦${recommended.costPerMbNgn}/MB, ${recommended.avgLatencyMs}ms latency)`,
-          transactionType: txType,
-          ussdBalance: recommended.ussdBalance,
-        } : null,
+        recommendation: recommended
+          ? {
+              carrier: recommended.code,
+              name: recommended.name,
+              reason: isFinancial
+                ? `${recommended.code} recommended for ${txType}: ${recommended.reliabilityPct}% reliability, ${recommended.slaUptimePct}% SLA uptime`
+                : `${recommended.code} recommended for ${txType}: best cost/performance (₦${recommended.costPerMbNgn}/MB, ${recommended.avgLatencyMs}ms latency)`,
+              transactionType: txType,
+              ussdBalance: recommended.ussdBalance,
+            }
+          : null,
       };
     }),
   getSwitchStats: protectedProcedure.query(async () => {
     try {
       const db = (await getDb())!;
-      if (!db) return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+      if (!db)
+        return {
+          totalRecords: 0,
+          activeItems: 0,
+          lastUpdated: new Date().toISOString(),
+        };
       const [stats] = await db
         .select({ total: count() })
         .from(simOrchestratorConfig);
@@ -331,7 +379,11 @@ export const carrierSwitchingRouter = router({
         lastUpdated: new Date().toISOString(),
       };
     } catch {
-      return { totalRecords: 0, activeItems: 0, lastUpdated: new Date().toISOString() };
+      return {
+        totalRecords: 0,
+        activeItems: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
   }),
   recordSwitch: protectedProcedure
@@ -386,8 +438,9 @@ export const carrierSwitchingRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishcarrierSwitchingMiddleware("recordSwitch", `${Date.now()}`, { action: "recordSwitch" }).catch(() => {});
-
+      await publishcarrierSwitchingMiddleware("recordSwitch", `${Date.now()}`, {
+        action: "recordSwitch",
+      }).catch(() => {});
 
       return {
         success: true,

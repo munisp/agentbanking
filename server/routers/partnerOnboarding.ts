@@ -128,18 +128,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishpartnerOnboardingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `onboarding.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -163,10 +164,17 @@ async function publishpartnerOnboardingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("onboarding", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("onboarding", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const partnerOnboardingRouter = router({
@@ -266,7 +274,9 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpartnerOnboardingMiddleware("addCorridor", `${Date.now()}`, { action: "addCorridor" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware("addCorridor", `${Date.now()}`, {
+        action: "addCorridor",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -277,7 +287,11 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpartnerOnboardingMiddleware("addFeeOverride", `${Date.now()}`, { action: "addFeeOverride" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware(
+        "addFeeOverride",
+        `${Date.now()}`,
+        { action: "addFeeOverride" }
+      ).catch(() => {});
 
       return { success: true };
     }),
@@ -288,28 +302,38 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpartnerOnboardingMiddleware("completeOnboarding", `${Date.now()}`, { action: "completeOnboarding" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware(
+        "completeOnboarding",
+        `${Date.now()}`,
+        { action: "completeOnboarding" }
+      ).catch(() => {});
 
       return { success: true };
     }),
 
   getBranding: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishpartnerOnboardingMiddleware("getBranding", `${Date.now()}`, { action: "getBranding" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("getBranding", `${Date.now()}`, {
+      action: "getBranding",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listCorridors: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishpartnerOnboardingMiddleware("listCorridors", `${Date.now()}`, { action: "listCorridors" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("listCorridors", `${Date.now()}`, {
+      action: "listCorridors",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listFees: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishpartnerOnboardingMiddleware("listFees", `${Date.now()}`, { action: "listFees" }).catch(() => {});
+    await publishpartnerOnboardingMiddleware("listFees", `${Date.now()}`, {
+      action: "listFees",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -320,7 +344,11 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpartnerOnboardingMiddleware("registerTenant", `${Date.now()}`, { action: "registerTenant" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware(
+        "registerTenant",
+        `${Date.now()}`,
+        { action: "registerTenant" }
+      ).catch(() => {});
 
       return { success: true };
     }),
@@ -331,7 +359,11 @@ export const partnerOnboardingRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpartnerOnboardingMiddleware("updateBranding", `${Date.now()}`, { action: "updateBranding" }).catch(() => {});
+      await publishpartnerOnboardingMiddleware(
+        "updateBranding",
+        `${Date.now()}`,
+        { action: "updateBranding" }
+      ).catch(() => {});
 
       return { success: true };
     }),

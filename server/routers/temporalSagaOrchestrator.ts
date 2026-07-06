@@ -18,7 +18,10 @@ import { tbCreateTransfer } from "../tbClient";
 import { fluvioPublish } from "../lib/fluvioClient";
 import { daprPublish } from "../lib/daprClient";
 import { lakehouseIngest } from "../lib/lakehouseClient";
-import { writeToOutbox, failOpenWithAlert } from "../middleware/transactionalOutbox";
+import {
+  writeToOutbox,
+  failOpenWithAlert,
+} from "../middleware/transactionalOutbox";
 
 const TEMPORAL_URL = process.env.TEMPORAL_URL || "http://localhost:7233";
 
@@ -37,20 +40,27 @@ async function startWorkflow(
   taskQueue: string = "fund-flows"
 ): Promise<WorkflowExecution> {
   try {
-    const resp = await fetch(`${TEMPORAL_URL}/api/v1/namespaces/default/workflows`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workflow_type: workflowType,
-        workflow_id: workflowId,
-        task_queue: taskQueue,
-        input: [input],
-      }),
-    });
+    const resp = await fetch(
+      `${TEMPORAL_URL}/api/v1/namespaces/default/workflows`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflow_type: workflowType,
+          workflow_id: workflowId,
+          task_queue: taskQueue,
+          input: [input],
+        }),
+      }
+    );
 
     if (resp.ok) {
-      const data = await resp.json() as any;
-      return { workflowId, runId: data.run_id || workflowId, status: "RUNNING" };
+      const data = (await resp.json()) as any;
+      return {
+        workflowId,
+        runId: data.run_id || workflowId,
+        status: "RUNNING",
+      };
     }
     return { workflowId, runId: workflowId, status: "STARTED" };
   } catch {
@@ -61,12 +71,16 @@ async function startWorkflow(
 
 async function getWorkflowStatus(workflowId: string): Promise<string> {
   try {
-    const resp = await fetch(`${TEMPORAL_URL}/api/v1/namespaces/default/workflows/${workflowId}`);
+    const resp = await fetch(
+      `${TEMPORAL_URL}/api/v1/namespaces/default/workflows/${workflowId}`
+    );
     if (resp.ok) {
-      const data = await resp.json() as any;
+      const data = (await resp.json()) as any;
       return data.status || "UNKNOWN";
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return "UNKNOWN";
 }
 
@@ -102,20 +116,28 @@ async function executeSaga(
 
       // Record step completion
       if (db) {
-        await db.execute(sql`
+        await db
+          .execute(
+            sql`
           INSERT INTO saga_step_log (workflow_id, saga_name, step_name, status, result_json)
           VALUES (${ctx.workflowId}, ${sagaName}, ${step.name}, 'completed', ${JSON.stringify(result)}::jsonb)
-        `).catch(() => {});
+        `
+          )
+          .catch(() => {});
       }
     } catch (err) {
       const errorMsg = (err as Error).message;
 
       // Record failure
       if (db) {
-        await db.execute(sql`
+        await db
+          .execute(
+            sql`
           INSERT INTO saga_step_log (workflow_id, saga_name, step_name, status, result_json)
           VALUES (${ctx.workflowId}, ${sagaName}, ${step.name}, 'failed', ${JSON.stringify({ error: errorMsg })}::jsonb)
-        `).catch(() => {});
+        `
+          )
+          .catch(() => {});
       }
 
       // Compensate in reverse order
@@ -125,33 +147,66 @@ async function executeSaga(
           try {
             await compensateStep.compensate(ctx);
             if (db) {
-              await db.execute(sql`
+              await db
+                .execute(
+                  sql`
                 INSERT INTO saga_step_log (workflow_id, saga_name, step_name, status, result_json)
-                VALUES (${ctx.workflowId}, ${sagaName}, ${completedSteps[i] + '_compensate'}, 'completed', '{}'::jsonb)
-              `).catch(() => {});
+                VALUES (${ctx.workflowId}, ${sagaName}, ${completedSteps[i] + "_compensate"}, 'completed', '{}'::jsonb)
+              `
+                )
+                .catch(() => {});
             }
           } catch (compErr) {
             // Compensation failure — critical alert
-            await publishEvent("saga.workflow.compensated" as any, ctx.workflowId, {
-              workflowId: ctx.workflowId, sagaName, step: completedSteps[i], error: (compErr as Error).message,
-            }).catch(() => {});
+            await publishEvent(
+              "saga.workflow.compensated" as any,
+              ctx.workflowId,
+              {
+                workflowId: ctx.workflowId,
+                sagaName,
+                step: completedSteps[i],
+                error: (compErr as Error).message,
+              }
+            ).catch(() => {});
             await daprPublish("ops-alerts", "saga.compensation.failed", {
-              workflowId: ctx.workflowId, sagaName, step: completedSteps[i],
+              workflowId: ctx.workflowId,
+              sagaName,
+              step: completedSteps[i],
             }).catch(() => {});
           }
         }
       }
 
-      await publishEvent("saga.workflow.compensated" as any, ctx.workflowId, { workflowId: ctx.workflowId, sagaName, failedStep: step.name, error: errorMsg }).catch(() => {});
-      await fluvioPublish("saga.failure", { workflowId: ctx.workflowId, sagaName }).catch(() => {});
+      await publishEvent("saga.workflow.compensated" as any, ctx.workflowId, {
+        workflowId: ctx.workflowId,
+        sagaName,
+        failedStep: step.name,
+        error: errorMsg,
+      }).catch(() => {});
+      await fluvioPublish("saga.failure", {
+        workflowId: ctx.workflowId,
+        sagaName,
+      }).catch(() => {});
 
       return { success: false, completedSteps, error: errorMsg };
     }
   }
 
-  await publishEvent("saga.workflow.completed" as any, ctx.workflowId, { workflowId: ctx.workflowId, sagaName, steps: completedSteps }).catch(() => {});
-  await fluvioPublish("saga.success", { workflowId: ctx.workflowId, sagaName }).catch(() => {});
-  await lakehouseIngest("saga_executions", { workflowId: ctx.workflowId, sagaName, steps: completedSteps, success: true }).catch(() => {});
+  await publishEvent("saga.workflow.completed" as any, ctx.workflowId, {
+    workflowId: ctx.workflowId,
+    sagaName,
+    steps: completedSteps,
+  }).catch(() => {});
+  await fluvioPublish("saga.success", {
+    workflowId: ctx.workflowId,
+    sagaName,
+  }).catch(() => {});
+  await lakehouseIngest("saga_executions", {
+    workflowId: ctx.workflowId,
+    sagaName,
+    steps: completedSteps,
+    success: true,
+  }).catch(() => {});
 
   return { success: true, completedSteps };
 }
@@ -161,30 +216,34 @@ async function executeSaga(
 export const temporalSagaRouter = router({
   // Cross-border remittance saga
   startRemittanceSaga: protectedProcedure
-    .input(z.object({
-      agentId: z.number().int().positive(),
-      senderAccount: z.string(),
-      recipientAccount: z.string(),
-      sendAmount: z.number().positive(),
-      sendCurrency: z.string().length(3),
-      receiveCurrency: z.string().length(3),
-      corridor: z.string(),
-    }))
+    .input(
+      z.object({
+        agentId: z.number().int().positive(),
+        senderAccount: z.string(),
+        recipientAccount: z.string(),
+        sendAmount: z.number().positive(),
+        sendCurrency: z.string().length(3),
+        receiveCurrency: z.string().length(3),
+        corridor: z.string(),
+      })
+    )
     .mutation(async ({ input }) => {
       const workflowId = `remit_${input.agentId}_${Date.now()}`;
 
       const steps: SagaStep[] = [
         {
           name: "validate_compliance",
-          execute: async (ctx) => {
+          execute: async ctx => {
             // CBN limit check + sanctions screening
             return { compliant: true };
           },
-          compensate: async () => { /* nothing to compensate */ },
+          compensate: async () => {
+            /* nothing to compensate */
+          },
         },
         {
           name: "reserve_funds",
-          execute: async (ctx) => {
+          execute: async ctx => {
             // FOR UPDATE lock + debit sender balance
             const db = (await getDb())!;
             if (db) {
@@ -195,7 +254,7 @@ export const temporalSagaRouter = router({
             }
             return { reserved: true, amount: ctx.amount };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             // Restore funds on failure
             const db = (await getDb())!;
             if (db) {
@@ -207,20 +266,23 @@ export const temporalSagaRouter = router({
         },
         {
           name: "convert_currency",
-          execute: async (ctx) => {
+          execute: async ctx => {
             // FX conversion via rate engine
             const rate = 1.0; // Production: fetch live rate
             const receiveAmount = Math.floor(ctx.amount * rate);
             ctx.results.receiveAmount = receiveAmount;
             return { rate, receiveAmount };
           },
-          compensate: async () => { /* FX reversal handled by reserve_funds compensation */ },
+          compensate: async () => {
+            /* FX reversal handled by reserve_funds compensation */
+          },
         },
         {
           name: "submit_to_corridor",
-          execute: async (ctx) => {
+          execute: async ctx => {
             // Send via Mojaloop/PAPSS/SWIFT
-            const mojalloopUrl = process.env.MOJALOOP_URL || "http://localhost:4002";
+            const mojalloopUrl =
+              process.env.MOJALOOP_URL || "http://localhost:4002";
             const resp = await fetch(`${mojalloopUrl}/transfers`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -230,19 +292,25 @@ export const temporalSagaRouter = router({
                 currency: ctx.data.receiveCurrency,
                 payee: ctx.data.recipientAccount,
               }),
-            }).catch(() => ({ ok: true, json: async () => ({ transferId: ctx.workflowId }) }));
+            }).catch(() => ({
+              ok: true,
+              json: async () => ({ transferId: ctx.workflowId }),
+            }));
 
             return { submitted: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             // Cancel transfer in corridor
-            const mojalloopUrl = process.env.MOJALOOP_URL || "http://localhost:4002";
-            await fetch(`${mojalloopUrl}/transfers/${ctx.workflowId}/cancel`, { method: "POST" }).catch(() => {});
+            const mojalloopUrl =
+              process.env.MOJALOOP_URL || "http://localhost:4002";
+            await fetch(`${mojalloopUrl}/transfers/${ctx.workflowId}/cancel`, {
+              method: "POST",
+            }).catch(() => {});
           },
         },
         {
           name: "record_gl",
-          execute: async (ctx) => {
+          execute: async ctx => {
             // GL entries
             const db = (await getDb())!;
             if (db) {
@@ -251,10 +319,16 @@ export const temporalSagaRouter = router({
                 VALUES (${ctx.agentId}, '2001', 'debit', ${ctx.amount}, ${ctx.workflowId}, 'Cross-border remittance')
               `);
             }
-            await tbCreateTransfer({ debitAccountId: "2001", creditAccountId: "3001", amount: ctx.amount, ledger: 1, code: 7 }).catch(failOpenWithAlert("tigerbeetle", "remittanceSaga"));
+            await tbCreateTransfer({
+              debitAccountId: "2001",
+              creditAccountId: "3001",
+              amount: ctx.amount,
+              ledger: 1,
+              code: 7,
+            }).catch(failOpenWithAlert("tigerbeetle", "remittanceSaga"));
             return { recorded: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db) {
               await db.execute(sql`
@@ -266,14 +340,27 @@ export const temporalSagaRouter = router({
         },
         {
           name: "notify",
-          execute: async (ctx) => {
-            await writeToOutbox("remittance", ctx.workflowId, "remittance.completed", {
-              agentId: ctx.agentId, amount: ctx.amount, corridor: ctx.data.corridor,
-            });
-            await publishEvent("saga.workflow.completed" as any, ctx.workflowId, { workflowId: ctx.workflowId, agentId: ctx.agentId }).catch(() => {});
+          execute: async ctx => {
+            await writeToOutbox(
+              "remittance",
+              ctx.workflowId,
+              "remittance.completed",
+              {
+                agentId: ctx.agentId,
+                amount: ctx.amount,
+                corridor: ctx.data.corridor,
+              }
+            );
+            await publishEvent(
+              "saga.workflow.completed" as any,
+              ctx.workflowId,
+              { workflowId: ctx.workflowId, agentId: ctx.agentId }
+            ).catch(() => {});
             return { notified: true };
           },
-          compensate: async () => { /* notifications can't be un-sent but are idempotent */ },
+          compensate: async () => {
+            /* notifications can't be un-sent but are idempotent */
+          },
         },
       ];
 
@@ -286,7 +373,11 @@ export const temporalSagaRouter = router({
       };
 
       // Start Temporal workflow (or execute directly if unavailable)
-      const execution = await startWorkflow("RemittanceSaga", workflowId, input);
+      const execution = await startWorkflow(
+        "RemittanceSaga",
+        workflowId,
+        input
+      );
 
       if (execution.status === "DIRECT") {
         // Temporal unavailable — execute saga directly
@@ -299,12 +390,14 @@ export const temporalSagaRouter = router({
 
   // Loan lifecycle saga
   startLoanSaga: protectedProcedure
-    .input(z.object({
-      agentId: z.number().int().positive(),
-      loanAmount: z.number().positive(),
-      loanType: z.enum(["working_capital", "float_advance", "equipment"]),
-      termDays: z.number().int().positive(),
-    }))
+    .input(
+      z.object({
+        agentId: z.number().int().positive(),
+        loanAmount: z.number().positive(),
+        loanType: z.enum(["working_capital", "float_advance", "equipment"]),
+        termDays: z.number().int().positive(),
+      })
+    )
     .mutation(async ({ input }) => {
       const workflowId = `loan_${input.agentId}_${Date.now()}`;
 
@@ -316,7 +409,7 @@ export const temporalSagaRouter = router({
         },
         {
           name: "approve_loan",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (db) {
               await db.execute(sql`
@@ -326,16 +419,18 @@ export const temporalSagaRouter = router({
             }
             return { approved: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db) {
-              await db.execute(sql`UPDATE loans SET status = 'cancelled' WHERE reference = ${ctx.workflowId}`);
+              await db.execute(
+                sql`UPDATE loans SET status = 'cancelled' WHERE reference = ${ctx.workflowId}`
+              );
             }
           },
         },
         {
           name: "disburse_funds",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (db) {
               await db.execute(sql`
@@ -347,13 +442,21 @@ export const temporalSagaRouter = router({
                 VALUES (${ctx.agentId}, '2004', 'credit', ${ctx.amount}, ${ctx.workflowId}, 'Loan disbursement')
               `);
             }
-            await tbCreateTransfer({ debitAccountId: "2001", creditAccountId: "2004", amount: ctx.amount, ledger: 1, code: 11 }).catch(failOpenWithAlert("tigerbeetle", "loanSaga"));
+            await tbCreateTransfer({
+              debitAccountId: "2001",
+              creditAccountId: "2004",
+              amount: ctx.amount,
+              ledger: 1,
+              code: 11,
+            }).catch(failOpenWithAlert("tigerbeetle", "loanSaga"));
             return { disbursed: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db) {
-              await db.execute(sql`UPDATE agents SET float_balance = float_balance - ${ctx.amount} WHERE id = ${ctx.agentId}`);
+              await db.execute(
+                sql`UPDATE agents SET float_balance = float_balance - ${ctx.amount} WHERE id = ${ctx.agentId}`
+              );
               await db.execute(sql`
                 INSERT INTO general_ledger_entries (agent_id, account_id, entry_type, amount, reference, description)
                 VALUES (${ctx.agentId}, '2004', 'debit', ${ctx.amount}, ${ctx.workflowId}, 'Loan disbursement reversal')
@@ -363,7 +466,7 @@ export const temporalSagaRouter = router({
         },
         {
           name: "schedule_repayment",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (db) {
               await db.execute(sql`
@@ -373,10 +476,12 @@ export const temporalSagaRouter = router({
             }
             return { scheduled: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db) {
-              await db.execute(sql`UPDATE recurring_payments SET status = 'cancelled' WHERE agent_id = ${ctx.agentId} AND payment_type = 'loan_repayment'`);
+              await db.execute(
+                sql`UPDATE recurring_payments SET status = 'cancelled' WHERE agent_id = ${ctx.agentId} AND payment_type = 'loan_repayment'`
+              );
             }
           },
         },
@@ -391,7 +496,10 @@ export const temporalSagaRouter = router({
       };
 
       const result = await executeSaga("loan_lifecycle", steps, ctx);
-      await writeToOutbox("loan", workflowId, "loan.saga.completed", { ...input, ...result });
+      await writeToOutbox("loan", workflowId, "loan.saga.completed", {
+        ...input,
+        ...result,
+      });
 
       return { workflowId, ...result };
     }),
@@ -405,12 +513,12 @@ export const temporalSagaRouter = router({
 
       let steps: any[] = [];
       if (db) {
-        steps = await db.execute(sql`
+        steps = (await db.execute(sql`
           SELECT step_name, status, result_json, created_at
           FROM saga_step_log
           WHERE workflow_id = ${input.workflowId}
           ORDER BY created_at ASC
-        `) as any[];
+        `)) as any[];
       }
 
       return { workflowId: input.workflowId, status, steps };
@@ -435,18 +543,20 @@ export const temporalSagaRouter = router({
     }),
 
   startSettlementSaga: protectedProcedure
-    .input(z.object({
-      terminalId: z.string().min(1),
-      batchRef: z.string().optional(),
-      settlementDate: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string().min(1),
+        batchRef: z.string().optional(),
+        settlementDate: z.string().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
       const workflowId = `settle_${input.terminalId}_${Date.now()}`;
 
       const steps: SagaStep[] = [
         {
           name: "create_batch",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (!db) return { batchId: 0 };
             const batchRef = ctx.data.batchRef || `BATCH-${Date.now()}`;
@@ -455,21 +565,26 @@ export const temporalSagaRouter = router({
               VALUES (${batchRef}, ${ctx.data.terminalId}, 'pending', NOW())
               RETURNING id
             `);
-            const batchId = Array.isArray(result) && result[0] ? (result[0] as Record<string, unknown>).id : 0;
+            const batchId =
+              Array.isArray(result) && result[0]
+                ? (result[0] as Record<string, unknown>).id
+                : 0;
             ctx.results.batchId = batchId;
             ctx.results.batchRef = batchRef;
             return { batchId, batchRef };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db && ctx.results.batchId) {
-              await db.execute(sql`DELETE FROM pos_settlement_batches WHERE id = ${ctx.results.batchId}`);
+              await db.execute(
+                sql`DELETE FROM pos_settlement_batches WHERE id = ${ctx.results.batchId}`
+              );
             }
           },
         },
         {
           name: "process_transactions",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (!db) return { processed: 0 };
             const txResult = await db.execute(sql`
@@ -478,7 +593,9 @@ export const temporalSagaRouter = router({
               WHERE terminal_id = ${ctx.data.terminalId}
                 AND status = 'completed'
             `);
-            const row = Array.isArray(txResult) ? txResult[0] as Record<string, unknown> : {};
+            const row = Array.isArray(txResult)
+              ? (txResult[0] as Record<string, unknown>)
+              : {};
             const cnt = Number(row?.cnt ?? 0);
             const total = Number(row?.total ?? 0);
             if (ctx.results.batchId) {
@@ -490,16 +607,18 @@ export const temporalSagaRouter = router({
             }
             return { processed: cnt, totalAmount: total };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db && ctx.results.batchId) {
-              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'failed' WHERE id = ${ctx.results.batchId}`);
+              await db.execute(
+                sql`UPDATE pos_settlement_batches SET status = 'failed' WHERE id = ${ctx.results.batchId}`
+              );
             }
           },
         },
         {
           name: "settle_batch",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (!db) return { settled: false };
             const settleRef = `SETTLE-${ctx.results.batchRef}-${Date.now()}`;
@@ -513,16 +632,18 @@ export const temporalSagaRouter = router({
             ctx.results.settleRef = settleRef;
             return { settled: true, settleRef };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db && ctx.results.batchId) {
-              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'processing', settlement_ref = NULL WHERE id = ${ctx.results.batchId}`);
+              await db.execute(
+                sql`UPDATE pos_settlement_batches SET status = 'processing', settlement_ref = NULL WHERE id = ${ctx.results.batchId}`
+              );
             }
           },
         },
         {
           name: "reconcile_batch",
-          execute: async (ctx) => {
+          execute: async ctx => {
             const db = (await getDb())!;
             if (!db) return { reconciled: false };
             if (ctx.results.batchId) {
@@ -532,10 +653,12 @@ export const temporalSagaRouter = router({
             }
             return { reconciled: true };
           },
-          compensate: async (ctx) => {
+          compensate: async ctx => {
             const db = (await getDb())!;
             if (db && ctx.results.batchId) {
-              await db.execute(sql`UPDATE pos_settlement_batches SET status = 'settled' WHERE id = ${ctx.results.batchId}`);
+              await db.execute(
+                sql`UPDATE pos_settlement_batches SET status = 'settled' WHERE id = ${ctx.results.batchId}`
+              );
             }
           },
         },

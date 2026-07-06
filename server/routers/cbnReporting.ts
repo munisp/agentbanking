@@ -210,18 +210,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishcbnReportingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `reporting.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -245,10 +246,17 @@ async function publishcbnReportingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("reporting", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const cbnReportingRouter = router({
@@ -410,15 +418,17 @@ export const cbnReportingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishcbnReportingMiddleware("generateQuarterlyFraudReport", `${Date.now()}`, { action: "generateQuarterlyFraudReport" }).catch(() => {});
-
+        await publishcbnReportingMiddleware(
+          "generateQuarterlyFraudReport",
+          `${Date.now()}`,
+          { action: "generateQuarterlyFraudReport" }
+        ).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-
-        await publishcbnReportingMiddleware("fileSar", `${Date.now()}`, { action: "fileSar" }).catch(() => {});
-
-
+        await publishcbnReportingMiddleware("fileSar", `${Date.now()}`, {
+          action: "fileSar",
+        }).catch(() => {});
 
         return {
           sarRef: `SAR-${Date.now()}-${input.agentId}`,
@@ -444,7 +454,11 @@ export const cbnReportingRouter = router({
   getPendingSubmissions: protectedProcedure.query(async () => {
     const svc = await callCbnService("/api/v1/cbn-reports/pending");
     // Middleware fan-out (fail-open)
-    await publishcbnReportingMiddleware("getPendingSubmissions", `${Date.now()}`, { action: "getPendingSubmissions" }).catch(() => {});
+    await publishcbnReportingMiddleware(
+      "getPendingSubmissions",
+      `${Date.now()}`,
+      { action: "getPendingSubmissions" }
+    ).catch(() => {});
 
     return { reports: svc ?? [], source: svc ? "service" : "fallback" };
   }),
@@ -485,7 +499,9 @@ export const cbnReportingRouter = router({
   health: protectedProcedure.query(async () => {
     const svc = await callCbnService("/api/v1/cbn-reports/health");
     // Middleware fan-out (fail-open)
-    await publishcbnReportingMiddleware("markSubmitted", `${Date.now()}`, { action: "markSubmitted" }).catch(() => {});
+    await publishcbnReportingMiddleware("markSubmitted", `${Date.now()}`, {
+      action: "markSubmitted",
+    }).catch(() => {});
 
     return {
       serviceAvailable: !!svc,

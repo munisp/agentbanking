@@ -109,18 +109,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishpredictiveAgentChurnMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -144,10 +145,14 @@ async function publishpredictiveAgentChurnMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const predictiveAgentChurnRouter = router({
@@ -268,8 +273,9 @@ export const predictiveAgentChurnRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishpredictiveAgentChurnMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+        await publishpredictiveAgentChurnMiddleware("create", `${Date.now()}`, {
+          action: "create",
+        }).catch(() => {});
 
         return { success: true, itemId };
       } catch (error) {
@@ -291,7 +297,9 @@ export const predictiveAgentChurnRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "churn_" + input.itemId));
         // Middleware fan-out (fail-open)
-        await publishpredictiveAgentChurnMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishpredictiveAgentChurnMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -336,7 +344,9 @@ export const predictiveAgentChurnRouter = router({
 
   listAtRisk: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishpredictiveAgentChurnMiddleware("listAtRisk", `${Date.now()}`, { action: "listAtRisk" }).catch(() => {});
+    await publishpredictiveAgentChurnMiddleware("listAtRisk", `${Date.now()}`, {
+      action: "listAtRisk",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -347,7 +357,11 @@ export const predictiveAgentChurnRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishpredictiveAgentChurnMiddleware("triggerIntervention", `${Date.now()}`, { action: "triggerIntervention" }).catch(() => {});
+      await publishpredictiveAgentChurnMiddleware(
+        "triggerIntervention",
+        `${Date.now()}`,
+        { action: "triggerIntervention" }
+      ).catch(() => {});
 
       return { success: true };
     }),

@@ -100,18 +100,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishnotificationLogsCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -135,10 +136,17 @@ async function publishnotificationLogsCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const notification_logsRouter = router({
@@ -287,8 +295,9 @@ export const notification_logsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishnotificationLogsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
-
+        await publishnotificationLogsCrudMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

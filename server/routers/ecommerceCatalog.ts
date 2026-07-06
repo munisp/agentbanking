@@ -142,18 +142,19 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   }
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishecommerceCatalogMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `ecommerce.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -177,10 +178,17 @@ async function publishecommerceCatalogMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("ecommerce", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("ecommerce", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const ecommerceCatalogRouter = router({
@@ -378,15 +386,19 @@ export const ecommerceCatalogRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishecommerceCatalogMiddleware("updateProduct", `${Date.now()}`, { action: "updateProduct" }).catch(() => {});
-
+      await publishecommerceCatalogMiddleware(
+        "updateProduct",
+        `${Date.now()}`,
+        { action: "updateProduct" }
+      ).catch(() => {});
 
       // Middleware fan-out (fail-open)
 
-
-      await publishecommerceCatalogMiddleware("deleteProduct", `${Date.now()}`, { action: "deleteProduct" }).catch(() => {});
-
-
+      await publishecommerceCatalogMiddleware(
+        "deleteProduct",
+        `${Date.now()}`,
+        { action: "deleteProduct" }
+      ).catch(() => {});
 
       return { deleted: true };
     }),
@@ -467,7 +479,11 @@ export const ecommerceCatalogRouter = router({
 
       if (!inv) return null;
       // Middleware fan-out (fail-open)
-      await publishecommerceCatalogMiddleware("createCategory", `${Date.now()}`, { action: "createCategory" }).catch(() => {});
+      await publishecommerceCatalogMiddleware(
+        "createCategory",
+        `${Date.now()}`,
+        { action: "createCategory" }
+      ).catch(() => {});
 
       return { ...inv, available: inv.quantity - inv.reserved };
     }),

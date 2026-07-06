@@ -22,14 +22,40 @@ import {
   withIdempotency,
 } from "../lib/transactionHelper";
 
-async function publishSocialMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("ecommerce.social", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: String(payload.storeId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.social.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `ecommerce.social.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("ecommerce_social", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+async function publishSocialMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("ecommerce.social", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.storeId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `ecommerce.social.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `ecommerce.social.${event}`, { key, ...payload })
+    .catch(() => {});
+  ingestToLakehouse("ecommerce_social", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 }
 
-const SOCIAL_PLATFORMS = ["whatsapp", "instagram", "tiktok", "facebook"] as const;
+const SOCIAL_PLATFORMS = [
+  "whatsapp",
+  "instagram",
+  "tiktok",
+  "facebook",
+] as const;
 
 export const socialCommerceGatewayRouter = router({
   // ── Catalog Push ─────────────────────────────────────────────────────────
@@ -44,7 +70,11 @@ export const socialCommerceGatewayRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
 
       const products = await database
         .select()
@@ -52,7 +82,10 @@ export const socialCommerceGatewayRouter = router({
         .where(sql`${ecommerceProducts.id} = ANY(${input.productIds})`);
 
       if (products.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "No products found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No products found",
+        });
       }
 
       const catalogPayload = products.map((p: any) => ({
@@ -67,13 +100,15 @@ export const socialCommerceGatewayRouter = router({
 
       // Platform-specific API calls (via Dapr service invocation)
       const platformEndpoint = `social-${input.platform}-connector`;
-      await dapr.invokeService(platformEndpoint, "catalog/push", {
-        storeId: input.storeId,
-        products: catalogPayload,
-        accessToken: input.accessToken,
-      }).catch(() => {
-        // Fail-open: log but don't fail the whole operation
-      });
+      await dapr
+        .invokeService(platformEndpoint, "catalog/push", {
+          storeId: input.storeId,
+          products: catalogPayload,
+          accessToken: input.accessToken,
+        })
+        .catch(() => {
+          // Fail-open: log but don't fail the whole operation
+        });
 
       await writeAuditLog({
         agentId: 0,
@@ -124,7 +159,11 @@ export const socialCommerceGatewayRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
 
       const orderId = `SOCIAL-${input.platform.toUpperCase()}-${Date.now()}`;
       const totalKobo = Math.round(parseFloat(input.totalAmount) * 100);
@@ -163,7 +202,11 @@ export const socialCommerceGatewayRouter = router({
         itemCount: input.items.length,
       });
 
-      cacheSet(`social:order:${orderId}`, JSON.stringify({ ...input, orderId }), 86400).catch(() => {});
+      cacheSet(
+        `social:order:${orderId}`,
+        JSON.stringify({ ...input, orderId }),
+        86400
+      ).catch(() => {});
 
       return {
         orderId,
@@ -184,7 +227,11 @@ export const socialCommerceGatewayRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
 
       const [store] = await database
         .select()
@@ -192,7 +239,8 @@ export const socialCommerceGatewayRouter = router({
         .where(eq(agentStores.id, input.storeId))
         .limit(1);
 
-      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
+      if (!store)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
 
       const products = await database
         .select()
@@ -226,10 +274,14 @@ export const socialCommerceGatewayRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      publishSocialMiddleware("webhook.received", `${input.platform}-${input.eventType}`, {
-        platform: input.platform,
-        eventType: input.eventType,
-      });
+      publishSocialMiddleware(
+        "webhook.received",
+        `${input.platform}-${input.eventType}`,
+        {
+          platform: input.platform,
+          eventType: input.eventType,
+        }
+      );
 
       // Route to appropriate handler based on event type
       const eventRouting: Record<string, string> = {
@@ -248,7 +300,11 @@ export const socialCommerceGatewayRouter = router({
         resource: "socialCommerceGateway",
         resourceId: `${input.platform}-${input.eventType}`,
         status: "success",
-        metadata: { platform: input.platform, eventType: input.eventType, handler },
+        metadata: {
+          platform: input.platform,
+          eventType: input.eventType,
+          handler,
+        },
       });
 
       return { acknowledged: true, handler, platform: input.platform };
@@ -304,14 +360,18 @@ export const socialCommerceGatewayRouter = router({
         .limit(1);
 
       if (!record) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product with id ${input.id} not found` });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Product with id ${input.id} not found`,
+        });
       }
       return record;
     }),
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, lastUpdated: new Date().toISOString() };
+    if (!database)
+      return { totalRecords: 0, lastUpdated: new Date().toISOString() };
     const _totalRows = await database
       .select({ total: count() })
       .from(ecommerceProducts);
@@ -326,7 +386,12 @@ export const socialCommerceGatewayRouter = router({
   getStats: protectedProcedure.query(async () => {
     const database = await getDb();
     if (!database)
-      return { total: 0, active: 0, recent: 0, lastUpdated: new Date().toISOString() };
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     try {
       const [totalRow] = await database
         .select({ total: count() })
@@ -339,7 +404,12 @@ export const socialCommerceGatewayRouter = router({
         lastUpdated: new Date().toISOString(),
       };
     } catch {
-      return { total: 0, active: 0, recent: 0, lastUpdated: new Date().toISOString() };
+      return {
+        total: 0,
+        active: 0,
+        recent: 0,
+        lastUpdated: new Date().toISOString(),
+      };
     }
   }),
 });

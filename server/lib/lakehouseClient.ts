@@ -43,7 +43,7 @@ export async function lakehouseQuery(
       signal: AbortSignal.timeout(30000),
     });
     if (!response.ok) return null;
-    const result = await response.json() as { rows?: unknown[] };
+    const result = (await response.json()) as { rows?: unknown[] };
     return result.rows || [];
   } catch {
     return null;

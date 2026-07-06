@@ -125,18 +125,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdeveloperPortalMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -160,10 +161,17 @@ async function publishdeveloperPortalMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const developerPortalRouter = router({
@@ -387,8 +395,9 @@ export const developerPortalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishdeveloperPortalMiddleware("revokeKey", `${Date.now()}`, { action: "revokeKey" }).catch(() => {});
-
+        await publishdeveloperPortalMiddleware("revokeKey", `${Date.now()}`, {
+          action: "revokeKey",
+        }).catch(() => {});
 
         return { success: true, message: "API key revoked successfully" };
       } catch (error) {
@@ -459,8 +468,9 @@ export const developerPortalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishdeveloperPortalMiddleware("rotateKey", `${Date.now()}`, { action: "rotateKey" }).catch(() => {});
-
+        await publishdeveloperPortalMiddleware("rotateKey", `${Date.now()}`, {
+          action: "rotateKey",
+        }).catch(() => {});
 
         return {
           success: true,
@@ -612,7 +622,11 @@ export const developerPortalRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishdeveloperPortalMiddleware("createWebhookSecret", `${Date.now()}`, { action: "createWebhookSecret" }).catch(() => {});
+        await publishdeveloperPortalMiddleware(
+          "createWebhookSecret",
+          `${Date.now()}`,
+          { action: "createWebhookSecret" }
+        ).catch(() => {});
 
         return { ...row, secret };
       } catch (error) {
@@ -641,7 +655,11 @@ export const developerPortalRouter = router({
           .returning();
         if (!row) throw new TRPCError({ code: "NOT_FOUND" });
         // Middleware fan-out (fail-open)
-        await publishdeveloperPortalMiddleware("rotateWebhookSecret", `${Date.now()}`, { action: "rotateWebhookSecret" }).catch(() => {});
+        await publishdeveloperPortalMiddleware(
+          "rotateWebhookSecret",
+          `${Date.now()}`,
+          { action: "rotateWebhookSecret" }
+        ).catch(() => {});
 
         return { ...row, secret: newSecret };
       } catch (error) {
@@ -667,7 +685,11 @@ export const developerPortalRouter = router({
           .set({ isActive: input.isActive })
           .where(eq(webhookSecrets.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishdeveloperPortalMiddleware("toggleWebhookSecret", `${Date.now()}`, { action: "toggleWebhookSecret" }).catch(() => {});
+        await publishdeveloperPortalMiddleware(
+          "toggleWebhookSecret",
+          `${Date.now()}`,
+          { action: "toggleWebhookSecret" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -690,7 +712,11 @@ export const developerPortalRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         await db.delete(webhookSecrets).where(eq(webhookSecrets.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishdeveloperPortalMiddleware("deleteWebhookSecret", `${Date.now()}`, { action: "deleteWebhookSecret" }).catch(() => {});
+        await publishdeveloperPortalMiddleware(
+          "deleteWebhookSecret",
+          `${Date.now()}`,
+          { action: "deleteWebhookSecret" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -781,7 +807,11 @@ export const developerPortalRouter = router({
         if (!db) return { success: false };
         await db.insert(apiKeyUsage).values(input as any);
         // Middleware fan-out (fail-open)
-        await publishdeveloperPortalMiddleware("recordApiKeyUsage", `${Date.now()}`, { action: "recordApiKeyUsage" }).catch(() => {});
+        await publishdeveloperPortalMiddleware(
+          "recordApiKeyUsage",
+          `${Date.now()}`,
+          { action: "recordApiKeyUsage" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

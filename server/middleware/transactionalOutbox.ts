@@ -41,7 +41,9 @@ export async function writeToOutbox(
 
 // ── Publish from Outbox (background poller) ─────────────────────────────────
 
-export async function pollAndPublishOutbox(batchSize: number = 50): Promise<number> {
+export async function pollAndPublishOutbox(
+  batchSize: number = 50
+): Promise<number> {
   const db = (await getDb())!;
   if (!db) return 0;
 
@@ -100,11 +102,14 @@ export async function pollAndPublishOutbox(batchSize: number = 50): Promise<numb
 
         // Alert on DLQ entry
         await daprPublish("ops-alerts", "event.dead_letter", {
-          eventId: row.id, eventType: row.event_type, error: (err as Error).message,
+          eventId: row.id,
+          eventType: row.event_type,
+          error: (err as Error).message,
         }).catch(() => {});
 
         await fluvioPublish("ops.dlq.entry", {
-          eventId: row.id, eventType: row.event_type,
+          eventId: row.id,
+          eventType: row.event_type,
         }).catch(() => {});
       } else {
         await db.execute(sql`
@@ -119,7 +124,9 @@ export async function pollAndPublishOutbox(batchSize: number = 50): Promise<numb
   // Track delivery metrics
   if (published > 0) {
     await lakehouseIngest("outbox_delivery_metrics", {
-      published, total: (rows as any[]).length, timestamp: new Date().toISOString(),
+      published,
+      total: (rows as any[]).length,
+      timestamp: new Date().toISOString(),
     }).catch(() => {});
   }
 
@@ -128,7 +135,9 @@ export async function pollAndPublishOutbox(batchSize: number = 50): Promise<numb
 
 // ── Retry DLQ entries (manual or scheduled) ─────────────────────────────────
 
-export async function retryDeadLetters(maxRetries: number = 10): Promise<number> {
+export async function retryDeadLetters(
+  maxRetries: number = 10
+): Promise<number> {
   const db = (await getDb())!;
   if (!db) return 0;
 
@@ -145,7 +154,11 @@ export async function retryDeadLetters(maxRetries: number = 10): Promise<number>
 
   for (const row of rows as any[]) {
     try {
-      await publishEvent(row.event_type as any, row.aggregate_id || "dlq", row.payload);
+      await publishEvent(
+        row.event_type as any,
+        row.aggregate_id || "dlq",
+        row.payload
+      );
       await db.execute(sql`
         UPDATE event_dead_letter SET resolved = TRUE, resolved_at = NOW() WHERE id = ${row.id}
       `);
@@ -172,19 +185,30 @@ export async function logMiddlewareHealth(
   const db = (await getDb())!;
   if (!db) return;
 
-  await db.execute(sql`
+  await db
+    .execute(
+      sql`
     INSERT INTO middleware_health_log (service_name, router_name, status, latency_ms, error_message)
     VALUES (${serviceName}, ${routerName}, ${status}, ${latencyMs}, ${errorMessage ?? null})
-  `).catch(() => {});
+  `
+    )
+    .catch(() => {});
 
   // Alert on errors (not silent anymore)
   if (status === "error" || status === "unreachable") {
     await daprPublish("ops-alerts", "middleware.degraded", {
-      serviceName, routerName, status, errorMessage,
+      serviceName,
+      routerName,
+      status,
+      errorMessage,
     }).catch(() => {});
 
     await fluvioPublish("ops.middleware.health", {
-      serviceName, routerName, status, latencyMs, timestamp: Date.now(),
+      serviceName,
+      routerName,
+      status,
+      latencyMs,
+      timestamp: Date.now(),
     }).catch(() => {});
   }
 }

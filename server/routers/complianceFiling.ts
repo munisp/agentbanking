@@ -117,18 +117,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishcomplianceFilingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `compliance.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -152,10 +153,17 @@ async function publishcomplianceFilingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("compliance", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("compliance", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const complianceFilingRouter = router({
@@ -283,8 +291,11 @@ export const complianceFilingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishcomplianceFilingMiddleware("createFiling", `${Date.now()}`, { action: "createFiling" }).catch(() => {});
-
+        await publishcomplianceFilingMiddleware(
+          "createFiling",
+          `${Date.now()}`,
+          { action: "createFiling" }
+        ).catch(() => {});
 
         return { filing };
       } catch (error) {
@@ -311,7 +322,11 @@ export const complianceFilingRouter = router({
           } as any)
           .where(eq(complianceFilings.id, input.filingId));
         // Middleware fan-out (fail-open)
-        await publishcomplianceFilingMiddleware("submitFiling", `${Date.now()}`, { action: "submitFiling" }).catch(() => {});
+        await publishcomplianceFilingMiddleware(
+          "submitFiling",
+          `${Date.now()}`,
+          { action: "submitFiling" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -337,7 +352,11 @@ export const complianceFilingRouter = router({
           })
           .where(eq(complianceFilings.id, input.filingId));
         // Middleware fan-out (fail-open)
-        await publishcomplianceFilingMiddleware("acknowledgeFiling", `${Date.now()}`, { action: "acknowledgeFiling" }).catch(() => {});
+        await publishcomplianceFilingMiddleware(
+          "acknowledgeFiling",
+          `${Date.now()}`,
+          { action: "acknowledgeFiling" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

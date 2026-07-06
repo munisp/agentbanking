@@ -78,18 +78,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishfaceEnrollmentMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -113,10 +114,17 @@ async function publishfaceEnrollmentMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const faceEnrollmentRouter = router({
@@ -263,7 +271,9 @@ export const faceEnrollmentRouter = router({
               )[0] ?? null,
           });
           // Middleware fan-out (fail-open)
-          await publishfaceEnrollmentMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
+          await publishfaceEnrollmentMiddleware("verify", `${Date.now()}`, {
+            action: "verify",
+          }).catch(() => {});
 
           return { match: false, score: 0, reason: "no_enrollment" };
         }
@@ -426,7 +436,9 @@ export const faceEnrollmentRouter = router({
           });
         }
         // Middleware fan-out (fail-open)
-        await publishfaceEnrollmentMiddleware("revoke", `${Date.now()}`, { action: "revoke" }).catch(() => {});
+        await publishfaceEnrollmentMiddleware("revoke", `${Date.now()}`, {
+          action: "revoke",
+        }).catch(() => {});
 
         return { success: !!updated };
       } catch (error) {

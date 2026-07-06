@@ -37,13 +37,29 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.dispute", key, { eventType, ...payload });
-  fluvioPublish("pos.dispute", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.dispute.filed", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_disputes", { event_type: eventType, ...payload, source: "posDispute" }).catch(() => {});
+  fluvioPublish("pos.dispute", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.dispute.filed", { eventType, ...payload })
+    .catch(() => {});
+  lakehouseIngest("pos_disputes", {
+    event_type: eventType,
+    ...payload,
+    source: "posDispute",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   open: ["investigating", "resolved", "rejected"],
@@ -221,7 +237,12 @@ export const posDisputeRouter = router({
           },
         });
 
-        publishPosMiddleware("fileDispute", input.transactionRef, { action: "fileDispute", disputeId: dispute.id, reason: input.reason, transactionRef: input.transactionRef });
+        publishPosMiddleware("fileDispute", input.transactionRef, {
+          action: "fileDispute",
+          disputeId: dispute.id,
+          reason: input.reason,
+          transactionRef: input.transactionRef,
+        });
 
         return {
           disputeId: dispute.id,

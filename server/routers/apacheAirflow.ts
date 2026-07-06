@@ -114,18 +114,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishapacheAirflowMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -149,10 +150,17 @@ async function publishapacheAirflowMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const apacheAirflowRouter = router({
@@ -283,7 +291,9 @@ export const apacheAirflowRouter = router({
   }),
   listDags: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishapacheAirflowMiddleware("listDags", `${Date.now()}`, { action: "listDags" }).catch(() => {});
+    await publishapacheAirflowMiddleware("listDags", `${Date.now()}`, {
+      action: "listDags",
+    }).catch(() => {});
 
     return {
       dags: [
@@ -357,7 +367,9 @@ export const apacheAirflowRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishapacheAirflowMiddleware("getDag", `${Date.now()}`, { action: "getDag" }).catch(() => {});
+      await publishapacheAirflowMiddleware("getDag", `${Date.now()}`, {
+        action: "getDag",
+      }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -365,7 +377,9 @@ export const apacheAirflowRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishapacheAirflowMiddleware("toggleDag", `${Date.now()}`, { action: "toggleDag" }).catch(() => {});
+      await publishapacheAirflowMiddleware("toggleDag", `${Date.now()}`, {
+        action: "toggleDag",
+      }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

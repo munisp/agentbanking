@@ -30,7 +30,6 @@ import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
   menu_displayed: ["input_received"],
@@ -215,7 +214,18 @@ export const nfcTapToPayRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
@@ -313,7 +323,18 @@ export const nfcTapToPayRouter = router({
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       const db = (await getDb())!;
 
       const validStatuses = [
@@ -390,38 +411,71 @@ export const nfcTapToPayRouter = router({
 
   // ── NFC Payment Execution ─────────────────────────────────────────────────
   processPayment: protectedProcedure
-    .input(z.object({
-      terminalId: z.string().min(1),
-      amount: z.number().positive(),
-      cardType: z.enum(["visa", "mastercard", "verve", "unknown"]).default("unknown"),
-      idempotencyKey: z.string().min(16).max(64),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string().min(1),
+        amount: z.number().positive(),
+        cardType: z
+          .enum(["visa", "mastercard", "verve", "unknown"])
+          .default("unknown"),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
         const db = (await getDb())!;
         const ref = `NFC-${crypto.randomInt(100000, 999999)}-${Date.now()}`;
 
-        return await withTransaction(async (tx) => {
+        return await withTransaction(async tx => {
           // CBN limit check
-          const limitCheck = await checkDailyLimit(db, session.id, "tier3", input.amount);
+          const limitCheck = await checkDailyLimit(
+            db,
+            session.id,
+            "tier3",
+            input.amount
+          );
           if (!limitCheck.allowed)
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Daily limit exceeded: ${limitCheck.reason}` });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Daily limit exceeded: ${limitCheck.reason}`,
+            });
 
           // Lock agent float
           const agentResult = await tx.execute(
             sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
           );
           const agent = (agentResult as any).rows?.[0];
-          if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+          if (!agent)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Agent not found",
+            });
 
           const floatBalance = parseFloat(agent.float_balance || "0");
           if (floatBalance < input.amount)
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient float balance" });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient float balance",
+            });
 
           const fees = calculateFee(input.amount, "transfer");
           const commission = calculateCommission(fees.fee, "transfer");
@@ -469,52 +523,89 @@ export const nfcTapToPayRouter = router({
             });
           }
 
-          publishEvent("pos.transactions.created", ref, {
-            type: "nfc_payment",
-            ref, terminalId: input.terminalId, cardType: input.cardType,
-            amount: input.amount, fee: fees.fee, commission: commission.agentShare,
-            agentId: session.id, timestamp: new Date().toISOString(),
-          }, { agentCode: session.agentCode }).catch(() => {});
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "nfc_payment",
+              ref,
+              terminalId: input.terminalId,
+              cardType: input.cardType,
+              amount: input.amount,
+              fee: fees.fee,
+              commission: commission.agentShare,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
 
           // TigerBeetle dual-ledger
           tbCreateTransfer({
-            debitAccountId: "1001", creditAccountId: "2001",
+            debitAccountId: "1001",
+            creditAccountId: "2001",
             amount: Math.round(input.amount * 100),
-            ref, txType: "nfc_payment", agentCode: session.agentCode,
+            ref,
+            txType: "nfc_payment",
+            agentCode: session.agentCode,
           }).catch(() => {});
 
           // Fluvio real-time streaming
           publishTxToFluvio({
-            txRef: ref, agentCode: session.agentCode,
-            amount: input.amount, type: "nfc_payment", timestamp: Date.now(),
+            txRef: ref,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "nfc_payment",
+            timestamp: Date.now(),
           }).catch(() => {});
 
           // Dapr pub/sub
-          dapr.publishEvent("pubsub", "nfc.payment.completed", {
-            ref, terminalId: input.terminalId, amount: input.amount,
-            agentId: session.id, cardType: input.cardType,
-          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "nfc.payment.completed", {
+              ref,
+              terminalId: input.terminalId,
+              amount: input.amount,
+              agentId: session.id,
+              cardType: input.cardType,
+            })
+            .catch(() => {});
 
           // Redis — invalidate agent balance cache
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
 
           // Lakehouse analytics
           ingestToLakehouse("nfc_payments", {
-            ref, terminalId: input.terminalId, cardType: input.cardType,
-            amount: input.amount, fee: fees.fee, commission: commission.agentShare,
-            agentId: session.id, timestamp: new Date().toISOString(),
+            ref,
+            terminalId: input.terminalId,
+            cardType: input.cardType,
+            amount: input.amount,
+            fee: fees.fee,
+            commission: commission.agentShare,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
           }).catch(() => {});
 
           writeAuditLog({
-            agentId: session.id, agentCode: session.agentCode,
-            action: "NFC_PAYMENT", resource: "nfcTapToPay", resourceId: ref,
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "NFC_PAYMENT",
+            resource: "nfcTapToPay",
+            resourceId: ref,
             status: "success",
-            metadata: { amount: input.amount, terminalId: input.terminalId, cardType: input.cardType },
+            metadata: {
+              amount: input.amount,
+              terminalId: input.terminalId,
+              cardType: input.cardType,
+            },
           }).catch(() => {});
 
           return {
-            success: true, ref, transactionId: txId,
-            amount: input.amount, fee: fees.fee, commission: commission.agentShare,
+            success: true,
+            ref,
+            transactionId: txId,
+            amount: input.amount,
+            fee: fees.fee,
+            commission: commission.agentShare,
             timestamp: new Date().toISOString(),
           };
         }, "nfcTapToPay.processPayment");
@@ -522,30 +613,53 @@ export const nfcTapToPayRouter = router({
     }),
 
   refundPayment: protectedProcedure
-    .input(z.object({
-      transactionRef: z.string().min(1),
-      reason: z.string().min(1).max(500),
-      idempotencyKey: z.string().min(16).max(64),
-    }))
+    .input(
+      z.object({
+        transactionRef: z.string().min(1),
+        reason: z.string().min(1).max(500),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       return withIdempotency(input.idempotencyKey, async () => {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
 
         const db = (await getDb())!;
         const refundRef = `NFC-REFUND-${Date.now()}`;
 
-        return await withTransaction(async (tx) => {
+        return await withTransaction(async tx => {
           // Lock original transaction
           const txResult = await tx.execute(
             sql`SELECT id, amount, agent_id, status FROM transactions WHERE ref = ${input.transactionRef} AND type = 'NFC Payment' FOR UPDATE`
           );
           const originalTx = (txResult as any).rows?.[0];
-          if (!originalTx) throw new TRPCError({ code: "NOT_FOUND", message: "NFC transaction not found" });
+          if (!originalTx)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "NFC transaction not found",
+            });
           if (originalTx.status === "reversed")
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction already reversed" });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Transaction already reversed",
+            });
 
           const amount = parseFloat(originalTx.amount);
 
@@ -573,33 +687,78 @@ export const nfcTapToPayRouter = router({
             status: "posted",
           });
 
-          publishEvent("pos.transactions.created", refundRef, {
-            type: "nfc_refund", refundRef, originalRef: input.transactionRef,
-            amount, reason: input.reason, agentId: session.id,
-            timestamp: new Date().toISOString(),
-          }, { agentCode: session.agentCode }).catch(() => {});
+          publishEvent(
+            "pos.transactions.created",
+            refundRef,
+            {
+              type: "nfc_refund",
+              refundRef,
+              originalRef: input.transactionRef,
+              amount,
+              reason: input.reason,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
 
           // TigerBeetle reversal
           tbCreateTransfer({
-            debitAccountId: "2001", creditAccountId: "1001",
+            debitAccountId: "2001",
+            creditAccountId: "1001",
             amount: Math.round(amount * 100),
-            ref: refundRef, txType: "nfc_refund", agentCode: session.agentCode,
+            ref: refundRef,
+            txType: "nfc_refund",
+            agentCode: session.agentCode,
           }).catch(() => {});
 
           // Fluvio + Dapr + Redis + Lakehouse
-          publishTxToFluvio({ txRef: refundRef, agentCode: session.agentCode, amount, type: "nfc_refund", timestamp: Date.now() }).catch(() => {});
-          dapr.publishEvent("pubsub", "nfc.refund.completed", { refundRef, originalRef: input.transactionRef, amount, agentId: session.id }).catch(() => {});
+          publishTxToFluvio({
+            txRef: refundRef,
+            agentCode: session.agentCode,
+            amount,
+            type: "nfc_refund",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "nfc.refund.completed", {
+              refundRef,
+              originalRef: input.transactionRef,
+              amount,
+              agentId: session.id,
+            })
+            .catch(() => {});
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
-          ingestToLakehouse("nfc_refunds", { refundRef, originalRef: input.transactionRef, amount, agentId: session.id, reason: input.reason, timestamp: new Date().toISOString() }).catch(() => {});
-
-          writeAuditLog({
-            agentId: session.id, agentCode: session.agentCode,
-            action: "NFC_REFUND", resource: "nfcTapToPay", resourceId: refundRef,
-            status: "success",
-            metadata: { originalRef: input.transactionRef, amount, reason: input.reason },
+          ingestToLakehouse("nfc_refunds", {
+            refundRef,
+            originalRef: input.transactionRef,
+            amount,
+            agentId: session.id,
+            reason: input.reason,
+            timestamp: new Date().toISOString(),
           }).catch(() => {});
 
-          return { success: true, refundRef, originalRef: input.transactionRef, amount, timestamp: new Date().toISOString() };
+          writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "NFC_REFUND",
+            resource: "nfcTapToPay",
+            resourceId: refundRef,
+            status: "success",
+            metadata: {
+              originalRef: input.transactionRef,
+              amount,
+              reason: input.reason,
+            },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            refundRef,
+            originalRef: input.transactionRef,
+            amount,
+            timestamp: new Date().toISOString(),
+          };
         }, "nfcTapToPay.refundPayment");
       });
     }),

@@ -23,7 +23,11 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { agents, loyaltyHistory, gl_journal_entries } from "../../drizzle/schema";
+import {
+  agents,
+  loyaltyHistory,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 import {
   validateAmount,
@@ -767,26 +771,54 @@ export const loyaltyRouter = router({
           });
         }
 
-        publishEvent("pos.transactions.created", redemptionRef, {
+        publishEvent(
+          "pos.transactions.created",
+          redemptionRef,
+          {
+            type: "loyalty_redemption",
+            rewardId: input.rewardId,
+            rewardName: input.rewardName,
+            pointsCost: input.pointsCost,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "5004",
+          creditAccountId: "2005",
+          amount: Math.round(input.pointsCost * 100),
+          ref: redemptionRef,
+          txType: "loyalty_redemption",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({
+          txRef: redemptionRef,
+          agentCode: session.agentCode,
+          amount: input.pointsCost,
           type: "loyalty_redemption",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "loyalty.redeemed", {
+            redemptionRef,
+            rewardId: input.rewardId,
+            pointsCost: input.pointsCost,
+            agentId: session.id,
+          })
+          .catch(() => {});
+        ingestToLakehouse("loyalty_redemptions", {
+          redemptionRef,
           rewardId: input.rewardId,
           rewardName: input.rewardName,
           pointsCost: input.pointsCost,
           agentId: session.id,
           timestamp: new Date().toISOString(),
-        }, { agentCode: session.agentCode }).catch(() => {});
-
-        // TigerBeetle dual-ledger
-        tbCreateTransfer({
-          debitAccountId: "5004", creditAccountId: "2005",
-          amount: Math.round(input.pointsCost * 100),
-          ref: redemptionRef, txType: "loyalty_redemption", agentCode: session.agentCode,
         }).catch(() => {});
-
-        // Fluvio + Dapr + Lakehouse
-        publishTxToFluvio({ txRef: redemptionRef, agentCode: session.agentCode, amount: input.pointsCost, type: "loyalty_redemption", timestamp: Date.now() }).catch(() => {});
-        dapr.publishEvent("pubsub", "loyalty.redeemed", { redemptionRef, rewardId: input.rewardId, pointsCost: input.pointsCost, agentId: session.id }).catch(() => {});
-        ingestToLakehouse("loyalty_redemptions", { redemptionRef, rewardId: input.rewardId, rewardName: input.rewardName, pointsCost: input.pointsCost, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
 
         return {
           success: true,

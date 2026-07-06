@@ -300,19 +300,15 @@ export const disputeRefundRouter = router({
           status: "posted",
         });
 
-        publishEvent(
-          "pos.disputes.resolved",
+        publishEvent("pos.disputes.resolved", refundRef, {
+          type: "refund",
           refundRef,
-          {
-            type: "refund",
-            refundRef,
-            disputeId: input?.id,
-            transactionRef: input?.transactionRef,
-            refundAmount,
-            reason: input?.reason,
-            timestamp: new Date().toISOString(),
-          }
-        ).catch(() => {});
+          disputeId: input?.id,
+          transactionRef: input?.transactionRef,
+          refundAmount,
+          reason: input?.reason,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       }
 
       return {

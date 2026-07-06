@@ -27,11 +27,16 @@ export function SpeechToFormInput({ onParsed, className }: SpeechToFormProps) {
   const recognitionRef = useRef<any>(null);
 
   const startListening = useCallback(() => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+    if (
+      !("webkitSpeechRecognition" in window) &&
+      !("SpeechRecognition" in window)
+    ) {
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
@@ -102,9 +107,17 @@ function parseVoiceCommand(text: string): ParsedCommand {
   const result: ParsedCommand = {};
 
   // Detect transaction type
-  if (lower.includes("cash in") || lower.includes("deposit") || lower.includes("put money")) {
+  if (
+    lower.includes("cash in") ||
+    lower.includes("deposit") ||
+    lower.includes("put money")
+  ) {
     result.type = "cash_in";
-  } else if (lower.includes("cash out") || lower.includes("withdraw") || lower.includes("collect money")) {
+  } else if (
+    lower.includes("cash out") ||
+    lower.includes("withdraw") ||
+    lower.includes("collect money")
+  ) {
     result.type = "cash_out";
   } else if (lower.includes("transfer") || lower.includes("send")) {
     result.type = "transfer";
@@ -136,12 +149,23 @@ function parseVoiceCommand(text: string): ParsedCommand {
   // Word-to-number mapping for spoken amounts
   if (!result.amount) {
     const wordAmounts: Record<string, number> = {
-      "one thousand": 1000, "two thousand": 2000, "three thousand": 3000,
-      "four thousand": 4000, "five thousand": 5000, "six thousand": 6000,
-      "seven thousand": 7000, "eight thousand": 8000, "nine thousand": 9000,
-      "ten thousand": 10000, "twenty thousand": 20000, "fifty thousand": 50000,
-      "hundred thousand": 100000, "one million": 1000000,
-      "five hundred": 500, "one hundred": 100, "two hundred": 200,
+      "one thousand": 1000,
+      "two thousand": 2000,
+      "three thousand": 3000,
+      "four thousand": 4000,
+      "five thousand": 5000,
+      "six thousand": 6000,
+      "seven thousand": 7000,
+      "eight thousand": 8000,
+      "nine thousand": 9000,
+      "ten thousand": 10000,
+      "twenty thousand": 20000,
+      "fifty thousand": 50000,
+      "hundred thousand": 100000,
+      "one million": 1000000,
+      "five hundred": 500,
+      "one hundred": 100,
+      "two hundred": 200,
     };
     for (const [word, value] of Object.entries(wordAmounts)) {
       if (lower.includes(word)) {
@@ -159,13 +183,27 @@ function parseVoiceCommand(text: string): ParsedCommand {
 
   // Alternative phone formats: "zero eight zero one two three..."
   if (!result.phone) {
-    const spokenPhone = lower.match(/(?:zero|oh)\s*(?:eight|seven|nine)\s*(?:zero|one|two|three|four|five|six|seven|eight|nine|\s)*/);
+    const spokenPhone = lower.match(
+      /(?:zero|oh)\s*(?:eight|seven|nine)\s*(?:zero|one|two|three|four|five|six|seven|eight|nine|\s)*/
+    );
     if (spokenPhone) {
       const digitWords: Record<string, string> = {
-        zero: "0", oh: "0", one: "1", two: "2", three: "3", four: "4",
-        five: "5", six: "6", seven: "7", eight: "8", nine: "9",
+        zero: "0",
+        oh: "0",
+        one: "1",
+        two: "2",
+        three: "3",
+        four: "4",
+        five: "5",
+        six: "6",
+        seven: "7",
+        eight: "8",
+        nine: "9",
       };
-      const digits = spokenPhone[0].split(/\s+/).map(w => digitWords[w] || "").join("");
+      const digits = spokenPhone[0]
+        .split(/\s+/)
+        .map(w => digitWords[w] || "")
+        .join("");
       if (digits.length >= 10) {
         result.phone = digits.slice(0, 11);
       }

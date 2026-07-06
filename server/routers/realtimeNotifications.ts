@@ -99,18 +99,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishrealtimeNotificationsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -134,10 +135,17 @@ async function publishrealtimeNotificationsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const realtimeNotificationsRouter = router({
@@ -233,8 +241,11 @@ export const realtimeNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishrealtimeNotificationsMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
-
+        await publishrealtimeNotificationsMiddleware(
+          "markRead",
+          `${Date.now()}`,
+          { action: "markRead" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -253,7 +264,11 @@ export const realtimeNotificationsRouter = router({
       .set({ status: "read" })
       .where(eq(notification_logs.status, "pending"));
     // Middleware fan-out (fail-open)
-    await publishrealtimeNotificationsMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
+    await publishrealtimeNotificationsMiddleware(
+      "markAllRead",
+      `${Date.now()}`,
+      { action: "markAllRead" }
+    ).catch(() => {});
 
     return { success: true };
   }),
@@ -291,7 +306,9 @@ export const realtimeNotificationsRouter = router({
     }),
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishrealtimeNotificationsMiddleware("send", `${Date.now()}`, { action: "send" }).catch(() => {});
+    await publishrealtimeNotificationsMiddleware("send", `${Date.now()}`, {
+      action: "send",
+    }).catch(() => {});
 
     return {
       totalRecords: 0,

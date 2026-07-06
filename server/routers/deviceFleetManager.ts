@@ -28,13 +28,32 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.device.fleet", key, { eventType, ...payload });
-  fluvioPublish("pos.device.fleet", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.device.fleet.updated", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_device_fleet_events", { event_type: eventType, ...payload, source: "deviceFleetManager" }).catch(() => {});
+  fluvioPublish("pos.device.fleet", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.device.fleet.updated", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_device_fleet_events", {
+    event_type: eventType,
+    ...payload,
+    source: "deviceFleetManager",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -270,7 +289,10 @@ const updateFirmware = protectedProcedure
           status: "success",
           metadata: { input: JSON.stringify(input).slice(0, 500) },
         });
-        publishPosMiddleware("updateFirmware", String(input.id), { action: "updateFirmware", deviceId: input.id });
+        publishPosMiddleware("updateFirmware", String(input.id), {
+          action: "updateFirmware",
+          deviceId: input.id,
+        });
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };

@@ -5,7 +5,11 @@
  */
 import { useState, useEffect } from "react";
 import { WifiOff, Wifi, RefreshCw, CheckCircle } from "lucide-react";
-import { getQueueSize, syncQueuedTransactions, isOnline } from "@/lib/offlineQueue";
+import {
+  getQueueSize,
+  syncQueuedTransactions,
+  isOnline,
+} from "@/lib/offlineQueue";
 import { t } from "@/lib/i18n";
 
 export function OfflineStatusBanner() {
@@ -54,18 +58,25 @@ export function OfflineStatusBanner() {
   if (online && !syncing && !justSynced && queueSize === 0) return null;
 
   return (
-    <div className={`px-4 py-2 text-sm flex items-center gap-2 transition-all ${
-      !online ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200" :
-      syncing ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200" :
-      justSynced ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200" :
-      "bg-gray-100 text-gray-800"
-    }`}>
+    <div
+      className={`px-4 py-2 text-sm flex items-center gap-2 transition-all ${
+        !online
+          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+          : syncing
+            ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+            : justSynced
+              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200"
+              : "bg-gray-100 text-gray-800"
+      }`}
+    >
       {!online && (
         <>
           <WifiOff className="w-4 h-4" />
           <span>{t("offline.title")}</span>
           {queueSize > 0 && (
-            <span className="ml-auto font-medium">{queueSize} {t("offline.queued")}</span>
+            <span className="ml-auto font-medium">
+              {queueSize} {t("offline.queued")}
+            </span>
           )}
         </>
       )}

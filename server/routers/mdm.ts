@@ -50,13 +50,32 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.mdm", key, { eventType, ...payload });
-  fluvioPublish("pos.mdm", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.mdm.command.executed", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_mdm_events", { event_type: eventType, ...payload, source: "mdm" }).catch(() => {});
+  fluvioPublish("pos.mdm", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.mdm.command.executed", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_mdm_events", {
+    event_type: eventType,
+    ...payload,
+    source: "mdm",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -284,7 +303,11 @@ export const mdmRouter = router({
             .where(eq(devices.id, input.deviceId));
         }
 
-        publishPosMiddleware("issueCommand", String(input.deviceId ?? "unknown"), { action: "issueCommand" });
+        publishPosMiddleware(
+          "issueCommand",
+          String(input.deviceId ?? "unknown"),
+          { action: "issueCommand" }
+        );
 
         return { commandId: cmd.id, status: "pending" };
       } catch (error) {
@@ -331,7 +354,10 @@ export const mdmRouter = router({
           })
           .returning();
 
-        publishPosMiddleware("pushConfig", String(input.terminalId), { action: "pushConfig", ...input });
+        publishPosMiddleware("pushConfig", String(input.terminalId), {
+          action: "pushConfig",
+          ...input,
+        });
         return { commandId: cmd.id, configUpdated: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -400,7 +426,10 @@ export const mdmRouter = router({
             .where(eq(devices.id, d.id));
         }
 
-        publishPosMiddleware("triggerOtaUpdate", String(input.terminalId), { action: "triggerOtaUpdate", ...input });
+        publishPosMiddleware("triggerOtaUpdate", String(input.terminalId), {
+          action: "triggerOtaUpdate",
+          ...input,
+        });
         return {
           devicesTargeted: targetDevices.length,
           commandsIssued: commands.length,
@@ -784,7 +813,15 @@ export const mdmRouter = router({
           .orderBy(deviceCommands.issuedAt)
           .limit(10);
 
-        publishPosMiddleware("deviceTelemetry", String(input.serialNumber ?? "unknown"), { action: "deviceTelemetry", serialNumber: input.serialNumber, deviceId: device.id });
+        publishPosMiddleware(
+          "deviceTelemetry",
+          String(input.serialNumber ?? "unknown"),
+          {
+            action: "deviceTelemetry",
+            serialNumber: input.serialNumber,
+            deviceId: device.id,
+          }
+        );
 
         return {
           deviceId: device.id,
@@ -869,7 +906,11 @@ export const mdmRouter = router({
           apiBase: "/api/trpc",
         });
 
-        publishPosMiddleware("generateEnrollmentToken", String(input.terminalId), { action: "generateEnrollmentToken", ...input });
+        publishPosMiddleware(
+          "generateEnrollmentToken",
+          String(input.terminalId),
+          { action: "generateEnrollmentToken", ...input }
+        );
         return {
           token,
           expiresAt,
@@ -954,7 +995,11 @@ export const mdmRouter = router({
           })
           .where(eq(devices.id, device.id));
 
-        publishPosMiddleware("enrollWithToken", String(device.id), { action: "enrollWithToken", deviceId: device.id, agentCode: input.agentCode });
+        publishPosMiddleware("enrollWithToken", String(device.id), {
+          action: "enrollWithToken",
+          deviceId: device.id,
+          agentCode: input.agentCode,
+        });
 
         return {
           deviceId: device.id,
@@ -1008,7 +1053,10 @@ export const mdmRouter = router({
           }
         }
 
-        publishPosMiddleware("ackCommand", String(input.terminalId), { action: "ackCommand", ...input });
+        publishPosMiddleware("ackCommand", String(input.terminalId), {
+          action: "ackCommand",
+          ...input,
+        });
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1067,7 +1115,10 @@ export const mdmRouter = router({
           status: "success",
           metadata: { reason: input.reason, disabledBy: ctx.user.keycloakSub },
         });
-        publishPosMiddleware("disableTerminal", String(input.terminalId), { action: "disableTerminal", ...input });
+        publishPosMiddleware("disableTerminal", String(input.terminalId), {
+          action: "disableTerminal",
+          ...input,
+        });
         return { ok: true, agentCode: input.agentCode, terminalEnabled: false };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1151,7 +1202,11 @@ export const mdmRouter = router({
               updatedAt: new Date(),
             })
             .where(eq(deviceCompliancePolicies.id, input.id));
-          publishPosMiddleware("upsertPolicy", String(input.id), { action: "upsertPolicy", policyId: input.id, policyAction: "updated" });
+          publishPosMiddleware("upsertPolicy", String(input.id), {
+            action: "upsertPolicy",
+            policyId: input.id,
+            policyAction: "updated",
+          });
           return { id: input.id, action: "updated" };
         } else {
           const [row] = await db
@@ -1167,7 +1222,11 @@ export const mdmRouter = router({
               createdBy: ctx.user.name ?? ctx.user.keycloakSub,
             })
             .returning();
-          publishPosMiddleware("upsertPolicy", String(row.id), { action: "upsertPolicy", policyId: row.id, policyAction: "created" });
+          publishPosMiddleware("upsertPolicy", String(row.id), {
+            action: "upsertPolicy",
+            policyId: row.id,
+            policyAction: "created",
+          });
           return { id: row.id, action: "created" };
         }
       } catch (error) {
@@ -1242,7 +1301,10 @@ export const mdmRouter = router({
             resolvedBy: ctx.user.name ?? ctx.user.keycloakSub,
           })
           .where(eq(deviceComplianceViolations.id, input.violationId));
-        publishPosMiddleware("acknowledgeViolation", String(input.terminalId), { action: "acknowledgeViolation", ...input });
+        publishPosMiddleware("acknowledgeViolation", String(input.terminalId), {
+          action: "acknowledgeViolation",
+          ...input,
+        });
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1337,7 +1399,11 @@ export const mdmRouter = router({
           .insert(otaReleases)
           .values({ ...input, status: "draft" })
           .returning();
-        publishPosMiddleware("createOtaRelease", String(input.version ?? "unknown"), { action: "createOtaRelease" });
+        publishPosMiddleware(
+          "createOtaRelease",
+          String(input.version ?? "unknown"),
+          { action: "createOtaRelease" }
+        );
 
         return row;
       } catch (error) {
@@ -1360,7 +1426,10 @@ export const mdmRouter = router({
           .set({ status: "published", publishedAt: new Date() })
           .where(eq(otaReleases.id, input.id))
           .returning();
-        publishPosMiddleware("publishOtaRelease", String(input.terminalId), { action: "publishOtaRelease", ...input });
+        publishPosMiddleware("publishOtaRelease", String(input.terminalId), {
+          action: "publishOtaRelease",
+          ...input,
+        });
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1381,7 +1450,10 @@ export const mdmRouter = router({
           .update(otaReleases)
           .set({ status: "archived" })
           .where(eq(otaReleases.id, input.id));
-        publishPosMiddleware("archiveOtaRelease", String(input.terminalId), { action: "archiveOtaRelease", ...input });
+        publishPosMiddleware("archiveOtaRelease", String(input.terminalId), {
+          action: "archiveOtaRelease",
+          ...input,
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1471,7 +1543,11 @@ export const mdmRouter = router({
             })
             .where(eq(otaUpdateLog.id, existing[0].id))
             .returning();
-          publishPosMiddleware("scheduleOta", String(input.releaseId ?? "unknown"), { action: "scheduleOta" });
+          publishPosMiddleware(
+            "scheduleOta",
+            String(input.releaseId ?? "unknown"),
+            { action: "scheduleOta" }
+          );
 
           return row;
         }
@@ -1487,7 +1563,12 @@ export const mdmRouter = router({
             startedAt: new Date(),
           })
           .returning();
-        publishPosMiddleware("recordOtaUpdate", String(input.deviceId), { action: "recordOtaUpdate", deviceId: input.deviceId, releaseId: input.releaseId, status: input.status });
+        publishPosMiddleware("recordOtaUpdate", String(input.deviceId), {
+          action: "recordOtaUpdate",
+          deviceId: input.deviceId,
+          releaseId: input.releaseId,
+          status: input.status,
+        });
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1549,7 +1630,10 @@ export const mdmRouter = router({
         status: "success",
         metadata: { enabledBy: ctx.user.keycloakSub },
       });
-      publishPosMiddleware("enableTerminal", String(input.terminalId), { action: "enableTerminal", ...input });
+      publishPosMiddleware("enableTerminal", String(input.terminalId), {
+        action: "enableTerminal",
+        ...input,
+      });
       return { ok: true, agentCode: input.agentCode, terminalEnabled: true };
     }),
 });

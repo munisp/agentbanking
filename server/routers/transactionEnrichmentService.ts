@@ -110,18 +110,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtransactionEnrichmentServiceMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `transactions.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -145,10 +146,17 @@ async function publishtransactionEnrichmentServiceMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("transactions", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("transactions", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const transactionEnrichmentServiceRouter = router({
@@ -278,8 +286,11 @@ export const transactionEnrichmentServiceRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishtransactionEnrichmentServiceMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
-
+        await publishtransactionEnrichmentServiceMiddleware(
+          "createRule",
+          `${Date.now()}`,
+          { action: "createRule" }
+        ).catch(() => {});
 
         return { success: true, ruleId };
       } catch (error) {
@@ -309,9 +320,13 @@ export const transactionEnrichmentServiceRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishtransactionEnrichmentServiceMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+          await publishtransactionEnrichmentServiceMiddleware(
+            "toggleRule",
+            `${Date.now()}`,
+            { action: "toggleRule" }
+          ).catch(() => {});
 
-          return { success: false, error: "Rule not found" };
+        return { success: false, error: "Rule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.status = input.status;
         await db

@@ -150,18 +150,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishbiometricAuthMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `biometric.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -185,10 +186,17 @@ async function publishbiometricAuthMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("biometric", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("biometric", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const biometricAuthRouter = router({
@@ -260,8 +268,11 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware(
+          "passiveLiveness",
+          `${Date.now()}`,
+          { action: "passiveLiveness" }
+        ).catch(() => {});
 
         return {
           isLive: result.is_live ?? false,
@@ -307,8 +318,11 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("activeLiveness", `${Date.now()}`, { action: "activeLiveness" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware(
+          "activeLiveness",
+          `${Date.now()}`,
+          { action: "activeLiveness" }
+        ).catch(() => {});
 
         return {
           isLive: result.is_live ?? false,
@@ -354,8 +368,9 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("matchFaces", `${Date.now()}`, { action: "matchFaces" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware("matchFaces", `${Date.now()}`, {
+          action: "matchFaces",
+        }).catch(() => {});
 
         return {
           match: result.match ?? false,
@@ -396,8 +411,9 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("detectFaces", `${Date.now()}`, { action: "detectFaces" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware("detectFaces", `${Date.now()}`, {
+          action: "detectFaces",
+        }).catch(() => {});
 
         return {
           faces: (result.faces ?? []).map((f: any) => ({
@@ -440,8 +456,11 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("detectDeepfake", `${Date.now()}`, { action: "detectDeepfake" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware(
+          "detectDeepfake",
+          `${Date.now()}`,
+          { action: "detectDeepfake" }
+        ).catch(() => {});
 
         return {
           isReal: result.is_real ?? true,
@@ -515,8 +534,11 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("fullVerification", `${Date.now()}`, { action: "fullVerification" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware(
+          "fullVerification",
+          `${Date.now()}`,
+          { action: "fullVerification" }
+        ).catch(() => {});
 
         return {
           verificationId: result.verification_id,
@@ -561,8 +583,9 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("assessQuality", `${Date.now()}`, { action: "assessQuality" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware("assessQuality", `${Date.now()}`, {
+          action: "assessQuality",
+        }).catch(() => {});
 
         return {
           overallQuality: result.overall_quality ?? 0,
@@ -601,8 +624,9 @@ export const biometricAuthRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbiometricAuthMiddleware("antiSpoof", `${Date.now()}`, { action: "antiSpoof" }).catch(() => {});
-
+        await publishbiometricAuthMiddleware("antiSpoof", `${Date.now()}`, {
+          action: "antiSpoof",
+        }).catch(() => {});
 
         return {
           antiSpoofScore: result.anti_spoof_score ?? 0,

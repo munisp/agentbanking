@@ -105,18 +105,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishmerchantKycOnboardingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `kyc.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -140,10 +141,14 @@ async function publishmerchantKycOnboardingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const merchantKycOnboardingRouter = router({
@@ -276,8 +281,11 @@ export const merchantKycOnboardingRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishmerchantKycOnboardingMiddleware("uploadDoc", `${Date.now()}`, { action: "uploadDoc" }).catch(() => {});
-
+        await publishmerchantKycOnboardingMiddleware(
+          "uploadDoc",
+          `${Date.now()}`,
+          { action: "uploadDoc" }
+        ).catch(() => {});
 
         return { doc };
       } catch (error) {
@@ -312,7 +320,11 @@ export const merchantKycOnboardingRouter = router({
           })
           .where(eq(merchantKycDocs.id, input.docId));
         // Middleware fan-out (fail-open)
-        await publishmerchantKycOnboardingMiddleware("verifyDoc", `${Date.now()}`, { action: "verifyDoc" }).catch(() => {});
+        await publishmerchantKycOnboardingMiddleware(
+          "verifyDoc",
+          `${Date.now()}`,
+          { action: "verifyDoc" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

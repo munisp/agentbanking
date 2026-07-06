@@ -62,18 +62,24 @@ const SEVERITY_BG: Record<Severity, string> = {
 };
 
 export default function InsiderThreatDashboard() {
-  const [activeTab, setActiveTab] = useState<"overview" | "approvals" | "alerts" | "audit" | "permissions">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "approvals" | "alerts" | "audit" | "permissions"
+  >("overview");
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
 
   // Fetch dashboard data
-  const dashboardQuery = trpc.insiderThreatManagement.getDashboard.useQuery(undefined, {
-    refetchInterval: 30000,
-  });
+  const dashboardQuery = trpc.insiderThreatManagement.getDashboard.useQuery(
+    undefined,
+    {
+      refetchInterval: 30000,
+    }
+  );
 
   // Fetch pending approvals
-  const approvalsQuery = trpc.insiderThreatManagement.listPendingApprovals.useQuery(undefined, {
-    refetchInterval: 10000,
-  });
+  const approvalsQuery =
+    trpc.insiderThreatManagement.listPendingApprovals.useQuery(undefined, {
+      refetchInterval: 10000,
+    });
 
   // Fetch alerts
   const alertsQuery = trpc.insiderThreatManagement.getAlerts.useQuery(
@@ -82,38 +88,43 @@ export default function InsiderThreatDashboard() {
   );
 
   // Fetch audit chain status
-  const verifyAuditQuery = trpc.insiderThreatManagement.verifyAuditChain.useQuery(undefined, {
-    enabled: activeTab === "audit",
-  });
+  const verifyAuditQuery =
+    trpc.insiderThreatManagement.verifyAuditChain.useQuery(undefined, {
+      enabled: activeTab === "audit",
+    });
 
   // Mutations
-  const approveRequestMut = trpc.insiderThreatManagement.approveRequest.useMutation({
-    onSuccess: () => {
-      toast.success("Approval granted");
-      approvalsQuery.refetch();
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
+  const approveRequestMut =
+    trpc.insiderThreatManagement.approveRequest.useMutation({
+      onSuccess: () => {
+        toast.success("Approval granted");
+        approvalsQuery.refetch();
+      },
+      onError: (err: any) => toast.error(err.message),
+    });
 
-  const rejectRequestMut = trpc.insiderThreatManagement.rejectRequest.useMutation({
-    onSuccess: () => {
-      toast.success("Request rejected");
-      approvalsQuery.refetch();
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
+  const rejectRequestMut =
+    trpc.insiderThreatManagement.rejectRequest.useMutation({
+      onSuccess: () => {
+        toast.success("Request rejected");
+        approvalsQuery.refetch();
+      },
+      onError: (err: any) => toast.error(err.message),
+    });
 
-  const requestStepUpMut = trpc.insiderThreatManagement.requestStepUp.useMutation({
-    onSuccess: (data: any) => {
-      setStepUpToken(data.token);
-      toast.success("Step-up authentication verified (5 min validity)");
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
+  const requestStepUpMut =
+    trpc.insiderThreatManagement.requestStepUp.useMutation({
+      onSuccess: (data: any) => {
+        setStepUpToken(data.token);
+        toast.success("Step-up authentication verified (5 min validity)");
+      },
+      onError: (err: any) => toast.error(err.message),
+    });
 
   // Derived state
   const dashboardData = dashboardQuery.data as any;
-  const pendingApprovals: ApprovalRequest[] = (approvalsQuery.data as any)?.approvals ?? [];
+  const pendingApprovals: ApprovalRequest[] =
+    (approvalsQuery.data as any)?.approvals ?? [];
   const alerts: ThreatAlert[] = (alertsQuery.data as any)?.alerts ?? [];
   const auditStatus = (verifyAuditQuery.data as any) ?? null;
 
@@ -128,12 +139,21 @@ export default function InsiderThreatDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Insider Threat Management</h1>
-          <p className="text-sm text-gray-500 mt-1">Security operations — separation of duties, approval workflows, behavioral monitoring</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Insider Threat Management
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Security operations — separation of duties, approval workflows,
+            behavioral monitoring
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${detection.blocked_agents > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-            {detection.blocked_agents > 0 ? `${detection.blocked_agents} Blocked` : "All Clear"}
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-medium ${detection.blocked_agents > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}
+          >
+            {detection.blocked_agents > 0
+              ? `${detection.blocked_agents} Blocked`
+              : "All Clear"}
           </span>
         </div>
       </div>
@@ -141,7 +161,9 @@ export default function InsiderThreatDashboard() {
       {/* Tabs */}
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex gap-6">
-          {(["overview", "approvals", "alerts", "audit", "permissions"] as const).map(tab => (
+          {(
+            ["overview", "approvals", "alerts", "audit", "permissions"] as const
+          ).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -195,37 +217,61 @@ export default function InsiderThreatDashboard() {
 
           {/* Thresholds Info */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Approval Thresholds</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">
+              Approval Thresholds
+            </h3>
             <div className="grid grid-cols-3 gap-4">
               <div className="p-3 bg-green-50 rounded-lg">
-                <div className="text-sm font-medium text-green-700">Tier 1 — Standard</div>
+                <div className="text-sm font-medium text-green-700">
+                  Tier 1 — Standard
+                </div>
                 <div className="text-xs text-green-600">₦0 – ₦500,000</div>
-                <div className="text-xs text-green-600 mt-1">No additional approval</div>
+                <div className="text-xs text-green-600 mt-1">
+                  No additional approval
+                </div>
               </div>
               <div className="p-3 bg-yellow-50 rounded-lg">
-                <div className="text-sm font-medium text-yellow-700">Tier 2 — Dual Control</div>
-                <div className="text-xs text-yellow-600">₦500,001 – ₦5,000,000</div>
-                <div className="text-xs text-yellow-600 mt-1">1 additional approver</div>
+                <div className="text-sm font-medium text-yellow-700">
+                  Tier 2 — Dual Control
+                </div>
+                <div className="text-xs text-yellow-600">
+                  ₦500,001 – ₦5,000,000
+                </div>
+                <div className="text-xs text-yellow-600 mt-1">
+                  1 additional approver
+                </div>
               </div>
               <div className="p-3 bg-red-50 rounded-lg">
-                <div className="text-sm font-medium text-red-700">Tier 3 — Compliance Review</div>
+                <div className="text-sm font-medium text-red-700">
+                  Tier 3 — Compliance Review
+                </div>
                 <div className="text-xs text-red-600">₦5,000,001+</div>
-                <div className="text-xs text-red-600 mt-1">2 approvers + 30-min cooling</div>
+                <div className="text-xs text-red-600 mt-1">
+                  2 approvers + 30-min cooling
+                </div>
               </div>
             </div>
           </div>
 
           {/* Separation of Duties Summary */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Separation of Duties Rules</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">
+              Separation of Duties Rules
+            </h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <span>No agent can approve their own reversal, loan, commission, or float adjustment</span>
+                <span>
+                  No agent can approve their own reversal, loan, commission, or
+                  float adjustment
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <span>Financial Maker and Financial Approver roles are mutually exclusive</span>
+                <span>
+                  Financial Maker and Financial Approver roles are mutually
+                  exclusive
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -233,11 +279,15 @@ export default function InsiderThreatDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <span>Step-up authentication required for all approval actions</span>
+                <span>
+                  Step-up authentication required for all approval actions
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                <span>Admin sessions timeout after 15 minutes of inactivity</span>
+                <span>
+                  Admin sessions timeout after 15 minutes of inactivity
+                </span>
               </div>
             </div>
           </div>
@@ -250,7 +300,11 @@ export default function InsiderThreatDashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Pending Approval Requests</h2>
             {!stepUpToken && (
-              <StepUpAuthButton onAuthenticate={(password) => requestStepUpMut.mutate({ password })} />
+              <StepUpAuthButton
+                onAuthenticate={password =>
+                  requestStepUpMut.mutate({ password })
+                }
+              />
             )}
             {stepUpToken && (
               <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full">
@@ -260,21 +314,25 @@ export default function InsiderThreatDashboard() {
           </div>
 
           {pendingApprovals.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No pending approvals</div>
+            <div className="text-center py-8 text-gray-500">
+              No pending approvals
+            </div>
           ) : (
             pendingApprovals.map(approval => (
               <ApprovalCard
                 key={approval.id}
                 approval={approval}
                 stepUpToken={stepUpToken}
-                onApprove={(id) => {
+                onApprove={id => {
                   if (!stepUpToken) {
                     toast.error("Step-up authentication required");
                     return;
                   }
                   approveRequestMut.mutate({ requestId: id, stepUpToken });
                 }}
-                onReject={(id, reason) => rejectRequestMut.mutate({ requestId: id, reason })}
+                onReject={(id, reason) =>
+                  rejectRequestMut.mutate({ requestId: id, reason })
+                }
               />
             ))
           )}
@@ -286,7 +344,9 @@ export default function InsiderThreatDashboard() {
         <div className="space-y-3">
           <h2 className="text-lg font-semibold mb-4">Insider Threat Alerts</h2>
           {alerts.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No alerts detected</div>
+            <div className="text-center py-8 text-gray-500">
+              No alerts detected
+            </div>
           ) : (
             alerts.map((alert, i) => (
               <AlertCard key={alert.id ?? i} alert={alert} />
@@ -300,17 +360,27 @@ export default function InsiderThreatDashboard() {
         <div className="space-y-4">
           <h2 className="text-lg font-semibold mb-4">Audit Chain Integrity</h2>
           {auditStatus && (
-            <div className={`p-4 rounded-lg border ${auditStatus.valid ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+            <div
+              className={`p-4 rounded-lg border ${auditStatus.valid ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}
+            >
               <div className="flex items-center gap-2">
-                <span className={`text-xl ${auditStatus.valid ? "text-green-600" : "text-red-600"}`}>
+                <span
+                  className={`text-xl ${auditStatus.valid ? "text-green-600" : "text-red-600"}`}
+                >
                   {auditStatus.valid ? "🔒" : "⚠️"}
                 </span>
                 <div>
-                  <div className={`font-semibold ${auditStatus.valid ? "text-green-800" : "text-red-800"}`}>
+                  <div
+                    className={`font-semibold ${auditStatus.valid ? "text-green-800" : "text-red-800"}`}
+                  >
                     {auditStatus.valid ? "Chain Intact" : "TAMPERING DETECTED"}
                   </div>
-                  <div className="text-sm text-gray-600">{auditStatus.message}</div>
-                  <div className="text-xs text-gray-500 mt-1">Total entries: {auditStatus.total_entries}</div>
+                  <div className="text-sm text-gray-600">
+                    {auditStatus.message}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Total entries: {auditStatus.total_entries}
+                  </div>
                 </div>
               </div>
             </div>
@@ -318,10 +388,12 @@ export default function InsiderThreatDashboard() {
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <h3 className="font-semibold text-gray-900 mb-2">How it works</h3>
             <p className="text-sm text-gray-600">
-              Every privileged action is recorded in a SHA-256 hash chain. Each entry contains the hash of the
-              previous entry, creating a tamper-evident log. If any record is modified or deleted, the chain
-              verification will detect the inconsistency. Entries are also forwarded in real-time to an external
-              SIEM for independent verification.
+              Every privileged action is recorded in a SHA-256 hash chain. Each
+              entry contains the hash of the previous entry, creating a
+              tamper-evident log. If any record is modified or deleted, the
+              chain verification will detect the inconsistency. Entries are also
+              forwarded in real-time to an external SIEM for independent
+              verification.
             </p>
           </div>
         </div>
@@ -330,21 +402,37 @@ export default function InsiderThreatDashboard() {
       {/* Permissions Tab */}
       {activeTab === "permissions" && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold mb-4">Granular Permission Model</h2>
+          <h2 className="text-lg font-semibold mb-4">
+            Granular Permission Model
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <RoleCard
               role="Agent Operator"
-              permissions={["Create Cash-In", "Create Cash-Out", "View Transactions"]}
+              permissions={[
+                "Create Cash-In",
+                "Create Cash-Out",
+                "View Transactions",
+              ]}
               incompatible={["Financial Approver", "System Admin"]}
             />
             <RoleCard
               role="Financial Maker"
-              permissions={["Create Loans", "Create Reversals", "Create Commissions", "Create FX"]}
+              permissions={[
+                "Create Loans",
+                "Create Reversals",
+                "Create Commissions",
+                "Create FX",
+              ]}
               incompatible={["Financial Approver"]}
             />
             <RoleCard
               role="Financial Approver"
-              permissions={["Approve Reversals", "Approve Loans", "Approve Commissions", "Approve FX"]}
+              permissions={[
+                "Approve Reversals",
+                "Approve Loans",
+                "Approve Commissions",
+                "Approve FX",
+              ]}
               incompatible={["Financial Maker"]}
             />
             <RoleCard
@@ -359,7 +447,9 @@ export default function InsiderThreatDashboard() {
             />
             <RoleCard
               role="Break Glass (Emergency)"
-              permissions={["Emergency Override Access (time-limited, fully audited)"]}
+              permissions={[
+                "Emergency Override Access (time-limited, fully audited)",
+              ]}
               incompatible={[]}
             />
           </div>
@@ -371,7 +461,17 @@ export default function InsiderThreatDashboard() {
 
 // ── Sub-Components ───────────────────────────────────────────────────────────
 
-function KPICard({ title, value, color, bg }: { title: string; value: number; color: string; bg: string }) {
+function KPICard({
+  title,
+  value,
+  color,
+  bg,
+}: {
+  title: string;
+  value: number;
+  color: string;
+  bg: string;
+}) {
   return (
     <div className={`${bg} rounded-lg p-4 border`}>
       <div className="text-sm text-gray-600">{title}</div>
@@ -398,15 +498,23 @@ function ApprovalCard({
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="font-medium text-gray-900">{approval.type.replace(/_/g, " ")}</div>
-          <div className="text-sm text-gray-500">
-            Requested by: <span className="font-mono">{approval.requestedByCode}</span>
+          <div className="font-medium text-gray-900">
+            {approval.type.replace(/_/g, " ")}
           </div>
           <div className="text-sm text-gray-500">
-            Amount: <span className="font-semibold">₦{approval.amount.toLocaleString()}</span> {approval.currency}
+            Requested by:{" "}
+            <span className="font-mono">{approval.requestedByCode}</span>
+          </div>
+          <div className="text-sm text-gray-500">
+            Amount:{" "}
+            <span className="font-semibold">
+              ₦{approval.amount.toLocaleString()}
+            </span>{" "}
+            {approval.currency}
           </div>
           <div className="text-xs text-gray-400 mt-1">
-            {approval.approvals.length}/{approval.requiredApprovals} approvals • Expires {new Date(approval.expiresAt).toLocaleString()}
+            {approval.approvals.length}/{approval.requiredApprovals} approvals •
+            Expires {new Date(approval.expiresAt).toLocaleString()}
           </div>
         </div>
         <div className="flex gap-2">
@@ -461,14 +569,21 @@ function AlertCard({ alert }: { alert: ThreatAlert }) {
           <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase`}>
             {alert.severity}
           </span>
-          <span className="font-medium text-sm">{alert.threat_type.replace(/_/g, " ")}</span>
+          <span className="font-medium text-sm">
+            {alert.threat_type.replace(/_/g, " ")}
+          </span>
         </div>
-        <span className="text-xs text-gray-500">{new Date(alert.timestamp).toLocaleString()}</span>
+        <span className="text-xs text-gray-500">
+          {new Date(alert.timestamp).toLocaleString()}
+        </span>
       </div>
       <div className="mt-2 text-sm">{alert.description}</div>
       <div className="mt-1 text-xs text-gray-600">
-        Agent: <span className="font-mono">{alert.agent_code}</span> • Risk Score: {alert.risk_score}/100
-        {alert.auto_blocked && <span className="ml-2 text-red-700 font-bold">AUTO-BLOCKED</span>}
+        Agent: <span className="font-mono">{alert.agent_code}</span> • Risk
+        Score: {alert.risk_score}/100
+        {alert.auto_blocked && (
+          <span className="ml-2 text-red-700 font-bold">AUTO-BLOCKED</span>
+        )}
       </div>
       <div className="mt-2 text-xs text-gray-500 italic">
         Recommended: {alert.recommended_action}
@@ -477,7 +592,11 @@ function AlertCard({ alert }: { alert: ThreatAlert }) {
   );
 }
 
-function StepUpAuthButton({ onAuthenticate }: { onAuthenticate: (password: string) => void }) {
+function StepUpAuthButton({
+  onAuthenticate,
+}: {
+  onAuthenticate: (password: string) => void;
+}) {
   const [showModal, setShowModal] = useState(false);
   const [password, setPassword] = useState("");
 
@@ -492,9 +611,12 @@ function StepUpAuthButton({ onAuthenticate }: { onAuthenticate: (password: strin
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="font-semibold text-lg mb-2">Step-Up Authentication</h3>
+            <h3 className="font-semibold text-lg mb-2">
+              Step-Up Authentication
+            </h3>
             <p className="text-sm text-gray-500 mb-4">
-              Re-enter your password to verify your identity for approval actions.
+              Re-enter your password to verify your identity for approval
+              actions.
             </p>
             <input
               type="password"
@@ -505,7 +627,10 @@ function StepUpAuthButton({ onAuthenticate }: { onAuthenticate: (password: strin
               autoFocus
             />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 text-sm">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-gray-600 text-sm"
+              >
                 Cancel
               </button>
               <button
@@ -541,16 +666,24 @@ function RoleCard({
       <div className="font-semibold text-gray-900 mb-2">{role}</div>
       <div className="space-y-1">
         {permissions.map(p => (
-          <div key={p} className="text-xs text-gray-600 flex items-center gap-1">
+          <div
+            key={p}
+            className="text-xs text-gray-600 flex items-center gap-1"
+          >
             <span className="text-green-500">✓</span> {p}
           </div>
         ))}
       </div>
       {incompatible.length > 0 && (
         <div className="mt-2 pt-2 border-t">
-          <div className="text-xs text-red-600 font-medium">Cannot hold simultaneously:</div>
+          <div className="text-xs text-red-600 font-medium">
+            Cannot hold simultaneously:
+          </div>
           {incompatible.map(r => (
-            <div key={r} className="text-xs text-red-500 flex items-center gap-1">
+            <div
+              key={r}
+              className="text-xs text-red-500 flex items-center gap-1"
+            >
               <span>✗</span> {r}
             </div>
           ))}

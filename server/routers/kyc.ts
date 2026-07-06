@@ -138,18 +138,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishkycMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `kyc.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -173,10 +174,14 @@ async function publishkycMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const kycRouter = router({
@@ -350,15 +355,15 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishkycMiddleware("passiveLiveness", `${Date.now()}`, { action: "passiveLiveness" }).catch(() => {});
-
+        await publishkycMiddleware("passiveLiveness", `${Date.now()}`, {
+          action: "passiveLiveness",
+        }).catch(() => {});
 
         // Middleware fan-out (fail-open)
 
-
-        await publishkycMiddleware("registerDevice", `${Date.now()}`, { action: "registerDevice" }).catch(() => {});
-
-
+        await publishkycMiddleware("registerDevice", `${Date.now()}`, {
+          action: "registerDevice",
+        }).catch(() => {});
 
         return {
           fingerprint,
@@ -413,7 +418,9 @@ export const kycRouter = router({
           input.score
         );
         // Middleware fan-out (fail-open)
-        await publishkycMiddleware("recordDeviceAttempt", `${Date.now()}`, { action: "recordDeviceAttempt" }).catch(() => {});
+        await publishkycMiddleware("recordDeviceAttempt", `${Date.now()}`, {
+          action: "recordDeviceAttempt",
+        }).catch(() => {});
 
         return { recorded: true, fingerprintHash: fingerprint.fingerprintHash };
       } catch (error) {
@@ -512,7 +519,9 @@ export const kycRouter = router({
         if (!challenge) {
           // Service unavailable — return session ID so the client can still proceed
           // Middleware fan-out (fail-open)
-          await publishkycMiddleware("startLiveness", `${Date.now()}`, { action: "startLiveness" }).catch(() => {});
+          await publishkycMiddleware("startLiveness", `${Date.now()}`, {
+            action: "startLiveness",
+          }).catch(() => {});
 
           return {
             sessionId: session.id,
@@ -619,8 +628,9 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishkycMiddleware("submitLivenessFrame", `${Date.now()}`, { action: "submitLivenessFrame" }).catch(() => {});
-
+        await publishkycMiddleware("submitLivenessFrame", `${Date.now()}`, {
+          action: "submitLivenessFrame",
+        }).catch(() => {});
 
         return {
           sessionId: input.sessionId,
@@ -918,7 +928,9 @@ export const kycRouter = router({
             input.mimeType
           );
           // Middleware fan-out (fail-open)
-          await publishkycMiddleware("requestDocumentUpload", `${Date.now()}`, { action: "requestDocumentUpload" }).catch(() => {});
+          await publishkycMiddleware("requestDocumentUpload", `${Date.now()}`, {
+            action: "requestDocumentUpload",
+          }).catch(() => {});
 
           return {
             uploadUrl: url,
@@ -985,8 +997,9 @@ export const kycRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishkycMiddleware("geoIpCorrelate", `${Date.now()}`, { action: "geoIpCorrelate" }).catch(() => {});
-
+        await publishkycMiddleware("geoIpCorrelate", `${Date.now()}`, {
+          action: "geoIpCorrelate",
+        }).catch(() => {});
 
         return {
           riskScore: correlation.riskScore,

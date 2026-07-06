@@ -138,18 +138,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishadvancedBiReportingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `reporting.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -173,10 +174,17 @@ async function publishadvancedBiReportingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("reporting", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const advancedBiReportingRouter = router({
@@ -280,7 +288,11 @@ export const advancedBiReportingRouter = router({
   }),
   reportBuilder: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishadvancedBiReportingMiddleware("reportBuilder", `${Date.now()}`, { action: "reportBuilder" }).catch(() => {});
+    await publishadvancedBiReportingMiddleware(
+      "reportBuilder",
+      `${Date.now()}`,
+      { action: "reportBuilder" }
+    ).catch(() => {});
 
     return {
       templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],

@@ -32,10 +32,9 @@ export async function daprStateGet(
   key: string
 ): Promise<unknown | null> {
   try {
-    const response = await fetch(
-      `${DAPR_URL}/v1.0/state/${storeName}/${key}`,
-      { signal: AbortSignal.timeout(3000) }
-    );
+    const response = await fetch(`${DAPR_URL}/v1.0/state/${storeName}/${key}`, {
+      signal: AbortSignal.timeout(3000),
+    });
     if (!response.ok) return null;
     return response.json();
   } catch {
@@ -49,15 +48,12 @@ export async function daprStateSave(
   value: unknown
 ): Promise<boolean> {
   try {
-    const response = await fetch(
-      `${DAPR_URL}/v1.0/state/${storeName}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify([{ key, value }]),
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const response = await fetch(`${DAPR_URL}/v1.0/state/${storeName}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([{ key, value }]),
+      signal: AbortSignal.timeout(5000),
+    });
     return response.ok;
   } catch {
     return false;

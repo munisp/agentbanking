@@ -114,18 +114,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishnetworkResilienceMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `resilience.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -149,10 +150,17 @@ async function publishnetworkResilienceMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("resilience", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("resilience", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const networkResilienceRouter = router({
@@ -231,8 +239,9 @@ export const networkResilienceRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishnetworkResilienceMiddleware("status", `${Date.now()}`, { action: "status" }).catch(() => {});
-
+      await publishnetworkResilienceMiddleware("status", `${Date.now()}`, {
+        action: "status",
+      }).catch(() => {});
 
       return {
         success: true,
@@ -268,7 +277,9 @@ export const networkResilienceRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishnetworkResilienceMiddleware("failover", `${Date.now()}`, { action: "failover" }).catch(() => {});
+      await publishnetworkResilienceMiddleware("failover", `${Date.now()}`, {
+        action: "failover",
+      }).catch(() => {});
 
       return {
         success: true,
@@ -364,7 +375,9 @@ export const networkResilienceRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishnetworkResilienceMiddleware("test", `${Date.now()}`, { action: "test" }).catch(() => {});
+      await publishnetworkResilienceMiddleware("test", `${Date.now()}`, {
+        action: "test",
+      }).catch(() => {});
 
       return {
         success: true,

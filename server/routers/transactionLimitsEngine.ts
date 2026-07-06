@@ -110,18 +110,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtransactionLimitsEngineMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `transactions.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -145,10 +146,17 @@ async function publishtransactionLimitsEngineMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("transactions", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("transactions", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const transactionLimitsEngineRouter = router({
@@ -307,8 +315,11 @@ export const transactionLimitsEngineRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishtransactionLimitsEngineMiddleware("setLimit", `${Date.now()}`, { action: "setLimit" }).catch(() => {});
-
+        await publishtransactionLimitsEngineMiddleware(
+          "setLimit",
+          `${Date.now()}`,
+          { action: "setLimit" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

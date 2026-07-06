@@ -141,18 +141,19 @@ const _constraints = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishaiMonitoringMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -176,10 +177,17 @@ async function publishaiMonitoringMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const aiMonitoringRouter = router({
@@ -378,8 +386,9 @@ export const aiMonitoringRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishaiMonitoringMiddleware("retrain", `${Date.now()}`, { action: "retrain" }).catch(() => {});
-
+      await publishaiMonitoringMiddleware("retrain", `${Date.now()}`, {
+        action: "retrain",
+      }).catch(() => {});
 
       return {
         success: true,
@@ -431,7 +440,11 @@ export const aiMonitoringRouter = router({
     )
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishaiMonitoringMiddleware("throughputTimeSeries", `${Date.now()}`, { action: "throughputTimeSeries" }).catch(() => {});
+      await publishaiMonitoringMiddleware(
+        "throughputTimeSeries",
+        `${Date.now()}`,
+        { action: "throughputTimeSeries" }
+      ).catch(() => {});
 
       return { data: null, timestamp: new Date().toISOString() };
     }),
@@ -439,7 +452,9 @@ export const aiMonitoringRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishaiMonitoringMiddleware("acknowledgeAlert", `${Date.now()}`, { action: "acknowledgeAlert" }).catch(() => {});
+      await publishaiMonitoringMiddleware("acknowledgeAlert", `${Date.now()}`, {
+        action: "acknowledgeAlert",
+      }).catch(() => {});
 
       return {
         success: true,

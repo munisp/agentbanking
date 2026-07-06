@@ -119,18 +119,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishrateAlertsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -154,10 +155,17 @@ async function publishrateAlertsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const rateAlertsRouter = router({
@@ -303,8 +311,9 @@ export const rateAlertsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishrateAlertsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+      await publishrateAlertsMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return {
         success: true,
@@ -317,7 +326,9 @@ export const rateAlertsRouter = router({
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishrateAlertsMiddleware("delete", `${Date.now()}`, {
+        action: "delete",
+      }).catch(() => {});
 
       return { success: true, deletedId: input.id };
     }),
@@ -362,7 +373,9 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("rearm", `${Date.now()}`, { action: "rearm" }).catch(() => {});
+      await publishrateAlertsMiddleware("rearm", `${Date.now()}`, {
+        action: "rearm",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -373,7 +386,9 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("runCheck", `${Date.now()}`, { action: "runCheck" }).catch(() => {});
+      await publishrateAlertsMiddleware("runCheck", `${Date.now()}`, {
+        action: "runCheck",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -384,7 +399,9 @@ export const rateAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
+      await publishrateAlertsMiddleware("toggle", `${Date.now()}`, {
+        action: "toggle",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -400,7 +417,9 @@ export const rateAlertsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("subscribe", `${Date.now()}`, { action: "subscribe" }).catch(() => {});
+      await publishrateAlertsMiddleware("subscribe", `${Date.now()}`, {
+        action: "subscribe",
+      }).catch(() => {});
 
       return {
         id: `alert-${Date.now()}`,

@@ -75,13 +75,15 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
 async function publishcustomerDisputePortalMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `customer.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -105,10 +107,17 @@ async function publishcustomerDisputePortalMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("customer", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("customer", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const customerDisputePortalRouter = router({
@@ -309,8 +318,11 @@ export const customerDisputePortalRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishcustomerDisputePortalMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
-
+      await publishcustomerDisputePortalMiddleware(
+        "addMessage",
+        `${Date.now()}`,
+        { action: "addMessage" }
+      ).catch(() => {});
 
       return {
         totalDisputes: 0,
@@ -379,7 +391,11 @@ export const customerDisputePortalRouter = router({
     .input(z.object({ disputeId: z.number(), reason: z.string() }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishcustomerDisputePortalMiddleware("escalateDispute", `${Date.now()}`, { action: "escalateDispute" }).catch(() => {});
+      await publishcustomerDisputePortalMiddleware(
+        "escalateDispute",
+        `${Date.now()}`,
+        { action: "escalateDispute" }
+      ).catch(() => {});
 
       return {
         success: true,
@@ -397,7 +413,11 @@ export const customerDisputePortalRouter = router({
     )
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishcustomerDisputePortalMiddleware("updateDispute", `${Date.now()}`, { action: "updateDispute" }).catch(() => {});
+      await publishcustomerDisputePortalMiddleware(
+        "updateDispute",
+        `${Date.now()}`,
+        { action: "updateDispute" }
+      ).catch(() => {});
 
       return {
         success: true,

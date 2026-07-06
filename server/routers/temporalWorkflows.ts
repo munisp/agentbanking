@@ -99,18 +99,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtemporalWorkflowsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -134,10 +135,17 @@ async function publishtemporalWorkflowsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const temporalWorkflowsRouter = router({
@@ -285,8 +293,11 @@ export const temporalWorkflowsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishtemporalWorkflowsMiddleware("startWorkflow", `${Date.now()}`, { action: "startWorkflow" }).catch(() => {});
-
+        await publishtemporalWorkflowsMiddleware(
+          "startWorkflow",
+          `${Date.now()}`,
+          { action: "startWorkflow" }
+        ).catch(() => {});
 
         return {
           workflowId: instance.id,
@@ -320,7 +331,11 @@ export const temporalWorkflowsRouter = router({
           metadata: { reason: input.reason ?? "manual" },
         });
         // Middleware fan-out (fail-open)
-        await publishtemporalWorkflowsMiddleware("cancelWorkflow", `${Date.now()}`, { action: "cancelWorkflow" }).catch(() => {});
+        await publishtemporalWorkflowsMiddleware(
+          "cancelWorkflow",
+          `${Date.now()}`,
+          { action: "cancelWorkflow" }
+        ).catch(() => {});
 
         return { workflowId: input.id, status: "cancelled" };
       } catch (error) {
@@ -356,21 +371,27 @@ export const temporalWorkflowsRouter = router({
 
   health: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtemporalWorkflowsMiddleware("health", `${Date.now()}`, { action: "health" }).catch(() => {});
+    await publishtemporalWorkflowsMiddleware("health", `${Date.now()}`, {
+      action: "health",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   list: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtemporalWorkflowsMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+    await publishtemporalWorkflowsMiddleware("list", `${Date.now()}`, {
+      action: "list",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   summary: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtemporalWorkflowsMiddleware("summary", `${Date.now()}`, { action: "summary" }).catch(() => {});
+    await publishtemporalWorkflowsMiddleware("summary", `${Date.now()}`, {
+      action: "summary",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -381,14 +402,18 @@ export const temporalWorkflowsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishtemporalWorkflowsMiddleware("terminate", `${Date.now()}`, { action: "terminate" }).catch(() => {});
+      await publishtemporalWorkflowsMiddleware("terminate", `${Date.now()}`, {
+        action: "terminate",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   workflowTypes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtemporalWorkflowsMiddleware("workflowTypes", `${Date.now()}`, { action: "workflowTypes" }).catch(() => {});
+    await publishtemporalWorkflowsMiddleware("workflowTypes", `${Date.now()}`, {
+      action: "workflowTypes",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -396,7 +421,9 @@ export const temporalWorkflowsRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishtemporalWorkflowsMiddleware("start", `${Date.now()}`, { action: "start" }).catch(() => {});
+      await publishtemporalWorkflowsMiddleware("start", `${Date.now()}`, {
+        action: "start",
+      }).catch(() => {});
 
       return {
         success: true,

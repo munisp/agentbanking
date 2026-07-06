@@ -373,7 +373,7 @@ export const bnplEngineRouter = router({
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           const db = tx ?? (await getDb())!;
           const ref = `BNPL-PAY-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
@@ -382,12 +382,22 @@ export const bnplEngineRouter = router({
             sql`SELECT * FROM "bnpl_applications" WHERE id = ${input.applicationId} FOR UPDATE`
           );
           const app = (appResult as any).rows?.[0];
-          if (!app) throw new TRPCError({ code: "NOT_FOUND", message: "BNPL application not found" });
+          if (!app)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "BNPL application not found",
+            });
           if (app.status === "completed") {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Loan already fully repaid" });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Loan already fully repaid",
+            });
           }
 
-          const appData = typeof app.data === "string" ? JSON.parse(app.data) : (app.data ?? {});
+          const appData =
+            typeof app.data === "string"
+              ? JSON.parse(app.data)
+              : (app.data ?? {});
           const totalAmount = Number(appData.amount ?? 0);
           const paidSoFar = Number(appData.paidAmount ?? 0);
           const newPaid = paidSoFar + input.amount;
@@ -397,9 +407,13 @@ export const bnplEngineRouter = router({
           const agentRows = await db.execute(
             sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
           );
-          const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          const agentRow =
+            (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
           if (!agentRow || Number(agentRow.float_balance) < input.amount) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Insufficient float for repayment" });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient float for repayment",
+            });
           }
 
           await db.execute(
@@ -407,31 +421,42 @@ export const bnplEngineRouter = router({
           );
 
           // Update BNPL application
-          const updatedData = { ...appData, paidAmount: newPaid, lastPaymentDate: new Date().toISOString() };
-          const newStatus = isFullyPaid ? "completed" : app.status === "overdue" ? "active" : app.status;
+          const updatedData = {
+            ...appData,
+            paidAmount: newPaid,
+            lastPaymentDate: new Date().toISOString(),
+          };
+          const newStatus = isFullyPaid
+            ? "completed"
+            : app.status === "overdue"
+              ? "active"
+              : app.status;
           await db.execute(
             sql`UPDATE "bnpl_applications" SET data = ${JSON.stringify(updatedData)}::jsonb, status = ${newStatus}, updated_at = NOW() WHERE id = ${input.applicationId}`
           );
 
           // Record transaction
-          const [txRecord] = await db.insert(transactions).values({
-            ref,
-            agentId: session.id,
-            type: "BNPL Repayment",
-            amount: String(input.amount),
-            fee: "0",
-            commission: "0",
-            currency: "NGN",
-            channel: "BNPL",
-            status: "success",
-            metadata: {
-              applicationId: input.applicationId,
-              installmentNumber: input.installmentNumber,
-              paidSoFar: newPaid,
-              totalAmount,
-              isFullyPaid,
-            },
-          }).returning();
+          const [txRecord] = await db
+            .insert(transactions)
+            .values({
+              ref,
+              agentId: session.id,
+              type: "BNPL Repayment",
+              amount: String(input.amount),
+              fee: "0",
+              commission: "0",
+              currency: "NGN",
+              channel: "BNPL",
+              status: "success",
+              metadata: {
+                applicationId: input.applicationId,
+                installmentNumber: input.installmentNumber,
+                paidSoFar: newPaid,
+                totalAmount,
+                isFullyPaid,
+              },
+            })
+            .returning();
 
           // GL double-entry: Debit BNPL Receivable, Credit Agent Float
           await db.insert(gl_journal_entries).values({
@@ -486,16 +511,40 @@ export const bnplEngineRouter = router({
 
           // TigerBeetle dual-ledger
           tbCreateTransfer({
-            debitAccountId: "2004", creditAccountId: "2001",
+            debitAccountId: "2004",
+            creditAccountId: "2001",
             amount: Math.round(input.amount * 100),
-            ref, txType: "bnpl_repayment", agentCode: session.agentCode,
+            ref,
+            txType: "bnpl_repayment",
+            agentCode: session.agentCode,
           }).catch(() => {});
 
           // Fluvio + Dapr + Redis + Lakehouse
-          publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "bnpl_repayment", timestamp: Date.now() }).catch(() => {});
-          dapr.publishEvent("pubsub", "bnpl.repayment.completed", { ref, applicationId: input.applicationId, amount: input.amount, isFullyPaid }).catch(() => {});
+          publishTxToFluvio({
+            txRef: ref,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "bnpl_repayment",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "bnpl.repayment.completed", {
+              ref,
+              applicationId: input.applicationId,
+              amount: input.amount,
+              isFullyPaid,
+            })
+            .catch(() => {});
           cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
-          ingestToLakehouse("bnpl_repayments", { ref, applicationId: input.applicationId, amount: input.amount, totalPaid: newPaid, isFullyPaid, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
+          ingestToLakehouse("bnpl_repayments", {
+            ref,
+            applicationId: input.applicationId,
+            amount: input.amount,
+            totalPaid: newPaid,
+            isFullyPaid,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
 
           writeAuditLog({
             agentId: session.id,
@@ -504,7 +553,11 @@ export const bnplEngineRouter = router({
             resource: "bnpl",
             resourceId: ref,
             status: "success",
-            metadata: { applicationId: input.applicationId, amount: input.amount, isFullyPaid },
+            metadata: {
+              applicationId: input.applicationId,
+              amount: input.amount,
+              isFullyPaid,
+            },
           }).catch(() => {});
 
           return {
@@ -535,7 +588,10 @@ export const bnplEngineRouter = router({
       const processed: { id: number; penalty: number }[] = [];
 
       for (const app of overdueApps) {
-        const appData = typeof app.data === "string" ? JSON.parse(app.data) : (app.data ?? {});
+        const appData =
+          typeof app.data === "string"
+            ? JSON.parse(app.data)
+            : (app.data ?? {});
         const totalAmount = Number(appData.amount ?? 0);
         const paidAmount = Number(appData.paidAmount ?? 0);
         const outstanding = totalAmount - paidAmount;

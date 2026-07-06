@@ -25,7 +25,7 @@ function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
+    request.onupgradeneeded = event => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
@@ -72,7 +72,10 @@ export async function getQueuedTransactions(): Promise<QueuedTransaction[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const txn = db.transaction(STORE_NAME, "readonly");
-    const request = txn.objectStore(STORE_NAME).index("status").getAll("queued");
+    const request = txn
+      .objectStore(STORE_NAME)
+      .index("status")
+      .getAll("queued");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -101,7 +104,9 @@ export async function syncQueuedTransactions(): Promise<{
 }> {
   const db = await openDB();
   const queued = await getQueuedTransactions();
-  let synced = 0, failed = 0, conflicts = 0;
+  let synced = 0,
+    failed = 0,
+    conflicts = 0;
 
   for (const tx of queued) {
     try {
@@ -156,10 +161,12 @@ export async function clearSyncedTransactions(): Promise<number> {
   return new Promise((resolve, reject) => {
     const txn = db.transaction(STORE_NAME, "readwrite");
     const store = txn.objectStore(STORE_NAME);
-    const request = store.index("status").openCursor(IDBKeyRange.only("synced"));
+    const request = store
+      .index("status")
+      .openCursor(IDBKeyRange.only("synced"));
     let deleted = 0;
 
-    request.onsuccess = (event) => {
+    request.onsuccess = event => {
       const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
       if (cursor) {
         if (cursor.value.syncedAt < cutoff) {

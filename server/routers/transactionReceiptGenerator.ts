@@ -95,18 +95,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtransactionReceiptGeneratorMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `transactions.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -130,10 +131,17 @@ async function publishtransactionReceiptGeneratorMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("transactions", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("transactions", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const transactionReceiptGeneratorRouter = router({
@@ -257,8 +265,11 @@ export const transactionReceiptGeneratorRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishtransactionReceiptGeneratorMiddleware("createTemplate", `${Date.now()}`, { action: "createTemplate" }).catch(() => {});
-
+        await publishtransactionReceiptGeneratorMiddleware(
+          "createTemplate",
+          `${Date.now()}`,
+          { action: "createTemplate" }
+        ).catch(() => {});
 
         return { success: true, templateId };
       } catch (error) {
@@ -288,9 +299,13 @@ export const transactionReceiptGeneratorRouter = router({
           .limit(1);
         if (txRows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishtransactionReceiptGeneratorMiddleware("generateReceipt", `${Date.now()}`, { action: "generateReceipt" }).catch(() => {});
+          await publishtransactionReceiptGeneratorMiddleware(
+            "generateReceipt",
+            `${Date.now()}`,
+            { action: "generateReceipt" }
+          ).catch(() => {});
 
-          return { success: false, error: "Transaction not found" };
+        return { success: false, error: "Transaction not found" };
         const tx = txRows[0];
         const receiptId = "RCT-" + crypto.randomUUID().toUpperCase();
         await db.insert(auditLog).values({

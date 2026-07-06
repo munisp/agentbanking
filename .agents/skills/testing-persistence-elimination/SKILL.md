@@ -6,16 +6,20 @@ description: Test that in-memory state has been eliminated from polyglot service
 # Testing Persistence Elimination
 
 ## Overview
+
 When services migrate from in-memory state to PostgreSQL, both sides must be verified:
+
 1. **Negative proof**: No mutable module-level state patterns remain
 2. **Positive proof**: All state operations route through DB queries
 
 ## Devin Secrets Needed
+
 - `DATABASE_URL` — For runtime validation (optional; structural testing works without it)
 
 ## Testing Approach (Shell-Based Structural Validation)
 
 ### Go — Detect In-Memory State
+
 ```bash
 # Mutable module-level maps/slices (exclude static config like allPermissions)
 grep -n "^var.*map\[" service.go | grep -v "allPermissions\|allRoles\|incompatiblePairs"
@@ -23,6 +27,7 @@ grep -n "^var.*map\[" service.go | grep -v "allPermissions\|allRoles\|incompatib
 ```
 
 ### Go — Verify PostgreSQL
+
 ```bash
 # Must have all of: database/sql import, lib/pq driver, initDB(), and query calls
 grep -c '"database/sql"' service.go       # >= 1
@@ -31,6 +36,7 @@ grep -c 'db.BeginTx' service.go           # >= 1 (for transactional writes)
 ```
 
 ### Rust — Detect In-Memory State
+
 ```bash
 # Mutex<Vec<...>> or static mut or lazy_static are red flags
 grep -n "Mutex\|static mut\|lazy_static" src/main.rs
@@ -38,6 +44,7 @@ grep -n "Mutex\|static mut\|lazy_static" src/main.rs
 ```
 
 ### Rust — Verify PostgreSQL
+
 ```bash
 grep -c 'use sqlx' src/main.rs            # >= 1
 grep -c 'PgPool' src/main.rs              # >= 1 (in AppState)
@@ -45,6 +52,7 @@ grep -c 'sqlx::query' src/main.rs         # >= 3 (one per handler minimum)
 ```
 
 ### Python — Detect In-Memory State
+
 ```bash
 # Module-level mutable assignments (dicts, lists, sets used as stores)
 grep -n "^[a-z_]*: dict\|^[a-z_]*: list\|^[a-z_]*: set\|^[a-z_]* = {}\|^[a-z_]* = \[\]\|^[a-z_]* = set()" main.py
@@ -52,6 +60,7 @@ grep -n "^[a-z_]*: dict\|^[a-z_]*: list\|^[a-z_]*: set\|^[a-z_]* = {}\|^[a-z_]* 
 ```
 
 ### Python — Verify PostgreSQL
+
 ```bash
 grep -c 'import asyncpg\|import psycopg' main.py  # >= 1
 grep -c 'create_pool\|connect(' main.py            # >= 1
@@ -59,6 +68,7 @@ grep -c 'conn.execute\|conn.fetch\|conn.fetchrow\|conn.fetchval' main.py  # >= 1
 ```
 
 ### TypeScript — Detect In-Memory State
+
 ```bash
 # Module-level Maps, arrays, or Sets used as data stores
 grep -n "new Map<\|const.*Map<\|const.*\[\] =" middleware.ts | grep -v "//\|import"
@@ -66,6 +76,7 @@ grep -n "new Map<\|const.*Map<\|const.*\[\] =" middleware.ts | grep -v "//\|impo
 ```
 
 ### TypeScript — Verify PostgreSQL
+
 ```bash
 # Each persistence function must have db.execute calls
 for fn in functionName1 functionName2; do
@@ -75,7 +86,9 @@ done
 ```
 
 ### Async Correctness
+
 When functions change from sync to async, ALL callers must be updated:
+
 ```bash
 # Find all call sites and verify they use await
 grep -n "functionName(" router.ts | grep -v "import\|from" | grep -v "await"
@@ -90,6 +103,7 @@ grep -n "functionName(" router.ts | grep -v "import\|from" | grep -v "await"
 - **Rust `web::Data<AppState>`**: If `AppState` contains only `PgPool` + config, it's fine. Red flag: any `Mutex<Vec<...>>` or `RwLock<HashMap<...>>` inside it.
 
 ## CI Checks
+
 - `Validate DB Migrations` CI job verifies the SQL migration files are syntactically valid
 - TypeScript compilation: `npx tsc --noEmit` (6 pre-existing errors in react-i18next/@dnd-kit are expected)
 - Test suite: `npx vitest run` (5-7 pre-existing failures in db-performance/sprint46/middleware-runtime are expected)

@@ -83,18 +83,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishwebhookManagementMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `management.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -118,10 +119,17 @@ async function publishwebhookManagementMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("management", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("management", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const webhookManagementRouter = router({
@@ -318,8 +326,11 @@ export const webhookManagementRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishwebhookManagementMiddleware("createWebhook", `${Date.now()}`, { action: "createWebhook" }).catch(() => {});
-
+        await publishwebhookManagementMiddleware(
+          "createWebhook",
+          `${Date.now()}`,
+          { action: "createWebhook" }
+        ).catch(() => {});
 
         return {
           id: `WH-${sub.id}`,
@@ -365,7 +376,11 @@ export const webhookManagementRouter = router({
           .set(updates)
           .where(eq(webhookEndpoints.id, id));
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("updateWebhook", `${Date.now()}`, { action: "updateWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "updateWebhook",
+          `${Date.now()}`,
+          { action: "updateWebhook" }
+        ).catch(() => {});
 
         return { success: true, webhookId: input.webhookId };
       } catch (error) {
@@ -387,7 +402,11 @@ export const webhookManagementRouter = router({
         if (!db || !id) throw new Error("Database unavailable");
         await db.delete(webhookEndpoints).where(eq(webhookEndpoints.id, id));
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("deleteWebhook", `${Date.now()}`, { action: "deleteWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "deleteWebhook",
+          `${Date.now()}`,
+          { action: "deleteWebhook" }
+        ).catch(() => {});
 
         return { success: true, webhookId: input.webhookId };
       } catch (error) {
@@ -422,7 +441,11 @@ export const webhookManagementRouter = router({
           });
         }
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "testWebhook",
+          `${Date.now()}`,
+          { action: "testWebhook" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -465,7 +488,11 @@ export const webhookManagementRouter = router({
           }
         }
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "retryFailed",
+          `${Date.now()}`,
+          { action: "retryFailed" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -535,7 +562,11 @@ export const webhookManagementRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("createEndpoint", `${Date.now()}`, { action: "createEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "createEndpoint",
+          `${Date.now()}`,
+          { action: "createEndpoint" }
+        ).catch(() => {});
 
         return {
           id: ep.id,
@@ -577,7 +608,11 @@ export const webhookManagementRouter = router({
           .set(updates)
           .where(eq(webhookEndpoints.id, input.endpointId));
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("updateEndpoint", `${Date.now()}`, { action: "updateEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "updateEndpoint",
+          `${Date.now()}`,
+          { action: "updateEndpoint" }
+        ).catch(() => {});
 
         return { success: true, endpointId: input.endpointId };
       } catch (error) {
@@ -598,7 +633,11 @@ export const webhookManagementRouter = router({
           .delete(webhookEndpoints)
           .where(eq(webhookEndpoints.id, input.endpointId));
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("deleteEndpoint", `${Date.now()}`, { action: "deleteEndpoint" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "deleteEndpoint",
+          `${Date.now()}`,
+          { action: "deleteEndpoint" }
+        ).catch(() => {});
 
         return { success: true, endpointId: input.endpointId };
       } catch (error) {
@@ -666,7 +705,11 @@ export const webhookManagementRouter = router({
           })
           .where(eq(webhookDeliveries.id, input.deliveryId));
         // Middleware fan-out (fail-open)
-        await publishwebhookManagementMiddleware("retryDelivery", `${Date.now()}`, { action: "retryDelivery" }).catch(() => {});
+        await publishwebhookManagementMiddleware(
+          "retryDelivery",
+          `${Date.now()}`,
+          { action: "retryDelivery" }
+        ).catch(() => {});
 
         return {
           success: true,

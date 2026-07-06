@@ -7,7 +7,14 @@
  *
  * Learns from usage patterns and auto-upgrades proficiency.
  */
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
 
 type ProficiencyLevel = "beginner" | "intermediate" | "expert";
 
@@ -92,11 +99,21 @@ export function AdaptiveUIProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showGuide = profile.level === "beginner";
-  const showShortcuts = profile.level !== "beginner" && profile.shortcutsEnabled;
+  const showShortcuts =
+    profile.level !== "beginner" && profile.shortcutsEnabled;
   const compactMode = profile.level === "expert";
 
   return (
-    <AdaptiveContext.Provider value={{ profile, updateProfile, showGuide, showShortcuts, compactMode, recordTransaction }}>
+    <AdaptiveContext.Provider
+      value={{
+        profile,
+        updateProfile,
+        showGuide,
+        showShortcuts,
+        compactMode,
+        recordTransaction,
+      }}
+    >
       {children}
     </AdaptiveContext.Provider>
   );

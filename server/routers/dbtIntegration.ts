@@ -128,18 +128,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdbtIntegrationMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -163,10 +164,17 @@ async function publishdbtIntegrationMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const dbtIntegrationRouter = router({
@@ -262,7 +270,9 @@ export const dbtIntegrationRouter = router({
 
   getProjectInfo: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdbtIntegrationMiddleware("getProjectInfo", `${Date.now()}`, { action: "getProjectInfo" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("getProjectInfo", `${Date.now()}`, {
+      action: "getProjectInfo",
+    }).catch(() => {});
 
     return {
       name: "ngapp_analytics",
@@ -274,7 +284,9 @@ export const dbtIntegrationRouter = router({
   }),
   listModels: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdbtIntegrationMiddleware("listModels", `${Date.now()}`, { action: "listModels" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("listModels", `${Date.now()}`, {
+      action: "listModels",
+    }).catch(() => {});
 
     return {
       models: [
@@ -289,13 +301,17 @@ export const dbtIntegrationRouter = router({
   }),
   runTests: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishdbtIntegrationMiddleware("runTests", `${Date.now()}`, { action: "runTests" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("runTests", `${Date.now()}`, {
+      action: "runTests",
+    }).catch(() => {});
 
     return { passed: 118, failed: 2, total: 120, duration: 45 };
   }),
   getLineage: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdbtIntegrationMiddleware("getLineage", `${Date.now()}`, { action: "getLineage" }).catch(() => {});
+    await publishdbtIntegrationMiddleware("getLineage", `${Date.now()}`, {
+      action: "getLineage",
+    }).catch(() => {});
 
     return {
       nodes: [{ name: "fct_transactions", type: "model" }],
@@ -306,7 +322,9 @@ export const dbtIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       // Middleware fan-out (fail-open)
-      await publishdbtIntegrationMiddleware("projectInfo", `${Date.now()}`, { action: "projectInfo" }).catch(() => {});
+      await publishdbtIntegrationMiddleware("projectInfo", `${Date.now()}`, {
+        action: "projectInfo",
+      }).catch(() => {});
 
       return { items: [], total: 0, status: "ok" };
     }),
@@ -314,7 +332,9 @@ export const dbtIntegrationRouter = router({
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdbtIntegrationMiddleware("triggerRun", `${Date.now()}`, { action: "triggerRun" }).catch(() => {});
+      await publishdbtIntegrationMiddleware("triggerRun", `${Date.now()}`, {
+        action: "triggerRun",
+      }).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

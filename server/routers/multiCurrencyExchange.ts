@@ -41,53 +41,76 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 
 const FX_RATES: Record<string, number> = {
   // NGN corridors (Africa's largest economy)
-  "NGN-USD": 0.00063, "USD-NGN": 1580,
-  "NGN-EUR": 0.00058, "EUR-NGN": 1720,
-  "NGN-GBP": 0.00050, "GBP-NGN": 2000,
-  "NGN-GHS": 0.0075,  "GHS-NGN": 133,
-  "NGN-XOF": 0.37,    "XOF-NGN": 2.70,
-  "NGN-KES": 0.085,   "KES-NGN": 11.76,
-  "NGN-ZAR": 0.012,   "ZAR-NGN": 83.33,
-  "NGN-EGP": 0.031,   "EGP-NGN": 32.26,
+  "NGN-USD": 0.00063,
+  "USD-NGN": 1580,
+  "NGN-EUR": 0.00058,
+  "EUR-NGN": 1720,
+  "NGN-GBP": 0.0005,
+  "GBP-NGN": 2000,
+  "NGN-GHS": 0.0075,
+  "GHS-NGN": 133,
+  "NGN-XOF": 0.37,
+  "XOF-NGN": 2.7,
+  "NGN-KES": 0.085,
+  "KES-NGN": 11.76,
+  "NGN-ZAR": 0.012,
+  "ZAR-NGN": 83.33,
+  "NGN-EGP": 0.031,
+  "EGP-NGN": 32.26,
   // Major cross-corridors
-  "USD-EUR": 0.92,    "EUR-USD": 1.09,
-  "USD-GBP": 0.79,    "GBP-USD": 1.27,
-  "USD-GHS": 11.90,   "GHS-USD": 0.084,
-  "USD-KES": 135.0,   "KES-USD": 0.0074,
-  "USD-ZAR": 18.5,    "ZAR-USD": 0.054,
-  "EUR-GBP": 0.86,    "GBP-EUR": 1.16,
+  "USD-EUR": 0.92,
+  "EUR-USD": 1.09,
+  "USD-GBP": 0.79,
+  "GBP-USD": 1.27,
+  "USD-GHS": 11.9,
+  "GHS-USD": 0.084,
+  "USD-KES": 135.0,
+  "KES-USD": 0.0074,
+  "USD-ZAR": 18.5,
+  "ZAR-USD": 0.054,
+  "EUR-GBP": 0.86,
+  "GBP-EUR": 1.16,
   // Africa intra-regional
-  "GHS-KES": 11.34,   "KES-GHS": 0.088,
-  "ZAR-KES": 7.30,    "KES-ZAR": 0.137,
-  "XOF-GHS": 0.020,   "GHS-XOF": 49.5,
+  "GHS-KES": 11.34,
+  "KES-GHS": 0.088,
+  "ZAR-KES": 7.3,
+  "KES-ZAR": 0.137,
+  "XOF-GHS": 0.02,
+  "GHS-XOF": 49.5,
   // CBDC / stablecoin
-  "NGN-USDT": 0.00063, "USDT-NGN": 1580,
-  "NGN-USDC": 0.00063, "USDC-NGN": 1580,
-  "USD-USDT": 1.0,     "USDT-USD": 1.0,
+  "NGN-USDT": 0.00063,
+  "USDT-NGN": 1580,
+  "NGN-USDC": 0.00063,
+  "USDC-NGN": 1580,
+  "USD-USDT": 1.0,
+  "USDT-USD": 1.0,
   // Additional African corridors
-  "NGN-TZS": 1.58,    "TZS-NGN": 0.63,
-  "NGN-UGX": 2.32,    "UGX-NGN": 0.43,
-  "NGN-RWF": 0.79,    "RWF-NGN": 1.27,
-  "NGN-ZMW": 0.017,   "ZMW-NGN": 59.0,
+  "NGN-TZS": 1.58,
+  "TZS-NGN": 0.63,
+  "NGN-UGX": 2.32,
+  "UGX-NGN": 0.43,
+  "NGN-RWF": 0.79,
+  "RWF-NGN": 1.27,
+  "NGN-ZMW": 0.017,
+  "ZMW-NGN": 59.0,
 };
 // 15 currencies: NGN, USD, EUR, GBP, GHS, XOF, KES, ZAR, EGP, USDT, USDC, TZS, UGX, RWF, ZMW
 // 48 active pairs (bidirectional corridors)
 
-const getRates = protectedProcedure
-  .query(async () => {
-    const rates = Object.entries(FX_RATES).map(([pair, rate]) => {
-      const [from, to] = pair.split("-");
-      return {
-        pair,
-        fromCurrency: from,
-        toCurrency: to,
-        rate,
-        inverseRate: Math.round((1 / rate) * 10000) / 10000,
-        updatedAt: new Date().toISOString(),
-      };
-    });
-    return { rates, total: rates.length };
+const getRates = protectedProcedure.query(async () => {
+  const rates = Object.entries(FX_RATES).map(([pair, rate]) => {
+    const [from, to] = pair.split("-");
+    return {
+      pair,
+      fromCurrency: from,
+      toCurrency: to,
+      rate,
+      inverseRate: Math.round((1 / rate) * 10000) / 10000,
+      updatedAt: new Date().toISOString(),
+    };
   });
+  return { rates, total: rates.length };
+});
 
 const convert = protectedProcedure
   .input(
@@ -116,7 +139,7 @@ const convert = protectedProcedure
     const ref = `FX-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
     const idempFn = async () => {
-      return withTransaction(async (tx) => {
+      return withTransaction(async tx => {
         const db = tx ?? (await getDb())!;
 
         // Lock agent row
@@ -124,7 +147,11 @@ const convert = protectedProcedure
           sql`SELECT float_balance, float_locked FROM agents WHERE id = ${session.id} FOR UPDATE`
         );
         const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
-        if (!agentRow) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        if (!agentRow)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Agent not found",
+          });
         if (Number(agentRow.float_balance) < input.amount) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -201,16 +228,43 @@ const convert = protectedProcedure
 
     // TigerBeetle dual-ledger
     tbCreateTransfer({
-      debitAccountId: "2001", creditAccountId: "2001",
+      debitAccountId: "2001",
+      creditAccountId: "2001",
       amount: Math.round(input.amount * 100),
-      ref, txType: "fx_exchange", agentCode: session.agentCode,
+      ref,
+      txType: "fx_exchange",
+      agentCode: session.agentCode,
     }).catch(() => {});
 
     // Fluvio + Dapr + Redis + Lakehouse
-    publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "fx_exchange", timestamp: Date.now() }).catch(() => {});
-    dapr.publishEvent("pubsub", "fx.exchange.completed", { ref, fromCurrency: input.fromCurrency, toCurrency: input.toCurrency, amount: input.amount, convertedAmount }).catch(() => {});
+    publishTxToFluvio({
+      txRef: ref,
+      agentCode: session.agentCode,
+      amount: input.amount,
+      type: "fx_exchange",
+      timestamp: Date.now(),
+    }).catch(() => {});
+    dapr
+      .publishEvent("pubsub", "fx.exchange.completed", {
+        ref,
+        fromCurrency: input.fromCurrency,
+        toCurrency: input.toCurrency,
+        amount: input.amount,
+        convertedAmount,
+      })
+      .catch(() => {});
     cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
-    ingestToLakehouse("fx_exchanges", { ref, fromCurrency: input.fromCurrency, toCurrency: input.toCurrency, amount: input.amount, convertedAmount, rate, fee: feeResult.fee, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
+    ingestToLakehouse("fx_exchanges", {
+      ref,
+      fromCurrency: input.fromCurrency,
+      toCurrency: input.toCurrency,
+      amount: input.amount,
+      convertedAmount,
+      rate,
+      fee: feeResult.fee,
+      agentId: session.id,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
 
     return {
       success: true,
@@ -339,7 +393,12 @@ const getCorridors = protectedProcedure
           const [from, to] = pair.split("-");
           return { pair, fromCurrency: from, toCurrency: to, rate };
         });
-      return { items: corridors, total: Object.keys(FX_RATES).length, page: input.page ?? 1, limit: lim };
+      return {
+        items: corridors,
+        total: Object.keys(FX_RATES).length,
+        page: input.page ?? 1,
+        limit: lim,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -388,7 +447,11 @@ const setSpread = protectedProcedure
           action: "mutation",
           resource: "multiCurrencyExchange",
           status: "success",
-          metadata: { pair, spread, input: JSON.stringify(input).slice(0, 500) },
+          metadata: {
+            pair,
+            spread,
+            input: JSON.stringify(input).slice(0, 500),
+          },
         });
         return {
           success: true,

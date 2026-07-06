@@ -27,7 +27,6 @@ import {
 } from "../lib/domainCalculations";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -203,7 +202,18 @@ export const stablecoinRailsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
 
       // Enforce STATUS_TRANSITIONS state machine
       if (typeof input === "object" && "status" in input) {
@@ -292,25 +302,52 @@ export const stablecoinRailsRouter = router({
           status: "posted",
         });
 
-        publishEvent("pos.transactions.created", ref, {
-          type: "stablecoin_created",
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "stablecoin_created",
+            walletId: id,
+            amount: txAmount,
+            walletAddress: input.data.walletAddress,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: "system" }
+        ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "1003",
+          creditAccountId: "2001",
+          amount: Math.round(txAmount * 100),
+          ref,
+          txType: "stablecoin_creation",
+          agentCode: "system",
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({
+          txRef: ref,
+          agentCode: "system",
+          amount: txAmount,
+          type: "stablecoin_creation",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "stablecoin.created", {
+            ref,
+            walletId: id,
+            amount: txAmount,
+            walletAddress: input.data.walletAddress,
+          })
+          .catch(() => {});
+        ingestToLakehouse("stablecoin_wallets", {
+          ref,
           walletId: id,
           amount: txAmount,
           walletAddress: input.data.walletAddress,
           timestamp: new Date().toISOString(),
-        }, { agentCode: "system" }).catch(() => {});
-
-        // TigerBeetle dual-ledger
-        tbCreateTransfer({
-          debitAccountId: "1003", creditAccountId: "2001",
-          amount: Math.round(txAmount * 100),
-          ref, txType: "stablecoin_creation", agentCode: "system",
         }).catch(() => {});
-
-        // Fluvio + Dapr + Lakehouse
-        publishTxToFluvio({ txRef: ref, agentCode: "system", amount: txAmount, type: "stablecoin_creation", timestamp: Date.now() }).catch(() => {});
-        dapr.publishEvent("pubsub", "stablecoin.created", { ref, walletId: id, amount: txAmount, walletAddress: input.data.walletAddress }).catch(() => {});
-        ingestToLakehouse("stablecoin_wallets", { ref, walletId: id, amount: txAmount, walletAddress: input.data.walletAddress, timestamp: new Date().toISOString() }).catch(() => {});
       }
 
       return { id, status: "created" };
@@ -342,7 +379,18 @@ export const stablecoinRailsRouter = router({
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
 
       const validStatuses = [
@@ -398,14 +446,27 @@ export const stablecoinRailsRouter = router({
   // ── Stablecoin Mutations (mint, burn, transfer, on/off ramp) ──
 
   mint: protectedProcedure
-    .input(z.object({
-      walletId: z.number(),
-      amount: z.number().positive(),
-      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
-      sourceRef: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        walletId: z.number(),
+        amount: z.number().positive(),
+        currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+        sourceRef: z.string().min(1),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
       const ref = `MINT-${input.walletId}-${Date.now()}`;
 
@@ -414,7 +475,10 @@ export const stablecoinRailsRouter = router({
         sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active'`
       );
       if (!(wallet as any).rows?.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Active wallet not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Active wallet not found",
+        });
       }
 
       const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
@@ -429,35 +493,96 @@ export const stablecoinRailsRouter = router({
       await db.insert(gl_journal_entries).values({
         entryNumber: `JE-${ref}`,
         description: `Mint ${input.amount} ${input.currency} to wallet ${input.walletId}`,
-        debitAccountId: 1004, creditAccountId: 3001,
+        debitAccountId: 1004,
+        creditAccountId: 3001,
         amount: Math.round(input.amount * 100),
         currency: input.currency,
-        referenceType: "stablecoin_mint", referenceId: ref,
+        referenceType: "stablecoin_mint",
+        referenceId: ref,
         postedBy: (ctx as any)?.user?.agentCode ?? "system",
         status: "posted",
       });
 
-      await writeAuditLog({ agentId: (ctx as any)?.user?.id ?? 0, agentCode: (ctx as any)?.user?.agentCode ?? "system", action: "STABLECOIN_MINT", resource: "stablecoinRails", resourceId: String(input.walletId), status: "success", metadata: { amount: input.amount, currency: input.currency, ref } });
+      await writeAuditLog({
+        agentId: (ctx as any)?.user?.id ?? 0,
+        agentCode: (ctx as any)?.user?.agentCode ?? "system",
+        action: "STABLECOIN_MINT",
+        resource: "stablecoinRails",
+        resourceId: String(input.walletId),
+        status: "success",
+        metadata: { amount: input.amount, currency: input.currency, ref },
+      });
 
       // Middleware fan-out
-      publishEvent("stablecoin.minted", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance }).catch(() => {});
-      tbCreateTransfer({ debitAccountId: "1004", creditAccountId: "3001", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_mint", agentCode: "system" }).catch(() => {});
-      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_mint", timestamp: Date.now() }).catch(() => {});
-      dapr.publishEvent("pubsub", "stablecoin.minted", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency }).catch(() => {});
-      ingestToLakehouse("stablecoin_mints", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
+      publishEvent("stablecoin.minted", ref, {
+        walletId: input.walletId,
+        amount: input.amount,
+        currency: input.currency,
+        newBalance,
+      }).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: "1004",
+        creditAccountId: "3001",
+        amount: Math.round(input.amount * 100),
+        ref,
+        txType: "stablecoin_mint",
+        agentCode: "system",
+      }).catch(() => {});
+      publishTxToFluvio({
+        txRef: ref,
+        agentCode: "system",
+        amount: input.amount,
+        type: "stablecoin_mint",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "stablecoin.minted", {
+          ref,
+          walletId: input.walletId,
+          amount: input.amount,
+          currency: input.currency,
+        })
+        .catch(() => {});
+      ingestToLakehouse("stablecoin_mints", {
+        ref,
+        walletId: input.walletId,
+        amount: input.amount,
+        currency: input.currency,
+        newBalance,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
-      return { ref, walletId: input.walletId, amount: input.amount, newBalance, currency: input.currency };
+      return {
+        ref,
+        walletId: input.walletId,
+        amount: input.amount,
+        newBalance,
+        currency: input.currency,
+      };
     }),
 
   burn: protectedProcedure
-    .input(z.object({
-      walletId: z.number(),
-      amount: z.number().positive(),
-      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
-      reason: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        walletId: z.number(),
+        amount: z.number().positive(),
+        currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+        reason: z.string().min(1),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
       const ref = `BURN-${input.walletId}-${Date.now()}`;
 
@@ -465,12 +590,18 @@ export const stablecoinRailsRouter = router({
         sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active'`
       );
       if (!(wallet as any).rows?.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Active wallet not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Active wallet not found",
+        });
       }
 
       const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
       if (currentBalance < input.amount) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${currentBalance} < ${input.amount}` });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Insufficient balance: ${currentBalance} < ${input.amount}`,
+        });
       }
 
       const newBalance = currentBalance - input.amount;
@@ -481,33 +612,85 @@ export const stablecoinRailsRouter = router({
       await db.insert(gl_journal_entries).values({
         entryNumber: `JE-${ref}`,
         description: `Burn ${input.amount} ${input.currency} from wallet ${input.walletId}: ${input.reason}`,
-        debitAccountId: 3001, creditAccountId: 1004,
+        debitAccountId: 3001,
+        creditAccountId: 1004,
         amount: Math.round(input.amount * 100),
         currency: input.currency,
-        referenceType: "stablecoin_burn", referenceId: ref,
+        referenceType: "stablecoin_burn",
+        referenceId: ref,
         postedBy: (ctx as any)?.user?.agentCode ?? "system",
         status: "posted",
       });
 
-      publishEvent("stablecoin.burned", ref, { walletId: input.walletId, amount: input.amount, currency: input.currency, reason: input.reason }).catch(() => {});
-      tbCreateTransfer({ debitAccountId: "3001", creditAccountId: "1004", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_burn", agentCode: "system" }).catch(() => {});
-      publishTxToFluvio({ txRef: ref, agentCode: "system", amount: input.amount, type: "stablecoin_burn", timestamp: Date.now() }).catch(() => {});
-      dapr.publishEvent("pubsub", "stablecoin.burned", { ref, walletId: input.walletId, amount: input.amount }).catch(() => {});
-      ingestToLakehouse("stablecoin_burns", { ref, walletId: input.walletId, amount: input.amount, currency: input.currency, newBalance, timestamp: new Date().toISOString() }).catch(() => {});
+      publishEvent("stablecoin.burned", ref, {
+        walletId: input.walletId,
+        amount: input.amount,
+        currency: input.currency,
+        reason: input.reason,
+      }).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: "3001",
+        creditAccountId: "1004",
+        amount: Math.round(input.amount * 100),
+        ref,
+        txType: "stablecoin_burn",
+        agentCode: "system",
+      }).catch(() => {});
+      publishTxToFluvio({
+        txRef: ref,
+        agentCode: "system",
+        amount: input.amount,
+        type: "stablecoin_burn",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "stablecoin.burned", {
+          ref,
+          walletId: input.walletId,
+          amount: input.amount,
+        })
+        .catch(() => {});
+      ingestToLakehouse("stablecoin_burns", {
+        ref,
+        walletId: input.walletId,
+        amount: input.amount,
+        currency: input.currency,
+        newBalance,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
-      return { ref, walletId: input.walletId, amount: input.amount, newBalance, currency: input.currency };
+      return {
+        ref,
+        walletId: input.walletId,
+        amount: input.amount,
+        newBalance,
+        currency: input.currency,
+      };
     }),
 
   transfer: protectedProcedure
-    .input(z.object({
-      fromWalletId: z.number(),
-      toWalletId: z.number(),
-      amount: z.number().positive(),
-      currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
-      memo: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        fromWalletId: z.number(),
+        toWalletId: z.number(),
+        amount: z.number().positive(),
+        currency: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+        memo: z.string().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
       const ref = `TXF-${input.fromWalletId}-${input.toWalletId}-${Date.now()}`;
 
@@ -516,19 +699,30 @@ export const stablecoinRailsRouter = router({
         sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.fromWalletId} AND status = 'active' FOR UPDATE`
       );
       if (!(fromWallet as any).rows?.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Source wallet not found or inactive" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Source wallet not found or inactive",
+        });
       }
 
       const toWallet = await db.execute(
         sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.toWalletId} AND status = 'active' FOR UPDATE`
       );
       if (!(toWallet as any).rows?.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Destination wallet not found or inactive" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Destination wallet not found or inactive",
+        });
       }
 
-      const fromBalance = Number((fromWallet as any).rows[0].data?.balance ?? 0);
+      const fromBalance = Number(
+        (fromWallet as any).rows[0].data?.balance ?? 0
+      );
       if (fromBalance < input.amount) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${fromBalance} < ${input.amount}` });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Insufficient balance: ${fromBalance} < ${input.amount}`,
+        });
       }
 
       const fee = calculateFee(input.amount, "transfer");
@@ -537,39 +731,100 @@ export const stablecoinRailsRouter = router({
       const toBalance = Number((toWallet as any).rows[0].data?.balance ?? 0);
       const newToBalance = toBalance + netAmount;
 
-      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newFromBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.fromWalletId}`);
-      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newToBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.toWalletId}`);
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newFromBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.fromWalletId}`
+      );
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newToBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.toWalletId}`
+      );
 
       await db.insert(gl_journal_entries).values({
         entryNumber: `JE-${ref}`,
         description: `Transfer ${input.amount} ${input.currency} from wallet ${input.fromWalletId} to ${input.toWalletId}`,
-        debitAccountId: input.fromWalletId, creditAccountId: input.toWalletId,
+        debitAccountId: input.fromWalletId,
+        creditAccountId: input.toWalletId,
         amount: Math.round(input.amount * 100),
         currency: input.currency,
-        referenceType: "stablecoin_transfer", referenceId: ref,
+        referenceType: "stablecoin_transfer",
+        referenceId: ref,
         postedBy: (ctx as any)?.user?.agentCode ?? "system",
         status: "posted",
       });
 
-      publishEvent("stablecoin.transferred", ref, { fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, currency: input.currency }).catch(() => {});
-      tbCreateTransfer({ debitAccountId: String(input.fromWalletId), creditAccountId: String(input.toWalletId), amount: Math.round(input.amount * 100), ref, txType: "stablecoin_transfer", agentCode: "system" }).catch(() => {});
-      dapr.publishEvent("pubsub", "stablecoin.transferred", { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount }).catch(() => {});
-      ingestToLakehouse("stablecoin_transfers", { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, currency: input.currency, timestamp: new Date().toISOString() }).catch(() => {});
+      publishEvent("stablecoin.transferred", ref, {
+        fromWalletId: input.fromWalletId,
+        toWalletId: input.toWalletId,
+        amount: input.amount,
+        fee: fee.fee,
+        currency: input.currency,
+      }).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: String(input.fromWalletId),
+        creditAccountId: String(input.toWalletId),
+        amount: Math.round(input.amount * 100),
+        ref,
+        txType: "stablecoin_transfer",
+        agentCode: "system",
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "stablecoin.transferred", {
+          ref,
+          fromWalletId: input.fromWalletId,
+          toWalletId: input.toWalletId,
+          amount: input.amount,
+        })
+        .catch(() => {});
+      ingestToLakehouse("stablecoin_transfers", {
+        ref,
+        fromWalletId: input.fromWalletId,
+        toWalletId: input.toWalletId,
+        amount: input.amount,
+        fee: fee.fee,
+        currency: input.currency,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
-      return { ref, fromWalletId: input.fromWalletId, toWalletId: input.toWalletId, amount: input.amount, fee: fee.fee, netAmount, currency: input.currency };
+      return {
+        ref,
+        fromWalletId: input.fromWalletId,
+        toWalletId: input.toWalletId,
+        amount: input.amount,
+        fee: fee.fee,
+        netAmount,
+        currency: input.currency,
+      };
     }),
 
   onRamp: protectedProcedure
-    .input(z.object({
-      walletId: z.number(),
-      amount: z.number().positive(),
-      fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
-      stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
-      provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax", "bank_transfer"]),
-      paymentRef: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        walletId: z.number(),
+        amount: z.number().positive(),
+        fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
+        stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+        provider: z.enum([
+          "paystack",
+          "flutterwave",
+          "yellowcard",
+          "quidax",
+          "bank_transfer",
+        ]),
+        paymentRef: z.string().min(1),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
       const ref = `ONRAMP-${input.walletId}-${Date.now()}`;
 
@@ -586,171 +841,373 @@ export const stablecoinRailsRouter = router({
         try {
           const verifyUrl = `${providerUrls[input.provider]}/${input.paymentRef}`;
           const verifyRes = await fetch(verifyUrl, {
-            headers: { Authorization: `Bearer ${process.env[`${input.provider.toUpperCase()}_SECRET_KEY`] ?? ""}` },
+            headers: {
+              Authorization: `Bearer ${process.env[`${input.provider.toUpperCase()}_SECRET_KEY`] ?? ""}`,
+            },
             signal: AbortSignal.timeout(5000),
           });
           if (!verifyRes.ok) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Payment verification failed: ${verifyRes.status}` });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Payment verification failed: ${verifyRes.status}`,
+            });
           }
         } catch (err) {
           if (err instanceof TRPCError) throw err;
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Payment provider unreachable: ${(err as Error).message}` });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Payment provider unreachable: ${(err as Error).message}`,
+          });
         }
       }
 
       // FX rate lookup for non-NGN
       let stablecoinAmount = input.amount;
       if (input.fiatCurrency !== "NGN" && input.stablecoin === "cNGN") {
-        const rateRes = await db.execute(sql`SELECT rate FROM "currency_rates" WHERE from_currency = ${input.fiatCurrency} AND to_currency = 'NGN' ORDER BY updated_at DESC LIMIT 1`).catch(() => ({ rows: [] as any[] }));
+        const rateRes = await db
+          .execute(
+            sql`SELECT rate FROM "currency_rates" WHERE from_currency = ${input.fiatCurrency} AND to_currency = 'NGN' ORDER BY updated_at DESC LIMIT 1`
+          )
+          .catch(() => ({ rows: [] as any[] }));
         const rate = Number((rateRes as any).rows?.[0]?.rate ?? 1);
         stablecoinAmount = input.amount * rate;
       }
 
       // Credit wallet
-      const wallet = await db.execute(sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`);
-      if (!(wallet as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+      const wallet = await db.execute(
+        sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`
+      );
+      if (!(wallet as any).rows?.length)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
 
       const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
       const newBalance = currentBalance + stablecoinAmount;
-      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`);
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`
+      );
 
       await db.insert(gl_journal_entries).values({
         entryNumber: `JE-${ref}`,
         description: `On-ramp ${input.amount} ${input.fiatCurrency} → ${stablecoinAmount} ${input.stablecoin} via ${input.provider}`,
-        debitAccountId: 1001, creditAccountId: 3001,
+        debitAccountId: 1001,
+        creditAccountId: 3001,
         amount: Math.round(stablecoinAmount * 100),
         currency: input.stablecoin,
-        referenceType: "stablecoin_onramp", referenceId: ref,
+        referenceType: "stablecoin_onramp",
+        referenceId: ref,
         postedBy: (ctx as any)?.user?.agentCode ?? "system",
         status: "posted",
       });
 
-      publishEvent("stablecoin.minted", ref, { walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, provider: input.provider }).catch(() => {});
-      tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "3001", amount: Math.round(stablecoinAmount * 100), ref, txType: "stablecoin_onramp", agentCode: "system" }).catch(() => {});
-      dapr.publishEvent("pubsub", "stablecoin.onramp", { ref, walletId: input.walletId, fiatAmount: input.amount, stablecoinAmount, provider: input.provider }).catch(() => {});
-      ingestToLakehouse("stablecoin_onramp", { ref, walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, provider: input.provider, timestamp: new Date().toISOString() }).catch(() => {});
+      publishEvent("stablecoin.minted", ref, {
+        walletId: input.walletId,
+        fiatAmount: input.amount,
+        fiatCurrency: input.fiatCurrency,
+        stablecoinAmount,
+        stablecoin: input.stablecoin,
+        provider: input.provider,
+      }).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: "1001",
+        creditAccountId: "3001",
+        amount: Math.round(stablecoinAmount * 100),
+        ref,
+        txType: "stablecoin_onramp",
+        agentCode: "system",
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "stablecoin.onramp", {
+          ref,
+          walletId: input.walletId,
+          fiatAmount: input.amount,
+          stablecoinAmount,
+          provider: input.provider,
+        })
+        .catch(() => {});
+      ingestToLakehouse("stablecoin_onramp", {
+        ref,
+        walletId: input.walletId,
+        fiatAmount: input.amount,
+        fiatCurrency: input.fiatCurrency,
+        stablecoinAmount,
+        stablecoin: input.stablecoin,
+        provider: input.provider,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
-      return { ref, walletId: input.walletId, fiatAmount: input.amount, fiatCurrency: input.fiatCurrency, stablecoinAmount, stablecoin: input.stablecoin, newBalance, provider: input.provider };
+      return {
+        ref,
+        walletId: input.walletId,
+        fiatAmount: input.amount,
+        fiatCurrency: input.fiatCurrency,
+        stablecoinAmount,
+        stablecoin: input.stablecoin,
+        newBalance,
+        provider: input.provider,
+      };
     }),
 
   offRamp: protectedProcedure
-    .input(z.object({
-      walletId: z.number(),
-      amount: z.number().positive(),
-      stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
-      fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
-      bankCode: z.string().min(1),
-      accountNumber: z.string().min(10).max(10),
-      provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax"]),
-    }))
+    .input(
+      z.object({
+        walletId: z.number(),
+        amount: z.number().positive(),
+        stablecoin: z.enum(["USDT", "USDC", "cNGN", "BUSD"]),
+        fiatCurrency: z.enum(["NGN", "USD", "GBP", "EUR"]),
+        bankCode: z.string().min(1),
+        accountNumber: z.string().min(10).max(10),
+        provider: z.enum(["paystack", "flutterwave", "yellowcard", "quidax"]),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "transact",
+      }).catch(() => {});
       const db = (await getDb())!;
       const ref = `OFFRAMP-${input.walletId}-${Date.now()}`;
 
-      const wallet = await db.execute(sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`);
-      if (!(wallet as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+      const wallet = await db.execute(
+        sql`SELECT id, data FROM "stable_wallets" WHERE id = ${input.walletId} AND status = 'active' FOR UPDATE`
+      );
+      if (!(wallet as any).rows?.length)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
 
       const currentBalance = Number((wallet as any).rows[0].data?.balance ?? 0);
-      if (currentBalance < input.amount) throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient balance: ${currentBalance} < ${input.amount}` });
+      if (currentBalance < input.amount)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Insufficient balance: ${currentBalance} < ${input.amount}`,
+        });
 
       const fee = calculateFee(input.amount, "transfer");
       const netAmount = input.amount - fee.fee;
       const newBalance = currentBalance - input.amount;
 
-      await db.execute(sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`);
+      await db.execute(
+        sql`UPDATE "stable_wallets" SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{balance}', ${String(newBalance)}::jsonb), updated_at = NOW() WHERE id = ${input.walletId}`
+      );
 
       await db.insert(gl_journal_entries).values({
         entryNumber: `JE-${ref}`,
         description: `Off-ramp ${input.amount} ${input.stablecoin} → ${netAmount} ${input.fiatCurrency} via ${input.provider}`,
-        debitAccountId: 3001, creditAccountId: 1001,
+        debitAccountId: 3001,
+        creditAccountId: 1001,
         amount: Math.round(input.amount * 100),
         currency: input.stablecoin,
-        referenceType: "stablecoin_offramp", referenceId: ref,
+        referenceType: "stablecoin_offramp",
+        referenceId: ref,
         postedBy: (ctx as any)?.user?.agentCode ?? "system",
         status: "posted",
       });
 
-      publishEvent("stablecoin.burned", ref, { walletId: input.walletId, amount: input.amount, stablecoin: input.stablecoin, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, provider: input.provider }).catch(() => {});
-      tbCreateTransfer({ debitAccountId: "3001", creditAccountId: "1001", amount: Math.round(input.amount * 100), ref, txType: "stablecoin_offramp", agentCode: "system" }).catch(() => {});
-      dapr.publishEvent("pubsub", "stablecoin.offramp", { ref, walletId: input.walletId, amount: input.amount, fiatAmount: netAmount, provider: input.provider }).catch(() => {});
-      ingestToLakehouse("stablecoin_offramp", { ref, walletId: input.walletId, amount: input.amount, stablecoin: input.stablecoin, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, provider: input.provider, timestamp: new Date().toISOString() }).catch(() => {});
+      publishEvent("stablecoin.burned", ref, {
+        walletId: input.walletId,
+        amount: input.amount,
+        stablecoin: input.stablecoin,
+        fiatAmount: netAmount,
+        fiatCurrency: input.fiatCurrency,
+        provider: input.provider,
+      }).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: "3001",
+        creditAccountId: "1001",
+        amount: Math.round(input.amount * 100),
+        ref,
+        txType: "stablecoin_offramp",
+        agentCode: "system",
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "stablecoin.offramp", {
+          ref,
+          walletId: input.walletId,
+          amount: input.amount,
+          fiatAmount: netAmount,
+          provider: input.provider,
+        })
+        .catch(() => {});
+      ingestToLakehouse("stablecoin_offramp", {
+        ref,
+        walletId: input.walletId,
+        amount: input.amount,
+        stablecoin: input.stablecoin,
+        fiatAmount: netAmount,
+        fiatCurrency: input.fiatCurrency,
+        provider: input.provider,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
-      return { ref, walletId: input.walletId, burned: input.amount, fee: fee.fee, fiatAmount: netAmount, fiatCurrency: input.fiatCurrency, newBalance, provider: input.provider };
+      return {
+        ref,
+        walletId: input.walletId,
+        burned: input.amount,
+        fee: fee.fee,
+        fiatAmount: netAmount,
+        fiatCurrency: input.fiatCurrency,
+        newBalance,
+        provider: input.provider,
+      };
     }),
 
   getBalance: protectedProcedure
     .input(z.object({ walletId: z.number() }))
     .query(async ({ input }) => {
       const db = (await getDb())!;
-      const result = await db.execute(sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId}`);
-      if (!(result as any).rows?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
+      const result = await db.execute(
+        sql`SELECT id, data, status FROM "stable_wallets" WHERE id = ${input.walletId}`
+      );
+      if (!(result as any).rows?.length)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Wallet not found" });
       const row = (result as any).rows[0];
-      const data = typeof row.data === "string" ? JSON.parse(row.data) : (row.data ?? {});
-      return { walletId: input.walletId, balance: Number(data.balance ?? 0), currency: data.currency ?? "cNGN", status: row.status, walletAddress: data.walletAddress };
+      const data =
+        typeof row.data === "string" ? JSON.parse(row.data) : (row.data ?? {});
+      return {
+        walletId: input.walletId,
+        balance: Number(data.balance ?? 0),
+        currency: data.currency ?? "cNGN",
+        status: row.status,
+        walletAddress: data.walletAddress,
+      };
     }),
 
   getTransactionHistory: protectedProcedure
-    .input(z.object({ walletId: z.number(), limit: z.number().min(1).max(100).default(20), offset: z.number().min(0).default(0) }))
+    .input(
+      z.object({
+        walletId: z.number(),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
     .query(async ({ input }) => {
       const db = (await getDb())!;
       const lim = input.limit;
       const off = input.offset;
       const walletIdStr = `%wallet${input.walletId}%`;
-      const result = await db.execute(sql`SELECT * FROM "gl_journal_entries" WHERE reference_type LIKE 'stablecoin_%' AND (reference_id LIKE ${walletIdStr} OR description LIKE ${walletIdStr}) ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}`);
-      return { transactions: (result as any).rows ?? [], walletId: input.walletId };
+      const result = await db.execute(
+        sql`SELECT * FROM "gl_journal_entries" WHERE reference_type LIKE 'stablecoin_%' AND (reference_id LIKE ${walletIdStr} OR description LIKE ${walletIdStr}) ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}`
+      );
+      return {
+        transactions: (result as any).rows ?? [],
+        walletId: input.walletId,
+      };
     }),
 
   // ── Blockchain Wallet Integration (Stellar/Ethereum) ──
 
   getBlockchainBalance: protectedProcedure
-    .input(z.object({
-      walletAddress: z.string().min(1),
-      chain: z.enum(["stellar", "ethereum"]),
-    }))
+    .input(
+      z.object({
+        walletAddress: z.string().min(1),
+        chain: z.enum(["stellar", "ethereum"]),
+      })
+    )
     .query(async ({ input }) => {
       if (input.chain === "stellar") {
         try {
-          const horizonUrl = process.env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
-          const res = await fetch(`${horizonUrl}/accounts/${input.walletAddress}`, { signal: AbortSignal.timeout(10000) });
-          if (!res.ok) return { chain: "stellar", address: input.walletAddress, error: `Horizon: ${res.status}`, balances: [] };
-          const account = await res.json() as { balances?: Array<{ asset_type: string; balance: string; asset_code?: string }> };
-          return { chain: "stellar", address: input.walletAddress, balances: account.balances ?? [] };
+          const horizonUrl =
+            process.env.STELLAR_HORIZON_URL ??
+            "https://horizon-testnet.stellar.org";
+          const res = await fetch(
+            `${horizonUrl}/accounts/${input.walletAddress}`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+          if (!res.ok)
+            return {
+              chain: "stellar",
+              address: input.walletAddress,
+              error: `Horizon: ${res.status}`,
+              balances: [],
+            };
+          const account = (await res.json()) as {
+            balances?: Array<{
+              asset_type: string;
+              balance: string;
+              asset_code?: string;
+            }>;
+          };
+          return {
+            chain: "stellar",
+            address: input.walletAddress,
+            balances: account.balances ?? [],
+          };
         } catch (e) {
-          return { chain: "stellar", address: input.walletAddress, error: String(e), balances: [] };
+          return {
+            chain: "stellar",
+            address: input.walletAddress,
+            error: String(e),
+            balances: [],
+          };
         }
       } else {
         try {
-          const rpcUrl = process.env.ETHEREUM_RPC_URL ?? "https://sepolia.infura.io/v3/placeholder";
+          const rpcUrl =
+            process.env.ETHEREUM_RPC_URL ??
+            "https://sepolia.infura.io/v3/placeholder";
           const res = await fetch(rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBalance", params: [input.walletAddress, "latest"], id: 1 }),
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "eth_getBalance",
+              params: [input.walletAddress, "latest"],
+              id: 1,
+            }),
             signal: AbortSignal.timeout(10000),
           });
-          const rpcResult = await res.json() as { result?: string; error?: { message: string } };
+          const rpcResult = (await res.json()) as {
+            result?: string;
+            error?: { message: string };
+          };
           const hexBalance = rpcResult?.result ?? "0x0";
           const wei = BigInt(hexBalance);
-          return { chain: "ethereum", address: input.walletAddress, balanceWei: hexBalance, balanceEth: (Number(wei) / 1e18).toFixed(18) };
+          return {
+            chain: "ethereum",
+            address: input.walletAddress,
+            balanceWei: hexBalance,
+            balanceEth: (Number(wei) / 1e18).toFixed(18),
+          };
         } catch (e) {
-          return { chain: "ethereum", address: input.walletAddress, error: String(e), balanceWei: "0x0" };
+          return {
+            chain: "ethereum",
+            address: input.walletAddress,
+            error: String(e),
+            balanceWei: "0x0",
+          };
         }
       }
     }),
 
   submitChainTransaction: protectedProcedure
-    .input(z.object({
-      chain: z.enum(["stellar", "ethereum"]),
-      signedTx: z.string().min(1),
-      walletId: z.number().optional(),
-    }))
+    .input(
+      z.object({
+        chain: z.enum(["stellar", "ethereum"]),
+        signedTx: z.string().min(1),
+        walletId: z.number().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "stablecoin_wallet", entityId: String(input.walletId ?? "0"), permission: "transact" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "stablecoin_wallet",
+        entityId: String(input.walletId ?? "0"),
+        permission: "transact",
+      }).catch(() => {});
       const ref = `CHAIN-${input.chain}-${Date.now()}`;
 
       if (input.chain === "stellar") {
         try {
-          const horizonUrl = process.env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
+          const horizonUrl =
+            process.env.STELLAR_HORIZON_URL ??
+            "https://horizon-testnet.stellar.org";
           const res = await fetch(`${horizonUrl}/transactions`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -758,23 +1215,49 @@ export const stablecoinRailsRouter = router({
             signal: AbortSignal.timeout(30000),
           });
           const result = await res.json();
-          publishEvent("stablecoin.chain.submitted", ref, { chain: "stellar", result }).catch(() => {});
-          return { ref, chain: "stellar", status: res.ok ? "submitted" : "failed", result };
+          publishEvent("stablecoin.chain.submitted", ref, {
+            chain: "stellar",
+            result,
+          }).catch(() => {});
+          return {
+            ref,
+            chain: "stellar",
+            status: res.ok ? "submitted" : "failed",
+            result,
+          };
         } catch (e) {
           return { ref, chain: "stellar", status: "error", error: String(e) };
         }
       } else {
         try {
-          const rpcUrl = process.env.ETHEREUM_RPC_URL ?? "https://sepolia.infura.io/v3/placeholder";
+          const rpcUrl =
+            process.env.ETHEREUM_RPC_URL ??
+            "https://sepolia.infura.io/v3/placeholder";
           const res = await fetch(rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", method: "eth_sendRawTransaction", params: [input.signedTx], id: 1 }),
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "eth_sendRawTransaction",
+              params: [input.signedTx],
+              id: 1,
+            }),
             signal: AbortSignal.timeout(30000),
           });
-          const result = await res.json() as { result?: string; error?: { message: string } };
-          publishEvent("stablecoin.chain.submitted", ref, { chain: "ethereum", txHash: result?.result }).catch(() => {});
-          return { ref, chain: "ethereum", txHash: result?.result, status: result?.result ? "submitted" : "failed" };
+          const result = (await res.json()) as {
+            result?: string;
+            error?: { message: string };
+          };
+          publishEvent("stablecoin.chain.submitted", ref, {
+            chain: "ethereum",
+            txHash: result?.result,
+          }).catch(() => {});
+          return {
+            ref,
+            chain: "ethereum",
+            txHash: result?.result,
+            status: result?.result ? "submitted" : "failed",
+          };
         } catch (e) {
           return { ref, chain: "ethereum", status: "error", error: String(e) };
         }

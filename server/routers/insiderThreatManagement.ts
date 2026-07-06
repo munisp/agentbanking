@@ -38,14 +38,16 @@ export const insiderThreatManagementRouter = router({
   // ── Approval Workflows ─────────────────────────────────────────────────────
 
   createApproval: protectedProcedure
-    .input(z.object({
-      type: z.string().min(1),
-      amount: z.number().positive(),
-      currency: z.string().default("NGN"),
-      resource: z.string().min(1),
-      resourceId: z.string().min(1),
-      metadata: z.record(z.string(), z.unknown()).optional(),
-    }))
+    .input(
+      z.object({
+        type: z.string().min(1),
+        amount: z.number().positive(),
+        currency: z.string().default("NGN"),
+        resource: z.string().min(1),
+        resourceId: z.string().min(1),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -64,7 +66,12 @@ export const insiderThreatManagementRouter = router({
       });
 
       // Track velocity
-      await checkStaffVelocity(agent.id, agent.agentCode, input.type, input.amount);
+      await checkStaffVelocity(
+        agent.id,
+        agent.agentCode,
+        input.type,
+        input.amount
+      );
 
       // Middleware integration
       tbCreateTransfer({
@@ -96,11 +103,13 @@ export const insiderThreatManagementRouter = router({
     }),
 
   approveRequest: protectedProcedure
-    .input(z.object({
-      requestId: z.string().min(1),
-      stepUpToken: z.string().optional(),
-      reason: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        requestId: z.string().min(1),
+        stepUpToken: z.string().optional(),
+        reason: z.string().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -143,10 +152,12 @@ export const insiderThreatManagementRouter = router({
     }),
 
   rejectRequest: protectedProcedure
-    .input(z.object({
-      requestId: z.string().min(1),
-      reason: z.string().min(5),
-    }))
+    .input(
+      z.object({
+        requestId: z.string().min(1),
+        reason: z.string().min(5),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -174,12 +185,17 @@ export const insiderThreatManagementRouter = router({
     }),
 
   listPendingApprovals: protectedProcedure
-    .input(z.object({ limit: z.number().int().positive().default(50) }).optional())
+    .input(
+      z.object({ limit: z.number().int().positive().default(50) }).optional()
+    )
     .query(async ({ ctx, input }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
       if (agent.role !== "admin" && agent.role !== "super_admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admin access required",
+        });
       }
 
       const db = await getDb();
@@ -199,9 +215,11 @@ export const insiderThreatManagementRouter = router({
   // ── Step-Up Authentication ─────────────────────────────────────────────────
 
   requestStepUp: protectedProcedure
-    .input(z.object({
-      password: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        password: z.string().min(1),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -230,102 +248,108 @@ export const insiderThreatManagementRouter = router({
 
   // ── Threshold Configuration ────────────────────────────────────────────────
 
-  getThresholds: protectedProcedure
-    .query(async ({ ctx }) => {
-      const agent = (ctx as any).agent;
-      if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
-      return {
-        thresholds: APPROVAL_THRESHOLDS,
-        alwaysDualControl: ALWAYS_DUAL_CONTROL,
-      };
-    }),
+  getThresholds: protectedProcedure.query(async ({ ctx }) => {
+    const agent = (ctx as any).agent;
+    if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
+    return {
+      thresholds: APPROVAL_THRESHOLDS,
+      alwaysDualControl: ALWAYS_DUAL_CONTROL,
+    };
+  }),
 
   checkThreshold: protectedProcedure
-    .input(z.object({
-      amount: z.number().positive(),
-      operationType: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        amount: z.number().positive(),
+        operationType: z.string().min(1),
+      })
+    )
     .query(async ({ input }) => {
       return getRequiredApprovals(input.amount, input.operationType);
     }),
 
   // ── Audit Chain Verification ───────────────────────────────────────────────
 
-  verifyAuditChain: protectedProcedure
-    .query(async ({ ctx }) => {
-      const agent = (ctx as any).agent;
-      if (!agent || agent.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+  verifyAuditChain: protectedProcedure.query(async ({ ctx }) => {
+    const agent = (ctx as any).agent;
+    if (!agent || agent.role !== "admin") {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
 
-      // Call Rust audit-chain service
-      try {
-        const res = await fetch("http://localhost:8260/verify");
-        if (res.ok) return await res.json();
-      } catch {}
+    // Call Rust audit-chain service
+    try {
+      const res = await fetch("http://localhost:8260/verify");
+      if (res.ok) return await res.json();
+    } catch {}
 
-      return { valid: true, message: "Audit chain service not reachable — verify locally", total_entries: 0 };
-    }),
+    return {
+      valid: true,
+      message: "Audit chain service not reachable — verify locally",
+      total_entries: 0,
+    };
+  }),
 
-  getHighRiskActions: protectedProcedure
-    .query(async ({ ctx }) => {
-      const agent = (ctx as any).agent;
-      if (!agent || (agent.role !== "admin" && agent.role !== "compliance")) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+  getHighRiskActions: protectedProcedure.query(async ({ ctx }) => {
+    const agent = (ctx as any).agent;
+    if (!agent || (agent.role !== "admin" && agent.role !== "compliance")) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
 
-      try {
-        const res = await fetch("http://localhost:8260/high-risk");
-        if (res.ok) return await res.json();
-      } catch {}
+    try {
+      const res = await fetch("http://localhost:8260/high-risk");
+      if (res.ok) return await res.json();
+    } catch {}
 
-      return [];
-    }),
+    return [];
+  }),
 
   // ── Insider Threat Dashboard ───────────────────────────────────────────────
 
-  getDashboard: protectedProcedure
-    .query(async ({ ctx }) => {
-      const agent = (ctx as any).agent;
-      if (!agent || (agent.role !== "admin" && agent.role !== "compliance")) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+  getDashboard: protectedProcedure.query(async ({ ctx }) => {
+    const agent = (ctx as any).agent;
+    if (!agent || (agent.role !== "admin" && agent.role !== "compliance")) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
 
-      // Fetch from Python detection service
-      let detectionStats = null;
-      try {
-        const res = await fetch("http://localhost:8262/stats");
-        if (res.ok) detectionStats = await res.json();
-      } catch {}
+    // Fetch from Python detection service
+    let detectionStats = null;
+    try {
+      const res = await fetch("http://localhost:8262/stats");
+      if (res.ok) detectionStats = await res.json();
+    } catch {}
 
-      // Fetch from Go RBAC service
-      let rbacRoles = null;
-      try {
-        const res = await fetch("http://localhost:8261/roles");
-        if (res.ok) rbacRoles = await res.json();
-      } catch {}
+    // Fetch from Go RBAC service
+    let rbacRoles = null;
+    try {
+      const res = await fetch("http://localhost:8261/roles");
+      if (res.ok) rbacRoles = await res.json();
+    } catch {}
 
-      return {
-        detection: detectionStats ?? {
-          total_alerts: 0,
-          alerts_by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
-          blocked_agents: 0,
-        },
-        rbac: {
-          roles: rbacRoles ?? [],
-          incompatiblePairCount: 7,
-        },
-        thresholds: APPROVAL_THRESHOLDS,
-        alwaysDualControl: ALWAYS_DUAL_CONTROL,
-      };
-    }),
+    return {
+      detection: detectionStats ?? {
+        total_alerts: 0,
+        alerts_by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
+        blocked_agents: 0,
+      },
+      rbac: {
+        roles: rbacRoles ?? [],
+        incompatiblePairCount: 7,
+      },
+      thresholds: APPROVAL_THRESHOLDS,
+      alwaysDualControl: ALWAYS_DUAL_CONTROL,
+    };
+  }),
 
   getAlerts: protectedProcedure
-    .input(z.object({
-      severity: z.enum(["low", "medium", "high", "critical"]).optional(),
-      agentId: z.number().int().optional(),
-      limit: z.number().int().positive().default(100),
-    }).optional())
+    .input(
+      z
+        .object({
+          severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+          agentId: z.number().int().optional(),
+          limit: z.number().int().positive().default(100),
+        })
+        .optional()
+    )
     .query(async ({ ctx, input }) => {
       const agent = (ctx as any).agent;
       if (!agent || (agent.role !== "admin" && agent.role !== "compliance")) {
@@ -346,11 +370,13 @@ export const insiderThreatManagementRouter = router({
   // ── Permission Management ──────────────────────────────────────────────────
 
   checkPermission: protectedProcedure
-    .input(z.object({
-      permission: z.string().min(1),
-      resource: z.string().optional(),
-      resourceId: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        permission: z.string().min(1),
+        resource: z.string().optional(),
+        resourceId: z.string().optional(),
+      })
+    )
     .query(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -371,13 +397,18 @@ export const insiderThreatManagementRouter = router({
       } catch {}
 
       // Fallback: role-based check
-      return { allowed: agent.role === "admin", reason: "RBAC service unavailable — fallback to role check" };
+      return {
+        allowed: agent.role === "admin",
+        reason: "RBAC service unavailable — fallback to role check",
+      };
     }),
 
   checkConflicts: protectedProcedure
-    .input(z.object({
-      permissions: z.array(z.string()),
-    }))
+    .input(
+      z.object({
+        permissions: z.array(z.string()),
+      })
+    )
     .query(async ({ input, ctx }) => {
       const agent = (ctx as any).agent;
       if (!agent) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -394,6 +425,10 @@ export const insiderThreatManagementRouter = router({
         if (res.ok) return await res.json();
       } catch {}
 
-      return { hasConflict: false, conflicts: [], message: "RBAC service unavailable" };
+      return {
+        hasConflict: false,
+        conflicts: [],
+        message: "RBAC service unavailable",
+      };
     }),
 });

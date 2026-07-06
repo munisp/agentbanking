@@ -40,13 +40,32 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.firmware.ota", key, { eventType, ...payload });
-  fluvioPublish("pos.firmware.ota", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.firmware.ota.deployed", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_firmware_updates", { event_type: eventType, ...payload, source: "posFirmwareOTA" }).catch(() => {});
+  fluvioPublish("pos.firmware.ota", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.firmware.ota.deployed", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_firmware_updates", {
+    event_type: eventType,
+    ...payload,
+    source: "posFirmwareOTA",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -231,7 +250,10 @@ export const posFirmwareOTARouter = router({
           metadata: { version: input.version, forceUpdate: input.forceUpdate },
         });
 
-        publishPosMiddleware("publishVersion", input.version, { action: "publishVersion", ...input });
+        publishPosMiddleware("publishVersion", input.version, {
+          action: "publishVersion",
+          ...input,
+        });
         return entry;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -275,7 +297,10 @@ export const posFirmwareOTARouter = router({
           },
         });
 
-        publishPosMiddleware("startRollout", input.version, { action: "startRollout", ...input });
+        publishPosMiddleware("startRollout", input.version, {
+          action: "startRollout",
+          ...input,
+        });
         return {
           rolloutId,
           version: input.version,
@@ -381,7 +406,10 @@ export const posFirmwareOTARouter = router({
           },
         });
 
-        publishPosMiddleware("reportUpdateResult", String(input.terminalId), { action: "reportUpdateResult", ...input });
+        publishPosMiddleware("reportUpdateResult", String(input.terminalId), {
+          action: "reportUpdateResult",
+          ...input,
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

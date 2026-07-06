@@ -151,18 +151,19 @@ async function checkDbHealth() {
   }
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishbillingInvoiceMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `billing.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -186,10 +187,17 @@ async function publishbillingInvoiceMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("billing", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("billing", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const billingInvoiceRouter = router({
@@ -433,7 +441,9 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishbillingInvoiceMiddleware("markPaid", `${Date.now()}`, { action: "markPaid" }).catch(() => {});
+        await publishbillingInvoiceMiddleware("markPaid", `${Date.now()}`, {
+          action: "markPaid",
+        }).catch(() => {});
 
         return {
           success: true,
@@ -462,7 +472,11 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishbillingInvoiceMiddleware("generateCreditNote", `${Date.now()}`, { action: "generateCreditNote" }).catch(() => {});
+        await publishbillingInvoiceMiddleware(
+          "generateCreditNote",
+          `${Date.now()}`,
+          { action: "generateCreditNote" }
+        ).catch(() => {});
 
         return {
           creditNoteNumber: `CN-${crypto.randomUUID().toUpperCase()}`,
@@ -493,7 +507,11 @@ export const billingInvoiceRouter = router({
     .mutation(async ({ input }) => {
       try {
         // Middleware fan-out (fail-open)
-        await publishbillingInvoiceMiddleware("exportInvoices", `${Date.now()}`, { action: "exportInvoices" }).catch(() => {});
+        await publishbillingInvoiceMiddleware(
+          "exportInvoices",
+          `${Date.now()}`,
+          { action: "exportInvoices" }
+        ).catch(() => {});
 
         return {
           downloadUrl: `/api/billing/export/${input.tenantId}/${input.format}`,
@@ -641,7 +659,11 @@ export const billingInvoiceRouter = router({
       try {
         const invoice = await getStripe().invoices.pay(input.stripeInvoiceId);
         // Middleware fan-out (fail-open)
-        await publishbillingInvoiceMiddleware("collectPayment", `${Date.now()}`, { action: "collectPayment" }).catch(() => {});
+        await publishbillingInvoiceMiddleware(
+          "collectPayment",
+          `${Date.now()}`,
+          { action: "collectPayment" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -734,7 +756,11 @@ export const billingInvoiceRouter = router({
           },
         });
         // Middleware fan-out (fail-open)
-        await publishbillingInvoiceMiddleware("createInvoiceCheckout", `${Date.now()}`, { action: "createInvoiceCheckout" }).catch(() => {});
+        await publishbillingInvoiceMiddleware(
+          "createInvoiceCheckout",
+          `${Date.now()}`,
+          { action: "createInvoiceCheckout" }
+        ).catch(() => {});
 
         return { checkoutUrl: session.url, sessionId: session.id };
       } catch (err: any) {

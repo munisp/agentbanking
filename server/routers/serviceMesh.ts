@@ -129,18 +129,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishserviceMeshMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -164,10 +165,17 @@ async function publishserviceMeshMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const serviceMeshRouter = router({
@@ -263,7 +271,9 @@ export const serviceMeshRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishserviceMeshMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishserviceMeshMiddleware("dashboard", `${Date.now()}`, {
+      action: "dashboard",
+    }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -275,7 +285,11 @@ export const serviceMeshRouter = router({
 
   toggleCircuitBreaker: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishserviceMeshMiddleware("toggleCircuitBreaker", `${Date.now()}`, { action: "toggleCircuitBreaker" }).catch(() => {});
+    await publishserviceMeshMiddleware(
+      "toggleCircuitBreaker",
+      `${Date.now()}`,
+      { action: "toggleCircuitBreaker" }
+    ).catch(() => {});
 
     return { service: "default", enabled: true, state: "closed" };
   }),

@@ -118,18 +118,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishadvancedNotificationsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -153,10 +154,17 @@ async function publishadvancedNotificationsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const advancedNotificationsRouter = router({
@@ -288,8 +296,9 @@ export const advancedNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishadvancedNotificationsMiddleware("send", `${Date.now()}`, { action: "send" }).catch(() => {});
-
+        await publishadvancedNotificationsMiddleware("send", `${Date.now()}`, {
+          action: "send",
+        }).catch(() => {});
 
         return { success: true, notification: notif };
       } catch (error) {
@@ -313,7 +322,11 @@ export const advancedNotificationsRouter = router({
           .where(eq(notification_logs.id, input.notificationId))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishadvancedNotificationsMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
+        await publishadvancedNotificationsMiddleware(
+          "markRead",
+          `${Date.now()}`,
+          { action: "markRead" }
+        ).catch(() => {});
 
         return { success: true, notification: updated };
       } catch (error) {
@@ -328,7 +341,9 @@ export const advancedNotificationsRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishadvancedNotificationsMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishadvancedNotificationsMiddleware("dashboard", `${Date.now()}`, {
+      action: "dashboard",
+    }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -340,7 +355,11 @@ export const advancedNotificationsRouter = router({
 
   listTemplates: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishadvancedNotificationsMiddleware("listTemplates", `${Date.now()}`, { action: "listTemplates" }).catch(() => {});
+    await publishadvancedNotificationsMiddleware(
+      "listTemplates",
+      `${Date.now()}`,
+      { action: "listTemplates" }
+    ).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -348,7 +367,11 @@ export const advancedNotificationsRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishadvancedNotificationsMiddleware("sendNotification", `${Date.now()}`, { action: "sendNotification" }).catch(() => {});
+      await publishadvancedNotificationsMiddleware(
+        "sendNotification",
+        `${Date.now()}`,
+        { action: "sendNotification" }
+      ).catch(() => {});
 
       return { success: true, status: "ok" };
     }),

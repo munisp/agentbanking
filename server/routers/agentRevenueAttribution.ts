@@ -117,18 +117,19 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentRevenueAttributionMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -152,10 +153,14 @@ async function publishagentRevenueAttributionMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentRevenueAttributionRouter = router({
@@ -277,7 +282,11 @@ export const agentRevenueAttributionRouter = router({
 
   listAttributions: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishagentRevenueAttributionMiddleware("listAttributions", `${Date.now()}`, { action: "listAttributions" }).catch(() => {});
+    await publishagentRevenueAttributionMiddleware(
+      "listAttributions",
+      `${Date.now()}`,
+      { action: "listAttributions" }
+    ).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -288,7 +297,11 @@ export const agentRevenueAttributionRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishagentRevenueAttributionMiddleware("recalculate", `${Date.now()}`, { action: "recalculate" }).catch(() => {});
+      await publishagentRevenueAttributionMiddleware(
+        "recalculate",
+        `${Date.now()}`,
+        { action: "recalculate" }
+      ).catch(() => {});
 
       return { success: true };
     }),

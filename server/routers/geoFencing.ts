@@ -133,18 +133,19 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   }
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishgeoFencingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -168,10 +169,17 @@ async function publishgeoFencingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const geoFencingRouter = router({
@@ -251,7 +259,9 @@ export const geoFencingRouter = router({
         })
         .returning();
       // Middleware fan-out (fail-open)
-      await publishgeoFencingMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishgeoFencingMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return { id: String(zone.id), name: zone.name, created: true };
     }),
@@ -266,7 +276,9 @@ export const geoFencingRouter = router({
         .set({ isActive: input.active, updatedAt: new Date() })
         .where(eq(geofenceZones.id, Number(input.id)));
       // Middleware fan-out (fail-open)
-      await publishgeoFencingMiddleware("toggle", `${Date.now()}`, { action: "toggle" }).catch(() => {});
+      await publishgeoFencingMiddleware("toggle", `${Date.now()}`, {
+        action: "toggle",
+      }).catch(() => {});
 
       return { id: input.id, active: input.active, updated: true };
     }),
@@ -330,13 +342,15 @@ export const geoFencingRouter = router({
       const db = await getDb();
       if (!db)
         // Middleware fan-out (fail-open)
-        await publishgeoFencingMiddleware("createZone", `${Date.now()}`, { action: "createZone" }).catch(() => {});
+        await publishgeoFencingMiddleware("createZone", `${Date.now()}`, {
+          action: "createZone",
+        }).catch(() => {});
 
-        return {
-          id: `zone-${Date.now()}`,
-          name: input.name,
-          createdAt: new Date().toISOString(),
-        };
+      return {
+        id: `zone-${Date.now()}`,
+        name: input.name,
+        createdAt: new Date().toISOString(),
+      };
       const [zone] = await db
         .insert(geofenceZones)
         .values({
@@ -364,7 +378,9 @@ export const geoFencingRouter = router({
         .delete(geofenceZones)
         .where(eq(geofenceZones.id, Number(input.zoneId)));
       // Middleware fan-out (fail-open)
-      await publishgeoFencingMiddleware("deleteZone", `${Date.now()}`, { action: "deleteZone" }).catch(() => {});
+      await publishgeoFencingMiddleware("deleteZone", `${Date.now()}`, {
+        action: "deleteZone",
+      }).catch(() => {});
 
       return { success: true, zoneId: input.zoneId };
     }),

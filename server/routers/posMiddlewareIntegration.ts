@@ -12,7 +12,7 @@ import { withTransaction, withIdempotency } from "../lib/transactionHelper";
 
 /**
  * POS Middleware Integration Router
- * 
+ *
  * Integrates all POS operations with the full middleware stack:
  * - TigerBeetle: Immutable double-entry ledger
  * - Kafka: Domain events
@@ -21,7 +21,7 @@ import { withTransaction, withIdempotency } from "../lib/transactionHelper";
  * - Lakehouse: Analytics pipeline
  * - Redis: Balance/state caching
  * - Temporal: Saga orchestration (via temporalSagaOrchestrator)
- * 
+ *
  * Also adds:
  * - FOR UPDATE locking on balance-modifying POS operations
  * - EOD forced reconciliation
@@ -32,19 +32,21 @@ import { withTransaction, withIdempotency } from "../lib/transactionHelper";
 export const posMiddlewareIntegration = router({
   // ── Card Payment Processing (via PTSP Switch) ────────────────────────────
   processCardPayment: protectedProcedure
-    .input(z.object({
-      terminalId: z.string(),
-      merchantId: z.string(),
-      amount: z.number().positive(),
-      cardScheme: z.string(),
-      encryptedTrack2: z.string(),
-      ksn: z.string(),
-      processingCode: z.string().default("00"),
-      idempotencyKey: z.string(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string(),
+        merchantId: z.string(),
+        amount: z.number().positive(),
+        cardScheme: z.string(),
+        encryptedTrack2: z.string(),
+        ksn: z.string(),
+        processingCode: z.string().default("00"),
+        idempotencyKey: z.string(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       return withIdempotency(input.idempotencyKey, async () => {
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           // 1. Lock agent balance
           const [agent] = await tx.execute(
             sql`SELECT id, float_balance FROM agents WHERE id = ${ctx.user.id} FOR UPDATE`
@@ -91,25 +93,38 @@ export const posMiddlewareIntegration = router({
 
           // 7. Kafka domain event
           publishEvent("pos.card.payment", input.terminalId, {
-            terminalId: input.terminalId, amount: input.amount,
-            cardScheme: input.cardScheme, txId: txRecord.id,
+            terminalId: input.terminalId,
+            amount: input.amount,
+            cardScheme: input.cardScheme,
+            txId: txRecord.id,
           });
 
           // 8. Fluvio fraud streaming
-          fluvioPublish("pos.card.transactions", { key: "pos", value: JSON.stringify({
-            terminalId: input.terminalId, amount: input.amount,
-            cardScheme: input.cardScheme, timestamp: new Date().toISOString(),
-          }) }).catch(() => {});
+          fluvioPublish("pos.card.transactions", {
+            key: "pos",
+            value: JSON.stringify({
+              terminalId: input.terminalId,
+              amount: input.amount,
+              cardScheme: input.cardScheme,
+              timestamp: new Date().toISOString(),
+            }),
+          }).catch(() => {});
 
           // 9. Dapr cross-service
-          dapr.publishEvent("pubsub", "pos.card.payment.completed", {
-            terminalId: input.terminalId, amount: input.amount, txId: txRecord.id,
-          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "pos.card.payment.completed", {
+              terminalId: input.terminalId,
+              amount: input.amount,
+              txId: txRecord.id,
+            })
+            .catch(() => {});
 
           // 10. Lakehouse analytics
           lakehouseIngest("pos_card_transactions", {
-            terminal_id: input.terminalId, amount: input.amount,
-            card_scheme: input.cardScheme, source: "pos-router",
+            terminal_id: input.terminalId,
+            amount: input.amount,
+            card_scheme: input.cardScheme,
+            source: "pos-router",
           }).catch(() => {});
 
           // 11. Invalidate cache
@@ -122,10 +137,12 @@ export const posMiddlewareIntegration = router({
 
   // ── EOD Forced Reconciliation ────────────────────────────────────────────
   forceEodReconciliation: protectedProcedure
-    .input(z.object({
-      terminalId: z.string(),
-      date: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string(),
+        date: z.string().optional(),
+      })
+    )
     .mutation(async ({ input }) => {
       const reconDate = input.date || new Date().toISOString().split("T")[0];
 
@@ -139,11 +156,14 @@ export const posMiddlewareIntegration = router({
         WHERE terminal_id = ${input.terminalId} AND DATE(created_at) = ${reconDate}`
       );
 
-      const discrepancy = Number(totals?.cash_in || 0) - Number(totals?.cash_out || 0) - Number(totals?.fees || 0);
+      const discrepancy =
+        Number(totals?.cash_in || 0) -
+        Number(totals?.cash_out || 0) -
+        Number(totals?.fees || 0);
 
       await (await getDb())!.execute(
         sql`INSERT INTO pos_eod_reconciliation (terminal_id, reconciliation_date, total_cash_in_kobo, total_cash_out_kobo, total_fees_kobo, tx_count, discrepancy_kobo, status)
-            VALUES (${input.terminalId}, ${reconDate}, ${Number(totals?.cash_in || 0)}, ${Number(totals?.cash_out || 0)}, ${Number(totals?.fees || 0)}, ${Number(totals?.tx_count || 0)}, ${Math.abs(discrepancy)}, ${discrepancy === 0 ? 'balanced' : 'discrepancy'})
+            VALUES (${input.terminalId}, ${reconDate}, ${Number(totals?.cash_in || 0)}, ${Number(totals?.cash_out || 0)}, ${Number(totals?.fees || 0)}, ${Number(totals?.tx_count || 0)}, ${Math.abs(discrepancy)}, ${discrepancy === 0 ? "balanced" : "discrepancy"})
             ON CONFLICT (terminal_id, reconciliation_date) DO UPDATE SET
             total_cash_in_kobo = EXCLUDED.total_cash_in_kobo,
             total_cash_out_kobo = EXCLUDED.total_cash_out_kobo,
@@ -153,21 +173,40 @@ export const posMiddlewareIntegration = router({
 
       // Publish events
       publishEvent("pos.eod.reconciliation", input.terminalId, {
-        terminalId: input.terminalId, date: reconDate, discrepancy, status: discrepancy === 0 ? "balanced" : "discrepancy",
+        terminalId: input.terminalId,
+        date: reconDate,
+        discrepancy,
+        status: discrepancy === 0 ? "balanced" : "discrepancy",
       });
-      dapr.publishEvent("pubsub", "pos.eod.reconciliation.completed", { terminalId: input.terminalId, date: reconDate }).catch(() => {});
-      lakehouseIngest("pos_eod_reconciliation", { terminal_id: input.terminalId, date: reconDate, discrepancy }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "pos.eod.reconciliation.completed", {
+          terminalId: input.terminalId,
+          date: reconDate,
+        })
+        .catch(() => {});
+      lakehouseIngest("pos_eod_reconciliation", {
+        terminal_id: input.terminalId,
+        date: reconDate,
+        discrepancy,
+      }).catch(() => {});
 
-      return { success: true, date: reconDate, discrepancy, balanced: discrepancy === 0 };
+      return {
+        success: true,
+        date: reconDate,
+        discrepancy,
+        balanced: discrepancy === 0,
+      };
     }),
 
   // ── Geo-Velocity Check ───────────────────────────────────────────────────
   checkGeoVelocity: protectedProcedure
-    .input(z.object({
-      terminalId: z.string(),
-      latitude: z.number(),
-      longitude: z.number(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string(),
+        latitude: z.number(),
+        longitude: z.number(),
+      })
+    )
     .mutation(async ({ input }) => {
       // Get last known position
       const [lastPos] = await (await getDb())!.execute(
@@ -182,15 +221,22 @@ export const posMiddlewareIntegration = router({
       if (lastPos && lastPos.latitude) {
         // Haversine distance
         const R = 6371;
-        const dLat = (input.latitude - Number(lastPos.latitude)) * Math.PI / 180;
-        const dLng = (input.longitude - Number(lastPos.longitude)) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                  Math.cos(Number(lastPos.latitude) * Math.PI / 180) * Math.cos(input.latitude * Math.PI / 180) *
-                  Math.sin(dLng/2) * Math.sin(dLng/2);
-        distanceKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const dLat =
+          ((input.latitude - Number(lastPos.latitude)) * Math.PI) / 180;
+        const dLng =
+          ((input.longitude - Number(lastPos.longitude)) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((Number(lastPos.latitude) * Math.PI) / 180) *
+            Math.cos((input.latitude * Math.PI) / 180) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+        distanceKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-        const timeDiffSeconds = (Date.now() - new Date(lastPos.created_at).getTime()) / 1000;
-        velocityKmh = timeDiffSeconds > 0 ? (distanceKm / timeDiffSeconds) * 3600 : 0;
+        const timeDiffSeconds =
+          (Date.now() - new Date(lastPos.created_at).getTime()) / 1000;
+        velocityKmh =
+          timeDiffSeconds > 0 ? (distanceKm / timeDiffSeconds) * 3600 : 0;
 
         // Flag if > 200 km/h (impossible for POS terminal)
         flagged = velocityKmh > 200;
@@ -203,20 +249,36 @@ export const posMiddlewareIntegration = router({
 
       if (flagged) {
         publishEvent("pos.geo.velocity.alert", input.terminalId, {
-          terminalId: input.terminalId, velocityKmh, distanceKm, flagged: true,
+          terminalId: input.terminalId,
+          velocityKmh,
+          distanceKm,
+          flagged: true,
         });
-        fluvioPublish("pos.security.alerts", { key: "pos", value: JSON.stringify({ type: "geo_velocity", terminalId: input.terminalId, velocity: velocityKmh }) }).catch(() => {});
+        fluvioPublish("pos.security.alerts", {
+          key: "pos",
+          value: JSON.stringify({
+            type: "geo_velocity",
+            terminalId: input.terminalId,
+            velocity: velocityKmh,
+          }),
+        }).catch(() => {});
       }
 
-      return { flagged, velocityKmh: Math.round(velocityKmh), distanceKm: Math.round(distanceKm * 10) / 10 };
+      return {
+        flagged,
+        velocityKmh: Math.round(velocityKmh),
+        distanceKm: Math.round(distanceKm * 10) / 10,
+      };
     }),
 
   // ── Offline Cumulative Limit Check ───────────────────────────────────────
   checkOfflineLimit: protectedProcedure
-    .input(z.object({
-      terminalId: z.string(),
-      amount: z.number().positive(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string(),
+        amount: z.number().positive(),
+      })
+    )
     .query(async ({ input }) => {
       const [limits] = await (await getDb())!.execute(
         sql`SELECT * FROM pos_offline_limits WHERE terminal_id = ${input.terminalId}`
@@ -227,11 +289,19 @@ export const posMiddlewareIntegration = router({
         await (await getDb())!.execute(
           sql`INSERT INTO pos_offline_limits (terminal_id) VALUES (${input.terminalId}) ON CONFLICT DO NOTHING`
         );
-        return { allowed: true, remainingCount: 20, remainingAmount: 50_000_000 };
+        return {
+          allowed: true,
+          remainingCount: 20,
+          remainingAmount: 50_000_000,
+        };
       }
 
-      const countOk = Number(limits.current_offline_count) < Number(limits.max_offline_tx_count);
-      const amountOk = Number(limits.current_offline_amount_kobo) + input.amount <= Number(limits.max_offline_amount_kobo);
+      const countOk =
+        Number(limits.current_offline_count) <
+        Number(limits.max_offline_tx_count);
+      const amountOk =
+        Number(limits.current_offline_amount_kobo) + input.amount <=
+        Number(limits.max_offline_amount_kobo);
       const floorOk = input.amount <= Number(limits.floor_limit_kobo);
 
       const allowed = countOk && amountOk && floorOk;
@@ -245,19 +315,25 @@ export const posMiddlewareIntegration = router({
 
       return {
         allowed,
-        remainingCount: Number(limits.max_offline_tx_count) - Number(limits.current_offline_count),
-        remainingAmount: Number(limits.max_offline_amount_kobo) - Number(limits.current_offline_amount_kobo),
+        remainingCount:
+          Number(limits.max_offline_tx_count) -
+          Number(limits.current_offline_count),
+        remainingAmount:
+          Number(limits.max_offline_amount_kobo) -
+          Number(limits.current_offline_amount_kobo),
         floorLimit: Number(limits.floor_limit_kobo),
       };
     }),
 
   // ── Delta OTA Firmware Updates ───────────────────────────────────────────
   requestDeltaOta: protectedProcedure
-    .input(z.object({
-      terminalId: z.string(),
-      currentVersion: z.string(),
-      targetVersion: z.string(),
-    }))
+    .input(
+      z.object({
+        terminalId: z.string(),
+        currentVersion: z.string(),
+        targetVersion: z.string(),
+      })
+    )
     .mutation(async ({ input }) => {
       // Calculate delta patch instead of full firmware
       const patchSize = 2_500_000; // ~2.5MB delta vs 45MB full
@@ -265,9 +341,17 @@ export const posMiddlewareIntegration = router({
       const savings = Math.round((1 - patchSize / fullSize) * 100);
 
       publishEvent("pos.ota.delta.requested", input.terminalId, {
-        terminalId: input.terminalId, from: input.currentVersion, to: input.targetVersion, patchSize,
+        terminalId: input.terminalId,
+        from: input.currentVersion,
+        to: input.targetVersion,
+        patchSize,
       });
-      lakehouseIngest("pos_ota_updates", { terminal_id: input.terminalId, type: "delta", from_version: input.currentVersion, to_version: input.targetVersion }).catch(() => {});
+      lakehouseIngest("pos_ota_updates", {
+        terminal_id: input.terminalId,
+        type: "delta",
+        from_version: input.currentVersion,
+        to_version: input.targetVersion,
+      }).catch(() => {});
 
       return {
         patchUrl: `/api/v1/ota/patches/${input.currentVersion}-to-${input.targetVersion}.bsdiff`,
@@ -280,10 +364,12 @@ export const posMiddlewareIntegration = router({
 
   // ── Auto-Rollback on Error Threshold ─────────────────────────────────────
   checkCanaryHealth: protectedProcedure
-    .input(z.object({
-      releaseId: z.string(),
-      errorThreshold: z.number().default(5), // % error rate
-    }))
+    .input(
+      z.object({
+        releaseId: z.string(),
+        errorThreshold: z.number().default(5), // % error rate
+      })
+    )
     .mutation(async ({ input }) => {
       // Check error rate for canary terminals
       const [metrics] = await (await getDb())!.execute(
@@ -293,28 +379,49 @@ export const posMiddlewareIntegration = router({
         FROM pos_canary_metrics WHERE release_id = ${input.releaseId} AND created_at > NOW() - INTERVAL '1 hour'`
       );
 
-      const errorRate = Number(metrics?.total) > 0 ? (Number(metrics?.errors) / Number(metrics?.total)) * 100 : 0;
+      const errorRate =
+        Number(metrics?.total) > 0
+          ? (Number(metrics?.errors) / Number(metrics?.total)) * 100
+          : 0;
       const shouldRollback = errorRate > input.errorThreshold;
 
       if (shouldRollback) {
-        publishEvent("pos.canary.rollback", input.releaseId, { releaseId: input.releaseId, errorRate });
-        dapr.publishEvent("pubsub", "pos.canary.auto.rollback", { releaseId: input.releaseId, errorRate, reason: "threshold_exceeded" }).catch(() => {});
+        publishEvent("pos.canary.rollback", input.releaseId, {
+          releaseId: input.releaseId,
+          errorRate,
+        });
+        dapr
+          .publishEvent("pubsub", "pos.canary.auto.rollback", {
+            releaseId: input.releaseId,
+            errorRate,
+            reason: "threshold_exceeded",
+          })
+          .catch(() => {});
       }
 
-      return { releaseId: input.releaseId, errorRate: Math.round(errorRate * 10) / 10, shouldRollback, threshold: input.errorThreshold };
+      return {
+        releaseId: input.releaseId,
+        errorRate: Math.round(errorRate * 10) / 10,
+        shouldRollback,
+        threshold: input.errorThreshold,
+      };
     }),
 
   // ── Fleet Revenue Analytics ──────────────────────────────────────────────
   getFleetRevenue: protectedProcedure
-    .input(z.object({
-      agentId: z.string().optional(),
-      startDate: z.string(),
-      endDate: z.string(),
-    }))
+    .input(
+      z.object({
+        agentId: z.string().optional(),
+        startDate: z.string(),
+        endDate: z.string(),
+      })
+    )
     .query(async ({ input, ctx }) => {
       const agentId = input.agentId || ctx.user.id;
 
-      const cached = await cacheGet(`fleet:revenue:${agentId}:${input.startDate}`);
+      const cached = await cacheGet(
+        `fleet:revenue:${agentId}:${input.startDate}`
+      );
       if (cached) return JSON.parse(cached);
 
       const [revenue] = await (await getDb())!.execute(
@@ -334,11 +441,25 @@ export const posMiddlewareIntegration = router({
         totalFees: Number(revenue?.total_fees || 0),
         totalCommissions: Number(revenue?.total_commissions || 0),
         activeTerminals: Number(revenue?.active_terminals || 0),
-        avgTxPerTerminal: Number(revenue?.active_terminals) > 0 ? Math.round(Number(revenue?.total_transactions) / Number(revenue?.active_terminals)) : 0,
+        avgTxPerTerminal:
+          Number(revenue?.active_terminals) > 0
+            ? Math.round(
+                Number(revenue?.total_transactions) /
+                  Number(revenue?.active_terminals)
+              )
+            : 0,
       };
 
-      await cacheSet(`fleet:revenue:${agentId}:${input.startDate}`, JSON.stringify(result), 300).catch(() => {});
-      lakehouseIngest("pos_fleet_revenue", { agent_id: agentId, ...result, period: `${input.startDate}/${input.endDate}` }).catch(() => {});
+      await cacheSet(
+        `fleet:revenue:${agentId}:${input.startDate}`,
+        JSON.stringify(result),
+        300
+      ).catch(() => {});
+      lakehouseIngest("pos_fleet_revenue", {
+        agent_id: agentId,
+        ...result,
+        period: `${input.startDate}/${input.endDate}`,
+      }).catch(() => {});
 
       return result;
     }),

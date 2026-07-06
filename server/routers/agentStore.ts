@@ -43,11 +43,32 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
-async function publishStoreMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("ecommerce.store", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `ecommerce.store.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `ecommerce.store.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("ecommerce_store", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
+async function publishStoreMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("ecommerce.store", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `ecommerce.store.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `ecommerce.store.${event}`, { key, ...payload })
+    .catch(() => {});
+  ingestToLakehouse("ecommerce_store", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -119,18 +140,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentStoreMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -154,10 +176,14 @@ async function publishagentStoreMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentStoreRouter = router({
@@ -262,8 +288,15 @@ export const agentStoreRouter = router({
         })
         .returning();
 
-      publishStoreMiddleware("store.registered", store.slug, { storeId: store.id, agentId: input.agentId, agentCode: input.agentCode, storeName: input.storeName });
-      cacheSet(`store:${store.slug}`, JSON.stringify(store), 3600).catch(() => {});
+      publishStoreMiddleware("store.registered", store.slug, {
+        storeId: store.id,
+        agentId: input.agentId,
+        agentCode: input.agentCode,
+        storeName: input.storeName,
+      });
+      cacheSet(`store:${store.slug}`, JSON.stringify(store), 3600).catch(
+        () => {}
+      );
 
       return store;
     }),
@@ -327,7 +360,10 @@ export const agentStoreRouter = router({
         .where(eq(agentStores.id, storeId))
         .returning();
 
-      publishStoreMiddleware("store.updated", String(storeId), { storeId, changes: Object.keys(fields) });
+      publishStoreMiddleware("store.updated", String(storeId), {
+        storeId,
+        changes: Object.keys(fields),
+      });
 
       return updated;
     }),
@@ -620,7 +656,10 @@ export const agentStoreRouter = router({
         })
         .returning();
 
-      publishStoreMiddleware("delivery_zone.created", String(zone.id), { storeId: input.storeId, zoneName: input.zoneName });
+      publishStoreMiddleware("delivery_zone.created", String(zone.id), {
+        storeId: input.storeId,
+        zoneName: input.zoneName,
+      });
 
       return zone;
     }),
@@ -806,7 +845,10 @@ export const agentStoreRouter = router({
         })
         .returning();
 
-      publishStoreMiddleware("payment_split.created", String(split.id), { storeId: input.storeId, amount: input.orderTotal });
+      publishStoreMiddleware("payment_split.created", String(split.id), {
+        storeId: input.storeId,
+        amount: input.orderTotal,
+      });
 
       return split;
     }),
@@ -844,8 +886,9 @@ export const agentStoreRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishagentStoreMiddleware("createPaymentSplit", `${Date.now()}`, { action: "createPaymentSplit" }).catch(() => {});
-
+      await publishagentStoreMiddleware("createPaymentSplit", `${Date.now()}`, {
+        action: "createPaymentSplit",
+      }).catch(() => {});
 
       return { splits, total: totalResult[0]?.total ?? 0 };
     }),

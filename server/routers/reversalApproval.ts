@@ -29,7 +29,6 @@ import { checkDailyLimit } from "../lib/cbnLimits";
 import { withIdempotency } from "../lib/transactionHelper";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
   processing: ["completed", "failed"],
@@ -80,7 +79,18 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
 
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
@@ -104,10 +114,13 @@ const approve = protectedProcedure
     const fees = calculateFee(txAmount, "transfer");
     const commission = calculateCommission(fees.fee, "transfer");
     const tax = calculateTax(fees.fee, "vat");
-    return withTransaction(async (tx) => {
+    return withTransaction(async tx => {
       const db = tx ?? (await getDb())!;
       if (!input.id) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction ID required" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Transaction ID required",
+        });
       }
 
       // Lock original transaction
@@ -116,7 +129,10 @@ const approve = protectedProcedure
       );
       const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
       if (!originalTx) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "approve: record not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "approve: record not found",
+        });
       }
 
       const amount = Number(originalTx.amount);
@@ -156,30 +172,48 @@ const approve = protectedProcedure
         status: "posted",
       });
 
-      publishEvent(
-        "pos.transactions.reversed",
+      publishEvent("pos.transactions.reversed", reversalRef, {
         reversalRef,
-        {
+        originalTransactionId: input.id,
+        amount,
+        type: txType,
+        approvalData: input.data,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
+      // TigerBeetle reversal entry
+      tbCreateTransfer({
+        debitAccountId: "2001",
+        creditAccountId: "1001",
+        amount: Math.round(amount * 100),
+        ref: reversalRef,
+        txType: "transaction_reversal",
+        agentCode: "system",
+      }).catch(() => {});
+
+      // Fluvio + Dapr + Lakehouse
+      publishTxToFluvio({
+        txRef: reversalRef,
+        agentCode: "system",
+        amount,
+        type: "transaction_reversal",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "reversal.approved", {
           reversalRef,
           originalTransactionId: input.id,
           amount,
           type: txType,
-          approvalData: input.data,
-          timestamp: new Date().toISOString(),
-        }
-      ).catch(() => {});
-
-      // TigerBeetle reversal entry
-      tbCreateTransfer({
-        debitAccountId: "2001", creditAccountId: "1001",
-        amount: Math.round(amount * 100),
-        ref: reversalRef, txType: "transaction_reversal", agentCode: "system",
+        })
+        .catch(() => {});
+      ingestToLakehouse("transaction_reversals", {
+        reversalRef,
+        originalTransactionId: input.id,
+        amount,
+        type: txType,
+        timestamp: new Date().toISOString(),
       }).catch(() => {});
-
-      // Fluvio + Dapr + Lakehouse
-      publishTxToFluvio({ txRef: reversalRef, agentCode: "system", amount, type: "transaction_reversal", timestamp: Date.now() }).catch(() => {});
-      dapr.publishEvent("pubsub", "reversal.approved", { reversalRef, originalTransactionId: input.id, amount, type: txType }).catch(() => {});
-      ingestToLakehouse("transaction_reversals", { reversalRef, originalTransactionId: input.id, amount, type: txType, timestamp: new Date().toISOString() }).catch(() => {});
 
       return {
         success: true,
@@ -198,7 +232,18 @@ const reject = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx?.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;
@@ -256,7 +301,18 @@ const escalate = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "reverse" }).catch(() => {});
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx?.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
     // ── Enforce STATUS_TRANSITIONS state machine ──
     if (typeof input === "object" && "status" in input) {
       const newStatus = (input as Record<string, unknown>).status as string;

@@ -133,18 +133,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishannouncementReactionsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -168,10 +169,17 @@ async function publishannouncementReactionsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const announcementReactionsRouter = router({
@@ -271,14 +279,22 @@ export const announcementReactionsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishannouncementReactionsMiddleware("addComment", `${Date.now()}`, { action: "addComment" }).catch(() => {});
+      await publishannouncementReactionsMiddleware(
+        "addComment",
+        `${Date.now()}`,
+        { action: "addComment" }
+      ).catch(() => {});
 
       return { success: true };
     }),
 
   getReactions: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishannouncementReactionsMiddleware("getReactions", `${Date.now()}`, { action: "getReactions" }).catch(() => {});
+    await publishannouncementReactionsMiddleware(
+      "getReactions",
+      `${Date.now()}`,
+      { action: "getReactions" }
+    ).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -289,7 +305,9 @@ export const announcementReactionsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishannouncementReactionsMiddleware("react", `${Date.now()}`, { action: "react" }).catch(() => {});
+      await publishannouncementReactionsMiddleware("react", `${Date.now()}`, {
+        action: "react",
+      }).catch(() => {});
 
       return { success: true };
     }),

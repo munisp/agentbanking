@@ -239,7 +239,10 @@ import { cacheGet, cacheSet, cacheIncr } from "../redisClient";
 
 const localRateLimitFallback = new Map<string, RateLimitEntry>();
 
-async function getRedisRateLimit(key: string, windowMs: number): Promise<{ count: number; resetAt: number } | null> {
+async function getRedisRateLimit(
+  key: string,
+  windowMs: number
+): Promise<{ count: number; resetAt: number } | null> {
   try {
     const raw = await cacheGet(`rl:${key}`);
     if (raw) {
@@ -252,10 +255,18 @@ async function getRedisRateLimit(key: string, windowMs: number): Promise<{ count
   }
 }
 
-async function setRedisRateLimit(key: string, count: number, resetAt: number): Promise<void> {
+async function setRedisRateLimit(
+  key: string,
+  count: number,
+  resetAt: number
+): Promise<void> {
   try {
     const ttlMs = Math.max(resetAt - Date.now(), 1000);
-    await cacheSet(`rl:${key}`, JSON.stringify({ count, resetAt }), Math.ceil(ttlMs / 1000));
+    await cacheSet(
+      `rl:${key}`,
+      JSON.stringify({ count, resetAt }),
+      Math.ceil(ttlMs / 1000)
+    );
   } catch {
     // fall back to local
   }

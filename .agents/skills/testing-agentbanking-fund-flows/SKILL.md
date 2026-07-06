@@ -6,9 +6,11 @@ description: Test fund flow routers (cashIn, cashOut, NFC, QR, loans, BNPL, FX, 
 # Testing Agent Banking Fund Flow Routers
 
 ## Overview
+
 The platform has 485+ tRPC routers. Financial routers that move money must have up to 10 middleware layers:
 
 **Core (required for all financial mutations):**
+
 1. **FOR UPDATE** — PostgreSQL row-level locking inside `withTransaction()` to prevent race conditions
 2. **GL Journal Entries** — Double-entry accounting via `db.insert(gl_journal_entries).values({...})`
 3. **Kafka Events** — Domain event publishing via `publishEvent(topic, ref, payload, metadata)`
@@ -16,16 +18,14 @@ The platform has 485+ tRPC routers. Financial routers that move money must have 
 5. **CBN Limits** — Nigerian regulatory daily limits via `checkDailyLimit(db, agentId, tier, amount)`
 6. **Audit Log** — Mutation trail via `writeAuditLog({agentId, agentCode, action, resource, ...})`
 
-**Extended (fire-and-forget, fail-open):**
-7. **TigerBeetle** — Immutable dual-ledger via `tbCreateTransfer({debitAccountId, creditAccountId, amount, ref, txType, agentCode})`
-8. **Fluvio** — Real-time fraud streaming via `publishTxToFluvio({txRef, agentCode, amount, type, timestamp})`
-9. **Dapr** — Cross-service pub/sub via `dapr.publishEvent("pubsub", topic, payload)`
-10. **Lakehouse** — Analytics pipeline via `ingestToLakehouse(table, data)`
+**Extended (fire-and-forget, fail-open):** 7. **TigerBeetle** — Immutable dual-ledger via `tbCreateTransfer({debitAccountId, creditAccountId, amount, ref, txType, agentCode})` 8. **Fluvio** — Real-time fraud streaming via `publishTxToFluvio({txRef, agentCode, amount, type, timestamp})` 9. **Dapr** — Cross-service pub/sub via `dapr.publishEvent("pubsub", topic, payload)` 10. **Lakehouse** — Analytics pipeline via `ingestToLakehouse(table, data)`
 
 **Optional (context-dependent):**
+
 - **Redis** — Balance cache invalidation via `cacheSet(\`agent:balance:\${id}\`, "", 1)` on balance-affecting mutations
 
 ## Environment Setup
+
 - **Primary repo:** `munisp/agentbanking` (default for all work)
 - **Branch:** `production-hardened` is the main development branch
 - **No live server available** in most sessions — no DATABASE_URL, Redis, or Kafka env vars
@@ -34,25 +34,32 @@ The platform has 485+ tRPC routers. Financial routers that move money must have 
 - **Package manager:** pnpm
 
 ## Devin Secrets Needed
+
 - `DATABASE_URL` — PostgreSQL connection string (not currently available; testing is shell-based without it)
 - No other secrets required for structural validation testing
 
 ## Testing Approach (Shell-Based)
 
 ### 1. TypeScript Compilation
+
 ```bash
 npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "react-i18next\|@dnd-kit\|i18next"
 ```
+
 **Expected:** Zero output (only 6 pre-existing client errors filtered out)
 
 ### 2. Vitest Regression
+
 ```bash
 npx vitest run 2>&1 | grep -E "Test Files|Tests  " | tail -3
 ```
+
 **Expected:** 4,241+ pass, 5 pre-existing failures, no new failures
 
 ### 3. Import Completeness Check
+
 Verify all financial routers have required middleware imports:
+
 ```bash
 for f in cashIn cashOut agentLoanFacility nfcTapToPay dynamicQrPayment stablecoinRails loyalty commissionPayouts crossBorderRemittance multiCurrencyExchange bnplEngine chargebackManagement reversalApproval ecommerceOrders airtimeVending billPayments splitPayments recurringPayments; do
   FILE="server/routers/$f.ts"
@@ -70,7 +77,9 @@ done
 ```
 
 ### 4. Active Middleware Call Verification
+
 Verify imports aren't dead — each router has actual function calls:
+
 ```bash
 for f in <router_list>; do
   FILE="server/routers/$f.ts"
@@ -81,10 +90,13 @@ for f in <router_list>; do
   echo "$f: TB=$TB FL=$FL DA=$DA LH=$LH"
 done
 ```
+
 **Pass criteria:** All counts >= 1 for every router.
 
 ### 5. Fail-Open Pattern Verification
+
 All extended middleware calls MUST have `.catch(() => {})`. Use Python for multi-line detection:
+
 ```python
 import re
 for fn in ['tbCreateTransfer', 'publishTxToFluvio', 'dapr.publishEvent', 'ingestToLakehouse']:
@@ -93,10 +105,13 @@ for fn in ['tbCreateTransfer', 'publishTxToFluvio', 'dapr.publishEvent', 'ingest
         if '.catch(' not in chunk:
             print(f'UNCAUGHT: {fn}')
 ```
+
 **Important:** Do NOT use single-line grep for this — `tbCreateTransfer` spans multiple lines with `.catch` on the closing `})` line. Naive single-line grep will produce false positives.
 
 ### 6. GL Account ID Correctness
+
 Use Python regex for reliable multi-line extraction of GL account pairs:
+
 ```python
 import re
 m = re.search(r'tbCreateTransfer\(\{([^}]+)\}', content)
@@ -104,15 +119,19 @@ block = m.group(1)
 debit = re.search(r'debitAccountId:\s*"(\d+)"', block)
 credit = re.search(r'creditAccountId:\s*"(\d+)"', block)
 ```
+
 **Do NOT use `grep -A3 | grep -oP`** — it captures debit IDs for both fields due to how multi-line grep works.
 
 ### 7. Reversible Operation GL Consistency
+
 Verify that payment/refund pairs use reversed GL account IDs:
+
 - cashIn(1001→2001) ↔ cashOut(2001→1001)
 - loanDisburse(2001→2004) ↔ loanRepay(2004→2001)
 - nfcPayment(1001→2001) ↔ nfcRefund(2001→1001)
 
 ### 8. Dapr Topic + Lakehouse Table Uniqueness
+
 ```bash
 # Dapr topics should be unique and semantic
 grep -rn 'dapr.publishEvent("pubsub"' server/routers/ | grep -oP '"pubsub", "[^"]*"' | sort -u
@@ -121,21 +140,23 @@ grep -rn 'ingestToLakehouse(' server/routers/ | grep -oP 'ingestToLakehouse\("[^
 ```
 
 ## Key GL Account IDs
-| ID | Name | Usage |
-|----|------|-------|
-| 1001 | Cash-on-Hand | Cash deposits/withdrawals |
-| 1003 | Stablecoin Holding | Crypto-fiat |
-| 2001 | Agent Float | Agent balance operations |
-| 2004 | Loan Payable | Loan disbursement/repayment |
-| 2005 | Loyalty Payable | Points redemption |
-| 3001 | Remittance Payable | Cross-border |
-| 3002 | FX Conversion | Currency exchange |
-| 4001 | Fee Revenue | Transaction fees/commission payouts |
-| 4002 | Penalty Revenue | Late penalties |
-| 5001-5004 | Expense accounts | Chargebacks, refunds, loyalty |
-| 6001 | Interest Expense | Savings interest accrual |
+
+| ID        | Name               | Usage                               |
+| --------- | ------------------ | ----------------------------------- |
+| 1001      | Cash-on-Hand       | Cash deposits/withdrawals           |
+| 1003      | Stablecoin Holding | Crypto-fiat                         |
+| 2001      | Agent Float        | Agent balance operations            |
+| 2004      | Loan Payable       | Loan disbursement/repayment         |
+| 2005      | Loyalty Payable    | Points redemption                   |
+| 3001      | Remittance Payable | Cross-border                        |
+| 3002      | FX Conversion      | Currency exchange                   |
+| 4001      | Fee Revenue        | Transaction fees/commission payouts |
+| 4002      | Penalty Revenue    | Late penalties                      |
+| 5001-5004 | Expense accounts   | Chargebacks, refunds, loyalty       |
+| 6001      | Interest Expense   | Savings interest accrual            |
 
 ## Middleware Client Files (Function Signatures)
+
 - `server/tbClient.ts` — `tbCreateTransfer(req: TBTransferRequest)` where `debitAccountId` and `creditAccountId` are **strings** (not numbers)
 - `server/fluvio.ts` — `publishTxToFluvio({txRef, agentCode, amount, type, timestamp})`
 - `server/redisClient.ts` — `cacheSet(key: string, value: string, ttlSeconds?: number)`
@@ -143,9 +164,11 @@ grep -rn 'ingestToLakehouse(' server/routers/ | grep -oP 'ingestToLakehouse\("[^
 - `server/middleware/middlewareConnectors.ts` — `dapr.publishEvent(pubsubName, topic, data)`
 
 ## Key Kafka Topics
+
 All financial events publish to `pos.transactions.created` with a `type` field distinguishing event types (e.g., `nfc_payment`, `qr_payment`, `loan_disbursement`, `stablecoin_created`, `loyalty_redemption`).
 
 ## Common Issues
+
 - **`ctx.user` has no `agentCode` property** — The tRPC user context type only has `id`, `keycloakSub`, `name`, `email`, `role`, etc. Use `String(ctx.user?.id ?? "system")` instead of `ctx.user?.agentCode`.
 - **`CommissionSplit` has no `commission` property** — Use `agentShare`, `platformShare`, `superAgentShare`, or `aggregatorShare` instead.
 - **Duplicate schema imports** — If adding `gl_journal_entries` to a file that already imports from `../../drizzle/schema`, consolidate into one import statement.
@@ -170,6 +193,7 @@ function publishPosMiddleware(eventType: string, key: string, payload: Record<st
 ```
 
 **Critical test:** Verify the helper is actually CALLED from mutation handlers, not just defined. Use:
+
 ```bash
 DEFN=$(grep -c 'function publishPosMiddleware' "$FILE")
 TOTAL=$(grep -c 'publishPosMiddleware' "$FILE")
@@ -185,13 +209,14 @@ CALLS=$((TOTAL - DEFN))
 
 When verifying Go/Rust/Python services have no in-memory state:
 
-| Language | In-Memory Red Flags | PostgreSQL Green Flags |
-|----------|--------------------|-----------------------|
-| Go | `var x map[...]` (exclude static config) | `"database/sql"`, `lib/pq`, `db.Query/Exec` |
-| Rust | `Mutex<Vec/HashMap>`, `static mut`, `lazy_static` | `PgPool`, `sqlx::query`, `ON CONFLICT` (UPSERT) |
-| Python | Module-level `dict/list/set` assignments | `import asyncpg`, `CREATE TABLE IF NOT EXISTS`, `conn.execute/fetch` |
+| Language | In-Memory Red Flags                               | PostgreSQL Green Flags                                               |
+| -------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| Go       | `var x map[...]` (exclude static config)          | `"database/sql"`, `lib/pq`, `db.Query/Exec`                          |
+| Rust     | `Mutex<Vec/HashMap>`, `static mut`, `lazy_static` | `PgPool`, `sqlx::query`, `ON CONFLICT` (UPSERT)                      |
+| Python   | Module-level `dict/list/set` assignments          | `import asyncpg`, `CREATE TABLE IF NOT EXISTS`, `conn.execute/fetch` |
 
 **False positives to exclude:** Go `allPermissions`/`allRoles` (static config), Python `_pool: Optional[asyncpg.Pool]` (connection pool, not state), Rust `web::Data<AppState>` with only PgPool (infrastructure, not state).
 
 ## Recording
+
 No recording needed for fund flow testing — all validation is shell-based. Only record if testing involves browser UI interactions (e.g., testing the PWA QR scanner page or NFC settings dashboard).

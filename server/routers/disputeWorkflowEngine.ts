@@ -75,13 +75,15 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
 async function publishdisputeWorkflowEngineMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `disputes.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -105,10 +107,17 @@ async function publishdisputeWorkflowEngineMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("disputes", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("disputes", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const disputeWorkflowEngineRouter = router({
@@ -327,7 +336,11 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishdisputeWorkflowEngineMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware(
+          "updateStatus",
+          `${Date.now()}`,
+          { action: "updateStatus" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -385,7 +398,11 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishdisputeWorkflowEngineMiddleware("escalate", `${Date.now()}`, { action: "escalate" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware(
+          "escalate",
+          `${Date.now()}`,
+          { action: "escalate" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -481,7 +498,11 @@ export const disputeWorkflowEngineRouter = router({
           logger.warn("[DisputeWorkflow]", e);
         }
         // Middleware fan-out (fail-open)
-        await publishdisputeWorkflowEngineMiddleware("autoResolve", `${Date.now()}`, { action: "autoResolve" }).catch(() => {});
+        await publishdisputeWorkflowEngineMiddleware(
+          "autoResolve",
+          `${Date.now()}`,
+          { action: "autoResolve" }
+        ).catch(() => {});
 
         return {
           success: true,

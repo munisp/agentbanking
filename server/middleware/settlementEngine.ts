@@ -23,18 +23,26 @@ import { writeToOutbox } from "./transactionalOutbox";
 
 export interface FeeWaterfallResult {
   totalFee: number;
-  platformShare: number;   // 40%
-  agentShare: number;      // 35%
+  platformShare: number; // 40%
+  agentShare: number; // 35%
   superAgentShare: number; // 20%
-  taxShare: number;        // 5%
+  taxShare: number; // 5%
 }
 
-export function calculateFeeWaterfall(totalFeeKobo: number): FeeWaterfallResult {
-  const platformShare = Math.floor(totalFeeKobo * 0.40);
+export function calculateFeeWaterfall(
+  totalFeeKobo: number
+): FeeWaterfallResult {
+  const platformShare = Math.floor(totalFeeKobo * 0.4);
   const agentShare = Math.floor(totalFeeKobo * 0.35);
-  const superAgentShare = Math.floor(totalFeeKobo * 0.20);
+  const superAgentShare = Math.floor(totalFeeKobo * 0.2);
   const taxShare = totalFeeKobo - platformShare - agentShare - superAgentShare; // remainder to tax (≈5%)
-  return { totalFee: totalFeeKobo, platformShare, agentShare, superAgentShare, taxShare };
+  return {
+    totalFee: totalFeeKobo,
+    platformShare,
+    agentShare,
+    superAgentShare,
+    taxShare,
+  };
 }
 
 export async function recordFeeWaterfall(
@@ -53,15 +61,53 @@ export async function recordFeeWaterfall(
   }
 
   // TigerBeetle entries for each party
-  await tbCreateTransfer({ debitAccountId: "4001", creditAccountId: "4010", amount: split.platformShare, ledger: 1, code: 1 }).catch(() => {});
-  await tbCreateTransfer({ debitAccountId: "4001", creditAccountId: "4011", amount: split.agentShare, ledger: 1, code: 2 }).catch(() => {});
-  await tbCreateTransfer({ debitAccountId: "4001", creditAccountId: "4012", amount: split.superAgentShare, ledger: 1, code: 3 }).catch(() => {});
-  await tbCreateTransfer({ debitAccountId: "4001", creditAccountId: "4013", amount: split.taxShare, ledger: 1, code: 4 }).catch(() => {});
+  await tbCreateTransfer({
+    debitAccountId: "4001",
+    creditAccountId: "4010",
+    amount: split.platformShare,
+    ledger: 1,
+    code: 1,
+  }).catch(() => {});
+  await tbCreateTransfer({
+    debitAccountId: "4001",
+    creditAccountId: "4011",
+    amount: split.agentShare,
+    ledger: 1,
+    code: 2,
+  }).catch(() => {});
+  await tbCreateTransfer({
+    debitAccountId: "4001",
+    creditAccountId: "4012",
+    amount: split.superAgentShare,
+    ledger: 1,
+    code: 3,
+  }).catch(() => {});
+  await tbCreateTransfer({
+    debitAccountId: "4001",
+    creditAccountId: "4013",
+    amount: split.taxShare,
+    ledger: 1,
+    code: 4,
+  }).catch(() => {});
 
-  await publishEvent("settlement.fee.split", transactionRef, { transactionRef, ...split, agentId }).catch(() => {});
-  await fluvioPublish("fee.split", { transactionRef, agentId, ...split }).catch(() => {});
-  await daprPublish("revenue", "fee.split.completed", { transactionRef, ...split }).catch(() => {});
-  await lakehouseIngest("fee_waterfall_splits", { transactionRef, agentId, ...split, timestamp: new Date().toISOString() }).catch(() => {});
+  await publishEvent("settlement.fee.split", transactionRef, {
+    transactionRef,
+    ...split,
+    agentId,
+  }).catch(() => {});
+  await fluvioPublish("fee.split", { transactionRef, agentId, ...split }).catch(
+    () => {}
+  );
+  await daprPublish("revenue", "fee.split.completed", {
+    transactionRef,
+    ...split,
+  }).catch(() => {});
+  await lakehouseIngest("fee_waterfall_splits", {
+    transactionRef,
+    agentId,
+    ...split,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 
   return split;
 }
@@ -80,9 +126,10 @@ export async function addToSettlementBatch(
   const db = (await getDb())!;
   if (!db) return "no-db";
 
-  const cutOff = settlementType === "T0_agent"
-    ? new Date() // instant
-    : new Date(new Date().setHours(23, 59, 59, 999)); // end of day
+  const cutOff =
+    settlementType === "T0_agent"
+      ? new Date() // instant
+      : new Date(new Date().setHours(23, 59, 59, 999)); // end of day
 
   // Get or create today's batch
   const batchRef = `BATCH-${settlementType}-${new Date().toISOString().slice(0, 10)}`;
@@ -114,14 +161,19 @@ export async function addToSettlementBatch(
   // For T+0 (agent), settle immediately
   if (settlementType === "T0_agent") {
     await writeToOutbox("settlement", batchRef, "settlement.instant", {
-      batchRef, agentId, amount, transactionRef,
+      batchRef,
+      agentId,
+      amount,
+      transactionRef,
     });
   }
 
   return batchRef;
 }
 
-export async function processSettlementBatch(batchRef: string): Promise<{ settled: number; failed: number }> {
+export async function processSettlementBatch(
+  batchRef: string
+): Promise<{ settled: number; failed: number }> {
   const db = (await getDb())!;
   if (!db) return { settled: 0, failed: 0 };
 
@@ -152,8 +204,11 @@ export async function processSettlementBatch(batchRef: string): Promise<{ settle
   for (const item of items as any[]) {
     try {
       await tbCreateTransfer({
-        debitAccountId: "3001", creditAccountId: `agent_${item.agent_id}`,
-        amount: item.amount - item.fee_amount, ledger: 2, code: 10,
+        debitAccountId: "3001",
+        creditAccountId: `agent_${item.agent_id}`,
+        amount: item.amount - item.fee_amount,
+        ledger: 2,
+        code: 10,
       }).catch(() => {});
 
       await db.execute(sql`
@@ -172,10 +227,27 @@ export async function processSettlementBatch(batchRef: string): Promise<{ settle
     UPDATE settlement_batches SET status = 'settled', settled_at = NOW() WHERE id = ${batchId}
   `);
 
-  await publishEvent("settlement.batch.completed", batchRef, { batchRef, settled, failed }).catch(() => {});
-  await fluvioPublish("settlement.completed", { batchRef, settled, failed }).catch(() => {});
-  await daprPublish("settlement", "batch.completed", { batchRef, settled, failed }).catch(() => {});
-  await lakehouseIngest("settlement_batches", { batchRef, settled, failed, timestamp: new Date().toISOString() }).catch(() => {});
+  await publishEvent("settlement.batch.completed", batchRef, {
+    batchRef,
+    settled,
+    failed,
+  }).catch(() => {});
+  await fluvioPublish("settlement.completed", {
+    batchRef,
+    settled,
+    failed,
+  }).catch(() => {});
+  await daprPublish("settlement", "batch.completed", {
+    batchRef,
+    settled,
+    failed,
+  }).catch(() => {});
+  await lakehouseIngest("settlement_batches", {
+    batchRef,
+    settled,
+    failed,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 
   return { settled, failed };
 }
@@ -188,7 +260,11 @@ export async function checkFloatThreshold(
   agentId: number,
   currentBalance: number,
   initialFloat: number
-): Promise<{ alert: boolean; type?: "warning" | "critical"; percentage: number }> {
+): Promise<{
+  alert: boolean;
+  type?: "warning" | "critical";
+  percentage: number;
+}> {
   if (initialFloat <= 0) return { alert: false, percentage: 100 };
 
   const percentage = Math.round((currentBalance / initialFloat) * 100);
@@ -202,9 +278,19 @@ export async function checkFloatThreshold(
       `);
     }
 
-    await publishEvent("float.alert.critical", String(agentId), { agentId, currentBalance, percentage }).catch(() => {});
-    await fluvioPublish("float.alert.critical", { agentId, percentage }).catch(() => {});
-    await daprPublish("agent-alerts", "float.critical", { agentId, currentBalance, percentage }).catch(() => {});
+    await publishEvent("float.alert.critical", String(agentId), {
+      agentId,
+      currentBalance,
+      percentage,
+    }).catch(() => {});
+    await fluvioPublish("float.alert.critical", { agentId, percentage }).catch(
+      () => {}
+    );
+    await daprPublish("agent-alerts", "float.critical", {
+      agentId,
+      currentBalance,
+      percentage,
+    }).catch(() => {});
 
     return { alert: true, type: "critical", percentage };
   }
@@ -217,8 +303,14 @@ export async function checkFloatThreshold(
       `);
     }
 
-    await publishEvent("float.alert.warning", String(agentId), { agentId, currentBalance, percentage }).catch(() => {});
-    await fluvioPublish("float.alert.warning", { agentId, percentage }).catch(() => {});
+    await publishEvent("float.alert.warning", String(agentId), {
+      agentId,
+      currentBalance,
+      percentage,
+    }).catch(() => {});
+    await fluvioPublish("float.alert.warning", { agentId, percentage }).catch(
+      () => {}
+    );
 
     return { alert: true, type: "warning", percentage };
   }
@@ -230,7 +322,11 @@ export async function checkFloatThreshold(
 // RECURRING PAYMENT EXECUTOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function executeRecurringPayments(): Promise<{ executed: number; failed: number; skipped: number }> {
+export async function executeRecurringPayments(): Promise<{
+  executed: number;
+  failed: number;
+  skipped: number;
+}> {
   const db = (await getDb())!;
   if (!db) return { executed: 0, failed: 0, skipped: 0 };
 
@@ -248,7 +344,9 @@ export async function executeRecurringPayments(): Promise<{ executed: number; fa
     LIMIT 100
   `);
 
-  let executed = 0, failed = 0, skipped = 0;
+  let executed = 0,
+    failed = 0,
+    skipped = 0;
 
   for (const schedule of schedules as any[]) {
     try {
@@ -260,13 +358,24 @@ export async function executeRecurringPayments(): Promise<{ executed: number; fa
         VALUES (${schedule.id}, ${schedule.agent_id}, ${schedule.amount}, 'executed', NOW(), ${txRef})
       `);
 
-      await writeToOutbox("recurring_payment", txRef, "recurring.payment.executed", {
-        scheduleId: schedule.id, agentId: schedule.agent_id, amount: schedule.amount, txRef,
-      });
+      await writeToOutbox(
+        "recurring_payment",
+        txRef,
+        "recurring.payment.executed",
+        {
+          scheduleId: schedule.id,
+          agentId: schedule.agent_id,
+          amount: schedule.amount,
+          txRef,
+        }
+      );
 
       await tbCreateTransfer({
-        debitAccountId: `agent_${schedule.agent_id}`, creditAccountId: schedule.recipient_account,
-        amount: schedule.amount, ledger: 1, code: 20,
+        debitAccountId: `agent_${schedule.agent_id}`,
+        creditAccountId: schedule.recipient_account,
+        amount: schedule.amount,
+        ledger: 1,
+        code: 20,
       }).catch(() => {});
 
       executed++;
@@ -280,8 +389,17 @@ export async function executeRecurringPayments(): Promise<{ executed: number; fa
   }
 
   if (executed + failed > 0) {
-    await publishEvent("recurring.payment.executed", "batch", { executed, failed, skipped }).catch(() => {});
-    await lakehouseIngest("recurring_payment_runs", { executed, failed, skipped, timestamp: new Date().toISOString() }).catch(() => {});
+    await publishEvent("recurring.payment.executed", "batch", {
+      executed,
+      failed,
+      skipped,
+    }).catch(() => {});
+    await lakehouseIngest("recurring_payment_runs", {
+      executed,
+      failed,
+      skipped,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
   }
 
   return { executed, failed, skipped };
@@ -299,7 +417,14 @@ export async function runEndOfDayReconciliation(): Promise<{
   discrepancy: number;
 }> {
   const db = (await getDb())!;
-  if (!db) return { status: "matched", glTotal: 0, tbTotal: 0, floatTotal: 0, discrepancy: 0 };
+  if (!db)
+    return {
+      status: "matched",
+      glTotal: 0,
+      tbTotal: 0,
+      floatTotal: 0,
+      discrepancy: 0,
+    };
 
   // Sum GL entries for today
   const [glResult] = await db.execute(sql`
@@ -318,12 +443,16 @@ export async function runEndOfDayReconciliation(): Promise<{
   // TigerBeetle total (from sidecar)
   let tbTotal = glTotal; // fallback: assume match if TB unavailable
   try {
-    const resp = await fetch(`${process.env.TIGERBEETLE_URL || "http://localhost:8230"}/balances/total`);
+    const resp = await fetch(
+      `${process.env.TIGERBEETLE_URL || "http://localhost:8230"}/balances/total`
+    );
     if (resp.ok) {
       const data = await resp.json();
       tbTotal = Number(data.total ?? glTotal);
     }
-  } catch { /* use fallback */ }
+  } catch {
+    /* use fallback */
+  }
 
   const discrepancy = Math.abs(glTotal - tbTotal);
   const status = discrepancy === 0 ? "matched" : "discrepancy";
@@ -334,13 +463,29 @@ export async function runEndOfDayReconciliation(): Promise<{
   `);
 
   if (status === "discrepancy") {
-    await publishEvent("reconciliation.completed", "daily", { glTotal, tbTotal, discrepancy }).catch(() => {});
-    await daprPublish("ops-alerts", "reconciliation.discrepancy", { glTotal, tbTotal, discrepancy }).catch(() => {});
-    await fluvioPublish("ops.reconciliation.alert", { discrepancy, date: new Date().toISOString() }).catch(() => {});
+    await publishEvent("reconciliation.completed", "daily", {
+      glTotal,
+      tbTotal,
+      discrepancy,
+    }).catch(() => {});
+    await daprPublish("ops-alerts", "reconciliation.discrepancy", {
+      glTotal,
+      tbTotal,
+      discrepancy,
+    }).catch(() => {});
+    await fluvioPublish("ops.reconciliation.alert", {
+      discrepancy,
+      date: new Date().toISOString(),
+    }).catch(() => {});
   }
 
   await lakehouseIngest("reconciliation_daily", {
-    date: new Date().toISOString().slice(0, 10), glTotal, tbTotal, floatTotal, discrepancy, status,
+    date: new Date().toISOString().slice(0, 10),
+    glTotal,
+    tbTotal,
+    floatTotal,
+    discrepancy,
+    status,
   }).catch(() => {});
 
   return { status, glTotal, tbTotal, floatTotal, discrepancy };

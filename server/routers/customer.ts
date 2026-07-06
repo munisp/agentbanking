@@ -115,18 +115,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishcustomerMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `customer.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -150,10 +151,17 @@ async function publishcustomerMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("customer", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("customer", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const customerRouter = router({
@@ -299,7 +307,9 @@ export const customerRouter = router({
             db.select({ total: count() }).from(transactions).where(where),
           ]);
           // Middleware fan-out (fail-open)
-          await publishcustomerMiddleware("register", `${Date.now()}`, { action: "register" }).catch(() => {});
+          await publishcustomerMiddleware("register", `${Date.now()}`, {
+            action: "register",
+          }).catch(() => {});
 
           return { items, total };
         } catch (error) {
@@ -673,7 +683,9 @@ export const customerRouter = router({
             })
             .returning();
           // Middleware fan-out (fail-open)
-          await publishcustomerMiddleware("createChallenge", `${Date.now()}`, { action: "createChallenge" }).catch(() => {});
+          await publishcustomerMiddleware("createChallenge", `${Date.now()}`, {
+            action: "createChallenge",
+          }).catch(() => {});
 
           return { challenge: row.challenge, expiresAt: row.expiresAt };
         } catch (error) {

@@ -35,7 +35,6 @@ import {
 import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
   pending_validation: ["validated", "failed_validation"],
@@ -209,7 +208,18 @@ export const billPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -339,15 +349,35 @@ export const billPaymentsRouter = router({
 
         // TigerBeetle dual-ledger
         tbCreateTransfer({
-          debitAccountId: "2001", creditAccountId: "1001",
+          debitAccountId: "2001",
+          creditAccountId: "1001",
           amount: Math.round(input.amount * 100),
-          ref, txType: "bill_payment", agentCode: session.agentCode,
+          ref,
+          txType: "bill_payment",
+          agentCode: session.agentCode,
         }).catch(() => {});
 
         // Fluvio + Dapr + Lakehouse
-        publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amount, type: "bill_payment", timestamp: Date.now() }).catch(() => {});
-        dapr.publishEvent("pubsub", "bill.payment.completed", { ref, amount: input.amount, billerId: input.billerId }).catch(() => {});
-        ingestToLakehouse("bill_payments", { ref, amount: input.amount, billerId: input.billerId, timestamp: new Date().toISOString() }).catch(() => {});
+        publishTxToFluvio({
+          txRef: ref,
+          agentCode: session.agentCode,
+          amount: input.amount,
+          type: "bill_payment",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "bill.payment.completed", {
+            ref,
+            amount: input.amount,
+            billerId: input.billerId,
+          })
+          .catch(() => {});
+        ingestToLakehouse("bill_payments", {
+          ref,
+          amount: input.amount,
+          billerId: input.billerId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
           type: "bill_payment",

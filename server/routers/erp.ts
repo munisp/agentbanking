@@ -205,18 +205,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publisherpMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -240,10 +241,17 @@ async function publisherpMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const erpRouter = router({
@@ -314,7 +322,9 @@ export const erpRouter = router({
           .where(eq(erpConfig.id, existing.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publisherpMiddleware("saveConfig", `${Date.now()}`, { action: "saveConfig" }).catch(() => {});
+        await publisherpMiddleware("saveConfig", `${Date.now()}`, {
+          action: "saveConfig",
+        }).catch(() => {});
 
         return { success: true, config: updated };
       } catch (error) {
@@ -335,7 +345,9 @@ export const erpRouter = router({
       const cfg = await getOrCreateConfig(db);
       if (!cfg.baseUrl) {
         // Middleware fan-out (fail-open)
-        await publisherpMiddleware("testWebhook", `${Date.now()}`, { action: "testWebhook" }).catch(() => {});
+        await publisherpMiddleware("testWebhook", `${Date.now()}`, {
+          action: "testWebhook",
+        }).catch(() => {});
 
         return {
           success: false,
@@ -452,7 +464,9 @@ export const erpRouter = router({
         })
         .where(eq(erpConfig.id, cfg.id));
       // Middleware fan-out (fail-open)
-      await publisherpMiddleware("syncNow", `${Date.now()}`, { action: "syncNow" }).catch(() => {});
+      await publisherpMiddleware("syncNow", `${Date.now()}`, {
+        action: "syncNow",
+      }).catch(() => {});
 
       return { synced, failed, total: toSync.length };
     } catch (error) {
@@ -542,7 +556,9 @@ export const erpRouter = router({
           })
           .where(eq(erpSyncLog.id, input.logId));
         // Middleware fan-out (fail-open)
-        await publisherpMiddleware("retrySync", `${Date.now()}`, { action: "retrySync" }).catch(() => {});
+        await publisherpMiddleware("retrySync", `${Date.now()}`, {
+          action: "retrySync",
+        }).catch(() => {});
 
         return { success: result.success, error: result.error };
       } catch (error) {

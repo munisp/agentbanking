@@ -104,18 +104,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishemailDeliveryLogCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `delivery.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -139,10 +140,17 @@ async function publishemailDeliveryLogCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("delivery", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("delivery", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const emailDeliveryLogRouter = router({
@@ -316,8 +324,11 @@ export const emailDeliveryLogRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishemailDeliveryLogCrudMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
-
+        await publishemailDeliveryLogCrudMiddleware(
+          "retryFailed",
+          `${Date.now()}`,
+          { action: "retryFailed" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -342,7 +353,9 @@ export const emailDeliveryLogRouter = router({
           .delete(emailDeliveryLog)
           .where(eq(emailDeliveryLog.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishemailDeliveryLogCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishemailDeliveryLogCrudMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

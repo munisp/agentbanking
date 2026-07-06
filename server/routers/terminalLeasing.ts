@@ -35,13 +35,32 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.terminal.leasing", key, { eventType, ...payload });
-  fluvioPublish("pos.terminal.leasing", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.lease.payment.completed", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_terminal_leases", { event_type: eventType, ...payload, source: "terminalLeasing" }).catch(() => {});
+  fluvioPublish("pos.terminal.leasing", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.lease.payment.completed", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_terminal_leases", {
+    event_type: eventType,
+    ...payload,
+    source: "terminalLeasing",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   active: ["suspended", "terminated", "completed"],
@@ -207,7 +226,11 @@ export const terminalLeasingRouter = router({
           },
         });
 
-        publishPosMiddleware("createLease", String(input.terminalId ?? "unknown"), { action: "createLease" });
+        publishPosMiddleware(
+          "createLease",
+          String(input.terminalId ?? "unknown"),
+          { action: "createLease" }
+        );
 
         return {
           success: true,
@@ -352,7 +375,10 @@ export const terminalLeasingRouter = router({
           metadata: { amount: input.amount, paymentRef: input.paymentRef },
         });
 
-        publishPosMiddleware("recordPayment", String(input.leaseId), { action: "recordPayment", ...input });
+        publishPosMiddleware("recordPayment", String(input.leaseId), {
+          action: "recordPayment",
+          ...input,
+        });
         return {
           success: true,
           message: "Payment recorded",
@@ -439,7 +465,10 @@ export const terminalLeasingRouter = router({
           },
         });
 
-        publishPosMiddleware("terminateLease", String(input.leaseId), { action: "terminateLease", ...input });
+        publishPosMiddleware("terminateLease", String(input.leaseId), {
+          action: "terminateLease",
+          ...input,
+        });
         return {
           success: true,
           message: "Lease terminated",

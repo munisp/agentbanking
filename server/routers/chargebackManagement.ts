@@ -31,7 +31,6 @@ import {
 } from "../lib/domainCalculations";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
   pending_approval: ["approved", "rejected"],
@@ -191,7 +190,18 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "dispute",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -256,8 +266,19 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "dispute", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
-      return withTransaction(async (tx) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "dispute",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+      return withTransaction(async tx => {
         const db = tx ?? (await getDb())!;
         await db
           .update(disputes)
@@ -284,29 +305,45 @@ export const chargebackManagementRouter = router({
             status: "posted",
           });
 
-          publishEvent(
-            "pos.disputes.resolved",
-            String(input.id),
-            {
-              disputeId: input.id,
-              resolution: input.resolution,
-              refundAmount: input.refundAmount,
-              timestamp: new Date().toISOString(),
-            }
-          ).catch(() => {});
+          publishEvent("pos.disputes.resolved", String(input.id), {
+            disputeId: input.id,
+            resolution: input.resolution,
+            refundAmount: input.refundAmount,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
 
           // TigerBeetle dual-ledger for refund
           tbCreateTransfer({
-            debitAccountId: "5001", creditAccountId: "1001",
+            debitAccountId: "5001",
+            creditAccountId: "1001",
             amount: Math.round((input.refundAmount ?? 0) * 100),
-            ref: `CB-${input.id}-${Date.now()}`, txType: "chargeback_refund", agentCode: "system",
+            ref: `CB-${input.id}-${Date.now()}`,
+            txType: "chargeback_refund",
+            agentCode: "system",
           }).catch(() => {});
 
           // Fluvio + Dapr + Lakehouse
           const cbRef = `CB-${input.id}-${Date.now()}`;
-          publishTxToFluvio({ txRef: cbRef, agentCode: "system", amount: input.refundAmount ?? 0, type: "chargeback_resolution", timestamp: Date.now() }).catch(() => {});
-          dapr.publishEvent("pubsub", "chargeback.resolved", { disputeId: input.id, resolution: input.resolution, refundAmount: input.refundAmount }).catch(() => {});
-          ingestToLakehouse("chargeback_resolutions", { disputeId: input.id, resolution: input.resolution, refundAmount: input.refundAmount, timestamp: new Date().toISOString() }).catch(() => {});
+          publishTxToFluvio({
+            txRef: cbRef,
+            agentCode: "system",
+            amount: input.refundAmount ?? 0,
+            type: "chargeback_resolution",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "chargeback.resolved", {
+              disputeId: input.id,
+              resolution: input.resolution,
+              refundAmount: input.refundAmount,
+            })
+            .catch(() => {});
+          ingestToLakehouse("chargeback_resolutions", {
+            disputeId: input.id,
+            resolution: input.resolution,
+            refundAmount: input.refundAmount,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
         }
 
         await db.insert(auditLog).values({

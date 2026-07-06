@@ -109,18 +109,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishfraudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `fraud.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -144,10 +145,14 @@ async function publishfraudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const fraudRouter = router({
@@ -248,7 +253,9 @@ export const fraudRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishfraudMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+        await publishfraudMiddleware("updateStatus", `${Date.now()}`, {
+          action: "updateStatus",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -310,8 +317,9 @@ export const fraudRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishfraudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+        await publishfraudMiddleware("create", `${Date.now()}`, {
+          action: "create",
+        }).catch(() => {});
 
         return { success: true, alertId: alert.id };
       } catch (error) {
@@ -465,7 +473,9 @@ export const fraudRouter = router({
           });
         await db.delete(fraudRules).where(eq(fraudRules.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishfraudMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+        await publishfraudMiddleware("deleteRule", `${Date.now()}`, {
+          action: "deleteRule",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -494,7 +504,9 @@ export const fraudRouter = router({
           .where(eq(fraudRules.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishfraudMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+        await publishfraudMiddleware("toggleRule", `${Date.now()}`, {
+          action: "toggleRule",
+        }).catch(() => {});
 
         return { ...rule, threshold: Number(rule.threshold) };
       } catch (error) {
@@ -530,9 +542,11 @@ export const fraudRouter = router({
         .limit(1);
       if (existing.length > 0)
         // Middleware fan-out (fail-open)
-        await publishfraudMiddleware("seedDefaultRules", `${Date.now()}`, { action: "seedDefaultRules" }).catch(() => {});
+        await publishfraudMiddleware("seedDefaultRules", `${Date.now()}`, {
+          action: "seedDefaultRules",
+        }).catch(() => {});
 
-        return { seeded: 0, message: "Rules already exist — no changes made" };
+      return { seeded: 0, message: "Rules already exist — no changes made" };
       const DEFAULT_RULES = [
         {
           name: "Velocity: Max 5 Transactions per 10 Minutes",

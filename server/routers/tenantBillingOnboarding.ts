@@ -371,13 +371,15 @@ function logOperation(action: string, details: Record<string, unknown>) {
 async function publishtenantBillingOnboardingMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `billing.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -401,10 +403,17 @@ async function publishtenantBillingOnboardingMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("billing", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("billing", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const tenantBillingOnboardingRouter = router({
@@ -465,7 +474,11 @@ export const tenantBillingOnboardingRouter = router({
 
         if (existing) {
           // Middleware fan-out (fail-open)
-          await publishtenantBillingOnboardingMiddleware("provisionBilling", `${Date.now()}`, { action: "provisionBilling" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware(
+            "provisionBilling",
+            `${Date.now()}`,
+            { action: "provisionBilling" }
+          ).catch(() => {});
 
           return {
             success: false,
@@ -601,7 +614,11 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!existing) {
           // Middleware fan-out (fail-open)
-          await publishtenantBillingOnboardingMiddleware("updateConfig", `${Date.now()}`, { action: "updateConfig" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware(
+            "updateConfig",
+            `${Date.now()}`,
+            { action: "updateConfig" }
+          ).catch(() => {});
 
           return {
             success: false,
@@ -704,7 +721,11 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!config) {
           // Middleware fan-out (fail-open)
-          await publishtenantBillingOnboardingMiddleware("retryStep", `${Date.now()}`, { action: "retryStep" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware(
+            "retryStep",
+            `${Date.now()}`,
+            { action: "retryStep" }
+          ).catch(() => {});
 
           return { success: false, error: "No billing config found" };
         }
@@ -754,9 +775,13 @@ export const tenantBillingOnboardingRouter = router({
 
         if (!existing)
           // Middleware fan-out (fail-open)
-          await publishtenantBillingOnboardingMiddleware("deactivateBilling", `${Date.now()}`, { action: "deactivateBilling" }).catch(() => {});
+          await publishtenantBillingOnboardingMiddleware(
+            "deactivateBilling",
+            `${Date.now()}`,
+            { action: "deactivateBilling" }
+          ).catch(() => {});
 
-          return { success: false, error: "No billing config found" };
+        return { success: false, error: "No billing config found" };
 
         await (
           await db()

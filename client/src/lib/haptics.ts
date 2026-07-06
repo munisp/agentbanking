@@ -9,7 +9,8 @@
  * Falls back silently on devices without vibration support.
  */
 
-const supportsVibration = typeof navigator !== "undefined" && "vibrate" in navigator;
+const supportsVibration =
+  typeof navigator !== "undefined" && "vibrate" in navigator;
 
 export function hapticSuccess(): void {
   if (!supportsVibration) return;
@@ -36,7 +37,15 @@ export function hapticNotification(): void {
   navigator.vibrate([100, 50, 100]);
 }
 
-type HapticType = "micro" | "tap" | "success" | "error" | "warning" | "selection" | "notification" | "failure";
+type HapticType =
+  | "micro"
+  | "tap"
+  | "success"
+  | "error"
+  | "warning"
+  | "selection"
+  | "notification"
+  | "failure";
 
 const hapticMap: Record<HapticType, () => void> = {
   micro: hapticSelection,

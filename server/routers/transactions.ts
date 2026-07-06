@@ -1344,7 +1344,8 @@ export const transactionsRouter = router({
         if (tx.agentId === agent.id) {
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "Separation of duties violation: cannot approve your own reversal request",
+            message:
+              "Separation of duties violation: cannot approve your own reversal request",
           });
         }
 

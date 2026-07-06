@@ -344,29 +344,68 @@ export const savingsProductsRouter = router({
       const rows = await db.execute(
         sql`SELECT * FROM platform_settings WHERE key LIKE 'savings_product_%' ORDER BY key LIMIT 50`
       );
-      const products = (rows.rows ?? []).map((r: Record<string, unknown>) => {
-        try { return JSON.parse(String(r.value)); } catch { return null; }
-      }).filter(Boolean);
+      const products = (rows.rows ?? [])
+        .map((r: Record<string, unknown>) => {
+          try {
+            return JSON.parse(String(r.value));
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
       if (products.length > 0) return { products };
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
     return {
       products: [
-        { id: "SP-001", name: "Agent Savings", interestRate: 8, minBalance: 10000, compoundFrequency: "monthly", status: "active" },
-        { id: "SP-002", name: "Fixed Deposit", interestRate: 12, minBalance: 100000, compoundFrequency: "quarterly", tenorDays: 90, status: "active" },
-        { id: "SP-003", name: "Target Savings", interestRate: 10, minBalance: 5000, compoundFrequency: "daily", status: "active" },
+        {
+          id: "SP-001",
+          name: "Agent Savings",
+          interestRate: 8,
+          minBalance: 10000,
+          compoundFrequency: "monthly",
+          status: "active",
+        },
+        {
+          id: "SP-002",
+          name: "Fixed Deposit",
+          interestRate: 12,
+          minBalance: 100000,
+          compoundFrequency: "quarterly",
+          tenorDays: 90,
+          status: "active",
+        },
+        {
+          id: "SP-003",
+          name: "Target Savings",
+          interestRate: 10,
+          minBalance: 5000,
+          compoundFrequency: "daily",
+          status: "active",
+        },
       ],
     };
   }),
 
   calculateInterest: protectedProcedure
-    .input(z.object({
-      principal: z.number().positive(),
-      annualRate: z.number().min(0).max(100),
-      compoundFrequency: z.enum(["daily", "monthly", "quarterly", "annually"]).default("monthly"),
-      periodDays: z.number().min(1).max(3650).default(365),
-    }))
+    .input(
+      z.object({
+        principal: z.number().positive(),
+        annualRate: z.number().min(0).max(100),
+        compoundFrequency: z
+          .enum(["daily", "monthly", "quarterly", "annually"])
+          .default("monthly"),
+        periodDays: z.number().min(1).max(3650).default(365),
+      })
+    )
     .query(({ input }) => {
-      const frequencyMap = { daily: 365, monthly: 12, quarterly: 4, annually: 1 };
+      const frequencyMap = {
+        daily: 365,
+        monthly: 12,
+        quarterly: 4,
+        annually: 1,
+      };
       const n = frequencyMap[input.compoundFrequency];
       const r = input.annualRate / 100;
       const t = input.periodDays / 365;
@@ -386,15 +425,18 @@ export const savingsProductsRouter = router({
         compoundInterest: Math.round(compoundInterest * 100) / 100,
         simpleInterest: Math.round(simpleInterest * 100) / 100,
         maturityAmount: Math.round(compoundAmount * 100) / 100,
-        effectiveAnnualRate: Math.round((Math.pow(1 + r / n, n) - 1) * 10000) / 100,
+        effectiveAnnualRate:
+          Math.round((Math.pow(1 + r / n, n) - 1) * 10000) / 100,
       };
     }),
 
   accrueInterest: protectedProcedure
-    .input(z.object({
-      accountId: z.string(),
-      productId: z.string().default("SP-001"),
-    }))
+    .input(
+      z.object({
+        accountId: z.string(),
+        productId: z.string().default("SP-001"),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const session = { id: 0, agentCode: "SYSTEM" };
@@ -404,19 +446,34 @@ export const savingsProductsRouter = router({
         sql`SELECT value FROM platform_settings WHERE key = ${"savings_account_" + input.accountId} LIMIT 1`
       );
       const accountRow = (accountResult.rows ?? [])[0];
-      const account = accountRow ? JSON.parse(String((accountRow as Record<string, unknown>).value)) : {
-        balance: 0, lastAccrualDate: null, accruedInterest: 0,
-      };
+      const account = accountRow
+        ? JSON.parse(String((accountRow as Record<string, unknown>).value))
+        : {
+            balance: 0,
+            lastAccrualDate: null,
+            accruedInterest: 0,
+          };
 
       const balance = Number(account.balance ?? 0);
       if (balance <= 0) return { accrued: 0, message: "No balance to accrue" };
 
-      const annualRate = input.productId === "SP-002" ? 12 : input.productId === "SP-003" ? 10 : 8;
+      const annualRate =
+        input.productId === "SP-002"
+          ? 12
+          : input.productId === "SP-003"
+            ? 10
+            : 8;
       const dailyRate = annualRate / 100 / 365;
-      const lastAccrual = account.lastAccrualDate ? new Date(account.lastAccrualDate) : new Date(Date.now() - 86400000);
-      const daysSinceAccrual = Math.max(1, Math.floor((Date.now() - lastAccrual.getTime()) / 86400000));
+      const lastAccrual = account.lastAccrualDate
+        ? new Date(account.lastAccrualDate)
+        : new Date(Date.now() - 86400000);
+      const daysSinceAccrual = Math.max(
+        1,
+        Math.floor((Date.now() - lastAccrual.getTime()) / 86400000)
+      );
 
-      const accruedInterest = Math.round(balance * dailyRate * daysSinceAccrual * 100) / 100;
+      const accruedInterest =
+        Math.round(balance * dailyRate * daysSinceAccrual * 100) / 100;
 
       // GL entry for interest accrual
       await db.insert(gl_journal_entries).values({
@@ -460,14 +517,29 @@ export const savingsProductsRouter = router({
       const rows = await db.execute(
         sql`SELECT * FROM platform_settings WHERE key LIKE 'savings_account_%' ORDER BY key LIMIT 100`
       );
-      const accounts = (rows.rows ?? []).map((r: Record<string, unknown>) => {
-        try { return JSON.parse(String(r.value)); } catch { return null; }
-      }).filter(Boolean);
+      const accounts = (rows.rows ?? [])
+        .map((r: Record<string, unknown>) => {
+          try {
+            return JSON.parse(String(r.value));
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
       if (accounts.length > 0) return { accounts, total: accounts.length };
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
     return {
       accounts: [
-        { id: "SA-001", productId: "SP-001", agentId: "AGT-001", balance: 250000, accruedInterest: 1644, status: "active" },
+        {
+          id: "SA-001",
+          productId: "SP-001",
+          agentId: "AGT-001",
+          balance: 250000,
+          accruedInterest: 1644,
+          status: "active",
+        },
       ],
       total: 1,
     };
@@ -489,13 +561,20 @@ export const savingsProductsRouter = router({
           totalAccounts: Number(row.total_accounts ?? 0),
           activeAccounts: Number(row.active_txs ?? 0),
           totalBalance: Number(row.total_volume ?? 0),
-          avgBalance: Number(row.total_accounts) > 0 ? Math.round(Number(row.total_volume) / Number(row.total_accounts)) : 0,
+          avgBalance:
+            Number(row.total_accounts) > 0
+              ? Math.round(
+                  Number(row.total_volume) / Number(row.total_accounts)
+                )
+              : 0,
           interestPaid: 0,
           totalDeposits: Number(row.total_volume ?? 0),
           totalInterestPaid: 0,
         };
       }
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
     return {
       totalAccounts: 0,
       activeAccounts: 0,

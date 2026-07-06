@@ -201,18 +201,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdataThresholdAlertsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -236,10 +237,17 @@ async function publishdataThresholdAlertsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const dataThresholdAlertsRouter = router({
@@ -339,7 +347,11 @@ export const dataThresholdAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdataThresholdAlertsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
+      await publishdataThresholdAlertsMiddleware(
+        "acknowledge",
+        `${Date.now()}`,
+        { action: "acknowledge" }
+      ).catch(() => {});
 
       return { success: true };
     }),
@@ -350,7 +362,9 @@ export const dataThresholdAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdataThresholdAlertsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishdataThresholdAlertsMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -361,28 +375,36 @@ export const dataThresholdAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdataThresholdAlertsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishdataThresholdAlertsMiddleware("delete", `${Date.now()}`, {
+        action: "delete",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   events: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataThresholdAlertsMiddleware("events", `${Date.now()}`, { action: "events" }).catch(() => {});
+    await publishdataThresholdAlertsMiddleware("events", `${Date.now()}`, {
+      action: "events",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   metrics: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataThresholdAlertsMiddleware("metrics", `${Date.now()}`, { action: "metrics" }).catch(() => {});
+    await publishdataThresholdAlertsMiddleware("metrics", `${Date.now()}`, {
+      action: "metrics",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   operators: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataThresholdAlertsMiddleware("operators", `${Date.now()}`, { action: "operators" }).catch(() => {});
+    await publishdataThresholdAlertsMiddleware("operators", `${Date.now()}`, {
+      action: "operators",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -393,7 +415,11 @@ export const dataThresholdAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdataThresholdAlertsMiddleware("simulateCheck", `${Date.now()}`, { action: "simulateCheck" }).catch(() => {});
+      await publishdataThresholdAlertsMiddleware(
+        "simulateCheck",
+        `${Date.now()}`,
+        { action: "simulateCheck" }
+      ).catch(() => {});
 
       return { success: true };
     }),
@@ -404,7 +430,11 @@ export const dataThresholdAlertsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishdataThresholdAlertsMiddleware("toggleStatus", `${Date.now()}`, { action: "toggleStatus" }).catch(() => {});
+      await publishdataThresholdAlertsMiddleware(
+        "toggleStatus",
+        `${Date.now()}`,
+        { action: "toggleStatus" }
+      ).catch(() => {});
 
       return { success: true };
     }),

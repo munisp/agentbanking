@@ -36,7 +36,6 @@ import {
 import { validateInput } from "../lib/routerHelpers";
 import { enforcePermission } from "../_core/permify";
 
-
 const CORRIDORS = {
   "NG-GH": {
     source: "NGN",
@@ -158,13 +157,28 @@ export const crossBorderRemittanceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       const session = await getAgentFromCookie(ctx.req);
       if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
       const corridor = CORRIDORS[input.corridorId as keyof typeof CORRIDORS];
-      if (!corridor) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid corridor" });
+      if (!corridor)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid corridor",
+        });
 
       const fee = Math.max(
         corridor.minFee,
@@ -177,7 +191,7 @@ export const crossBorderRemittanceRouter = router({
       const ref = `XBDR-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
       const idempFn = async () => {
-        return withTransaction(async (tx) => {
+        return withTransaction(async tx => {
           const db = tx ?? (await getDb())!;
 
           // CBN cross-border limit check
@@ -198,10 +212,21 @@ export const crossBorderRemittanceRouter = router({
           const agentRows = await db.execute(
             sql`SELECT float_balance, float_locked FROM agents WHERE id = ${session.id} FOR UPDATE`
           );
-          const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
-          if (!agentRow) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-          if (agentRow.float_locked === true || agentRow.float_locked === "true") {
-            throw new TRPCError({ code: "FORBIDDEN", message: "Agent float is locked" });
+          const agentRow =
+            (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          if (!agentRow)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Agent not found",
+            });
+          if (
+            agentRow.float_locked === true ||
+            agentRow.float_locked === "true"
+          ) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Agent float is locked",
+            });
           }
           if (Number(agentRow.float_balance) < input.amountNGN) {
             throw new TRPCError({
@@ -319,16 +344,41 @@ export const crossBorderRemittanceRouter = router({
 
       // TigerBeetle dual-ledger
       tbCreateTransfer({
-        debitAccountId: "2001", creditAccountId: "1001",
+        debitAccountId: "2001",
+        creditAccountId: "1001",
         amount: Math.round(input.amountNGN * 100),
-        ref, txType: "cross_border_remittance", agentCode: session.agentCode,
+        ref,
+        txType: "cross_border_remittance",
+        agentCode: session.agentCode,
       }).catch(() => {});
 
       // Fluvio + Dapr + Redis + Lakehouse
-      publishTxToFluvio({ txRef: ref, agentCode: session.agentCode, amount: input.amountNGN, type: "cross_border_remittance", timestamp: Date.now() }).catch(() => {});
-      dapr.publishEvent("pubsub", "remittance.completed", { ref, corridor: input.corridorId, amountNGN: input.amountNGN, agentId: session.id }).catch(() => {});
+      publishTxToFluvio({
+        txRef: ref,
+        agentCode: session.agentCode,
+        amount: input.amountNGN,
+        type: "cross_border_remittance",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "remittance.completed", {
+          ref,
+          corridor: input.corridorId,
+          amountNGN: input.amountNGN,
+          agentId: session.id,
+        })
+        .catch(() => {});
       cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
-      ingestToLakehouse("remittance_transactions", { ref, corridor: input.corridorId, amountNGN: input.amountNGN, fee, receivedAmount, rate, agentId: session.id, timestamp: new Date().toISOString() }).catch(() => {});
+      ingestToLakehouse("remittance_transactions", {
+        ref,
+        corridor: input.corridorId,
+        amountNGN: input.amountNGN,
+        fee,
+        receivedAmount,
+        rate,
+        agentId: session.id,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
 
       return {
         reference: ref,

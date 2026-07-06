@@ -40,13 +40,32 @@ import { dapr } from "../middleware/middlewareConnectors";
 import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
 
-function publishPosMiddleware(eventType: string, key: string, payload: Record<string, unknown>) {
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
   publishEvent("pos.terminal.fleet", key, { eventType, ...payload });
-  fluvioPublish("pos.terminal.fleet", { key: "pos", value: JSON.stringify({ eventType, ...payload, timestamp: new Date().toISOString() }) }).catch(() => {});
-  dapr.publishEvent("pubsub", "pos.terminal.fleet.updated", { eventType, ...payload }).catch(() => {});
-  lakehouseIngest("pos_terminal_fleet_events", { event_type: eventType, ...payload, source: "posTerminalFleet" }).catch(() => {});
+  fluvioPublish("pos.terminal.fleet", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.terminal.fleet.updated", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_terminal_fleet_events", {
+    event_type: eventType,
+    ...payload,
+    source: "posTerminalFleet",
+  }).catch(() => {});
 }
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -292,7 +311,10 @@ export const posTerminalFleetRouter = router({
           metadata: { serialNumber: input.serialNumber, model: input.model },
         });
 
-        publishPosMiddleware("provision", input.serialNumber, { action: "provision", ...input });
+        publishPosMiddleware("provision", input.serialNumber, {
+          action: "provision",
+          ...input,
+        });
         return terminal;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -351,7 +373,10 @@ export const posTerminalFleetRouter = router({
           metadata: { assignedTo: input.agentId },
         });
 
-        publishPosMiddleware("assign", String(input.terminalId), { action: "assign", ...input });
+        publishPosMiddleware("assign", String(input.terminalId), {
+          action: "assign",
+          ...input,
+        });
         return updated;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -393,7 +418,10 @@ export const posTerminalFleetRouter = router({
           .set(updateData)
           .where(eq(posTerminals.id, input.terminalId));
 
-        publishPosMiddleware("heartbeat", String(input.terminalId), { action: "heartbeat", ...input });
+        publishPosMiddleware("heartbeat", String(input.terminalId), {
+          action: "heartbeat",
+          ...input,
+        });
         return { acknowledged: true, serverTime: new Date().toISOString() };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -448,7 +476,11 @@ export const posTerminalFleetRouter = router({
           metadata: { command: input.command, params: input.params },
         });
 
-        publishPosMiddleware("sendCommand", String(input.terminalId), { action: "sendCommand", terminalId: input.terminalId, command: input.command });
+        publishPosMiddleware("sendCommand", String(input.terminalId), {
+          action: "sendCommand",
+          terminalId: input.terminalId,
+          command: input.command,
+        });
 
         return {
           commandId: crypto.randomUUID(),
@@ -495,7 +527,10 @@ export const posTerminalFleetRouter = router({
           metadata: { reason: input.reason },
         });
 
-        publishPosMiddleware("decommission", String(input.terminalId), { action: "decommission", ...input });
+        publishPosMiddleware("decommission", String(input.terminalId), {
+          action: "decommission",
+          ...input,
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -587,7 +622,10 @@ export const posTerminalFleetRouter = router({
           metadata: { name: input.name },
         });
 
-        publishPosMiddleware("createGroup", input.name, { action: "createGroup", ...input });
+        publishPosMiddleware("createGroup", input.name, {
+          action: "createGroup",
+          ...input,
+        });
         return group;
       } catch (error) {
         if (error instanceof TRPCError) throw error;

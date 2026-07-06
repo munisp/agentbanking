@@ -112,18 +112,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -147,10 +148,14 @@ async function publishagentMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentRouter = router({
@@ -284,7 +289,9 @@ export const agentRouter = router({
   logout: protectedProcedure.mutation(async ({ ctx }) => {
     ctx.res.clearCookie("agent_session", { path: "/" });
     // Middleware fan-out (fail-open)
-    await publishagentMiddleware("logout", `${Date.now()}`, { action: "logout" }).catch(() => {});
+    await publishagentMiddleware("logout", `${Date.now()}`, {
+      action: "logout",
+    }).catch(() => {});
 
     return { success: true };
   }),
@@ -651,7 +658,9 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishagentMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -694,7 +703,9 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("setFloatLock", `${Date.now()}`, { action: "setFloatLock" }).catch(() => {});
+        await publishagentMiddleware("setFloatLock", `${Date.now()}`, {
+          action: "setFloatLock",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -743,7 +754,9 @@ export const agentRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("setTerminalEnabled", `${Date.now()}`, { action: "setTerminalEnabled" }).catch(() => {});
+        await publishagentMiddleware("setTerminalEnabled", `${Date.now()}`, {
+          action: "setTerminalEnabled",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -777,7 +790,9 @@ export const agentRouter = router({
           metadata: { count: input.ids.length },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("bulkActivate", `${Date.now()}`, { action: "bulkActivate" }).catch(() => {});
+        await publishagentMiddleware("bulkActivate", `${Date.now()}`, {
+          action: "bulkActivate",
+        }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -814,7 +829,9 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("bulkSuspend", `${Date.now()}`, { action: "bulkSuspend" }).catch(() => {});
+        await publishagentMiddleware("bulkSuspend", `${Date.now()}`, {
+          action: "bulkSuspend",
+        }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -855,7 +872,9 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
+        await publishagentMiddleware("bulkDelete", `${Date.now()}`, {
+          action: "bulkDelete",
+        }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {
@@ -892,7 +911,9 @@ export const agentRouter = router({
           metadata: { count: input.ids.length, tier: input.tier },
         });
         // Middleware fan-out (fail-open)
-        await publishagentMiddleware("bulkSetTier", `${Date.now()}`, { action: "bulkSetTier" }).catch(() => {});
+        await publishagentMiddleware("bulkSetTier", `${Date.now()}`, {
+          action: "bulkSetTier",
+        }).catch(() => {});
 
         return { success: true, count: input.ids.length };
       } catch (error) {

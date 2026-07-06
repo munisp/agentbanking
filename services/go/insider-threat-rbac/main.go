@@ -14,6 +14,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"strings"
 	"time"
 
@@ -477,6 +479,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// graceful shutdown via signal.Notify for SIGTERM
 	port := os.Getenv("RBAC_PORT")
 	if port == "" {
 		port = "8261"

@@ -15,7 +15,7 @@ global:
 mysql:
   enabled: true
   auth:
-    rootPassword: "rootpassword"
+    rootPassword: ""  # REQUIRED: Set via --set mysql.auth.rootPassword or K8S_MOJALOOP_MYSQL_ROOT_PASSWORD secret
     database: "mojaloop"
     username: "mojaloop"
     password: ""  # REQUIRED: Set via --set mysql.auth.password or K8S_MOJALOOP_DB_PASSWORD secret

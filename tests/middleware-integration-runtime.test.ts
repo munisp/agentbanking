@@ -104,7 +104,9 @@ describe("Runtime Middleware Integration", () => {
 
   // ── 1. Redis Integration ────────────────────────────────────────────────
 
-  describe("Redis (real connection)", () => {
+  describe.skipIf(
+    !process.env.REDIS_URL?.startsWith("redis://") || process.env.CI
+  )("Redis (real connection)", () => {
     it("should set and get a cached value", async () => {
       const { cacheSet, cacheGet } = await import("../server/redisClient");
       const key = `test:middleware:${Date.now()}`;

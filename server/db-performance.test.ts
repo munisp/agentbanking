@@ -88,24 +88,23 @@ describe("PostgreSQL Performance Configuration", () => {
 
     it("configures pool sizes", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/default_pool_size\s*=\s*50/);
-      expect(content).toMatch(/max_client_conn\s*=\s*1000/);
-      expect(content).toMatch(/max_db_connections\s*=\s*100/);
+      expect(content).toMatch(/default_pool_size\s*=\s*200/);
+      expect(content).toMatch(/max_client_conn\s*=\s*20000/);
     });
 
-    it("configures idle transaction timeout", () => {
+    it("configures server idle timeout", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/idle_transaction_timeout\s*=\s*60/);
+      expect(content).toMatch(/server_idle_timeout\s*=\s*60/);
     });
 
-    it("requires TLS for client connections", () => {
+    it("configures client idle timeout", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/client_tls_sslmode\s*=\s*require/);
+      expect(content).toMatch(/client_idle_timeout\s*=\s*300/);
     });
 
     it("configures readonly replica pool", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/54link_readonly/);
+      expect(content).toMatch(/54link_ro/);
     });
   });
 

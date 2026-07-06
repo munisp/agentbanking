@@ -4,6 +4,7 @@ import { Router } from "express";
 import { putBillingPlan } from "../controllers/billing/putBillingPlan";
 import { getBilling } from "../controllers/billing/getBilling";
 import { getBillingInfo } from "../controllers/billing/getBillingInfo";
+import { getBillingDashboard } from "../controllers/billing/getBillingDashboard";
 
 // Ledger
 import { recordSplit } from "../controllers/billing/recordSplit";
@@ -68,6 +69,7 @@ const router = Router();
 // ─── Base billing ─────────────────────────────────────────────────────────────
 router.route("/").get(getBilling).put(putBillingPlan);
 router.get("/info", getBillingInfo);
+router.get("/dashboard", getBillingDashboard);
 
 // ─── Billing Ledger ───────────────────────────────────────────────────────────
 router.post("/ledger/split", recordSplit);

@@ -1,0 +1,35 @@
+# billings — friendly alias for billing-aggregator, mirroring corebanking's /billings/* route.
+# Purely additive: same backend/port as billing-aggregator.yaml, just without the
+# "/billing-aggregator" prefix repeated in front of the app's own "/billing" mount path.
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-billings-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /billings/*
+      backends:
+        - serviceName: billing
+          servicePort: 9204
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/billings/(.*)"
+              - "/billing/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

@@ -9,6 +9,19 @@ export enum BillingPlan {
   ENTERPRISE = "enterprise",
 }
 
+export enum BillingPeriod {
+  MONTHLY = "monthly",
+  ANNUAL = "annual",
+}
+
+export enum InvoiceStatus {
+  DRAFT = "draft",
+  ISSUED = "issued",
+  PAID = "paid",
+  OVERDUE = "overdue",
+  VOID = "void",
+}
+
 export enum BillingStatus {
   ACTIVE = "ACTIVE",
   PAST_DUE = "PAST_DUE",

@@ -2,7 +2,7 @@ import { ApiError } from "../middlewares/error";
 import * as z from "zod";
 import httpStatus from "http-status";
 import logger from "../config/logger.config";
-import { BillingModel, BillingPlan, BillingRole } from "../utils/enums";
+import { BillingModel, BillingPeriod, BillingPlan, BillingRole } from "../utils/enums";
 
 export function validateRequest<T>(schema: z.ZodType<T>, payload: object) {
   try {
@@ -17,6 +17,7 @@ export function validateRequest<T>(schema: z.ZodType<T>, payload: object) {
 
 export const PutBillingPlanSchema = z.object({
   plan: z.nativeEnum(BillingPlan),
+  billingPeriod: z.nativeEnum(BillingPeriod).optional(),
 });
 
 // ─── Billing Ledger ───────────────────────────────────────────────────────────

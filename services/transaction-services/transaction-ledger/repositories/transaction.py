@@ -203,6 +203,28 @@ class TransactionRepository:
         )
         return result or 0.0
 
+    def fetch_transaction_status_counts(self, tenant_id: str) -> dict:
+        rows = (
+            self.__db.query(Transaction.status, func.count(Transaction.id))
+            .filter(Transaction.tenant_id == tenant_id)
+            .group_by(Transaction.status)
+            .all()
+        )
+        return {status.value: count for status, count in rows}
+
+    def fetch_transaction_type_counts(self, tenant_id: str) -> dict:
+        base_query = self.__db.query(Transaction).filter(
+            Transaction.tenant_id == tenant_id
+        )
+        total = base_query.count()
+        deposit = base_query.filter(Transaction.payer == "MINT_ACCOUNT").count()
+        withdrawal = base_query.filter(
+            Transaction.payer != "MINT_ACCOUNT",
+            Transaction.payee == "MINT_ACCOUNT",
+        ).count()
+        transfer = total - deposit - withdrawal
+        return {"deposit": deposit, "withdrawal": withdrawal, "transfer": transfer}
+
     async def mark_transaction_failed(self, payload: TransactionEventSchema):
         transaction = self._ensure_transaction_exists(payload)
         logger.info(f"Marking transaction failed for transaction_id={payload.transaction_id}, tenant_id={payload.tenant_id}")

@@ -50,3 +50,14 @@ export enum TenantType {
   INSURANCE = "insurance",
 }
 
+export enum BillingPlan {
+  STANDARD = "standard",
+  PREMIUM = "premium",
+  ENTERPRISE = "enterprise",
+}
+
+export enum BillingPeriod {
+  MONTHLY = "monthly",
+  ANNUAL = "annual",
+}
+

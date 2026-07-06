@@ -2,7 +2,7 @@ replicaCount: 1
 image:
   repository: registry.digitalocean.com/talentgraph-auth/54agent-transaction-ledger
   pullPolicy: IfNotPresent
-  tag: "0.0.1"
+  tag: "0.0.2"
 nameOverride: ""
 fullnameOverride: ""
 serviceAccount:
@@ -16,7 +16,7 @@ securityContext: {}
 service:
   type: ClusterIP
   port: 9337
-  targetPort: 80
+  targetPort: 9337
 resources:
   requests:
     cpu: 200m
@@ -37,7 +37,7 @@ tolerations: []
 affinity: {}
 dapr:
   appId: transaction-ledger
-  appPort: 80
+  appPort: 9337
   enableMetrics: true
   enabled: true
   metricsPort: 9099

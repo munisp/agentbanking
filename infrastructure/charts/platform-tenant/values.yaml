@@ -2,7 +2,7 @@ replicaCount: 1
 image:
   repository: registry.digitalocean.com/talentgraph-auth/54agent-platform-tenant
   pullPolicy: IfNotPresent
-  tag: "0.0.6"
+  tag: "0.0.7"
 nameOverride: ""
 fullnameOverride: ""
 serviceAccount:
@@ -58,3 +58,7 @@ secrets:
   PORT_BASE: "9541"
   SERVICE_GROUP: platform-tenant
   SERVICES: "config-service,enhanced-platform,enterprise-services,super-app-framework,tenant-management"
+  # billing-aggregator runs in the separate "billing" k8s namespace (see
+  # k8s/sprint80-billing-services.yaml), so Dapr cross-namespace invocation
+  # requires the "<app-id>.<namespace>" form.
+  BILLING_SERVICE_APP_ID: "billing-aggregator.billing"

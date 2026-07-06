@@ -530,14 +530,15 @@ func (s *PostgresStore) GetAccount(ctx context.Context, tenantID, accountID stri
 	`
 
 	var account Account
-	var parentID sql.NullString
+	var parentID, descriptionNull, tigerBeetleIDNull, cbnCodeNull sql.NullString
+	var tigerBeetleLedgerNull, tigerBeetleCodeNull sql.NullInt64
 	var metadataJSON []byte
 
 	err := s.db.QueryRowContext(ctx, query, tenantID, accountID).Scan(
-		&account.ID, &account.TenantID, &account.Code, &account.Name, &account.Description,
+		&account.ID, &account.TenantID, &account.Code, &account.Name, &descriptionNull,
 		&account.Type, &account.NormalBalance, &parentID, &account.Level,
 		&account.IsActive, &account.IsSystemAccount, &account.Currency,
-		&account.TigerBeetleID, &account.TigerBeetleLedger, &account.TigerBeetleCode, &account.CBNCode,
+		&tigerBeetleIDNull, &tigerBeetleLedgerNull, &tigerBeetleCodeNull, &cbnCodeNull,
 		pq.Array(&account.Tags), &metadataJSON, &account.CreatedAt, &account.UpdatedAt,
 	)
 
@@ -550,6 +551,21 @@ func (s *PostgresStore) GetAccount(ctx context.Context, tenantID, accountID stri
 
 	if parentID.Valid {
 		account.ParentID = parentID.String
+	}
+	if descriptionNull.Valid {
+		account.Description = descriptionNull.String
+	}
+	if tigerBeetleIDNull.Valid {
+		account.TigerBeetleID = tigerBeetleIDNull.String
+	}
+	if tigerBeetleLedgerNull.Valid {
+		account.TigerBeetleLedger = uint32(tigerBeetleLedgerNull.Int64)
+	}
+	if tigerBeetleCodeNull.Valid {
+		account.TigerBeetleCode = uint16(tigerBeetleCodeNull.Int64)
+	}
+	if cbnCodeNull.Valid {
+		account.CBNCode = cbnCodeNull.String
 	}
 	json.Unmarshal(metadataJSON, &account.Metadata)
 
@@ -567,14 +583,15 @@ func (s *PostgresStore) GetAccountByCode(ctx context.Context, tenantID, code str
 	`
 
 	var account Account
-	var parentID sql.NullString
+	var parentID, descriptionNull, tigerBeetleIDNull, cbnCodeNull sql.NullString
+	var tigerBeetleLedgerNull, tigerBeetleCodeNull sql.NullInt64
 	var metadataJSON []byte
 
 	err := s.db.QueryRowContext(ctx, query, tenantID, code).Scan(
-		&account.ID, &account.TenantID, &account.Code, &account.Name, &account.Description,
+		&account.ID, &account.TenantID, &account.Code, &account.Name, &descriptionNull,
 		&account.Type, &account.NormalBalance, &parentID, &account.Level,
 		&account.IsActive, &account.IsSystemAccount, &account.Currency,
-		&account.TigerBeetleID, &account.TigerBeetleLedger, &account.TigerBeetleCode, &account.CBNCode,
+		&tigerBeetleIDNull, &tigerBeetleLedgerNull, &tigerBeetleCodeNull, &cbnCodeNull,
 		pq.Array(&account.Tags), &metadataJSON, &account.CreatedAt, &account.UpdatedAt,
 	)
 
@@ -587,6 +604,21 @@ func (s *PostgresStore) GetAccountByCode(ctx context.Context, tenantID, code str
 
 	if parentID.Valid {
 		account.ParentID = parentID.String
+	}
+	if descriptionNull.Valid {
+		account.Description = descriptionNull.String
+	}
+	if tigerBeetleIDNull.Valid {
+		account.TigerBeetleID = tigerBeetleIDNull.String
+	}
+	if tigerBeetleLedgerNull.Valid {
+		account.TigerBeetleLedger = uint32(tigerBeetleLedgerNull.Int64)
+	}
+	if tigerBeetleCodeNull.Valid {
+		account.TigerBeetleCode = uint16(tigerBeetleCodeNull.Int64)
+	}
+	if cbnCodeNull.Valid {
+		account.CBNCode = cbnCodeNull.String
 	}
 	json.Unmarshal(metadataJSON, &account.Metadata)
 
@@ -628,14 +660,15 @@ func (s *PostgresStore) ListAccounts(ctx context.Context, tenantID, accountType,
 	var accounts []Account
 	for rows.Next() {
 		var account Account
-		var parentIDNull sql.NullString
+		var parentIDNull, descriptionNull, tigerBeetleIDNull, cbnCodeNull sql.NullString
+		var tigerBeetleLedgerNull, tigerBeetleCodeNull sql.NullInt64
 		var metadataJSON []byte
 
 		if err := rows.Scan(
-			&account.ID, &account.TenantID, &account.Code, &account.Name, &account.Description,
+			&account.ID, &account.TenantID, &account.Code, &account.Name, &descriptionNull,
 			&account.Type, &account.NormalBalance, &parentIDNull, &account.Level,
 			&account.IsActive, &account.IsSystemAccount, &account.Currency,
-			&account.TigerBeetleID, &account.TigerBeetleLedger, &account.TigerBeetleCode, &account.CBNCode,
+			&tigerBeetleIDNull, &tigerBeetleLedgerNull, &tigerBeetleCodeNull, &cbnCodeNull,
 			pq.Array(&account.Tags), &metadataJSON, &account.CreatedAt, &account.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -643,6 +676,21 @@ func (s *PostgresStore) ListAccounts(ctx context.Context, tenantID, accountType,
 
 		if parentIDNull.Valid {
 			account.ParentID = parentIDNull.String
+		}
+		if descriptionNull.Valid {
+			account.Description = descriptionNull.String
+		}
+		if tigerBeetleIDNull.Valid {
+			account.TigerBeetleID = tigerBeetleIDNull.String
+		}
+		if tigerBeetleLedgerNull.Valid {
+			account.TigerBeetleLedger = uint32(tigerBeetleLedgerNull.Int64)
+		}
+		if tigerBeetleCodeNull.Valid {
+			account.TigerBeetleCode = uint16(tigerBeetleCodeNull.Int64)
+		}
+		if cbnCodeNull.Valid {
+			account.CBNCode = cbnCodeNull.String
 		}
 		json.Unmarshal(metadataJSON, &account.Metadata)
 

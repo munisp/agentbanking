@@ -1,6 +1,6 @@
 import { AppDataSource } from "../database/dataSource";
 import { TenantBillingEntity } from "../entity/TenantBillingEntity";
-import { BillingPlan } from "../utils/enums";
+import { BillingPeriod, BillingPlan } from "../utils/enums";
 import { ensureTenantAccount } from "../services/tigerbeetleService";
 
 export class BillingRepository {
@@ -13,13 +13,23 @@ export class BillingRepository {
     });
   }
 
-  async changeBillingPlan(tenant_id: string, plan: BillingPlan) {
+  async findAll() {
+    return await this.manager.find(this.entity, {
+      order: { id: "ASC" },
+    });
+  }
+
+  async changeBillingPlan(tenant_id: string, plan: BillingPlan, billingPeriod?: BillingPeriod) {
     let billing = await this.findOne(tenant_id);
 
     if (!billing) {
       billing = new TenantBillingEntity();
       billing.tenant_id = tenant_id;
       billing.plan = plan || BillingPlan.STANDARD;
+      billing.subscription_config = {
+        ...billing.subscription_config,
+        billingCycle: billingPeriod || BillingPeriod.MONTHLY,
+      } as TenantBillingEntity["subscription_config"];
       const saved = await this.manager.save(billing);
 
       const tbAccountId = await ensureTenantAccount(saved.id, saved.currency ?? "NGN");
@@ -31,6 +41,12 @@ export class BillingRepository {
     }
 
     billing.plan = plan;
+    if (billingPeriod) {
+      billing.subscription_config = {
+        ...billing.subscription_config,
+        billingCycle: billingPeriod,
+      } as TenantBillingEntity["subscription_config"];
+    }
     await this.manager.save(billing);
   }
 

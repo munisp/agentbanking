@@ -16,4 +16,7 @@ export const EnvSchema = z.object({
   DB_DATABASE_TYPE: z.nativeEnum(SupportedDatabaseTypes),
   DAPR_HOST: z.string(),
   DAPR_HTTP_PORT: z.string(),
+  // billing-aggregator is a separate Dapr-invoked service (unlike corebanking's
+  // billing-service, which is bundled in the same pod and reached over raw HTTP).
+  BILLING_SERVICE_APP_ID: z.string().optional().default("billing-aggregator"),
 });

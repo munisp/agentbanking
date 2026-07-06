@@ -39,4 +39,10 @@ class TransactionService:
             "total_volume": self.__transaction_repository.fetch_transaction_volume(
                 context.tenant_id
             ),
+            "status_breakdown": self.__transaction_repository.fetch_transaction_status_counts(
+                context.tenant_id
+            ),
+            "type_breakdown": self.__transaction_repository.fetch_transaction_type_counts(
+                context.tenant_id
+            ),
         }

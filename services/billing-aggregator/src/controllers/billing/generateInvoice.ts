@@ -1,6 +1,8 @@
 import httpStatus from "http-status";
 import { asyncHandler } from "../../middlewares/async";
 import { billingLedgerRepository } from "../../repositories/billingLedgerRepository";
+import { billingInvoiceRepository } from "../../repositories/billingInvoiceRepository";
+import { billingRepository } from "../../repositories/billingRepository";
 import { validateRequest, GenerateInvoiceSchema } from "../../validations";
 import { BillingModel } from "../../utils/enums";
 import { BillingLedgerEntity } from "../../entity/BillingLedgerEntity";
@@ -91,24 +93,23 @@ export const generateInvoice = asyncHandler(async (req, res) => {
   const now = new Date();
   const invoice_number = `INV-${tenant_id}-${now.getFullYear()}${padTwo(now.getMonth() + 1)}-${Date.now().toString(36).toUpperCase()}`;
 
-  const invoice = {
-    id: `inv_${Date.now()}`,
+  const billing = await billingRepository.findOne(tenant_id);
+  const due_date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  const invoice = await billingInvoiceRepository.create({
     tenant_id,
     invoice_number,
-    period_start: input.period_start,
-    period_end: input.period_end,
-    issue_date: now.toISOString(),
-    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "draft",
-    currency: input.currency ?? "NGN",
+    plan: billing?.plan,
+    period_start,
+    period_end,
     subtotal,
     tax_rate,
     tax_amount,
     total,
+    currency: input.currency ?? "NGN",
+    due_date,
     line_items,
-    notes: "Payment due within 30 days. Late payments subject to 2% monthly interest.",
-    payment_terms: "Net 30",
-  };
+  });
 
   return res.status(httpStatus.CREATED).json({ message: "success", invoice });
 });

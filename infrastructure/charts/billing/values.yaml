@@ -2,7 +2,7 @@ replicaCount: 1
 image:
   repository: registry.digitalocean.com/talentgraph-auth/54agent-billing
   pullPolicy: IfNotPresent
-  tag: "0.0.4"
+  tag: "0.0.8"
 nameOverride: ""
 fullnameOverride: ""
 serviceAccount:

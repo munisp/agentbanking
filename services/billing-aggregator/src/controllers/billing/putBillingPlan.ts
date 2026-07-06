@@ -4,11 +4,11 @@ import { billingRepository } from "../../repositories/billingRepository";
 import { PutBillingPlanSchema, validateRequest } from "../../validations";
 
 export const putBillingPlan = asyncHandler(async (req, res) => {
-  const { plan } = validateRequest(PutBillingPlanSchema, req.body);
+  const { plan, billingPeriod } = validateRequest(PutBillingPlanSchema, req.body);
 
   const tenant_id = req.headers["x-tenant-id"] as string;
 
-  await billingRepository.changeBillingPlan(tenant_id, plan);
+  await billingRepository.changeBillingPlan(tenant_id, plan, billingPeriod);
 
   const billing = await billingRepository.getBilling(tenant_id);
 

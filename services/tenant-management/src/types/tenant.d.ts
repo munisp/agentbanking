@@ -20,6 +20,7 @@ export interface ICreateTenantPayload {
   };
   features: ITenantFeature[];
   plan?: string;
+  billingPeriod?: string;
   apiConfiguration?: {
     webhookUrl?: string;
     callbackUrl?: string;
@@ -46,6 +47,7 @@ export interface IUpdateTenantPayload {
   };
   features?: ITenantFeature[];
   plan?: string;
+  billingPeriod?: string;
   apiConfiguration?: {
     webhookUrl?: string;
     callbackUrl?: string;

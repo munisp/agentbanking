@@ -10,7 +10,7 @@ import {
   IUpdateTenantPayload,
 } from "../types/tenant";
 import { hashString } from "../utils";
-import { TenantStatus } from "../utils/enums";
+import { BillingPeriod, BillingPlan, TenantStatus } from "../utils/enums";
 import { TenantBranchEntity } from "../entity/TenantBranchEntity";
 import { TenantBranchContactEntity } from "../entity/TenantBranchContactEntity";
 import { TenantBranchFeatureFlagEntity } from "../entity/TenantBranchFeatureFlagEntity";
@@ -67,6 +67,8 @@ export class TenantRepository {
       tenant.cac_certificate_url = payload.cacCertificateUrl;
       tenant.cbn_license_url = payload.cbnLicenseUrl;
       tenant.status = TenantStatus.ACTIVE;
+      tenant.plan = (payload.plan as BillingPlan) ?? BillingPlan.STANDARD;
+      tenant.billingPeriod = (payload.billingPeriod as BillingPeriod) ?? BillingPeriod.MONTHLY;
       tenant.contact = contact;
       tenant.feature_flags = featureFlags;
       tenant.tenant_id = payload.tenantId;
@@ -97,6 +99,8 @@ export class TenantRepository {
       if (payload.type) tenant.type = payload.type;
       if (payload.cacCertificateUrl) tenant.cac_certificate_url = payload.cacCertificateUrl;
       if (payload.cbnLicenseUrl) tenant.cbn_license_url = payload.cbnLicenseUrl;
+      if (payload.plan) tenant.plan = payload.plan as BillingPlan;
+      if (payload.billingPeriod) tenant.billingPeriod = payload.billingPeriod as BillingPeriod;
       if (payload.apiConfiguration) tenant.api_configuration = payload.apiConfiguration;
 
       await manager.save(tenant);
@@ -365,8 +369,8 @@ export class TenantRepository {
     await this.manager.save(branch);
   }
 
-  async createBillingProfile(tenantId: string, plan: string) {
-    return await billingService.createBillingProfile(tenantId, plan);
+  async createBillingProfile(tenantId: string, plan: string, billingPeriod: string) {
+    return await billingService.createBillingProfile(tenantId, plan, billingPeriod);
   }
 }
 

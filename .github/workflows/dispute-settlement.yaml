@@ -16,6 +16,7 @@ on:
       - 'services/settlement-ledger-sync/**'
       - 'services/settlement-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/dispute-settlement.yaml'
 

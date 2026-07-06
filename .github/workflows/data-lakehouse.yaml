@@ -20,6 +20,7 @@ on:
       - 'services/postgres-production/**'
       - 'services/sync-manager/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/data-lakehouse.yaml'
 

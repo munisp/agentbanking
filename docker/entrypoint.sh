@@ -31,7 +31,11 @@ for svc in "${SVCLIST[@]}"; do
         workdir="$dir"
 
     elif [ -f "$dir/app.py" ]; then
-        cmd="uvicorn app:app --host 0.0.0.0 --port $PORT"
+        if grep -qE "^app\s*=|^from .+ import app" "$dir/app.py"; then
+            cmd="uvicorn app:app --host 0.0.0.0 --port $PORT"
+        else
+            cmd="python app.py"
+        fi
         workdir="$dir"
 
     elif [ -f "$dir/package.json" ]; then

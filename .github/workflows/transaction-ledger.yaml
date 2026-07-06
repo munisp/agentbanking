@@ -8,6 +8,7 @@ on:
     paths:
       - 'services/transaction-ledger/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/transaction-ledger.yaml'
 

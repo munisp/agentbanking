@@ -12,6 +12,7 @@ on:
       - 'services/super-app-framework/**'
       - 'services/tenant-management/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/platform-tenant.yaml'
 

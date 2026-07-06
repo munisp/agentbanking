@@ -19,6 +19,7 @@ on:
       - 'services/python-ml-engine/**'
       - 'services/revenue-forecast-ml/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/ai-ml.yaml'
 

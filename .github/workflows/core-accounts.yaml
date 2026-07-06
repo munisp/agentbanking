@@ -17,6 +17,7 @@ on:
       - 'services/settings-service/**'
       - 'services/user-onboarding-enhanced/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/core-accounts.yaml'
 

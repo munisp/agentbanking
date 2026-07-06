@@ -12,6 +12,7 @@ on:
       - 'services/loan-management/**'
       - 'services/loan-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/lending-credit.yaml'
 

@@ -26,6 +26,7 @@ on:
       - 'services/satellite-connectivity/**'
       - 'services/telco-integration/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/connectivity-sim.yaml'
 

@@ -27,6 +27,7 @@ on:
       - 'services/resilience-proxy/**'
       - 'services/rust-middleware-bridge/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/infra-network.yaml'
 

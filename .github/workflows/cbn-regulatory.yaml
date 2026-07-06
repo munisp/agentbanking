@@ -19,6 +19,7 @@ on:
       - 'services/gdpr-service/**'
       - 'services/goaml-integration-go/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/cbn-regulatory.yaml'
 

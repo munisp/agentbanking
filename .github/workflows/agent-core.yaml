@@ -30,6 +30,7 @@ on:
       - 'services/hierarchy-engine/**'
       - 'services/hierarchy-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/agent-core.yaml'
 

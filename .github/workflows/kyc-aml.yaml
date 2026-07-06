@@ -33,6 +33,7 @@ on:
       - 'services/rust-ocr-bridge/**'
       - 'services/vlm-document-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/kyc-aml.yaml'
 

@@ -28,6 +28,7 @@ on:
       - 'services/terminal-ownership/**'
       - 'services/territory-management/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/agent-pos.yaml'
 

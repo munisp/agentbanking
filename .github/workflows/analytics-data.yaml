@@ -26,6 +26,7 @@ on:
       - 'services/unified-analytics/**'
       - 'services/ussd-analytics/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/analytics-data.yaml'
 

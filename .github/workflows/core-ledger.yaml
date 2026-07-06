@@ -19,6 +19,7 @@ on:
       - 'services/tigerbeetle-sync/**'
       - 'services/tigerbeetle-zig/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/core-ledger.yaml'
 

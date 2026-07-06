@@ -23,6 +23,7 @@ on:
       - 'services/whatsapp-order-service/**'
       - 'services/whatsapp-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/channels-social.yaml'
 

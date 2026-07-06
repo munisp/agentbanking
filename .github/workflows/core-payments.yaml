@@ -37,6 +37,7 @@ on:
       - 'services/wearable-payments/**'
       - 'services/wise-integration/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/core-payments.yaml'
 

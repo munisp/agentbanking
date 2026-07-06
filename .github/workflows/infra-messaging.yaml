@@ -17,6 +17,7 @@ on:
       - 'services/unified-streaming/**'
       - 'services/websocket-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/infra-messaging.yaml'
 

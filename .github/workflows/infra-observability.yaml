@@ -17,6 +17,7 @@ on:
       - 'services/telemetry-collector/**'
       - 'services/telemetry-ingestion/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/infra-observability.yaml'
 

@@ -25,6 +25,7 @@ on:
       - 'services/tb-commission-sidecar/**'
       - 'services/tb-sidecar/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/billing.yaml'
 

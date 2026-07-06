@@ -20,6 +20,7 @@ on:
       - 'services/tx-monitor-alerter/**'
       - 'services/tx-validator/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/fraud-risk.yaml'
 

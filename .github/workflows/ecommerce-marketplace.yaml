@@ -25,6 +25,7 @@ on:
       - 'services/store-map-service/**'
       - 'services/storefront-advertising/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/ecommerce-marketplace.yaml'
 

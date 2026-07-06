@@ -18,6 +18,7 @@ on:
       - 'services/support-crm/**'
       - 'services/support-service/**'
       - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
       - 'docker/build-services.sh'
       - '.github/workflows/customer-engagement.yaml'
 

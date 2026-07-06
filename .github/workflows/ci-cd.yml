@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 15
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -107,7 +107,7 @@ jobs:
     timeout-minutes: 5
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate Docker Compose files
         run: |
@@ -133,7 +133,7 @@ jobs:
     timeout-minutes: 10
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -162,7 +162,7 @@ jobs:
     timeout-minutes: 5
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -200,7 +200,7 @@ jobs:
     timeout-minutes: 5
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -227,7 +227,7 @@ jobs:
       image_tag: ${{ steps.meta.outputs.tags }}
       image_digest: ${{ steps.build-push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -276,7 +276,7 @@ jobs:
       name: staging
       url: https://staging.pos-54link.com
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -326,7 +326,7 @@ jobs:
       name: production
       url: https://pos-54link.com
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

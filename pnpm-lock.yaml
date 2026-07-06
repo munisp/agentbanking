@@ -207,13 +207,13 @@ importers:
         version: 1.15.0
       '@trpc/client':
         specifier: ^11.6.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
+        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/react-query':
         specifier: ^11.6.0
-        version: 11.16.0(@tanstack/react-query@5.95.2(react@19.2.1))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.16.0(typescript@5.9.3))(react@19.2.1)(typescript@5.9.3)
+        version: 11.16.0(@tanstack/react-query@5.95.2(react@19.2.1))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.16.0(typescript@6.0.3))(react@19.2.1)(typescript@6.0.3)
       '@trpc/server':
         specifier: ^11.6.0
-        version: 11.16.0(typescript@5.9.3)
+        version: 11.16.0(typescript@6.0.3)
       '@types/bcryptjs':
         specifier: ^3.0.0
         version: 3.0.0
@@ -282,7 +282,7 @@ importers:
         version: 8.1.0
       i18next:
         specifier: ^26.2.0
-        version: 26.2.0(typescript@5.9.3)
+        version: 26.2.0(typescript@6.0.3)
       idb-keyval:
         specifier: ^6.2.2
         version: 6.2.2
@@ -366,7 +366,7 @@ importers:
         version: 7.64.0(react@19.2.1)
       react-i18next:
         specifier: ^17.0.8
-        version: 17.0.8(i18next@26.2.0(typescript@5.9.3))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(typescript@5.9.3)
+        version: 17.0.8(i18next@26.2.0(typescript@6.0.3))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(typescript@6.0.3)
       react-leaflet:
         specifier: ^5.0.0
         version: 5.0.0(leaflet@1.9.4)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -498,8 +498,8 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       typescript:
-        specifier: 5.9.3
-        version: 5.9.3
+        specifier: 6.0.3
+        version: 6.0.3
       vite:
         specifier: '>=7.3.2'
         version: 8.0.8(@types/node@24.7.0)(esbuild@0.25.10)(jiti@2.6.1)(terser@5.46.1)(tsx@4.20.6)(yaml@2.9.0)
@@ -6171,8 +6171,8 @@ packages:
     resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
     engines: {node: '>= 0.6'}
 
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -9757,22 +9757,22 @@ snapshots:
       '@temporalio/proto': 1.15.0
       nexus-rpc: 0.0.1
 
-  '@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)':
+  '@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)':
     dependencies:
-      '@trpc/server': 11.16.0(typescript@5.9.3)
-      typescript: 5.9.3
+      '@trpc/server': 11.16.0(typescript@6.0.3)
+      typescript: 6.0.3
 
-  '@trpc/react-query@11.16.0(@tanstack/react-query@5.95.2(react@19.2.1))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.16.0(typescript@5.9.3))(react@19.2.1)(typescript@5.9.3)':
+  '@trpc/react-query@11.16.0(@tanstack/react-query@5.95.2(react@19.2.1))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.16.0(typescript@6.0.3))(react@19.2.1)(typescript@6.0.3)':
     dependencies:
       '@tanstack/react-query': 5.95.2(react@19.2.1)
-      '@trpc/client': 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
-      '@trpc/server': 11.16.0(typescript@5.9.3)
+      '@trpc/client': 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
+      '@trpc/server': 11.16.0(typescript@6.0.3)
       react: 19.2.1
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  '@trpc/server@11.16.0(typescript@5.9.3)':
+  '@trpc/server@11.16.0(typescript@6.0.3)':
     dependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
@@ -11425,9 +11425,9 @@ snapshots:
 
   hyperdyperid@1.2.0: {}
 
-  i18next@26.2.0(typescript@5.9.3):
+  i18next@26.2.0(typescript@6.0.3):
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   iconv-lite@0.4.24:
     dependencies:
@@ -12569,16 +12569,16 @@ snapshots:
     dependencies:
       react: 19.2.1
 
-  react-i18next@17.0.8(i18next@26.2.0(typescript@5.9.3))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(typescript@5.9.3):
+  react-i18next@17.0.8(i18next@26.2.0(typescript@6.0.3))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(typescript@6.0.3):
     dependencies:
       '@babel/runtime': 7.29.2
       html-parse-stringify: 3.0.1
-      i18next: 26.2.0(typescript@5.9.3)
+      i18next: 26.2.0(typescript@6.0.3)
       react: 19.2.1
       use-sync-external-store: 1.6.0(react@19.2.1)
     optionalDependencies:
       react-dom: 19.2.1(react@19.2.1)
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   react-is@16.13.1: {}
 
@@ -13180,7 +13180,7 @@ snapshots:
       media-typer: 0.3.0
       mime-types: 2.1.35
 
-  typescript@5.9.3: {}
+  typescript@6.0.3: {}
 
   ufo@1.6.1: {}
 

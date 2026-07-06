@@ -236,4 +236,135 @@ export const transactionReconciliationRouter = router({
       };
     }
   }),
+
+  updateStatus: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().min(1),
+        status: z.string().min(1).max(50),
+        notes: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [record] = await database
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, input.id))
+        .limit(1);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+
+      enforceTransition(record.status ?? "initiated", input.status);
+
+      const [updated] = await database
+        .update(transactions)
+        .set({ status: input.status, updatedAt: new Date() })
+        .where(eq(transactions.id, input.id))
+        .returning();
+
+      logOperation("STATUS_UPDATED", {
+        transactionId: input.id,
+        from: record.status,
+        to: input.status,
+        notes: input.notes,
+      });
+
+      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
+        type: "status_updated",
+        transactionId: input.id,
+        from: record.status,
+        to: input.status,
+      }).catch(() => {});
+
+      return { success: true, transaction: updated };
+    }),
+
+  markDisputed: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().min(1),
+        reason: z.string().min(1).max(1000),
+        disputeRef: z.string().max(100).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [record] = await database
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, input.id))
+        .limit(1);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+
+      enforceTransition(record.status ?? "completed", "disputed");
+
+      const [updated] = await database
+        .update(transactions)
+        .set({ status: "disputed", updatedAt: new Date() })
+        .where(eq(transactions.id, input.id))
+        .returning();
+
+      logOperation("MARKED_DISPUTED", {
+        transactionId: input.id,
+        reason: input.reason,
+        disputeRef: input.disputeRef,
+      });
+
+      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
+        type: "disputed",
+        transactionId: input.id,
+        reason: input.reason,
+      }).catch(() => {});
+
+      return { success: true, transaction: updated };
+    }),
+
+  markResolved: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().min(1),
+        resolution: z.string().min(1).max(1000),
+        resolvedBy: z.string().max(200).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const [record] = await database
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, input.id))
+        .limit(1);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+
+      enforceTransition(record.status ?? "disputed", "resolved");
+
+      const [updated] = await database
+        .update(transactions)
+        .set({ status: "resolved", updatedAt: new Date() })
+        .where(eq(transactions.id, input.id))
+        .returning();
+
+      logOperation("MARKED_RESOLVED", {
+        transactionId: input.id,
+        resolution: input.resolution,
+        resolvedBy: input.resolvedBy,
+      });
+
+      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
+        type: "resolved",
+        transactionId: input.id,
+        resolution: input.resolution,
+      }).catch(() => {});
+
+      return { success: true, transaction: updated };
+    }),
 });

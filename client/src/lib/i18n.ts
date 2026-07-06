@@ -468,7 +468,8 @@ export function getTranslations(locale?: Locale): Record<string, string> {
 
 // ── Backward-Compatible Exports ─────────────────────────────────────────────
 
-export const SUPPORTED_LANGUAGES = Object.entries(SUPPORTED_LOCALES).map(([code, name]) => ({ code, name }));
+const LOCALE_FLAGS: Record<string, string> = { en: "🇬🇧", ha: "🇳🇬", yo: "🇳🇬", pcm: "🇳🇬", fr: "🇫🇷", ig: "🇳🇬" };
+export const SUPPORTED_LANGUAGES = Object.entries(SUPPORTED_LOCALES).map(([code, name]) => ({ code, name, label: name, flag: LOCALE_FLAGS[code] ?? "🌐" }));
 
 export function changeLanguage(code: string): void {
   if (code in translations) {

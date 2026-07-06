@@ -36,10 +36,19 @@ export function hapticNotification(): void {
   navigator.vibrate([100, 50, 100]);
 }
 
-export const haptic = {
+type HapticType = "micro" | "tap" | "success" | "error" | "warning" | "selection" | "notification" | "failure";
+
+const hapticMap: Record<HapticType, () => void> = {
+  micro: hapticSelection,
+  tap: hapticSelection,
   success: hapticSuccess,
+  error: hapticFailure,
   failure: hapticFailure,
   warning: hapticWarning,
   selection: hapticSelection,
   notification: hapticNotification,
 };
+
+export function haptic(type: HapticType): void {
+  hapticMap[type]?.();
+}

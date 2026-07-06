@@ -3,6 +3,50 @@
 # Rate limits: api_general=60/min, api_auth=10/min, api_tx=30/min
 
 routes:
+  # ── Cache-Busting: HTML entry point must never be cached ───────────────────
+  - id: pos-shell-html
+    uri: /
+    upstream_id: pos-shell
+    plugins:
+      response-rewrite:
+        headers:
+          set:
+            Cache-Control: "no-cache, no-store, must-revalidate"
+            Pragma: "no-cache"
+            Expires: "0"
+
+  - id: pos-shell-sw
+    uri: /sw.js
+    upstream_id: pos-shell
+    plugins:
+      response-rewrite:
+        headers:
+          set:
+            Cache-Control: "no-cache, no-store, must-revalidate"
+            Pragma: "no-cache"
+            Expires: "0"
+
+  - id: pos-shell-manifest
+    uri: /manifest.json
+    upstream_id: pos-shell
+    plugins:
+      response-rewrite:
+        headers:
+          set:
+            Cache-Control: "no-cache, no-store, must-revalidate"
+            Pragma: "no-cache"
+            Expires: "0"
+
+  # ── Hashed static assets: long-lived immutable cache ──────────────────────
+  - id: pos-shell-assets
+    uri: /assets/*
+    upstream_id: pos-shell
+    plugins:
+      response-rewrite:
+        headers:
+          set:
+            Cache-Control: "public, max-age=31536000, immutable"
+
   # ── Main POS Shell App ─────────────────────────────────────────────────────
   - id: pos-shell-api
     uri: /api/*

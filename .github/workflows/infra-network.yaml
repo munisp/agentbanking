@@ -32,7 +32,7 @@ on:
       - '.github/workflows/infra-network.yaml'
 
 env:
-  TAG: "0.0.1"
+  TAG: "0.0.2"
 
 jobs:
   build:

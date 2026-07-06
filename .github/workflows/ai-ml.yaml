@@ -24,7 +24,7 @@ on:
       - '.github/workflows/ai-ml.yaml'
 
 env:
-  TAG: "0.0.4"
+  TAG: "0.0.8"
 
 jobs:
   build:

@@ -1,0 +1,55 @@
+name: Build Ai Ml Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/ai-credit-scoring/**'
+      - 'services/ai-document-validation/**'
+      - 'services/ai-ml-services/**'
+      - 'services/ai-orchestration/**'
+      - 'services/demand-forecasting-py/**'
+      - 'services/gnn-engine/**'
+      - 'services/ml-engine/**'
+      - 'services/ml-model-registry/**'
+      - 'services/ml-pipeline/**'
+      - 'services/neural-network-service/**'
+      - 'services/python-ml-engine/**'
+      - 'services/revenue-forecast-ml/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/build-services.sh'
+      - '.github/workflows/ai-ml.yaml'
+
+env:
+  TAG: "0.0.4"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=ai-credit-scoring,ai-document-validation,ai-ml-services,ai-orchestration,demand-forecasting-py,gnn-engine,ml-engine,ml-model-registry,ml-pipeline,neural-network-service,python-ml-engine,revenue-forecast-ml
+            PORT_BASE=9148
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-ai-ml:${{ env.TAG }}

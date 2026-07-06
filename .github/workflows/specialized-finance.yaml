@@ -1,0 +1,56 @@
+name: Build Specialized Finance Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/blockchain/**'
+      - 'services/health-insurance-micro/**'
+      - 'services/health-service/**'
+      - 'services/insurance-service/**'
+      - 'services/investment-service/**'
+      - 'services/metaverse-service/**'
+      - 'services/pension-micro/**'
+      - 'services/stablecoin-defi/**'
+      - 'services/stablecoin-integration/**'
+      - 'services/stablecoin-rails/**'
+      - 'services/stablecoin-v2/**'
+      - 'services/tokenized-assets/**'
+      - 'services/wealth/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/build-services.sh'
+      - '.github/workflows/specialized-finance.yaml'
+
+env:
+  TAG: "0.0.5"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=blockchain,health-insurance-micro,health-service,insurance-service,investment-service,metaverse-service,pension-micro,stablecoin-defi,stablecoin-integration,stablecoin-rails,stablecoin-v2,tokenized-assets,wealth
+            PORT_BASE=9570
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-specialized-finance:${{ env.TAG }}

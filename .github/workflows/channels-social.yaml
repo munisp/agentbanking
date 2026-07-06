@@ -1,0 +1,59 @@
+name: Build Channels Social Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/at-sms-sender/**'
+      - 'services/at-sms-webhook/**'
+      - 'services/discord-service/**'
+      - 'services/email-service/**'
+      - 'services/google-assistant-service/**'
+      - 'services/instagram-service/**'
+      - 'services/messenger-service/**'
+      - 'services/rcs-service/**'
+      - 'services/snapchat-service/**'
+      - 'services/telegram-service/**'
+      - 'services/tiktok-service/**'
+      - 'services/twitter-service/**'
+      - 'services/wechat-service/**'
+      - 'services/whatsapp-ai-bot/**'
+      - 'services/whatsapp-order-service/**'
+      - 'services/whatsapp-service/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/build-services.sh'
+      - '.github/workflows/channels-social.yaml'
+
+env:
+  TAG: "0.0.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=at-sms-sender,at-sms-webhook,discord-service,email-service,google-assistant-service,instagram-service,messenger-service,rcs-service,snapchat-service,telegram-service,tiktok-service,twitter-service,wechat-service,whatsapp-ai-bot,whatsapp-order-service,whatsapp-service
+            PORT_BASE=9238
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-channels-social:${{ env.TAG }}

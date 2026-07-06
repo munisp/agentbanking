@@ -1,0 +1,56 @@
+name: Build Data Lakehouse Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/backup-manager/**'
+      - 'services/backup-service/**'
+      - 'services/data-archival/**'
+      - 'services/data-warehouse/**'
+      - 'services/dual-write-service/**'
+      - 'services/etl-pipeline/**'
+      - 'services/falkordb-service/**'
+      - 'services/lakehouse-integration/**'
+      - 'services/lakehouse-mojaloop/**'
+      - 'services/lakehouse-service/**'
+      - 'services/ollama-service/**'
+      - 'services/postgres-production/**'
+      - 'services/sync-manager/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/build-services.sh'
+      - '.github/workflows/data-lakehouse.yaml'
+
+env:
+  TAG: "0.0.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=backup-manager,backup-service,data-archival,data-warehouse,dual-write-service,etl-pipeline,falkordb-service,lakehouse-integration,lakehouse-mojaloop,lakehouse-service,ollama-service,postgres-production,sync-manager
+            PORT_BASE=9384
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-data-lakehouse:${{ env.TAG }}

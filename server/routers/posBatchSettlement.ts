@@ -199,6 +199,7 @@ export const posBatchSettlementRouter = router({
           metadata: { batchRef, txCount, totalAmount, netAmount },
         });
 
+        publishPosMiddleware("createBatch", String(input.terminalId), { action: "createBatch", ...input });
         return {
           success: true,
           message: `Settlement batch created with ${txCount} transactions`,
@@ -324,6 +325,7 @@ export const posBatchSettlementRouter = router({
           },
         });
 
+        publishPosMiddleware("processBatch", String(input.batchId), { action: "processBatch", ...input });
         return {
           success: true,
           message: "Batch settled successfully",
@@ -381,6 +383,7 @@ export const posBatchSettlementRouter = router({
           metadata: { reason: input.reason },
         });
 
+        publishPosMiddleware("failBatch", String(input.batchId), { action: "failBatch", ...input });
         return {
           success: true,
           message: "Batch marked as failed",
@@ -428,6 +431,7 @@ export const posBatchSettlementRouter = router({
           status: "success",
         });
 
+        publishPosMiddleware("reconcileBatch", String(input.batchId), { action: "reconcileBatch", ...input });
         return { success: true, message: "Batch reconciled", batch: updated };
       });
     }),

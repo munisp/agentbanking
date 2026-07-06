@@ -270,6 +270,7 @@ const updateFirmware = protectedProcedure
           status: "success",
           metadata: { input: JSON.stringify(input).slice(0, 500) },
         });
+        publishPosMiddleware("updateFirmware", String(input.id), { action: "updateFirmware", deviceId: input.id });
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };

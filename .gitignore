@@ -146,3 +146,7 @@ services/python/ml-pipeline/models/weights/*.json
 services/python/ml-pipeline/models/lakehouse/
 services/python/ml-pipeline/models/registry/
 /data/
+
+# Playwright E2E artifacts
+test-results/
+playwright-report/

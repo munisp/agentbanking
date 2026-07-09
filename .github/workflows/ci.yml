@@ -270,6 +270,20 @@ jobs:
       KEYCLOAK_CLIENT_ID: pos-shell-app
       PLATFORM_BASE_URL: https://platform.staging.54link.io
       PLATFORM_API_KEY: ci-smoke-platform-key
+      # Required by server env validation in NODE_ENV=production (CI test values).
+      CRON_SECRET: ci-smoke-cron-secret-32-characters-x
+      INTERNAL_API_KEY: ci-smoke-internal-api-key-32-chars-
+      TX_SIGNING_SECRET: ci-smoke-tx-signing-secret-32-chars
+      KEYCLOAK_CLIENT_SECRET: ci-smoke-keycloak-client-secret-32-
+      PLATFORM_SERVICE_TOKEN: ci-smoke-platform-service-token-32
+      MINIO_SECRET_KEY: ci-smoke-minio-secret-key-32-chars-
+      MINIO_ACCESS_KEY: ci-smoke-minio-access-key-32-chars-
+      APISIX_ADMIN_KEY: ci-smoke-apisix-admin-key-32-chars-
+      TERMII_API_KEY: ci-smoke-termii-api-key-32-chars-xx
+      FLUVIO_API_KEY: ci-smoke-fluvio-api-key-32-chars-xx
+      MQTT_PASSWORD: ci-smoke-mqtt-password-32-chars-xxx
+      # Security sidecars are not deployed in CI — fail open.
+      SECURITY_FAIL_OPEN: "true"
     services:
       postgres:
         image: postgres:16-alpine
@@ -305,6 +319,9 @@ jobs:
       - name: Run database migrations
         run: pnpm db:push
         continue-on-error: true
+
+      - name: Seed smoke test data (agents/admin/supervisor fixtures)
+        run: node scripts/seed-e2e.mjs
 
       - name: Start server in background
         run: |
@@ -375,6 +392,22 @@ jobs:
       BASE_URL: http://localhost:3000
       TEST_ADMIN_EMAIL: admin@54link.ng
       TEST_ADMIN_PASS: TestAdmin123!
+      # Required by server env validation in NODE_ENV=production (CI test values).
+      CRON_SECRET: ci-e2e-cron-secret-32-characters-xx
+      INTERNAL_API_KEY: ci-e2e-internal-api-key-32-chars-xx
+      TX_SIGNING_SECRET: ci-e2e-tx-signing-secret-32-chars-x
+      KEYCLOAK_CLIENT_SECRET: ci-e2e-keycloak-client-secret-32-ch
+      PLATFORM_API_KEY: ci-e2e-platform-api-key-32-chars-xx
+      PLATFORM_SERVICE_TOKEN: ci-e2e-platform-service-token-32-ch
+      MINIO_SECRET_KEY: ci-e2e-minio-secret-key-32-chars-xx
+      MINIO_ACCESS_KEY: ci-e2e-minio-access-key-32-chars-xx
+      APISIX_ADMIN_KEY: ci-e2e-apisix-admin-key-32-chars-xx
+      TERMII_API_KEY: ci-e2e-termii-api-key-32-chars-xxxx
+      FLUVIO_API_KEY: ci-e2e-fluvio-api-key-32-chars-xxxx
+      MQTT_PASSWORD: ci-e2e-mqtt-password-32-chars-xxxxx
+      # Security sidecars (Rust DDoS / Go PBAC / Python Fraud ML) are not
+      # deployed in CI — fail open so requests are not blocked by their absence.
+      SECURITY_FAIL_OPEN: "true"
     services:
       postgres:
         image: postgres:16-alpine
@@ -413,6 +446,9 @@ jobs:
       - name: Run database migrations
         run: pnpm db:push
         continue-on-error: true
+
+      - name: Seed E2E test data (agents/admin/supervisor fixtures)
+        run: node scripts/seed-e2e.mjs
 
       - name: Start server in background
         run: |

@@ -59,26 +59,10 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      matrix:
-        language: [javascript-typescript]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+  # CodeQL analysis is owned by the dedicated codeql.yml workflow (JS/TS, Go,
+  # Python). A duplicate job here uploaded a second SARIF for the same
+  # javascript-typescript category, causing a category collision that failed
+  # the "CodeQL Analysis" check. Removed to keep a single authoritative run.
 
   secret-scan:
     name: Secret Detection

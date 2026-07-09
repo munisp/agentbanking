@@ -19,7 +19,9 @@ test.describe("Offline Queue and Auto-Sync", () => {
     for (const digit of ["1", "2", "3", "4"]) {
       await page.locator(`button[data-digit="${digit}"]`).first().click();
     }
-    await expect(page.locator("text=Cash In").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Cash In").first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // ── Simulate offline ─────────────────────────────────────────────────────
     await context.setOffline(true);
@@ -44,6 +46,8 @@ test.describe("Offline Queue and Auto-Sync", () => {
     // This is a soft assertion — sync may happen in background
     const isVisible = await onlineIndicator.isVisible().catch(() => false);
     // Even if toast is not visible, the page should still be functional
-    await expect(page.locator("text=Cash In").first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("text=Cash In").first()).toBeVisible({
+      timeout: 5_000,
+    });
   });
 });

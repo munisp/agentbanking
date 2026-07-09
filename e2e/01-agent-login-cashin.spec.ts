@@ -26,7 +26,9 @@ test.describe("Agent Login and Cash-In Flow", () => {
     }
 
     // ── 4. Wait for POS Shell dashboard ─────────────────────────────────────
-    await expect(page.locator("text=Cash In").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Cash In").first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // ── 5. Navigate to Cash In ───────────────────────────────────────────────
     await page.locator("text=Cash In").first().click();

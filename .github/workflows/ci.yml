@@ -23,13 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # Full history needed for Gitleaks commit scanning
+          fetch-depth: 0 # Full history needed for Gitleaks commit scanning
 
       - name: Run Gitleaks secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Optional: for org-level scanning
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Optional: for org-level scanning
         with:
           args: >
             --redact
@@ -408,6 +408,10 @@ jobs:
       # Security sidecars (Rust DDoS / Go PBAC / Python Fraud ML) are not
       # deployed in CI — fail open so requests are not blocked by their absence.
       SECURITY_FAIL_OPEN: "true"
+      # The app drives every request from a single IP under Playwright, which
+      # trips the in-process connection throttle and per-IP rate limiters
+      # (503/429). Disable them for the E2E run; production keeps them on.
+      DISABLE_RATE_LIMITS: "true"
     services:
       postgres:
         image: postgres:16-alpine
@@ -869,8 +873,8 @@ jobs:
       - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: 'http://localhost:3000'
-          rules_file_name: '.zap/rules.tsv'
+          target: "http://localhost:3000"
+          rules_file_name: ".zap/rules.tsv"
           cmd_options: >
             -a
             -j
@@ -878,17 +882,17 @@ jobs:
             -I
           fail_action: true
           allow_issue_writing: true
-          artifact_name: 'zap-baseline-report'
+          artifact_name: "zap-baseline-report"
         continue-on-error: false
 
       - name: Run OWASP ZAP API Scan
         uses: zaproxy/action-api-scan@v0.10.0
         with:
-          target: 'http://localhost:3000/api/trpc'
+          target: "http://localhost:3000/api/trpc"
           format: openapi
-          rules_file_name: '.zap/rules.tsv'
-          cmd_options: '-a -j -l WARN'
-          artifact_name: 'zap-api-report'
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a -j -l WARN"
+          artifact_name: "zap-api-report"
         continue-on-error: true
 
       - name: Upload ZAP reports

@@ -30,7 +30,9 @@ test.describe("Agent Login & Cash-In — Full Flow", () => {
     ).toBeVisible();
 
     // Verify SSO link exists
-    await expect(page.locator("text=/supervisor|admin.*sso/i")).toBeVisible();
+    await expect(
+      page.locator("text=/supervisor|admin.*sso/i").first()
+    ).toBeVisible();
   });
 
   test("should reject empty agent code", async ({ page }) => {
@@ -50,9 +52,7 @@ test.describe("Agent Login & Cash-In — Full Flow", () => {
 
     // Should show PIN pad or PIN entry screen
     await expect(
-      page
-        .locator('[data-digit], input[type="password"], text=/enter.*pin/i')
-        .first()
+      page.locator('[data-digit], input[type="password"]').first()
     ).toBeVisible({ timeout: 10_000 });
   });
 

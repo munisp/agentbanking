@@ -540,7 +540,14 @@ export function applySecurityMiddleware(app: any) {
     );
     return;
   }
-  app.use(ddosThrottling);
+  // The connection throttle and the per-IP rate limiters key on client IP and
+  // count every request (a single SPA page load fires 400+ asset/module
+  // requests). End-to-end test runs drive the whole app from one IP, so these
+  // trip and return 503/429 mid-suite. Allow an explicit opt-out for CI/E2E;
+  // production keeps them on by default.
+  const disableRateLimits = process.env.DISABLE_RATE_LIMITS === "true";
+
+  if (!disableRateLimits) app.use(ddosThrottling);
   app.use(securityHeaders);
   app.use(xssProtection);
   app.use(sqlInjectionProtection);
@@ -548,16 +555,22 @@ export function applySecurityMiddleware(app: any) {
   app.use(bruteForceProtection);
   app.use(requestSizeLimit());
 
-  // Rate limit auth endpoints
-  app.use("/api/oauth", authRateLimiter);
-  app.use("/api/auth", authRateLimiter);
+  if (!disableRateLimits) {
+    // Rate limit auth endpoints
+    app.use("/api/oauth", authRateLimiter);
+    app.use("/api/auth", authRateLimiter);
 
-  // Rate limit API endpoints
-  app.use("/api/trpc", apiRateLimiter);
+    // Rate limit API endpoints
+    app.use("/api/trpc", apiRateLimiter);
 
-  // Rate limit webhook endpoints
-  app.use("/api/stripe/webhook", webhookRateLimiter);
-  app.use("/api/webhooks", webhookRateLimiter);
+    // Rate limit webhook endpoints
+    app.use("/api/stripe/webhook", webhookRateLimiter);
+    app.use("/api/webhooks", webhookRateLimiter);
+  } else {
+    console.log(
+      "[Security] Connection throttle + rate limiters disabled (DISABLE_RATE_LIMITS=true)"
+    );
+  }
 
   console.log(
     "[Security] All security middleware applied (Sprint 91: +brute-force, +fingerprinting, +DDoS throttling)"

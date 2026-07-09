@@ -67,6 +67,10 @@ jobs:
       VITE_FRONTEND_FORGE_API_KEY: e2e-frontend-forge-key
       VITE_FRONTEND_FORGE_API_URL: http://localhost:3001/api
       NODE_ENV: test
+      # The app drives every request from a single IP under Playwright, which
+      # trips the in-process connection throttle and per-IP rate limiters
+      # (503/429). Disable them for the E2E run; production keeps them on.
+      DISABLE_RATE_LIMITS: "true"
 
     steps:
       - name: Checkout repository

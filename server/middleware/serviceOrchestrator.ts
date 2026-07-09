@@ -247,7 +247,22 @@ export async function publishEvent(
 
   // Route auth events through Keycloak
   if (event.type.startsWith("auth.") || event.type.startsWith("user.")) {
-    await keycloak.verifyToken(event.metadata?.token ?? "").catch(() => {});
+    const tokenResult = await keycloak
+      .verifyToken(event.metadata?.token ?? "")
+      .catch((err: Error) => {
+        console.warn(
+          `[Keycloak] Token verification failed for ${event.type}: ${err.message}`
+        );
+        return null;
+      });
+    if (!tokenResult && event.metadata?.token) {
+      console.error(
+        `[Keycloak] FAIL-CLOSED: Rejecting auth event ${event.type} — invalid token`
+      );
+      throw new Error(
+        `Keycloak token verification failed for event ${event.type}`
+      );
+    }
   }
 
   // Check permissions via Permify for access-control events

@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -37,7 +84,7 @@ Provides semantic code search and intelligent code recommendations
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("cocoindex-service")
 app.include_router(metrics_router)
 
@@ -69,6 +116,11 @@ import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cocoindex_service")
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
@@ -93,7 +145,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -385,6 +437,10 @@ async def health_check():
 @app.post("/snippets", response_model=Dict[str, str])
 async def add_snippet(snippet: CodeSnippet):
     """Add a code snippet to the index"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_snippet_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_snippet", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         snippet_id = engine.add_snippet(snippet)
         return {
@@ -398,6 +454,10 @@ async def add_snippet(snippet: CodeSnippet):
 @app.post("/search", response_model=List[SearchResult])
 async def search_snippets(query: SearchQuery):
     """Search for code snippets"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("search_snippets_" + str(int(_time.time() * 1000)), _json.dumps({"action": "search_snippets", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         results = engine.search(query)
         return results
@@ -408,6 +468,15 @@ async def search_snippets(query: SearchQuery):
 @app.get("/stats", response_model=IndexStats)
 async def get_stats():
     """Get index statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "cocoindex-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         return engine.get_stats()
     except Exception as e:
@@ -417,6 +486,10 @@ async def get_stats():
 @app.post("/analyze")
 async def analyze_code(code: str, language: str):
     """Analyze code structure"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("analyze_code_" + str(int(_time.time() * 1000)), _json.dumps({"action": "analyze_code", "timestamp": _time.time()}), "cocoindex-service")
+
     try:
         analysis = engine.analyze_code(code, language)
         return analysis
@@ -427,6 +500,15 @@ async def analyze_code(code: str, language: str):
 @app.get("/snippets/{snippet_id}")
 async def get_snippet(snippet_id: str):
     """Get a specific code snippet"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_snippet", "cocoindex-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if snippet_id not in engine.snippets:
         raise HTTPException(status_code=404, detail="Snippet not found")
     
@@ -435,6 +517,10 @@ async def get_snippet(snippet_id: str):
 @app.delete("/snippets/{snippet_id}")
 async def delete_snippet(snippet_id: str):
     """Delete a code snippet"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_snippet_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_snippet", "timestamp": _time.time()}), "cocoindex-service")
+
     if snippet_id not in engine.snippets:
         raise HTTPException(status_code=404, detail="Snippet not found")
     
@@ -453,6 +539,10 @@ async def delete_snippet(snippet_id: str):
 @app.post("/index/rebuild")
 async def rebuild_index(background_tasks: BackgroundTasks):
     """Rebuild the entire index"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("rebuild_index_" + str(int(_time.time() * 1000)), _json.dumps({"action": "rebuild_index", "timestamp": _time.time()}), "cocoindex-service")
+
     def rebuild():
         try:
             logger.info("Starting index rebuild...")

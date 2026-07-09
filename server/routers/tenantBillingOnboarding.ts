@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 
 async function db() {
   const d = await getDb();
@@ -24,6 +24,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -31,6 +32,13 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["sent", "cancelled"],
@@ -358,6 +366,56 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishtenantBillingOnboardingMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `billing.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `billing_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `billing_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("billing", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
+
 export const tenantBillingOnboardingRouter = router({
   // Get available billing templates
   getTemplates: protectedProcedure.query(async () => ({
@@ -385,21 +443,28 @@ export const tenantBillingOnboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "tenantBillingOnboarding",
-        "mutation",
-        "Executed tenantBillingOnboarding mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "billPayment");
+      const commission = calculateCommission(fees.fee, "billPayment");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         // Check if tenant already has billing configured
         const [existing] = await (await db())
@@ -408,6 +473,13 @@ export const tenantBillingOnboardingRouter = router({
           .where(eq(tenantBillingConfig.tenantId, input.tenantId));
 
         if (existing) {
+          // Middleware fan-out (fail-open)
+          await publishtenantBillingOnboardingMiddleware(
+            "provisionBilling",
+            `${Date.now()}`,
+            { action: "provisionBilling" }
+          ).catch(() => {});
+
           return {
             success: false,
             error: "Billing already provisioned for this tenant",
@@ -541,6 +613,13 @@ export const tenantBillingOnboardingRouter = router({
           .where(eq(tenantBillingConfig.tenantId, input.tenantId));
 
         if (!existing) {
+          // Middleware fan-out (fail-open)
+          await publishtenantBillingOnboardingMiddleware(
+            "updateConfig",
+            `${Date.now()}`,
+            { action: "updateConfig" }
+          ).catch(() => {});
+
           return {
             success: false,
             error: "No billing config found. Provision billing first.",
@@ -641,6 +720,13 @@ export const tenantBillingOnboardingRouter = router({
           .where(eq(tenantBillingConfig.tenantId, input.tenantId));
 
         if (!config) {
+          // Middleware fan-out (fail-open)
+          await publishtenantBillingOnboardingMiddleware(
+            "retryStep",
+            `${Date.now()}`,
+            { action: "retryStep" }
+          ).catch(() => {});
+
           return { success: false, error: "No billing config found" };
         }
 
@@ -688,7 +774,14 @@ export const tenantBillingOnboardingRouter = router({
           .where(eq(tenantBillingConfig.tenantId, input.tenantId));
 
         if (!existing)
-          return { success: false, error: "No billing config found" };
+          // Middleware fan-out (fail-open)
+          await publishtenantBillingOnboardingMiddleware(
+            "deactivateBilling",
+            `${Date.now()}`,
+            { action: "deactivateBilling" }
+          ).catch(() => {});
+
+        return { success: false, error: "No billing config found" };
 
         await (
           await db()

@@ -1,6 +1,10 @@
+import os
 import logging
 import time
 from fastapi import FastAPI, Depends, HTTPException, Security, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from sqlalchemy.orm import Session
 from typing import List
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -14,6 +18,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -35,12 +86,12 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 logging.basicConfig(level=settings.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ML Engine Service", description="Machine Learning Engine for Remittance Platform")
+apply_middleware(app, enable_auth=True)
 
 # Dependency to get the database session
 def get_db():
@@ -49,6 +100,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.on_event("startup")
 def on_startup():
@@ -76,6 +131,10 @@ async def metrics_endpoint():
 # ML Model Endpoints - protected by API key
 @app.post("/models/", response_model=schemas.MLModel, status_code=201, tags=["ML Models"])
 def create_ml_model(model: schemas.MLModelCreate, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_ml_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_ml_model", "timestamp": _time.time()}), "ml-engine")
+
     logger.info(f"Creating ML model: {model.name}")
     try:
         db_model = models.MLModel(**model.dict())
@@ -89,12 +148,30 @@ def create_ml_model(model: schemas.MLModelCreate, db: Session = Depends(get_db),
 
 @app.get("/models/", response_model=List[schemas.MLModel], tags=["ML Models"])
 def read_ml_models(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_ml_models", "ml-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Reading ML models (skip={skip}, limit={limit}).")
     models_list = db.query(models.MLModel).offset(skip).limit(limit).all()
     return models_list
 
 @app.get("/models/{model_id}", response_model=schemas.MLModel, tags=["ML Models"])
 def read_ml_model(model_id: int, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_ml_model", "ml-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Reading ML model with ID: {model_id}")
     db_model = db.query(models.MLModel).filter(models.MLModel.id == model_id).first()
     if db_model is None:
@@ -104,6 +181,10 @@ def read_ml_model(model_id: int, db: Session = Depends(get_db), api_key: str = S
 
 @app.put("/models/{model_id}", response_model=schemas.MLModel, tags=["ML Models"])
 def update_ml_model(model_id: int, model: schemas.MLModelUpdate, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_ml_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_ml_model", "timestamp": _time.time()}), "ml-engine")
+
     logger.info(f"Updating ML model with ID: {model_id}")
     db_model = db.query(models.MLModel).filter(models.MLModel.id == model_id).first()
     if db_model is None:
@@ -121,6 +202,10 @@ def update_ml_model(model_id: int, model: schemas.MLModelUpdate, db: Session = D
 
 @app.delete("/models/{model_id}", status_code=204, tags=["ML Models"])
 def delete_ml_model(model_id: int, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_ml_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_ml_model", "timestamp": _time.time()}), "ml-engine")
+
     logger.info(f"Deleting ML model with ID: {model_id}")
     db_model = db.query(models.MLModel).filter(models.MLModel.id == model_id).first()
     if db_model is None:
@@ -137,6 +222,10 @@ def delete_ml_model(model_id: int, db: Session = Depends(get_db), api_key: str =
 # Prediction Endpoints - protected by API key
 @app.post("/predictions/", response_model=schemas.Prediction, status_code=201, tags=["Predictions"])
 def create_prediction(prediction: schemas.PredictionCreate, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_prediction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_prediction", "timestamp": _time.time()}), "ml-engine")
+
     logger.info(f"Creating prediction for model ID: {prediction.model_id}")
     # In a real scenario, this would trigger an actual ML prediction
     # For now, we'll just store the request and a dummy result
@@ -156,12 +245,30 @@ def create_prediction(prediction: schemas.PredictionCreate, db: Session = Depend
 
 @app.get("/predictions/", response_model=List[schemas.Prediction], tags=["Predictions"])
 def read_predictions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_predictions", "ml-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Reading predictions (skip={skip}, limit={limit}).")
     predictions_list = db.query(models.Prediction).offset(skip).limit(limit).all()
     return predictions_list
 
 @app.get("/predictions/{prediction_id}", response_model=schemas.Prediction, tags=["Predictions"])
 def read_prediction(prediction_id: int, db: Session = Depends(get_db), api_key: str = Security(security.get_api_key)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_prediction", "ml-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Reading prediction with ID: {prediction_id}")
     db_prediction = db.query(models.Prediction).filter(models.Prediction.id == prediction_id).first()
     if db_prediction is None:

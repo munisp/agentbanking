@@ -6,6 +6,9 @@ FastAPI application for payment gateway integration with support for 13 payment 
 """
 
 from fastapi import FastAPI, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -27,10 +30,56 @@ import logging
 import psycopg2
 import psycopg2.extras
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 def _init_persistence():
-    """Initialize SQLite persistence for payment-gateway-service."""
+    """Initialize PostgreSQL persistence for payment-gateway-service."""
     import os
-    db_path = os.environ.get("PAYMENT_GATEWAY_SERVICE_DB_PATH", "/tmp/payment-gateway-service.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/payment_gateway_service'))
         
@@ -38,11 +87,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -64,14 +112,12 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> None:
@@ -81,7 +127,6 @@ async def lifespan(app: FastAPI) -> None:
     yield
     logger.info("Payment Gateway Service shutting down...")
     # Production: Cleanup gateway connections
-
 
 # Create FastAPI application
 app = FastAPI(
@@ -110,6 +155,12 @@ app = FastAPI(
     ## Supported Transaction Types
     
     * Domestic transfers (within Nigeria)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
     * International remittances (54 African countries)
     * Deposits and withdrawals
     * Refunds and reversals
@@ -132,7 +183,6 @@ app.add_middleware(
 # GZip compression middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-
 # Request timing middleware
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next) -> None:
@@ -143,7 +193,6 @@ async def add_process_time_header(request: Request, call_next) -> None:
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next) -> None:
@@ -152,7 +201,6 @@ async def log_requests(request: Request, call_next) -> None:
     response = await call_next(request)
     logger.info(f"Response: {response.status_code}")
     return response
-
 
 # Exception handlers
 @app.exception_handler(PaymentGatewayError)
@@ -168,7 +216,6 @@ async def payment_gateway_error_handler(request: Request, exc: PaymentGatewayErr
         }
     )
 
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> None:
     """Handle request validation errors."""
@@ -181,7 +228,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "details": exc.errors()
         }
     )
-
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception) -> None:
@@ -196,11 +242,9 @@ async def general_exception_handler(request: Request, exc: Exception) -> None:
         }
     )
 
-
 # Include routers
 app.include_router(payment_router.router)
 app.include_router(webhook_router.router)
-
 
 # Health check endpoint
 @app.get("/health", tags=["health"])
@@ -217,7 +261,6 @@ async def health_check() -> Dict[str, Any]:
         "timestamp": time.time()
     }
 
-
 # Root endpoint
 @app.get("/", tags=["root"])
 async def root() -> Dict[str, str]:
@@ -226,13 +269,21 @@ async def root() -> Dict[str, str]:
     
     Returns basic service information.
     """
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "payment-gateway-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "Nigerian Remittance Platform - Payment Gateway Service",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health"
     }
-
 
 if __name__ == "__main__":
     import uvicorn

@@ -7,7 +7,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { disputes, transactions } from "../../drizzle/schema";
+import {
+  disputes,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -16,6 +20,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -23,6 +28,38 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("pos.dispute", key, { eventType, ...payload });
+  fluvioPublish("pos.dispute", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.dispute.filed", { eventType, ...payload })
+    .catch(() => {});
+  lakehouseIngest("pos_disputes", {
+    event_type: eventType,
+    ...payload,
+    source: "posDispute",
+  }).catch(() => {});
+}
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   open: ["investigating", "resolved", "rejected"],
@@ -78,72 +115,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _posDispute_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
 // ── Computation Helpers ────────────────────────────────────────────────────
 const _posDisputeCalc = {
   percentage: (value: number, total: number) =>
@@ -171,21 +142,28 @@ export const posDisputeRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "posDispute",
-        "mutation",
-        "Executed posDispute mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "posTransaction");
+      const commission = calculateCommission(fees.fee, "posTransaction");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -231,6 +209,21 @@ export const posDisputeRouter = router({
           })
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `posDispute transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         await writeAuditLog({
           agentId: session.id,
           agentCode: session.agentCode,
@@ -242,6 +235,13 @@ export const posDisputeRouter = router({
             transactionRef: input.transactionRef,
             reason: input.reason,
           },
+        });
+
+        publishPosMiddleware("fileDispute", input.transactionRef, {
+          action: "fileDispute",
+          disputeId: dispute.id,
+          reason: input.reason,
+          transactionRef: input.transactionRef,
         });
 
         return {

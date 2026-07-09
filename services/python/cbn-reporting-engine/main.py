@@ -6,6 +6,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .router import router
@@ -18,6 +21,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -39,12 +89,10 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 
 # Ensure all tables exist at startup
 Base.metadata.create_all(bind=engine)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,7 +105,6 @@ async def lifespan(app: FastAPI):
     cbn_scheduler.stop()
     logger.info("[CBN] APScheduler stopped.")
 
-
 app = FastAPI(
 
 import psycopg2
@@ -65,6 +112,12 @@ import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cbn_reporting_engine")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -89,6 +142,10 @@ REPORT_TYPES = ["daily_returns", "weekly_summary", "monthly_prudential", "quarte
 
 @app.post("/api/v1/reports/generate")
 async def generate_report(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_report_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate_report", "timestamp": _time.time()}), "cbn-reporting-engine")
+
     body = await request.json()
     report_type = body.get("type", "daily_returns")
     if report_type not in REPORT_TYPES:
@@ -97,7 +154,7 @@ async def generate_report(request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""INSERT INTO reports (report_type, period, status, generated_at)
-                      VALUES (?, ?, 'generated', NOW())""", (report_type, period))
+                      VALUES (%s, %s, 'generated', NOW())""", (report_type, period))
     conn.commit()
     report_id = cursor.fetchone()[0]
     conn.close()
@@ -105,6 +162,15 @@ async def generate_report(request: Request):
 
 @app.get("/api/v1/reports")
 async def list_reports():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_reports", "cbn-reporting-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, report_type, period, status, generated_at FROM reports ORDER BY generated_at DESC LIMIT 50")
@@ -114,6 +180,15 @@ async def list_reports():
 
 @app.get("/api/v1/reports/{report_id}")
 async def get_report(report_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_report", "cbn-reporting-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM reports WHERE id = %s", (report_id,))
@@ -139,7 +214,6 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
 
 @app.get("/health")
 def health_check():

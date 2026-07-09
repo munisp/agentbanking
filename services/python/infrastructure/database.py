@@ -16,10 +16,8 @@ logger = logging.getLogger(__name__)
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # Create the SQLAlchemy engine
-# connect_args={"check_same_thread": False} is only needed for SQLite
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
-)
+    SQLALCHEMY_DATABASE_URL, )
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -11,6 +11,9 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, EmailStr
@@ -43,7 +46,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/platform")
@@ -56,6 +58,7 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/management_api")
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -81,7 +84,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -258,7 +261,6 @@ async def list_agents(
         logger.error(f"List agents error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def get_agent(agent_id: str = Path(...), conn=Depends(db)):
     """Get agent details"""
@@ -283,7 +285,6 @@ async def get_agent(agent_id: str = Path(...), conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/v1/agents", status_code=status.HTTP_201_CREATED, tags=["Agents"])
 async def create_agent(data: AgentCreate, request: Request, conn=Depends(db)):
     """Create a new agent"""
@@ -303,7 +304,6 @@ async def create_agent(data: AgentCreate, request: Request, conn=Depends(db)):
         raise HTTPException(status_code=409, detail="Agent with this email already exists")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.put("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def update_agent(agent_id: str, data: AgentUpdate, conn=Depends(db)):
@@ -328,7 +328,6 @@ async def update_agent(agent_id: str, data: AgentUpdate, conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/api/v1/agents/{agent_id}", tags=["Agents"])
 async def delete_agent(agent_id: str, conn=Depends(db)):
     """Deactivate an agent (soft delete)"""
@@ -344,7 +343,6 @@ async def delete_agent(agent_id: str, conn=Depends(db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/agents/{agent_id}/hierarchy", tags=["Agents"])
 async def get_agent_hierarchy(agent_id: str, conn=Depends(db)):
@@ -364,7 +362,6 @@ async def get_agent_hierarchy(agent_id: str, conn=Depends(db)):
         return [dict(r) for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # TRANSACTIONS ENDPOINTS
@@ -429,7 +426,6 @@ async def list_transactions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/transactions/stats", tags=["Transactions"])
 async def get_transaction_stats(
     period: str = Query(default="today"),
@@ -469,7 +465,6 @@ async def get_transaction_stats(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/transactions/{transaction_id}", tags=["Transactions"])
 async def get_transaction(transaction_id: str, conn=Depends(db)):
     """Get transaction details"""
@@ -489,7 +484,6 @@ async def get_transaction(transaction_id: str, conn=Depends(db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # POS TERMINALS ENDPOINTS
@@ -540,7 +534,6 @@ async def list_pos_terminals(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/v1/pos/terminals", status_code=201, tags=["POS"])
 async def create_pos_terminal(data: POSTerminalCreate, conn=Depends(db)):
     """Register a new POS terminal"""
@@ -559,7 +552,6 @@ async def create_pos_terminal(data: POSTerminalCreate, conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/pos/status", tags=["POS"])
 async def get_pos_status(conn=Depends(db)):
     """Get POS fleet status summary"""
@@ -576,7 +568,6 @@ async def get_pos_status(conn=Depends(db)):
         return dict(row)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # QR CODES ENDPOINTS
@@ -621,7 +612,6 @@ async def list_qr_codes(
         return {"items": [dict(r) for r in rows], "total": total, "page": page, "limit": limit}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/v1/qr-codes/generate", status_code=201, tags=["QR Codes"])
 async def generate_qr_code(data: QRCodeGenerate, conn=Depends(db)):
@@ -675,7 +665,6 @@ async def generate_qr_code(data: QRCodeGenerate, conn=Depends(db)):
         except Exception as e2:
             raise HTTPException(status_code=500, detail=str(e2))
 
-
 @app.post("/api/v1/qr-codes/validate", tags=["QR Codes"])
 async def validate_qr_code(code: str, conn=Depends(db)):
     """Validate a QR code"""
@@ -703,7 +692,6 @@ async def validate_qr_code(code: str, conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/qr-codes/stats", tags=["QR Codes"])
 async def get_qr_stats(conn=Depends(db)):
     """Get QR code statistics"""
@@ -719,7 +707,6 @@ async def get_qr_stats(conn=Depends(db)):
         return dict(row)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # COMMISSIONS ENDPOINTS
@@ -764,7 +751,6 @@ async def list_commissions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/commissions/rules", tags=["Commissions"])
 async def list_commission_rules(conn=Depends(db)):
     """List commission rules"""
@@ -773,7 +759,6 @@ async def list_commission_rules(conn=Depends(db)):
         return [dict(r) for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/v1/commissions/rules", status_code=201, tags=["Commissions"])
 async def create_commission_rule(data: CommissionRule, conn=Depends(db)):
@@ -791,7 +776,6 @@ async def create_commission_rule(data: CommissionRule, conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.put("/api/v1/commissions/rules/{rule_id}", tags=["Commissions"])
 async def update_commission_rule(rule_id: str, data: CommissionRule, conn=Depends(db)):
     """Update a commission rule"""
@@ -807,7 +791,6 @@ async def update_commission_rule(rule_id: str, data: CommissionRule, conn=Depend
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/api/v1/commissions/rules/{rule_id}", tags=["Commissions"])
 async def delete_commission_rule(rule_id: str, conn=Depends(db)):
     """Delete (deactivate) a commission rule"""
@@ -816,7 +799,6 @@ async def delete_commission_rule(rule_id: str, conn=Depends(db)):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # KYC MANAGEMENT ENDPOINTS
@@ -858,7 +840,6 @@ async def list_kyc_applications(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/v1/kyc/applications/{application_id}/review", tags=["KYC"])
 async def review_kyc_application(application_id: str, data: KYCReview, conn=Depends(db)):
     """Review a KYC application"""
@@ -873,7 +854,6 @@ async def review_kyc_application(application_id: str, data: KYCReview, conn=Depe
         return {"success": True, "decision": data.decision}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # ANALYTICS ENDPOINTS
@@ -938,7 +918,6 @@ async def get_analytics_overview(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
 # INVENTORY ENDPOINTS
 # ============================================================================
@@ -980,7 +959,6 @@ async def list_inventory(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/v1/inventory", status_code=201, tags=["Inventory"])
 async def create_inventory_item(data: InventoryItem, conn=Depends(db)):
     """Create inventory item"""
@@ -998,7 +976,6 @@ async def create_inventory_item(data: InventoryItem, conn=Depends(db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.put("/api/v1/inventory/{item_id}", tags=["Inventory"])
 async def update_inventory_item(item_id: str, data: InventoryItem, conn=Depends(db)):
     """Update inventory item"""
@@ -1013,7 +990,6 @@ async def update_inventory_item(item_id: str, data: InventoryItem, conn=Depends(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.delete("/api/v1/inventory/{item_id}", tags=["Inventory"])
 async def delete_inventory_item(item_id: str, conn=Depends(db)):
     """Delete inventory item"""
@@ -1022,7 +998,6 @@ async def delete_inventory_item(item_id: str, conn=Depends(db)):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # SYSTEM HEALTH ENDPOINTS
@@ -1075,11 +1050,9 @@ async def get_system_health(conn=Depends(db), redis=Depends(cache)):
         "environment": ENVIRONMENT,
     }
 
-
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
-
 
 if __name__ == "__main__":
     import uvicorn

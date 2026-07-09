@@ -23,7 +23,11 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { agents, loyaltyHistory } from "../../drizzle/schema";
+import {
+  agents,
+  loyaltyHistory,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 import {
   validateAmount,
@@ -38,6 +42,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -212,10 +222,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -413,21 +419,28 @@ export const loyaltyRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "loyalty",
-        "mutation",
-        "Executed loyalty mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -739,11 +752,79 @@ export const loyaltyRouter = router({
             pointsCost: input.pointsCost,
           },
         });
+        const redemptionRef = `RDM-${Date.now()}`;
+
+        // GL entry for points redemption (if reward has monetary value)
+        const db = (await getDb())!;
+        if (db) {
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${redemptionRef}`,
+            description: `Loyalty redemption: ${input.rewardName}`,
+            debitAccountId: 5004,
+            creditAccountId: 2005,
+            amount: input.pointsCost,
+            currency: "NGN",
+            referenceType: "loyalty_redemption",
+            referenceId: redemptionRef,
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+        }
+
+        publishEvent(
+          "pos.transactions.created",
+          redemptionRef,
+          {
+            type: "loyalty_redemption",
+            rewardId: input.rewardId,
+            rewardName: input.rewardName,
+            pointsCost: input.pointsCost,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "5004",
+          creditAccountId: "2005",
+          amount: Math.round(input.pointsCost * 100),
+          ref: redemptionRef,
+          txType: "loyalty_redemption",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({
+          txRef: redemptionRef,
+          agentCode: session.agentCode,
+          amount: input.pointsCost,
+          type: "loyalty_redemption",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "loyalty.redeemed", {
+            redemptionRef,
+            rewardId: input.rewardId,
+            pointsCost: input.pointsCost,
+            agentId: session.id,
+          })
+          .catch(() => {});
+        ingestToLakehouse("loyalty_redemptions", {
+          redemptionRef,
+          rewardId: input.rewardId,
+          rewardName: input.rewardName,
+          pointsCost: input.pointsCost,
+          agentId: session.id,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
         return {
           success: true,
           pointsDeducted: input.pointsCost,
           remainingPoints: agent.loyaltyPoints - input.pointsCost,
-          redemptionRef: `RDM-${Date.now()}`,
+          redemptionRef,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

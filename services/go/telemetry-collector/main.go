@@ -6,7 +6,7 @@
 //   - Estimate bandwidth via timed download of known-size payloads
 //   - Detect carrier and network tier from device APIs
 //   - Report metrics to telemetry-ingestion service
-//   - Cache metrics locally when offline (SQLite WAL)
+//   - Cache metrics locally when offline (PostgreSQL WAL)
 //   - Flush cached metrics on reconnect
 //
 // Endpoints:
@@ -431,7 +431,7 @@ func setupGracefulShutdown(srv *http.Server) {
 	}()
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

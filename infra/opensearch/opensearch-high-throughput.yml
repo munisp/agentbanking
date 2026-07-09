@@ -1,0 +1,64 @@
+# ==============================================================================
+# OpenSearch 2.x — High-Throughput Configuration (Millions of docs/sec)
+# Target: 8 vCPU / 32 GB RAM per node, 5-node cluster
+# ==============================================================================
+
+# ── Cluster ──────────────────────────────────────────────────────────────────
+cluster.name: pos54-search-ht
+node.name: ${HOSTNAME}
+
+# ── JVM Heap (set in jvm.options, NOT here) ──────────────────────────────────
+# -Xms16g -Xmx16g  (50% of RAM, never exceed 32GB for compressed oops)
+
+# ── Thread Pools ─────────────────────────────────────────────────────────────
+thread_pool.write.size: 8              # Match CPU cores
+thread_pool.write.queue_size: 10000    # Deep queue for burst writes
+thread_pool.search.size: 13            # (cores * 3 / 2) + 1
+thread_pool.search.queue_size: 5000
+thread_pool.get.size: 8
+thread_pool.get.queue_size: 1000
+
+# ── Indexing ─────────────────────────────────────────────────────────────────
+index.refresh_interval: "30s"          # Refresh every 30s (default 1s is too aggressive)
+index.translog.durability: "async"     # Async translog fsync (10x faster writes)
+index.translog.sync_interval: "5s"     # Sync translog every 5s
+index.translog.flush_threshold_size: "1gb"  # Flush at 1GB (default 512MB)
+index.number_of_shards: 5             # 1 shard per node
+index.number_of_replicas: 1            # 1 replica for HA
+
+# ── Bulk Indexing ────────────────────────────────────────────────────────────
+# Client-side: use _bulk API with 5-15 MB payloads, 1000-5000 docs per batch
+# indices.memory.index_buffer_size set in docker-compose env
+
+# ── Circuit Breakers ─────────────────────────────────────────────────────────
+indices.breaker.total.limit: "85%"
+indices.breaker.request.limit: "60%"
+indices.breaker.fielddata.limit: "40%"
+
+# ── Merge Policy ─────────────────────────────────────────────────────────────
+index.merge.scheduler.max_thread_count: 4  # Parallel merges
+index.merge.policy.max_merged_segment: "5gb"
+index.merge.policy.segments_per_tier: 10
+
+# ── Query Cache ──────────────────────────────────────────────────────────────
+indices.queries.cache.size: "20%"
+index.queries.cache.enabled: true
+
+# ── Fielddata ────────────────────────────────────────────────────────────────
+indices.fielddata.cache.size: "30%"
+
+# ── Recovery ─────────────────────────────────────────────────────────────────
+indices.recovery.max_bytes_per_sec: "500mb"  # Fast shard recovery on NVMe
+cluster.routing.allocation.node_concurrent_recoveries: 4
+
+# ── Disk Watermarks ──────────────────────────────────────────────────────────
+cluster.routing.allocation.disk.watermark.low: "85%"
+cluster.routing.allocation.disk.watermark.high: "90%"
+cluster.routing.allocation.disk.watermark.flood_stage: "95%"
+
+# ── Index Lifecycle (ISM) ───────────────────────────────────────────────────
+# Hot-Warm-Cold architecture:
+# - Hot: NVMe SSD (0-7 days) — full replicas, frequent queries
+# - Warm: SSD (7-30 days) — read-only, force-merged, 1 replica
+# - Cold: HDD (30-365 days) — read-only, 0 replicas, searchable snapshots
+# - Delete: > 365 days

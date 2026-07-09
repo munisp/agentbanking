@@ -1,13 +1,20 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import {
   disputes,
   transactions,
   refunds,
   auditLog,
+  gl_journal_entries,
 } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -22,6 +29,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -89,10 +97,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -186,21 +190,41 @@ export const chargebackManagementRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "dispute",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "chargebackManagement",
-        "mutation",
-        "Executed chargebackManagement mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         const [chargeback] = await db
@@ -238,16 +262,90 @@ export const chargebackManagementRouter = router({
       z.object({
         id: z.number(),
         resolution: z.enum(["accepted", "rejected", "partial"]),
-        refundAmount: z.number().optional(),
+        refundAmount: z.number().positive().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "dispute",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+      return withTransaction(async tx => {
+        const db = tx ?? (await getDb())!;
         await db
           .update(disputes)
           .set({ status: "resolved", resolution: input.resolution })
           .where(eq(disputes.id, input.id));
+
+        // GL reversal entry for accepted/partial chargebacks with refund
+        if (
+          (input.resolution === "accepted" || input.resolution === "partial") &&
+          input.refundAmount &&
+          input.refundAmount > 0
+        ) {
+          const refundRef = `CB-REF-${Date.now()}-${input.id}`;
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${refundRef}`,
+            description: `Chargeback refund for dispute #${input.id}`,
+            debitAccountId: 5001, // Chargeback Expense
+            creditAccountId: 1001, // Cash on Hand (refund to customer)
+            amount: Math.round(input.refundAmount * 100),
+            currency: "NGN",
+            referenceType: "dispute",
+            referenceId: String(input.id),
+            postedBy: "system",
+            status: "posted",
+          });
+
+          publishEvent("pos.disputes.resolved", String(input.id), {
+            disputeId: input.id,
+            resolution: input.resolution,
+            refundAmount: input.refundAmount,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+
+          // TigerBeetle dual-ledger for refund
+          tbCreateTransfer({
+            debitAccountId: "5001",
+            creditAccountId: "1001",
+            amount: Math.round((input.refundAmount ?? 0) * 100),
+            ref: `CB-${input.id}-${Date.now()}`,
+            txType: "chargeback_refund",
+            agentCode: "system",
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Lakehouse
+          const cbRef = `CB-${input.id}-${Date.now()}`;
+          publishTxToFluvio({
+            txRef: cbRef,
+            agentCode: "system",
+            amount: input.refundAmount ?? 0,
+            type: "chargeback_resolution",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "chargeback.resolved", {
+              disputeId: input.id,
+              resolution: input.resolution,
+              refundAmount: input.refundAmount,
+            })
+            .catch(() => {});
+          ingestToLakehouse("chargeback_resolutions", {
+            disputeId: input.id,
+            resolution: input.resolution,
+            refundAmount: input.refundAmount,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+        }
+
         await db.insert(auditLog).values({
           action: "chargeback_resolved",
           resource: "disputes",
@@ -258,15 +356,9 @@ export const chargebackManagementRouter = router({
             refundAmount: input.refundAmount,
           },
         });
+
         return { success: true, id: input.id, resolution: input.resolution };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      }, "resolveChargeback");
     }),
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

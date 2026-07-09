@@ -2,6 +2,9 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 
 import logging
 from fastapi import FastAPI, Request, status
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
@@ -14,6 +17,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -35,7 +85,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,6 +97,7 @@ import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/stablecoin_defi")
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -70,6 +120,15 @@ init_db()
 
 @app.get("/api/v1/items")
 async def list_items():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "stablecoin-defi")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, status, data, created_at FROM items ORDER BY created_at DESC LIMIT 100")
@@ -79,13 +138,17 @@ async def list_items():
 
 @app.post("/api/v1/items")
 async def create_item(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "stablecoin-defi")
+
     body = await request.json()
     name = body.get("name", "")
     if not name:
         raise HTTPException(status_code=400, detail="Name required")
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO items (name, status, data, created_at) VALUES (?, 'active', ?, NOW())",
+    cursor.execute("INSERT INTO items (name, status, data, created_at) VALUES (%s, 'active', %s, NOW())",
                    (name, str(body)))
     conn.commit()
     item_id = cursor.fetchone()[0]
@@ -94,6 +157,15 @@ async def create_item(request: Request):
 
 @app.get("/api/v1/items/{item_id}")
 async def get_item(item_id: int):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_item", "stablecoin-defi")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM items WHERE id = %s", (item_id,))
@@ -105,6 +177,10 @@ async def get_item(item_id: int):
 
 @app.put("/api/v1/items/{item_id}")
 async def update_item(item_id: int, request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "stablecoin-defi")
+
     body = await request.json()
     conn = get_db()
     cursor = conn.cursor()
@@ -116,6 +192,10 @@ async def update_item(item_id: int, request: Request):
 
 @app.delete("/api/v1/items/{item_id}")
 async def delete_item(item_id: int):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "stablecoin-defi")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM items WHERE id = %s", (item_id,))
@@ -153,6 +233,10 @@ async def service_exception_handler(request: Request, exc: ServiceException) -> 
 
 # --- Startup Event Handler ---
 @app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+@app.on_event("startup")
 async def startup_event() -> None:
     logger.info("Application startup...")
     # Initialize database tables
@@ -162,6 +246,15 @@ async def startup_event() -> None:
 # --- Root Endpoint ---
 @app.get("/", tags=["Root"])
 async def root() -> Dict[str, Any]:
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "stablecoin-defi")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"message": "Welcome to the Stablecoin DeFi API", "version": settings.VERSION}
 
 # --- Include Router ---

@@ -3,8 +3,8 @@ from typing import List
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./stablecoin_integration.db"
-    ASYNC_DATABASE_URL: str = "sqlite+aiosqlite:///./stablecoin_integration.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/stablecoin_integration"
+    ASYNC_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/stablecoin_integration"
 
     # Application Settings
     PROJECT_NAME: str = "Stablecoin Integration Service"

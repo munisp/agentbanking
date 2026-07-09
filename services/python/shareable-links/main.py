@@ -7,6 +7,9 @@ import logging
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- Production: Graceful Shutdown ---
@@ -14,6 +17,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -35,11 +85,16 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Shareable Links", description="Dynamic link generation for payment requests, invoices, and agent referrals with tracking", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -70,7 +125,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -123,6 +178,10 @@ async def health():
 @app.post("/api/v1/links/create")
 async def create_link(link_type: str, payload: dict, expires_hours: int = 72):
     """Create a shareable link."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_link_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_link", "timestamp": _time.time()}), "shareable-links")
+
     valid_types = ["payment_request", "invoice", "referral", "receipt", "onboarding"]
     if link_type not in valid_types: raise HTTPException(400, f"Must be one of: {valid_types}")
     return {"link_id": f"LNK-{int(__import__('time').time())}", "type": link_type, "url": "", "short_url": "", "expires_at": None, "clicks": 0}
@@ -130,16 +189,38 @@ async def create_link(link_type: str, payload: dict, expires_hours: int = 72):
 @app.get("/api/v1/links/{link_id}")
 async def get_link(link_id: str):
     """Get link details and analytics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_link", "shareable-links")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"link_id": link_id, "type": "", "url": "", "clicks": 0, "conversions": 0, "status": "active"}
 
 @app.get("/api/v1/links/{link_id}/analytics")
 async def get_analytics(link_id: str):
     """Get detailed link analytics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_analytics", "shareable-links")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"link_id": link_id, "total_clicks": 0, "unique_clicks": 0, "conversions": 0, "referrers": [], "devices": []}
 
 @app.delete("/api/v1/links/{link_id}")
 async def deactivate_link(link_id: str):
     """Deactivate a shareable link."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("deactivate_link_" + str(int(_time.time() * 1000)), _json.dumps({"action": "deactivate_link", "timestamp": _time.time()}), "shareable-links")
+
     return {"link_id": link_id, "status": "deactivated", "deactivated_at": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

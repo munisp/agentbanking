@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./discord_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/discord_service"
     
     # Service settings
     SERVICE_NAME: str = "discord-service"
@@ -37,8 +37,7 @@ settings = get_settings()
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # Create a configured "Session" class

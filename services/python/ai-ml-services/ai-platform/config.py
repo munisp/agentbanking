@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "a_very_secret_key_for_testing" # In a real app, this should be a complex, randomly generated string
     
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./ai_platform.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/ai_ml_services"
     
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080"]

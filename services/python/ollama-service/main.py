@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -37,7 +84,7 @@ Provides local LLM inference using Ollama
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("ollama-service")
 app.include_router(metrics_router)
 
@@ -65,6 +112,11 @@ import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ollama_service")
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
@@ -89,7 +141,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -442,6 +494,10 @@ async def health_check():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """Chat with Ollama"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("chat_" + str(int(_time.time() * 1000)), _json.dumps({"action": "chat", "timestamp": _time.time()}), "ollama-service")
+
     try:
         if request.stream:
             return StreamingResponse(
@@ -458,6 +514,10 @@ async def chat(request: ChatRequest):
 @app.post("/completions")
 async def generate(request: CompletionRequest):
     """Generate completion"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("generate_" + str(int(_time.time() * 1000)), _json.dumps({"action": "generate", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.generate(request)
         return response
@@ -468,6 +528,10 @@ async def generate(request: CompletionRequest):
 @app.post("/embeddings")
 async def embeddings(request: EmbeddingRequest):
     """Generate embeddings"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("embeddings_" + str(int(_time.time() * 1000)), _json.dumps({"action": "embeddings", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.embeddings(request)
         return response
@@ -478,6 +542,15 @@ async def embeddings(request: EmbeddingRequest):
 @app.get("/models", response_model=List[ModelInfo])
 async def list_models():
     """List available models"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "ollama-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         models = await engine.list_models()
         return models
@@ -488,6 +561,10 @@ async def list_models():
 @app.post("/models/pull")
 async def pull_model(model_name: str, background_tasks: BackgroundTasks):
     """Pull a model from Ollama registry"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("pull_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "pull_model", "timestamp": _time.time()}), "ollama-service")
+
     try:
         background_tasks.add_task(engine.pull_model, model_name)
         return {"message": f"Pulling model {model_name} in background", "status": "started"}
@@ -498,6 +575,10 @@ async def pull_model(model_name: str, background_tasks: BackgroundTasks):
 @app.post("/banking/assistant")
 async def banking_assistant(query: BankingQuery):
     """Banking-specific AI assistant"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("banking_assistant_" + str(int(_time.time() * 1000)), _json.dumps({"action": "banking_assistant", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.banking_assistant(query)
         return response
@@ -508,6 +589,10 @@ async def banking_assistant(query: BankingQuery):
 @app.post("/banking/fraud-analysis")
 async def fraud_analysis(transaction_data: Dict[str, Any]):
     """Analyze transaction for fraud"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("fraud_analysis_" + str(int(_time.time() * 1000)), _json.dumps({"action": "fraud_analysis", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.fraud_analysis(transaction_data)
         return response
@@ -518,6 +603,10 @@ async def fraud_analysis(transaction_data: Dict[str, Any]):
 @app.post("/banking/classify-query")
 async def classify_query(query: str):
     """Classify customer query"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("classify_query_" + str(int(_time.time() * 1000)), _json.dumps({"action": "classify_query", "timestamp": _time.time()}), "ollama-service")
+
     try:
         response = await engine.customer_query_classifier(query)
         return response

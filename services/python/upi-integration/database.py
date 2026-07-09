@@ -13,12 +13,10 @@ logger.setLevel(logging.INFO)
 # Database setup
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
-# For SQLite, check_same_thread is needed for multi-threading environments like FastAPI
 # For other databases (PostgreSQL, MySQL), this parameter is not needed.
-connect_args = {"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args=connect_args
+    SQLALCHEMY_DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

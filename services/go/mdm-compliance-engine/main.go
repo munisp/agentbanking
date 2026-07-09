@@ -160,6 +160,27 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 
@@ -171,7 +192,7 @@ func main() {
 	http.HandleFunc("/api/v1/device/list", handleListDevices)
 	http.HandleFunc("/health", handleHealth)
 	log.Printf("[mdm-compliance-engine] Starting on :%s with %d devices", port, len(devices))
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)))
 }
 
 // --- Production: Graceful Shutdown ---
@@ -190,7 +211,7 @@ func setupGracefulShutdown(srv *http.Server) {
 	}()
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

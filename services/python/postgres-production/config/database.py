@@ -46,7 +46,6 @@ class DatabaseConfig:
         
         return conn_str
 
-
 class DatabaseManager:
     """Database connection manager with pooling"""
     
@@ -105,7 +104,6 @@ class DatabaseManager:
         if self.engine:
             self.engine.dispose()
         print("✅ Database connections closed")
-
 
 # Global database manager instance
 db_manager = DatabaseManager()

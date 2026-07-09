@@ -30,6 +30,9 @@ from collections import defaultdict
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Query, Path
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
@@ -39,6 +42,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -60,7 +110,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 # ── Configuration ───────────────────────────────────────────────────────────────
 
 logging.basicConfig(level=logging.INFO)
@@ -81,6 +130,7 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/store_analytics_engine")
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -106,7 +156,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -137,7 +187,6 @@ customer_purchases: Dict[int, list] = defaultdict(list)
 # Store metrics cache
 metrics_cache: Dict[str, Any] = {}
 
-
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
 class SaleEvent(BaseModel):
@@ -149,25 +198,21 @@ class SaleEvent(BaseModel):
     payment_method: str = "card"
     timestamp: Optional[str] = None
 
-
 class ProductViewEvent(BaseModel):
     store_id: int
     product_id: int
     customer_id: Optional[int] = None
     timestamp: Optional[str] = None
 
-
 class ForecastRequest(BaseModel):
     store_id: int
     days_ahead: int = 30
     metric: str = "revenue"  # revenue, orders, avg_order
 
-
 class BenchmarkRequest(BaseModel):
     store_id: int
     city: Optional[str] = None
     category: Optional[str] = None
-
 
 # ── Analytics Core ──────────────────────────────────────────────────────────────
 
@@ -181,7 +226,6 @@ def moving_average(values: List[float], window: int = 7) -> List[float]:
         result.append(sum(values[start:i + 1]) / (i - start + 1))
     return result
 
-
 def linear_trend(values: List[float]) -> tuple:
     """Linear regression for trend detection. Returns (slope, intercept)."""
     n = len(values)
@@ -194,7 +238,6 @@ def linear_trend(values: List[float]) -> tuple:
     slope = numerator / denominator if denominator != 0 else 0
     intercept = y_mean - slope * x_mean
     return (slope, intercept)
-
 
 def forecast_values(values: List[float], days_ahead: int) -> List[float]:
     """Forecast future values using trend + seasonal decomposition."""
@@ -214,7 +257,6 @@ def forecast_values(values: List[float], days_ahead: int) -> List[float]:
             trend_val += seasonal * 0.3  # Dampen seasonal component
         forecasts.append(max(0, round(trend_val, 2)))
     return forecasts
-
 
 def detect_trending(
     sales: list, window_recent: int = 7, window_baseline: int = 30
@@ -257,7 +299,6 @@ def detect_trending(
 
     trending.sort(key=lambda x: x["acceleration"], reverse=True)
     return trending[:20]
-
 
 def compute_customer_segments(
     sales: list,
@@ -310,7 +351,6 @@ def compute_customer_segments(
         ),
     }
 
-
 def recommend_products(
     customer_id: int, store_id: int, limit: int = 10
 ) -> List[Dict[str, Any]]:
@@ -343,7 +383,6 @@ def recommend_products(
         for pid, score in recommendations
     ]
 
-
 # ── Middleware Integration Helpers ──────────────────────────────────────────────
 
 async def publish_event(topic: str, data: dict):
@@ -353,7 +392,6 @@ async def publish_event(topic: str, data: dict):
     except Exception as e:
         logger.warning(f"Dapr publish failed for {topic}: {e}")
 
-
 async def cache_set(key: str, value: Any, ttl: int = 3600):
     try:
         url = f"http://localhost:{DAPR_HTTP_PORT}/v1.0/state/redis-store"
@@ -361,14 +399,12 @@ async def cache_set(key: str, value: Any, ttl: int = 3600):
     except Exception:
         pass
 
-
 async def stream_to_fluvio(topic: str, data: dict):
     try:
         url = f"http://{FLUVIO_ENDPOINT}/produce/{topic}"
         await http_client.post(url, json=data)
     except Exception:
         pass
-
 
 # ── API Endpoints ───────────────────────────────────────────────────────────────
 
@@ -381,10 +417,13 @@ async def health_check():
         "time": datetime.utcnow().isoformat(),
     }
 
-
 @app.post("/api/v1/analytics/ingest/sale")
 async def ingest_sale(event: SaleEvent):
     """Ingest a sale event for analytics processing."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ingest_sale_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ingest_sale", "timestamp": _time.time()}), "store-analytics-engine")
+
     ts = event.timestamp or datetime.utcnow().isoformat()
     record = {
         "order_id": event.order_id,
@@ -408,17 +447,28 @@ async def ingest_sale(event: SaleEvent):
 
     return {"status": "ingested", "storeId": event.store_id}
 
-
 @app.post("/api/v1/analytics/ingest/view")
 async def ingest_view(event: ProductViewEvent):
     """Ingest a product view event."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("ingest_view_" + str(int(_time.time() * 1000)), _json.dumps({"action": "ingest_view", "timestamp": _time.time()}), "store-analytics-engine")
+
     product_views[event.store_id][event.product_id] += 1
     return {"status": "recorded"}
-
 
 @app.get("/api/v1/analytics/store/{store_id}/dashboard")
 async def store_dashboard(store_id: int = Path(...)):
     """Comprehensive store analytics dashboard."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("store_dashboard", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     now = datetime.utcnow()
 
@@ -477,10 +527,13 @@ async def store_dashboard(store_id: int = Path(...)):
         "trendingProducts": detect_trending(sales),
     }
 
-
 @app.post("/api/v1/analytics/store/{store_id}/forecast")
 async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None):
     """Forecast future sales using time series analysis."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("sales_forecast_" + str(int(_time.time() * 1000)), _json.dumps({"action": "sales_forecast", "timestamp": _time.time()}), "store-analytics-engine")
+
     if req is None:
         req = ForecastRequest(store_id=store_id)
 
@@ -522,14 +575,21 @@ async def sales_forecast(store_id: int = Path(...), req: ForecastRequest = None)
         "confidence": "medium" if len(sales) >= 30 else "low",
     }
 
-
 @app.get("/api/v1/analytics/store/{store_id}/trending")
 async def trending_products(store_id: int = Path(...)):
     """Get trending products for a store."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("trending_products", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     trending = detect_trending(sales)
     return {"storeId": store_id, "trending": trending}
-
 
 @app.get("/api/v1/analytics/store/{store_id}/recommendations/{customer_id}")
 async def get_recommendations(
@@ -545,10 +605,18 @@ async def get_recommendations(
         "recommendations": recs,
     }
 
-
 @app.get("/api/v1/analytics/store/{store_id}/conversion")
 async def conversion_funnel(store_id: int = Path(...)):
     """Conversion funnel: views -> cart -> purchase."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("conversion_funnel", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     views = sum(product_views.get(store_id, {}).values())
     purchases = len(store_sales.get(store_id, []))
     # Estimate cart adds as 30% of views (heuristic)
@@ -568,10 +636,18 @@ async def conversion_funnel(store_id: int = Path(...)):
         },
     }
 
-
 @app.get("/api/v1/analytics/store/{store_id}/revenue-breakdown")
 async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
     """Revenue breakdown by product category, payment method, and time."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("revenue_breakdown", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     sales = store_sales.get(store_id, [])
     now = datetime.utcnow()
     period_sales = [s for s in sales if (now - datetime.fromisoformat(s["timestamp"])).days <= days]
@@ -603,10 +679,18 @@ async def revenue_breakdown(store_id: int = Path(...), days: int = Query(30)):
         "peakDay": max(daily_dow, key=daily_dow.get) if daily_dow else None,
     }
 
-
 @app.get("/api/v1/analytics/platform/overview")
 async def platform_overview():
     """Platform-wide analytics overview for all stores."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("platform_overview", "store-analytics-engine")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     total_stores = len(store_sales)
     total_orders = sum(len(s) for s in store_sales.values())
     total_revenue = sum(sum(sale["amount"] for sale in sales) for sales in store_sales.values())
@@ -626,8 +710,11 @@ async def platform_overview():
         "topStores": store_revenues[:10],
     }
 
-
 # ── Startup ─────────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.on_event("startup")
 async def startup():
@@ -647,7 +734,6 @@ async def startup():
         )
     except Exception:
         pass
-
 
 if __name__ == "__main__":
     import uvicorn

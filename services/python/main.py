@@ -20,6 +20,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/python")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title="Remittance Platform - Complete API",
     description="Unified API for all 162 microservices",
@@ -28,7 +48,7 @@ app = FastAPI(
 
 from shared.middleware import apply_middleware, ErrorResponse
 from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("agent-banking-platform---complete-api")
 app.include_router(metrics_router)
 
@@ -255,6 +275,15 @@ async def list_services():
         "total_routes": len(routes),
         "routes": routes
     }
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

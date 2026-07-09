@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field("a-very-secret-key-for-jwt-and-stuff", env="SECRET_KEY")
     
     # Database Settings
-    DATABASE_URL: str = Field("sqlite:///./multi_currency_accounts.db", env="DATABASE_URL")
+    DATABASE_URL: str = Field("postgresql://postgres:postgres@localhost:5432/multi_currency_accounts", env="DATABASE_URL")
     
     # Security Settings (Placeholder for real implementation)
     ALGORITHM: str = Field("HS256", env="ALGORITHM")

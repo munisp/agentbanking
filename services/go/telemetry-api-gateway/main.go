@@ -212,6 +212,27 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 
@@ -225,7 +246,7 @@ func main() {
 
 	log.Printf("[telemetry-api-gateway] Starting on port %s", port)
 	log.Printf("[telemetry-api-gateway] Kafka: %s | OpenSearch: %s | Redis: %s", kafkaBroker, opensearchURL, redisURL)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -246,7 +267,7 @@ func setupGracefulShutdown(srv *http.Server) {
 	}()
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

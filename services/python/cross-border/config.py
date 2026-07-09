@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./cross_border.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/cross_border"
     
     # Application Settings
     PROJECT_NAME: str = "Cross-Border Payments API"

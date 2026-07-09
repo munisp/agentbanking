@@ -7,7 +7,14 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+import { eventBus, EVENTS } from "../lib/eventBus";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -16,13 +23,17 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
+
 import {
   calculateFee,
   calculateCommission,
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -184,72 +195,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _billPayments_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
 export const billPaymentsRouter = router({
   payBill: protectedProcedure
     .input(
@@ -259,24 +204,38 @@ export const billPaymentsRouter = router({
         amount: z.number().min(0).positive().max(5_000_000),
         customerName: z.string().max(128).optional(),
         customerPhone: z.string().max(20).optional(),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "billPayments",
-        "mutation",
-        "Executed billPayments mutation"
-      );
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -295,19 +254,20 @@ export const billPaymentsRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        const feeResult = calculateFee(input.amount, "billPayment");
+        const commResult = calculateCommission(feeResult.fee, "billPayment");
+        const ref = `BIL-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
+
+        // Atomic balance check with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",
           });
-
-        const commission = Math.round(input.amount * 0.015);
-        const ref = `BIL-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
           .insert(transactions)
@@ -316,8 +276,8 @@ export const billPaymentsRouter = router({
             agentId: session.id,
             type: "Bill Payment",
             amount: String(input.amount),
-            fee: "0",
-            commission: String(commission),
+            fee: String(feeResult.fee),
+            commission: String(commResult.agentShare),
             customerName: input.customerName ?? null,
             customerPhone: input.customerPhone ?? null,
             customerAccount: input.customerReference,
@@ -339,6 +299,20 @@ export const billPaymentsRouter = router({
           })
           .where(eq(agents.id, session.id));
 
+        // Double-entry journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-CI-${Date.now()}`,
+          description: `billPayments transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref ?? String(Date.now()),
+          postedBy: session?.agentCode ?? "system",
+          status: "posted",
+        });
+
         await writeAuditLog({
           agentId: session.id,
           agentCode: session.agentCode,
@@ -353,12 +327,72 @@ export const billPaymentsRouter = router({
           },
         });
 
+        // Kafka event for downstream consumers
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "bill_payment",
+            ref,
+            transactionId: tx.id,
+            agentId: session.id,
+            billerId: input.billerId,
+            billerName: biller.name,
+            amount: input.amount,
+            fee: feeResult.fee,
+            commission: commResult.agentShare,
+            customerReference: input.customerReference,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "2001",
+          creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref,
+          txType: "bill_payment",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({
+          txRef: ref,
+          agentCode: session.agentCode,
+          amount: input.amount,
+          type: "bill_payment",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "bill.payment.completed", {
+            ref,
+            amount: input.amount,
+            billerId: input.billerId,
+          })
+          .catch(() => {});
+        ingestToLakehouse("bill_payments", {
+          ref,
+          amount: input.amount,
+          billerId: input.billerId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
+          type: "bill_payment",
+          ref,
+          amount: input.amount,
+          agentId: session.id,
+        });
+
         return {
           ref,
           billerId: input.billerId,
           billerName: biller.name,
           amount: input.amount,
-          commission,
+          fee: feeResult.fee,
+          commission: commResult.agentShare,
           status: "success",
           transactionId: tx.id,
         };

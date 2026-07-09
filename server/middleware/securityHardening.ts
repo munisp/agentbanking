@@ -234,7 +234,43 @@ interface RateLimitEntry {
   resetAt: number;
 }
 
-const rateLimitStore = new Map<string, RateLimitEntry>();
+// Redis-backed distributed rate limiting (falls back to in-memory if Redis unavailable)
+import { cacheGet, cacheSet, cacheIncr } from "../redisClient";
+
+const localRateLimitFallback = new Map<string, RateLimitEntry>();
+
+async function getRedisRateLimit(
+  key: string,
+  windowMs: number
+): Promise<{ count: number; resetAt: number } | null> {
+  try {
+    const raw = await cacheGet(`rl:${key}`);
+    if (raw) {
+      const entry = JSON.parse(raw);
+      if (entry.resetAt > Date.now()) return entry;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function setRedisRateLimit(
+  key: string,
+  count: number,
+  resetAt: number
+): Promise<void> {
+  try {
+    const ttlMs = Math.max(resetAt - Date.now(), 1000);
+    await cacheSet(
+      `rl:${key}`,
+      JSON.stringify({ count, resetAt }),
+      Math.ceil(ttlMs / 1000)
+    );
+  } catch {
+    // fall back to local
+  }
+}
 
 export interface RateLimitConfig {
   windowMs: number;
@@ -243,20 +279,34 @@ export interface RateLimitConfig {
 }
 
 export function createRateLimiter(config: RateLimitConfig) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const key = config.keyGenerator
       ? config.keyGenerator(req)
       : `${req.ip}:${req.path}`;
 
     const now = Date.now();
-    const entry = rateLimitStore.get(key);
+
+    // Try Redis first for distributed rate limiting
+    let entry = await getRedisRateLimit(key, config.windowMs);
+
+    if (!entry) {
+      // Check local fallback
+      const localEntry = localRateLimitFallback.get(key);
+      if (localEntry && localEntry.resetAt >= now) {
+        entry = localEntry;
+      }
+    }
 
     if (!entry || entry.resetAt < now) {
-      rateLimitStore.set(key, { count: 1, resetAt: now + config.windowMs });
+      const newEntry = { count: 1, resetAt: now + config.windowMs };
+      localRateLimitFallback.set(key, newEntry);
+      await setRedisRateLimit(key, 1, newEntry.resetAt);
       return next();
     }
 
     entry.count++;
+    localRateLimitFallback.set(key, entry);
+    await setRedisRateLimit(key, entry.count, entry.resetAt);
 
     if (entry.count > config.maxRequests) {
       res.setHeader(

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./onboarding_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/onboarding_service"
     
     # Application settings
     SERVICE_NAME: str = "onboarding-service"
@@ -33,8 +33,7 @@ settings = Settings()
 
 # Use a synchronous engine for simplicity with FastAPI's dependency injection
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    settings.DATABASE_URL,
     pool_pre_ping=True
 )
 

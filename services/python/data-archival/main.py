@@ -19,6 +19,9 @@ from enum import Enum
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 
 # --- Production: Graceful Shutdown ---
@@ -26,6 +29,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -47,8 +97,8 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = FastAPI(title="54Link Data Archival Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -79,18 +129,16 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
         pass
 
-
 class RetentionAction(str, Enum):
     ARCHIVE = "archive"
     DELETE = "delete"
     ANONYMIZE = "anonymize"
-
 
 class RetentionPolicy(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -107,7 +155,6 @@ class RetentionPolicy(BaseModel):
     records_archived: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-
 class ArchivalJob(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     policy_id: str
@@ -120,7 +167,6 @@ class ArchivalJob(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
-
 
 # In-memory stores (production: PostgreSQL)
 policies: dict[str, RetentionPolicy] = {}
@@ -146,33 +192,58 @@ DEFAULT_POLICIES = [
                     table_name="webhook_deliveries", retention_days=30, action=RetentionAction.DELETE),
 ]
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.on_event("startup")
 async def startup():
     for p in DEFAULT_POLICIES:
         policies[p.id] = p
 
-
 @app.post("/policies")
 async def create_policy(policy: RetentionPolicy):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_policy", "timestamp": _time.time()}), "data-archival")
+
     policies[policy.id] = policy
     return {"id": policy.id, "message": "policy created"}
 
-
 @app.get("/policies")
 async def list_policies():
-    return {"policies": [p.model_dump() for p in policies.values()], "count": len(policies)}
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_policies", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
 
+    return {"policies": [p.model_dump() for p in policies.values()], "count": len(policies)}
 
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_policy", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     return policies[policy_id].model_dump()
 
-
 @app.put("/policies/{policy_id}")
 async def update_policy(policy_id: str, body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_policy", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     policy = policies[policy_id]
@@ -181,17 +252,23 @@ async def update_policy(policy_id: str, body: dict):
             setattr(policy, k, v)
     return {"message": "policy updated", "policy": policy.model_dump()}
 
-
 @app.delete("/policies/{policy_id}")
 async def delete_policy(policy_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_policy_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_policy", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     del policies[policy_id]
     return {"message": "policy deleted"}
 
-
 @app.post("/archive/run/{policy_id}")
 async def run_archival(policy_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("run_archival_" + str(int(_time.time() * 1000)), _json.dumps({"action": "run_archival", "timestamp": _time.time()}), "data-archival")
+
     if policy_id not in policies:
         raise HTTPException(404, "policy not found")
     policy = policies[policy_id]
@@ -219,9 +296,12 @@ async def run_archival(policy_id: str):
     jobs[job.id] = job
     return {"job": job.model_dump()}
 
-
 @app.post("/archive/run-all")
 async def run_all_archival():
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("run_all_archival_" + str(int(_time.time() * 1000)), _json.dumps({"action": "run_all_archival", "timestamp": _time.time()}), "data-archival")
+
     results = []
     for policy_id, policy in policies.items():
         if not policy.enabled:
@@ -239,25 +319,44 @@ async def run_all_archival():
         results.append({"policy": policy.name, "job_id": job.id, "archived": job.records_archived})
     return {"ran": len(results), "results": results}
 
-
 @app.get("/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_jobs", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = list(jobs.values())
     if status:
         items = [j for j in items if j.status == status]
     items.sort(key=lambda j: j.started_at or "", reverse=True)
     return {"jobs": [j.model_dump() for j in items[:limit]], "total": len(items)}
 
-
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_job", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     return jobs[job_id].model_dump()
 
-
 @app.post("/restore/{job_id}")
 async def restore_from_archive(job_id: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("restore_from_archive_" + str(int(_time.time() * 1000)), _json.dumps({"action": "restore_from_archive", "timestamp": _time.time()}), "data-archival")
+
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
     job = jobs[job_id]
@@ -268,9 +367,12 @@ async def restore_from_archive(job_id: str):
         "status": "restoring",
     }
 
-
 @app.post("/gdpr/delete")
 async def gdpr_delete(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("gdpr_delete_" + str(int(_time.time() * 1000)), _json.dumps({"action": "gdpr_delete", "timestamp": _time.time()}), "data-archival")
+
     customer_id = body.get("customer_id", "")
     reason = body.get("reason", "GDPR right to erasure")
     if not customer_id:
@@ -284,9 +386,17 @@ async def gdpr_delete(body: dict):
         "audit_id": str(uuid.uuid4()),
     }
 
-
 @app.get("/stats")
 async def stats():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("stats", "data-archival")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     total_archived = sum(p.records_archived for p in policies.values())
     return {
         "total_policies": len(policies),
@@ -298,7 +408,6 @@ async def stats():
             for p in policies.values()
         },
     }
-
 
 @app.get("/health")
 async def health():

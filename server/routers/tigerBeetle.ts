@@ -21,7 +21,7 @@ import {
   tbCreateTransfer,
   tbEnsureAgentAccount,
 } from "../tbClient";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { agents, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, count, sum, and, gte, lte } from "drizzle-orm";
 import { validateInput } from "../lib/routerHelpers";
@@ -39,6 +39,11 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -112,45 +117,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_TIGERBEETLE = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_TIGERBEETLE.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (!INTEGRITY_RULES_TIGERBEETLE.validateRange(data.amount, 0, 100_000_000))
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Database Operations Helper ─────────────────────────────────────────────
 async function checkDbHealth() {
   try {
@@ -166,76 +132,6 @@ async function checkDbHealth() {
   }
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _tigerBeetle_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -249,6 +145,48 @@ const _txPatterns = {
     });
   },
 };
+
+async function publishtigerBeetleMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("pos.transactions.created", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  tbCreateTransfer({
+    debitAccountId: "1001",
+    creditAccountId: "2001",
+    amount: Number(payload.amount ?? 0),
+    ledger: 1,
+    code: 1,
+    ref: key,
+    txType: event,
+    agentCode: String(payload.agentId ?? "system"),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `pos.transactions.created.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `pos.transactions.created.${event}`, {
+      key,
+      ...payload,
+    })
+    .catch(() => {});
+  ingestToLakehouse("tigerBeetle", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+  cacheSet(`tigerBeetle:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
 
 export const tigerBeetleRouter = router({
   /** Health check */
@@ -394,21 +332,28 @@ export const tigerBeetleRouter = router({
   triggerSync: protectedProcedure
     .input(z.object({ agentCode: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "tigerBeetle",
-        "mutation",
-        "Executed tigerBeetle mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const body = input.agentCode ? { agentCode: input.agentCode } : {};
         await tbFetch("/sync/trigger", {
@@ -416,6 +361,35 @@ export const tigerBeetleRouter = router({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "tigerBeetle",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
+        await publishtigerBeetleMiddleware("triggerSync", `${Date.now()}`, {
+          action: "triggerSync",
+        }).catch(() => {});
+
         return { triggered: true, timestamp: new Date().toISOString() };
       } catch {
         return {
@@ -432,6 +406,10 @@ export const tigerBeetleRouter = router({
     .mutation(async ({ input }) => {
       try {
         const created = await tbEnsureAgentAccount(input.agentCode);
+        await publishtigerBeetleMiddleware("ensureAccount", `${Date.now()}`, {
+          action: "ensureAccount",
+        }).catch(() => {});
+
         return { created, agentCode: input.agentCode };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -490,6 +468,10 @@ export const tigerBeetleRouter = router({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ limit: input.limit }),
         })) as { retried: number; succeeded: number; failed: number };
+        await publishtigerBeetleMiddleware("retryFailed", `${Date.now()}`, {
+          action: "retryFailed",
+        }).catch(() => {});
+
         return data;
       } catch {
         return {
@@ -508,9 +490,17 @@ export const tigerBeetleRouter = router({
   rotateSecret: protectedProcedure
     .input(z.object({ secretName: z.string() }))
     .mutation(async ({ input }) => {
+      await publishtigerBeetleMiddleware("rotateSecret", `${Date.now()}`, {
+        action: "rotateSecret",
+      }).catch(() => {});
+
       return { success: true, rotatedAt: new Date().toISOString() };
     }),
   start: protectedProcedure.mutation(async () => {
+    await publishtigerBeetleMiddleware("start", `${Date.now()}`, {
+      action: "start",
+    }).catch(() => {});
+
     return { success: true, startedAt: new Date().toISOString() };
   }),
 
@@ -564,6 +554,12 @@ export const tigerBeetleRouter = router({
           `Transfer ${input.amount} via middleware fan-out`
         );
       } catch {}
+      await publishtigerBeetleMiddleware(
+        "middlewareTransfer",
+        `${Date.now()}`,
+        { action: "middlewareTransfer" }
+      ).catch(() => {});
+
       return result;
     }),
 
@@ -582,6 +578,10 @@ export const tigerBeetleRouter = router({
         query: input.query || { match_all: {} },
         size: input.size,
       });
+      await publishtigerBeetleMiddleware("middlewareSearch", `${Date.now()}`, {
+        action: "middlewareSearch",
+      }).catch(() => {});
+
       return result.ok
         ? result.data
         : { hits: { hits: [], total: { value: 0 } } };
@@ -592,6 +592,10 @@ export const tigerBeetleRouter = router({
       "../adapters/tigerbeetleMiddlewareAdapter"
     );
     const result = await orchestratorReconcile();
+    await publishtigerBeetleMiddleware("middlewareReconcile", `${Date.now()}`, {
+      action: "middlewareReconcile",
+    }).catch(() => {});
+
     return result.ok ? result.data : { status: "unavailable", total_runs: 0 };
   }),
 });

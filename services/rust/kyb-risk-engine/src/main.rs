@@ -22,6 +22,7 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 use uuid::Uuid;
+use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -187,13 +188,7 @@ struct TypologyMatch {
 // ── Application State ──────────────────────────────────────────────────────────
 
 struct AppState {
-    config: Config,
-    start_time: Instant,
-    pep_database: RwLock<Vec<PEPEntry>>,
-    sanctions_database: RwLock<Vec<SanctionsEntry>>,
-    screening_cache: RwLock<HashMap<String, PEPScreeningResult>>,
-    requests_total: RwLock<u64>,
-    requests_success: RwLock<u64>,
+    pool: PgPool,
 }
 
 #[derive(Debug, Clone)]
@@ -803,6 +798,76 @@ async fn get_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
+
+
+// --- PostgreSQL Persistence ---
+async fn get_db_pool() -> Result<deadpool_postgres::Pool, Box<dyn std::error::Error>> {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/kyb_risk_engine".to_string());
+    
+    let config: tokio_postgres::Config = database_url.parse()?;
+    let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
+    let pool = deadpool_postgres::Pool::builder(manager)
+        .max_size(16)
+        .build()?;
+    Ok(pool)
+}
+
+
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    Ok(auth_header[7..].to_string())
+}
+
+
+async fn init_db(pool: &PgPool) {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_state (
+            key TEXT PRIMARY KEY,
+            value JSONB NOT NULL DEFAULT '{}',
+            service TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"
+    ).execute(pool).await.ok();
+}
+
+
+async fn get_state(pool: &PgPool, key: &str, service: &str) -> Option<serde_json::Value> {
+    sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT value FROM service_state WHERE key = $1 AND service = $2"
+    )
+    .bind(key)
+    .bind(service)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn set_state(pool: &PgPool, key: &str, value: &serde_json::Value, service: &str) {
+    sqlx::query(
+        "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()"
+    )
+    .bind(key)
+    .bind(value)
+    .bind(service)
+    .execute(pool)
+    .await
+    .ok();
+}
 
 #[tokio::main]
 async fn main() {

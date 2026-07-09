@@ -25,6 +25,87 @@ import sys
 import atexit
 import logging
 
+# PostgreSQL persistence layer (replaces in-memory state)
+import asyncpg
+import json
+import os
+
+_pg_pool = None
+
+async def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        database_url = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agentbanking")
+        try:
+            _pg_pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection failed: {e} — using in-memory fallback")
+            return None
+    return _pg_pool
+
+async def pg_get_list(service: str, collection: str) -> list:
+    pool = await get_pg_pool()
+    if pool is None:
+        return []
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_list", service
+        )
+        return json.loads(row["value"]) if row else []
+    except:
+        return []
+
+async def pg_append_list(service: str, collection: str, item: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        items = await pg_get_list(service, collection)
+        items.append(item)
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_list", json.dumps(items), service
+        )
+    except:
+        pass
+
+async def pg_get_dict(service: str, collection: str) -> dict:
+    pool = await get_pg_pool()
+    if pool is None:
+        return {}
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_dict", service
+        )
+        return json.loads(row["value"]) if row else {}
+    except:
+        return {}
+
+async def pg_set_dict(service: str, collection: str, data: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_dict", json.dumps(data), service
+        )
+    except:
+        pass
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -45,7 +126,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = Flask(__name__)
 
 # ── Model State ───────────────────────────────────────────────────────────────
@@ -60,7 +140,7 @@ model_state = {
 }
 
 # Training data store
-training_data = []
+training_data_cache = []  # PG-backed via pg_get_list("carrier-recommendation", "training_data")
 MAX_TRAINING_DATA = 50000
 
 # Carrier performance profiles (learned from data)
@@ -118,7 +198,6 @@ def predict_carrier_score(carrier, hour, day_of_week, lat, lng, prev_latency, pr
 
     return max(0, min(100, score))
 
-
 def approximate_region(lat, lng):
     """Approximate region from lat/lng for African cities"""
     regions = {
@@ -141,7 +220,6 @@ def approximate_region(lat, lng):
             min_dist = dist
             closest = name
     return closest if min_dist < 2.0 else "unknown"
-
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -184,7 +262,6 @@ def predict():
         "region": approximate_region(lat, lng),
         "conditions": {"hour": hour, "dayOfWeek": day_of_week},
     })
-
 
 @app.route("/train", methods=["POST"])
 def train():
@@ -231,11 +308,9 @@ def train():
         "accuracy": model_state["accuracy"],
     })
 
-
 @app.route("/model/status", methods=["GET"])
 def model_status():
     return jsonify(model_state)
-
 
 @app.route("/batch-predict", methods=["POST"])
 def batch_predict():
@@ -270,7 +345,6 @@ def batch_predict():
 
     return jsonify({"predictions": results, "count": len(results)})
 
-
 @app.route("/feature-importance", methods=["GET"])
 def feature_importance():
     return jsonify({
@@ -285,7 +359,6 @@ def feature_importance():
             {"name": "latitude", "importance": 0.01, "description": "Latitude coordinate"},
         ]
     })
-
 
 @app.route("/carriers/stats", methods=["GET"])
 def carrier_stats():
@@ -303,7 +376,6 @@ def carrier_stats():
     stats.sort(key=lambda x: x["baseScore"], reverse=True)
     return jsonify(stats)
 
-
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
@@ -315,13 +387,11 @@ def health():
         "carriers": len(carrier_profiles),
     })
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8114))
     print(f"[carrier-recommendation] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
 
 import psycopg2
 import psycopg2.extras
@@ -352,7 +422,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:

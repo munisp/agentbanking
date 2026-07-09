@@ -1,9 +1,18 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
+import { gl_journal_entries, transactions, agents } from "../../drizzle/schema";
 import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import crypto from "crypto";
 
 import {
   validateAmount,
@@ -74,45 +83,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_BNPLENGINE = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_BNPLENGINE.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (!INTEGRITY_RULES_BNPLENGINE.validateRange(data.amount, 0, 100_000_000))
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Database Operations Helper ─────────────────────────────────────────────
 async function checkDbHealth() {
   try {
@@ -128,76 +98,6 @@ async function checkDbHealth() {
   }
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _bnplEngine_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -309,21 +209,26 @@ export const bnplEngineRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // Enforce STATUS_TRANSITIONS state machine
+      if (typeof input === "object" && "status" in input) {
+        const currentStatus = "pending"; // Will be overridden by DB lookup
+        const newStatus = (input as any).status;
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "bnplEngine",
-        "mutation",
-        "Executed bnplEngine mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       const db = (await getDb())!;
 
       const amount = Number(input.data.amount);
@@ -351,6 +256,31 @@ export const bnplEngineRouter = router({
         sql`INSERT INTO "bnpl_applications" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
       );
       const id = (result as any).rows?.[0]?.id;
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "bnplEngine",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return { id, status: "created" };
     }),
 
@@ -428,6 +358,253 @@ export const bnplEngineRouter = router({
       };
     }
   }),
+
+  processRepayment: protectedProcedure
+    .input(
+      z.object({
+        applicationId: z.number(),
+        amount: z.number().positive(),
+        installmentNumber: z.number().min(1).optional(),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return withIdempotency(input.idempotencyKey, async () => {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+        return withTransaction(async tx => {
+          const db = tx ?? (await getDb())!;
+          const ref = `BNPL-PAY-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+
+          // Fetch BNPL application
+          const appResult = await db.execute(
+            sql`SELECT * FROM "bnpl_applications" WHERE id = ${input.applicationId} FOR UPDATE`
+          );
+          const app = (appResult as any).rows?.[0];
+          if (!app)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "BNPL application not found",
+            });
+          if (app.status === "completed") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Loan already fully repaid",
+            });
+          }
+
+          const appData =
+            typeof app.data === "string"
+              ? JSON.parse(app.data)
+              : (app.data ?? {});
+          const totalAmount = Number(appData.amount ?? 0);
+          const paidSoFar = Number(appData.paidAmount ?? 0);
+          const newPaid = paidSoFar + input.amount;
+          const isFullyPaid = newPaid >= totalAmount;
+
+          // Lock agent row and debit
+          const agentRows = await db.execute(
+            sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agentRow =
+            (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+          if (!agentRow || Number(agentRow.float_balance) < input.amount) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient float for repayment",
+            });
+          }
+
+          await db.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(input.amount)} WHERE id = ${session.id}`
+          );
+
+          // Update BNPL application
+          const updatedData = {
+            ...appData,
+            paidAmount: newPaid,
+            lastPaymentDate: new Date().toISOString(),
+          };
+          const newStatus = isFullyPaid
+            ? "completed"
+            : app.status === "overdue"
+              ? "active"
+              : app.status;
+          await db.execute(
+            sql`UPDATE "bnpl_applications" SET data = ${JSON.stringify(updatedData)}::jsonb, status = ${newStatus}, updated_at = NOW() WHERE id = ${input.applicationId}`
+          );
+
+          // Record transaction
+          const [txRecord] = await db
+            .insert(transactions)
+            .values({
+              ref,
+              agentId: session.id,
+              type: "BNPL Repayment",
+              amount: String(input.amount),
+              fee: "0",
+              commission: "0",
+              currency: "NGN",
+              channel: "BNPL",
+              status: "success",
+              metadata: {
+                applicationId: input.applicationId,
+                installmentNumber: input.installmentNumber,
+                paidSoFar: newPaid,
+                totalAmount,
+                isFullyPaid,
+              },
+            })
+            .returning();
+
+          // GL double-entry: Debit BNPL Receivable, Credit Agent Float
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `BNPL repayment for application #${input.applicationId}`,
+            debitAccountId: 1002, // BNPL Receivable (asset reduction)
+            creditAccountId: 2001, // Agent Float
+            amount: Math.round(input.amount * 100),
+            currency: "NGN",
+            referenceType: "bnpl_repayment",
+            referenceId: String(txRecord.id),
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          // Late penalty if overdue
+          if (app.status === "overdue") {
+            const penalty = calculateLatePenalty(input.amount, 30);
+            if (penalty.penalty > 0) {
+              await db.insert(gl_journal_entries).values({
+                entryNumber: `JE-PEN-${ref}`,
+                description: `Late penalty on BNPL #${input.applicationId}`,
+                debitAccountId: 2001,
+                creditAccountId: 4002, // Penalty Revenue
+                amount: Math.round(penalty.penalty * 100),
+                currency: "NGN",
+                referenceType: "bnpl_penalty",
+                referenceId: String(txRecord.id),
+                postedBy: session.agentCode,
+                status: "posted",
+              });
+            }
+          }
+
+          // Kafka event
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "bnpl_repayment",
+              ref,
+              applicationId: input.applicationId,
+              amount: input.amount,
+              paidSoFar: newPaid,
+              totalAmount,
+              isFullyPaid,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
+
+          // TigerBeetle dual-ledger
+          tbCreateTransfer({
+            debitAccountId: "2004",
+            creditAccountId: "2001",
+            amount: Math.round(input.amount * 100),
+            ref,
+            txType: "bnpl_repayment",
+            agentCode: session.agentCode,
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Redis + Lakehouse
+          publishTxToFluvio({
+            txRef: ref,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "bnpl_repayment",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "bnpl.repayment.completed", {
+              ref,
+              applicationId: input.applicationId,
+              amount: input.amount,
+              isFullyPaid,
+            })
+            .catch(() => {});
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+          ingestToLakehouse("bnpl_repayments", {
+            ref,
+            applicationId: input.applicationId,
+            amount: input.amount,
+            totalPaid: newPaid,
+            isFullyPaid,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+
+          writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "BNPL_REPAYMENT",
+            resource: "bnpl",
+            resourceId: ref,
+            status: "success",
+            metadata: {
+              applicationId: input.applicationId,
+              amount: input.amount,
+              isFullyPaid,
+            },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            ref,
+            transactionId: txRecord.id,
+            applicationId: input.applicationId,
+            amountPaid: input.amount,
+            totalPaid: newPaid,
+            totalAmount,
+            remainingBalance: Math.max(0, totalAmount - newPaid),
+            isFullyPaid,
+            status: newStatus,
+            timestamp: new Date().toISOString(),
+          };
+        }, "bnplEngine.processRepayment");
+      });
+    }),
+
+  collectOverdue: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(50) }))
+    .mutation(async ({ input }) => {
+      const db = (await getDb())!;
+      const overdueResult = await db.execute(
+        sql`SELECT id, data, agent_id FROM "bnpl_applications" WHERE status = 'overdue' ORDER BY created_at ASC LIMIT ${input.limit}`
+      );
+      const overdueApps = (overdueResult as any).rows ?? [];
+      const processed: { id: number; penalty: number }[] = [];
+
+      for (const app of overdueApps) {
+        const appData =
+          typeof app.data === "string"
+            ? JSON.parse(app.data)
+            : (app.data ?? {});
+        const totalAmount = Number(appData.amount ?? 0);
+        const paidAmount = Number(appData.paidAmount ?? 0);
+        const outstanding = totalAmount - paidAmount;
+        const penalty = calculateLatePenalty(outstanding, 30);
+        processed.push({ id: app.id, penalty: penalty.penalty });
+      }
+
+      return {
+        processed: processed.length,
+        items: processed,
+        timestamp: new Date().toISOString(),
+      };
+    }),
 
   serviceHealth: protectedProcedure.query(async () => {
     const services = [

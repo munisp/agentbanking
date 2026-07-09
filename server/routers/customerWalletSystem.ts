@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
-import { customers, transactions, auditLog } from "../../drizzle/schema";
+import {
+  customers,
+  transactions,
+  auditLog,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -16,6 +22,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -23,6 +30,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -78,71 +88,46 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _customerWalletSystem_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
+async function publishcustomerWalletSystemMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("wallet.credited", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  tbCreateTransfer({
+    debitAccountId: "1001",
+    creditAccountId: "2001",
+    amount: Number(payload.amount ?? 0),
+    ledger: 1,
+    code: 1,
+    ref: key,
+    txType: event,
+    agentCode: String(payload.agentId ?? "system"),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `wallet.credited.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `wallet.credited.${event}`, { key, ...payload })
+    .catch(() => {});
+  ingestToLakehouse("customerWalletSystem", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+  cacheSet(`customerWalletSystem:${key}`, JSON.stringify(payload), 300).catch(
+    () => {}
+  );
+}
 
 export const customerWalletSystemRouter = router({
   getBalance: protectedProcedure
@@ -220,21 +205,28 @@ export const customerWalletSystemRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "customerWalletSystem",
-        "mutation",
-        "Executed customerWalletSystem mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         const [tx] = await db
@@ -242,12 +234,26 @@ export const customerWalletSystemRouter = router({
           .values({
             customerId: input.customerId,
             amount: String(input.amount),
+            fee: String(fees.fee),
+            commission: String(commission.agentShare),
             type: "Cash In",
             status: "success",
             channel: "App",
             reference: "TOP-" + crypto.randomUUID(),
           } as any)
           .returning();
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-WLT-${Date.now()}`,
+          description: "Customer wallet topup",
+          debitAccountId: 1001,
+          creditAccountId: 2001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: String(tx.id),
+          postedBy: "system",
+          status: "posted",
+        });
         await db.insert(auditLog).values({
           action: "wallet_topup",
           resource: "transactions",
@@ -259,6 +265,35 @@ export const customerWalletSystemRouter = router({
             source: input.source,
           },
         } as any);
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "customerWalletSystem",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
+        await publishcustomerWalletSystemMiddleware("topUp", `${Date.now()}`, {
+          action: "topUp",
+        }).catch(() => {});
+
         return { success: true, transactionId: tx.id, amount: input.amount };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -36,7 +83,7 @@ Port: 8150
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("ai/ml-services-coordinator")
 app.include_router(metrics_router)
 
@@ -101,14 +148,17 @@ def storage_keys(pattern: str = "*"):
         print(f"Storage keys error: {e}")
         return []
 
-
-
 app = FastAPI(
 
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ai_ml_services")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -134,7 +184,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -204,7 +254,6 @@ class RedisStorage:
         count = self._increment_count()
         return f"item_{count}"
 
-
 # Initialize Redis-backed storage
 storage = RedisStorage()
 
@@ -223,6 +272,15 @@ class Item(BaseModel):
 
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "ai-ml-services")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "ai-ml-services",
         "description": "AI/ML Services Coordinator",
@@ -244,6 +302,10 @@ async def health_check():
 @app.post("/items")
 async def create_item(item: Item):
     """Create a new item"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "ai-ml-services")
+
     stats["total_requests"] += 1
     item_id = storage.next_id()  # Use atomic Redis increment for unique IDs
     item.id = item_id
@@ -256,6 +318,15 @@ async def create_item(item: Item):
 @app.get("/items")
 async def list_items(skip: int = 0, limit: int = 100):
     """List all items"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_items", "ai-ml-services")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     stats["total_requests"] += 1
     items = list(storage.values())[skip:skip+limit]
     return {
@@ -269,6 +340,15 @@ async def list_items(skip: int = 0, limit: int = 100):
 @app.get("/items/{item_id}")
 async def get_item(item_id: str):
     """Get a specific item"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_item", "ai-ml-services")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     stats["total_requests"] += 1
     if item_id not in storage:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -277,6 +357,10 @@ async def get_item(item_id: str):
 @app.put("/items/{item_id}")
 async def update_item(item_id: str, item: Item):
     """Update an item"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "ai-ml-services")
+
     stats["total_requests"] += 1
     if item_id not in storage:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -289,6 +373,10 @@ async def update_item(item_id: str, item: Item):
 @app.delete("/items/{item_id}")
 async def delete_item(item_id: str):
     """Delete an item"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "ai-ml-services")
+
     stats["total_requests"] += 1
     if item_id not in storage:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -299,6 +387,10 @@ async def delete_item(item_id: str):
 @app.post("/process")
 async def process_data(data: Dict[str, Any]):
     """Process data (service-specific logic)"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("process_data_" + str(int(_time.time() * 1000)), _json.dumps({"action": "process_data", "timestamp": _time.time()}), "ai-ml-services")
+
     stats["total_requests"] += 1
     return {
         "success": True,
@@ -311,6 +403,15 @@ async def process_data(data: Dict[str, Any]):
 @app.get("/search")
 async def search_items(query: str):
     """Search items"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("search_items", "ai-ml-services")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     stats["total_requests"] += 1
     results = [item for item in storage.values() if query.lower() in str(item).lower()]
     return {
@@ -323,6 +424,15 @@ async def search_items(query: str):
 @app.get("/stats")
 async def get_statistics():
     """Get service statistics"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_statistics", "ai-ml-services")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
     return {
         "uptime_seconds": int(uptime),

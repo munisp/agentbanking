@@ -54,7 +54,7 @@ export function createNotification(params: {
 }): AppNotification {
   const now = new Date();
   return {
-    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `notif-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     userId: params.userId,
     type: params.type,
     title: params.title,
@@ -148,7 +148,7 @@ export function createAuditEntry(params: {
   metadata?: Record<string, unknown>;
 }): AuditEntry {
   return {
-    id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `audit-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     userId: params.userId,
     userName: params.userName,
     action: params.action,

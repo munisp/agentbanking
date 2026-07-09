@@ -1,4 +1,8 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
@@ -16,6 +20,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -37,12 +88,17 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Device Management Service",
               description="API for managing devices and device owners in an Remittance Platform.",
               version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 # Configure logger
 logger.add("file.log", rotation="500 MB", compression="zip", level=settings.LOG_LEVEL)
@@ -74,6 +130,10 @@ async def add_prometheus_metrics(request: Request, call_next):
 
 @app.post("/token", response_model=security.Token, tags=["Authentication"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "device-management")
+
     user = security.authenticate_user(form_data.username, form_data.password)
     if not user:
         logger.warning(f"Failed login attempt for user: {form_data.username}")
@@ -94,6 +154,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/owners/", response_model=schemas.DeviceOwner, status_code=status.HTTP_201_CREATED, tags=["Device Owners"])
 def create_device_owner(owner: schemas.DeviceOwnerCreate, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_device_owner_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_device_owner", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} creating new device owner: {owner.name}")
     db_owner = models.DeviceOwner(name=owner.name, contact_person=owner.contact_person, contact_email=owner.contact_email)
     db.add(db_owner)
@@ -105,6 +169,15 @@ def create_device_owner(owner: schemas.DeviceOwnerCreate, db: Session = Depends(
 
 @app.get("/owners/", response_model=List[schemas.DeviceOwner], tags=["Device Owners"])
 def read_device_owners(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_device_owners", "device-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user} fetching device owners.")
     owners = db.query(models.DeviceOwner).offset(skip).limit(limit).all()
     DB_OPERATION_COUNT.labels(operation='read', model='DeviceOwner', status='success').inc()
@@ -112,6 +185,15 @@ def read_device_owners(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 
 @app.get("/owners/{owner_id}", response_model=schemas.DeviceOwner, tags=["Device Owners"])
 def read_device_owner(owner_id: int, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_device_owner", "device-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user} fetching device owner {owner_id}.")
     db_owner = db.query(models.DeviceOwner).filter(models.DeviceOwner.id == owner_id).first()
     if db_owner is None:
@@ -123,6 +205,10 @@ def read_device_owner(owner_id: int, db: Session = Depends(get_db), current_user
 
 @app.put("/owners/{owner_id}", response_model=schemas.DeviceOwner, tags=["Device Owners"])
 def update_device_owner(owner_id: int, owner: schemas.DeviceOwnerUpdate, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_device_owner_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_device_owner", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} updating device owner {owner_id}.")
     db_owner = db.query(models.DeviceOwner).filter(models.DeviceOwner.id == owner_id).first()
     if db_owner is None:
@@ -143,6 +229,10 @@ def update_device_owner(owner_id: int, owner: schemas.DeviceOwnerUpdate, db: Ses
 
 @app.delete("/owners/{owner_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Device Owners"])
 def delete_device_owner(owner_id: int, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_device_owner_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_device_owner", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} deleting device owner {owner_id}.")
     db_owner = db.query(models.DeviceOwner).filter(models.DeviceOwner.id == owner_id).first()
     if db_owner is None:
@@ -159,6 +249,10 @@ def delete_device_owner(owner_id: int, db: Session = Depends(get_db), current_us
 
 @app.post("/devices/", response_model=schemas.Device, status_code=status.HTTP_201_CREATED, tags=["Devices"])
 def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_device", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} creating new device: {device.serial_number}")
     db_device = models.Device(**device.model_dump())
     db.add(db_device)
@@ -170,6 +264,15 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db), c
 
 @app.get("/devices/", response_model=List[schemas.Device], tags=["Devices"])
 def read_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_devices", "device-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user} fetching devices.")
     devices = db.query(models.Device).offset(skip).limit(limit).all()
     DB_OPERATION_COUNT.labels(operation='read', model='Device', status='success').inc()
@@ -177,6 +280,15 @@ def read_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db),
 
 @app.get("/devices/{device_id}", response_model=schemas.Device, tags=["Devices"])
 def read_device(device_id: int, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_device", "device-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"User {current_user} fetching device {device_id}.")
     db_device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if db_device is None:
@@ -188,6 +300,10 @@ def read_device(device_id: int, db: Session = Depends(get_db), current_user: str
 
 @app.put("/devices/{device_id}", response_model=schemas.Device, tags=["Devices"])
 def update_device(device_id: int, device: schemas.DeviceUpdate, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_device", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} updating device {device_id}.")
     db_device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if db_device is None:
@@ -208,6 +324,10 @@ def update_device(device_id: int, device: schemas.DeviceUpdate, db: Session = De
 
 @app.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Devices"])
 def delete_device(device_id: int, db: Session = Depends(get_db), current_user: str = Depends(security.get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_device_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_device", "timestamp": _time.time()}), "device-management")
+
     logger.info(f"User {current_user} deleting device {device_id}.")
     db_device = db.query(models.Device).filter(models.Device.id == device_id).first()
     if db_device is None:

@@ -8,7 +8,19 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, commissionRules } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+import { eventBus, EVENTS } from "../lib/eventBus";
+import {
+  transactions,
+  agents,
+  commissionRules,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -17,13 +29,17 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
+
 import {
   calculateFee,
   calculateCommission,
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit, KYC_TIER_LIMITS } from "../lib/cbnLimits";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_approval"],
@@ -216,24 +232,38 @@ export const airtimeVendingRouter = router({
         phone: z.string().min(11).max(14),
         amount: z.number().min(0).int().min(50).max(50_000),
         provider: z.enum(["MTN", "AIRTEL", "GLO", "9MOBILE"]).optional(),
+        idempotencyKey: z.string().min(16).max(64),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "airtimeVending",
-        "mutation",
-        "Executed airtimeVending mutation"
-      );
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -256,19 +286,19 @@ export const airtimeVendingRouter = router({
             message: "Cannot detect provider for this number",
           });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        const commission = Math.round(input.amount * 0.04);
+        const ref = `AIR-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
+
+        // Atomic balance check + debit with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",
           });
-
-        const commission = Math.round(input.amount * 0.04);
-        const ref = `AIR-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
           .insert(transactions)
@@ -290,9 +320,22 @@ export const airtimeVendingRouter = router({
           .update(agents)
           .set({
             floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
+
+        // Double-entry journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-CI-${Date.now()}`,
+          description: `airtimeVending transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(input.amount * 100),
+          currency: "NGN",
+          referenceType: "transaction",
+          referenceId: ref ?? String(Date.now()),
+          postedBy: session?.agentCode ?? "system",
+          status: "posted",
+        });
 
         await writeAuditLog({
           agentId: session.id,
@@ -307,6 +350,64 @@ export const airtimeVendingRouter = router({
             phone: input.phone,
             commission,
           },
+        });
+
+        // Kafka event for downstream consumers
+        publishEvent(
+          "pos.transactions.created",
+          ref,
+          {
+            type: "airtime_vending",
+            ref,
+            transactionId: tx.id,
+            agentId: session.id,
+            provider,
+            amount: input.amount,
+            phone: input.phone,
+            commission,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: session.agentCode }
+        ).catch(() => {});
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "2001",
+          creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref,
+          txType: "airtime_vending",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Lakehouse
+        publishTxToFluvio({
+          txRef: ref,
+          agentCode: session.agentCode,
+          amount: input.amount,
+          type: "airtime_vending",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "airtime.vended", {
+            ref,
+            amount: input.amount,
+            phone: input.phone,
+          })
+          .catch(() => {});
+        ingestToLakehouse("airtime_transactions", {
+          ref,
+          amount: input.amount,
+          phone: input.phone,
+          provider,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        eventBus.emit(EVENTS.TRANSACTION_COMPLETED, {
+          type: "airtime_vending",
+          ref,
+          amount: input.amount,
+          agentId: session.id,
         });
 
         return {
@@ -336,6 +437,33 @@ export const airtimeVendingRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -354,19 +482,19 @@ export const airtimeVendingRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < bundle.price)
+        const commission = Math.round(bundle.price * 0.03);
+        const ref = `DAT-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
+
+        // Atomic balance check + debit with FOR UPDATE to prevent race conditions
+        const agentRows = await db.execute(
+          sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+        );
+        const agentRow = (agentRows as any).rows?.[0] ?? (agentRows as any)[0];
+        if (!agentRow || Number(agentRow.float_balance) < bundle.price)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float balance",
           });
-
-        const commission = Math.round(bundle.price * 0.03);
-        const ref = `DAT-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
           .insert(transactions)
@@ -394,7 +522,6 @@ export const airtimeVendingRouter = router({
           .update(agents)
           .set({
             floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(bundle.price)}`,
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 

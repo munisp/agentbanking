@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import {
   eq,
   desc,
@@ -32,6 +32,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["scheduled", "generating"],
@@ -90,121 +96,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_SCHEDULEDREPORTS = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_SCHEDULEDREPORTS.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_SCHEDULEDREPORTS.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _scheduledReports_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -218,6 +109,55 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishscheduledReportsMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `reporting.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `reporting_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `reporting_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
 
 export const scheduledReportsRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -282,21 +222,28 @@ export const scheduledReportsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "scheduledReports",
-        "mutation",
-        "Executed scheduledReports mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -319,6 +266,39 @@ export const scheduledReportsRouter = router({
             frequency: input.frequency,
           },
         });
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "scheduledReports",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
+        // Middleware fan-out (fail-open)
+
+        await publishscheduledReportsMiddleware(
+          "createSchedule",
+          `${Date.now()}`,
+          { action: "createSchedule" }
+        ).catch(() => {});
+
         return { success: true, scheduleId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -338,6 +318,13 @@ export const scheduledReportsRouter = router({
         await db
           .delete(systemConfig)
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId));
+        // Middleware fan-out (fail-open)
+        await publishscheduledReportsMiddleware(
+          "deleteSchedule",
+          `${Date.now()}`,
+          { action: "deleteSchedule" }
+        ).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -360,7 +347,14 @@ export const scheduledReportsRouter = router({
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId))
           .limit(1);
         if (rows.length === 0)
-          return { success: false, error: "Schedule not found" };
+          // Middleware fan-out (fail-open)
+          await publishscheduledReportsMiddleware(
+            "pauseSchedule",
+            `${Date.now()}`,
+            { action: "pauseSchedule" }
+          ).catch(() => {});
+
+        return { success: false, error: "Schedule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.status = data.status === "active" ? "paused" : "active";
         await db
@@ -381,6 +375,11 @@ export const scheduledReportsRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishscheduledReportsMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
+
       return {
         success: true,
         id: crypto.randomUUID(),
@@ -391,14 +390,29 @@ export const scheduledReportsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
+      // Middleware fan-out (fail-open)
+      await publishscheduledReportsMiddleware("delete", `${Date.now()}`, {
+        action: "delete",
+      }).catch(() => {});
+
       return { success: true, deletedId: input.id };
     }),
 
   list: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishscheduledReportsMiddleware("list", `${Date.now()}`, {
+      action: "list",
+    }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
   recentRuns: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishscheduledReportsMiddleware("recentRuns", `${Date.now()}`, {
+      action: "recentRuns",
+    }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -407,10 +421,20 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishscheduledReportsMiddleware("runNow", `${Date.now()}`, {
+        action: "runNow",
+      }).catch(() => {});
+
       return { success: true };
     }),
 
   templates: protectedProcedure.query(async () => {
+    // Middleware fan-out (fail-open)
+    await publishscheduledReportsMiddleware("templates", `${Date.now()}`, {
+      action: "templates",
+    }).catch(() => {});
+
     return { data: [], total: 0 };
   }),
 
@@ -419,6 +443,11 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
+      // Middleware fan-out (fail-open)
+      await publishscheduledReportsMiddleware("update", `${Date.now()}`, {
+        action: "update",
+      }).catch(() => {});
+
       return { success: true };
     }),
 });

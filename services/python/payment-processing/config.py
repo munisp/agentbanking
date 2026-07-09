@@ -11,9 +11,8 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     # Database Settings
-    # Using asyncpg for PostgreSQL in a production environment, but defaulting to aiosqlite for sandbox/testing
-    # Production URL example: postgresql+asyncpg://user:password@host:port/dbname
-    DATABASE_URL: str = "sqlite+aiosqlite:///./payment_processing.db"
+        # Production URL example: postgresql+asyncpg://user:password@host:port/dbname
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/payment_processing"
     
     # CORS Settings
     CORS_ORIGINS: List[str] = ["*"] # Be more restrictive in production

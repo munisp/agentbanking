@@ -7,14 +7,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Determine the base directory for relative path resolution
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./push_notification_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/push_notification_service"
     
     # Service settings
     SERVICE_NAME: str = "push-notification-service"
@@ -35,14 +34,6 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 # SQLAlchemy setup
-# For SQLite, connect_args is needed for concurrent access
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, 
-        connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 # SessionLocal is the factory for new Session objects
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

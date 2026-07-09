@@ -11,6 +11,7 @@ import {
   settlementReconciliation,
   merchantSettlements,
   transactions,
+  gl_journal_entries,
   agents,
 } from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
@@ -32,6 +33,11 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["in_progress", "skipped"],
@@ -86,6 +92,53 @@ function logOperation(action: string, details: Record<string, unknown>) {
 
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
+
+async function publishsettlementReconciliationMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("settlement.reconciliation", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  tbCreateTransfer({
+    debitAccountId: "1001",
+    creditAccountId: "2001",
+    amount: Number(payload.amount ?? 0),
+    ledger: 1,
+    code: 1,
+    ref: key,
+    txType: event,
+    agentCode: String(payload.agentId ?? "system"),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `settlement.reconciliation.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `settlement.reconciliation.${event}`, {
+      key,
+      ...payload,
+    })
+    .catch(() => {});
+  ingestToLakehouse("settlementReconciliation", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+  cacheSet(
+    `settlementReconciliation:${key}`,
+    JSON.stringify(payload),
+    300
+  ).catch(() => {});
+}
+
 export const settlementReconciliationRouter = router({
   // ── List reconciliation records ───────────────────────────────────────────
   list: protectedProcedure
@@ -137,21 +190,28 @@ export const settlementReconciliationRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "settlementReconciliation",
-        "mutation",
-        "Executed settlementReconciliation mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "settlement");
+      const commission = calculateCommission(fees.fee, "settlement");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -220,6 +280,21 @@ export const settlementReconciliationRouter = router({
               })
               .where(eq(settlementReconciliation.id, existing.id))
               .returning();
+
+            // Double-entry GL journal entry
+            await db.insert(gl_journal_entries).values({
+              entryNumber: `JE-${Date.now()}`,
+              description: `settlementReconciliation transaction`,
+              debitAccountId: 2001,
+              creditAccountId: 1001,
+              amount: Math.round(
+                (typeof input === "object" && "amount" in input
+                  ? Number((input as any).amount)
+                  : 0) * 100
+              ),
+              currency: "NGN",
+              status: "posted",
+            });
           } else {
             [record] = await db
               .insert(settlementReconciliation)
@@ -246,6 +321,12 @@ export const settlementReconciliationRouter = router({
             date: input.settlementDate,
           },
         });
+
+        await publishsettlementReconciliationMiddleware(
+          "reconcileDate",
+          `${Date.now()}`,
+          { action: "reconcileDate" }
+        ).catch(() => {});
 
         return { processed: results.length, records: results };
       } catch (error) {
@@ -294,6 +375,12 @@ export const settlementReconciliationRouter = router({
           })
           .where(eq(settlementReconciliation.id, input.id))
           .returning();
+
+        await publishsettlementReconciliationMiddleware(
+          "resolve",
+          `${Date.now()}`,
+          { action: "resolve" }
+        ).catch(() => {});
 
         return updated;
       } catch (error) {

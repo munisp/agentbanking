@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Database settings
-    DATABASE_URL: str = "sqlite:///./telegram_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/telegram_service"
     
     # Service settings
     SERVICE_NAME: str = "telegram-service"
@@ -38,12 +38,9 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 # SQLAlchemy setup
-# The connect_args are only for SQLite to allow multiple threads to access the database
 # For PostgreSQL or MySQL, this should be removed.
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args=connect_args
+    settings.DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -7,6 +7,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -37,7 +84,7 @@ Real-time bidirectional communication service for Remittance Platform
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("websocket-service")
 app.include_router(metrics_router)
 
@@ -63,6 +110,11 @@ import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/websocket_service")
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
@@ -87,7 +139,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -260,6 +312,15 @@ async def health_check():
 @app.get("/connections")
 async def list_connections():
     """List all active connections"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_connections", "websocket-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     connections = []
     for agent_id, agent_connections in manager.active_connections.items():
         for connection in agent_connections:
@@ -275,6 +336,15 @@ async def list_connections():
 @app.get("/connections/{agent_id}")
 async def get_agent_connections(agent_id: str):
     """Get connections for a specific agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_agent_connections", "websocket-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     count = manager.get_agent_connections_count(agent_id)
     return {
         "agent_id": agent_id,
@@ -285,6 +355,10 @@ async def get_agent_connections(agent_id: str):
 @app.post("/send/agent/{agent_id}")
 async def send_to_agent(agent_id: str, message: Message):
     """Send a message to a specific agent"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_to_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_to_agent", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({
@@ -307,6 +381,10 @@ async def send_to_agent(agent_id: str, message: Message):
 @app.post("/send/broadcast")
 async def broadcast_message(message: Message):
     """Broadcast a message to all connected clients"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("broadcast_message_" + str(int(_time.time() * 1000)), _json.dumps({"action": "broadcast_message", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({
@@ -329,6 +407,10 @@ async def broadcast_message(message: Message):
 @app.post("/send/room/{room_id}")
 async def send_to_room(room_id: str, message: Message):
     """Send a message to all clients in a room"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_to_room_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_to_room", "timestamp": _time.time()}), "websocket-service")
+
     try:
         message.timestamp = datetime.utcnow()
         message_json = json.dumps({

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { chatSessions, chatMessages, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
@@ -18,6 +18,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -73,10 +79,6 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -110,6 +112,52 @@ function safeParse<T>(fn: () => T, fallback: T): T {
   }
 }
 
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishchatMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `chat.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `chat_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `chat_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("chat", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
+}
+
 export const chatRouter = router({
   startSession: protectedProcedure
     .input(
@@ -120,21 +168,28 @@ export const chatRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "chat",
-        "mutation",
-        "Executed chat mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       const db = (await getDb())!;
       const [session] = await db
         .insert(chatSessions)
@@ -222,6 +277,13 @@ export const chatRouter = router({
             .from(chatSessions)
             .orderBy(desc(chatSessions.createdAt))
             .limit(input?.limit ?? 50);
+
+      // Middleware fan-out (fail-open)
+
+      await publishchatMiddleware("sendMessage", `${Date.now()}`, {
+        action: "sendMessage",
+      }).catch(() => {});
+
       return { sessions: rows, total: rows.length };
     }),
 
@@ -240,6 +302,11 @@ export const chatRouter = router({
         status: "success",
         metadata: {},
       });
+      // Middleware fan-out (fail-open)
+      await publishchatMiddleware("closeSession", `${Date.now()}`, {
+        action: "closeSession",
+      }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -290,6 +357,17 @@ export const chatRouter = router({
       const db = (await getDb())!;
       await db.delete(chatMessages).where(eq(chatMessages.sessionId, input.id));
       await db.delete(chatSessions).where(eq(chatSessions.id, input.id));
+      // Middleware fan-out (fail-open)
+      await publishchatMiddleware("adminGetMessages", `${Date.now()}`, {
+        action: "adminGetMessages",
+      }).catch(() => {});
+
+      // Middleware fan-out (fail-open)
+
+      await publishchatMiddleware("adminDeleteSession", `${Date.now()}`, {
+        action: "adminDeleteSession",
+      }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -332,6 +410,11 @@ export const chatRouter = router({
           supportAgentName: input.supportAgentName,
         } as any)
         .where(eq(chatSessions.id, input.sessionId));
+      // Middleware fan-out (fail-open)
+      await publishchatMiddleware("adminAssignSession", `${Date.now()}`, {
+        action: "adminAssignSession",
+      }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -378,6 +461,17 @@ export const chatRouter = router({
         status: "success",
         metadata: { reason: input.reason },
       } as any);
+      // Middleware fan-out (fail-open)
+      await publishchatMiddleware("adminReply", `${Date.now()}`, {
+        action: "adminReply",
+      }).catch(() => {});
+
+      // Middleware fan-out (fail-open)
+
+      await publishchatMiddleware("adminEscalate", `${Date.now()}`, {
+        action: "adminEscalate",
+      }).catch(() => {});
+
       return { success: true };
     }),
 
@@ -389,6 +483,11 @@ export const chatRouter = router({
         .update(chatSessions)
         .set({ status: "resolved" })
         .where(eq(chatSessions.id, input.sessionId));
+      // Middleware fan-out (fail-open)
+      await publishchatMiddleware("adminResolve", `${Date.now()}`, {
+        action: "adminResolve",
+      }).catch(() => {});
+
       return { success: true };
     }),
 });

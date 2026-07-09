@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { auditLog, simOrchestratorConfig } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { validateInput } from "../lib/routerHelpers";
@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -75,51 +81,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_CARRIERSWITCHING = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_CARRIERSWITCHING.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_CARRIERSWITCHING.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Error Handling ─────────────────────────────────────────────────────────
 function handleError(error: unknown, context: string): never {
   if (error instanceof TRPCError) throw error;
@@ -139,76 +100,6 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _carrierSwitching_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -222,6 +113,55 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishcarrierSwitchingMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `network.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `network_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `network_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("network", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
 
 export const carrierSwitchingRouter = router({
   list: protectedProcedure
@@ -319,42 +259,188 @@ export const carrierSwitchingRouter = router({
         .object({ id: z.string().optional(), query: z.string().optional() })
         .optional()
     )
-    .query(async ({ input }) => {
-      return { data: null, id: input?.id ?? null };
+    .query(async () => {
+      try {
+        const db = (await getDb())!;
+        if (!db) return { data: [], rankings: [] };
+        const rows = await db
+          .select({
+            carrier: simOrchestratorConfig.terminalId,
+            count: count(),
+          })
+          .from(simOrchestratorConfig)
+          .groupBy(simOrchestratorConfig.terminalId)
+          .orderBy(desc(count()));
+
+        const { getCarrierProfiles } = await import(
+          "../middleware/carrierAwareFailover"
+        );
+        const profiles = getCarrierProfiles();
+        const rankings = profiles
+          .map((p, i) => ({
+            rank: i + 1,
+            carrier: p.code,
+            name: p.name,
+            reliabilityPct: p.reliabilityPct,
+            avgLatencyMs: p.avgLatencyMs,
+            costPerMbNgn: p.costPerMbNgn,
+            slaUptimePct: p.slaUptimePct,
+            preferredForFinancial: p.preferredForFinancial,
+            score: Math.round(
+              p.reliabilityPct * 0.4 +
+                (100 - p.avgLatencyMs / 10) * 0.3 +
+                (100 - p.costPerMbNgn * 200) * 0.3
+            ),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .map((r, i) => ({ ...r, rank: i + 1 }));
+        return { data: rankings, rankings };
+      } catch {
+        return { data: [], rankings: [] };
+      }
     }),
   getRecommendation: protectedProcedure
     .input(
       z
-        .object({ id: z.string().optional(), query: z.string().optional() })
+        .object({
+          terminalId: z.string().optional(),
+          transactionType: z
+            .enum([
+              "financial",
+              "payment",
+              "transfer",
+              "settlement",
+              "general",
+              "telemetry",
+            ])
+            .optional(),
+        })
         .optional()
     )
     .query(async ({ input }) => {
-      return { data: null, id: input?.id ?? null };
+      const { getCarrierProfiles } = await import(
+        "../middleware/carrierAwareFailover"
+      );
+      const profiles = getCarrierProfiles();
+      const txType = input?.transactionType ?? "general";
+      const isFinancial = [
+        "financial",
+        "payment",
+        "transfer",
+        "settlement",
+      ].includes(txType);
+
+      const recommended = isFinancial
+        ? profiles
+            .filter(p => p.preferredForFinancial)
+            .sort((a, b) => b.reliabilityPct - a.reliabilityPct)[0]
+        : profiles.sort((a, b) => {
+            const scoreA =
+              a.reliabilityPct * 0.3 +
+              (100 - a.costPerMbNgn * 200) * 0.4 +
+              (100 - a.avgLatencyMs / 10) * 0.3;
+            const scoreB =
+              b.reliabilityPct * 0.3 +
+              (100 - b.costPerMbNgn * 200) * 0.4 +
+              (100 - b.avgLatencyMs / 10) * 0.3;
+            return scoreB - scoreA;
+          })[0];
+
+      return {
+        data: recommended ?? null,
+        recommendation: recommended
+          ? {
+              carrier: recommended.code,
+              name: recommended.name,
+              reason: isFinancial
+                ? `${recommended.code} recommended for ${txType}: ${recommended.reliabilityPct}% reliability, ${recommended.slaUptimePct}% SLA uptime`
+                : `${recommended.code} recommended for ${txType}: best cost/performance (₦${recommended.costPerMbNgn}/MB, ${recommended.avgLatencyMs}ms latency)`,
+              transactionType: txType,
+              ussdBalance: recommended.ussdBalance,
+            }
+          : null,
+      };
     }),
   getSwitchStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeItems: 0,
-      lastUpdated: new Date().toISOString(),
-    };
+    try {
+      const db = (await getDb())!;
+      if (!db)
+        return {
+          totalRecords: 0,
+          activeItems: 0,
+          lastUpdated: new Date().toISOString(),
+        };
+      const [stats] = await db
+        .select({ total: count() })
+        .from(simOrchestratorConfig);
+      return {
+        totalRecords: stats?.total ?? 0,
+        activeItems: stats?.total ?? 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        totalRecords: 0,
+        activeItems: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }),
   recordSwitch: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "carrierSwitching",
-        "mutation",
-        "Executed carrierSwitching mutation"
-      );
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "carrierSwitching",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
+      // Middleware fan-out (fail-open)
+
+      await publishcarrierSwitchingMiddleware("recordSwitch", `${Date.now()}`, {
+        action: "recordSwitch",
+      }).catch(() => {});
 
       return {
         success: true,

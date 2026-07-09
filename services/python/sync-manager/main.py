@@ -3,6 +3,9 @@ Sync Manager
 Port: 8133
 """
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -39,7 +42,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 
 _db_pool = None
@@ -59,6 +61,7 @@ async def verify_token(authorization: str = Header(...)):
     return token
 
 app = FastAPI(title="Sync Manager", description="Sync Manager for Remittance Platform", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -90,7 +93,6 @@ async def health_check():
     except Exception as e:
         return {"status": "degraded", "service": "sync-manager", "error": str(e)}
 
-
 class ItemCreate(BaseModel):
     source_service: str
     target_service: str
@@ -109,7 +111,6 @@ class ItemUpdate(BaseModel):
     last_sync_at: Optional[str] = None
     error: Optional[str] = None
 
-
 @app.post("/api/v1/sync-manager")
 async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -127,7 +128,6 @@ async def create_item(item: ItemCreate, token: str = Depends(verify_token)):
         row = await conn.fetchrow(query, *vals)
         return dict(row)
 
-
 @app.get("/api/v1/sync-manager")
 async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -139,7 +139,6 @@ async def list_items(skip: int = 0, limit: int = 50, token: str = Depends(verify
         total = await conn.fetchval("SELECT COUNT(*) FROM sync_tasks")
         return {"total": total, "items": [dict(r) for r in rows], "skip": skip, "limit": limit}
 
-
 @app.get("/api/v1/sync-manager/{item_id}")
 async def get_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -148,7 +147,6 @@ async def get_item(item_id: str, token: str = Depends(verify_token)):
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
         return dict(row)
-
 
 @app.put("/api/v1/sync-manager/{item_id}")
 async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verify_token)):
@@ -171,7 +169,6 @@ async def update_item(item_id: str, item: ItemUpdate, token: str = Depends(verif
         row = await conn.fetchrow(query, *params)
         return dict(row)
 
-
 @app.delete("/api/v1/sync-manager/{item_id}")
 async def delete_item(item_id: str, token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -181,7 +178,6 @@ async def delete_item(item_id: str, token: str = Depends(verify_token)):
             raise HTTPException(status_code=404, detail="Item not found")
         return {"deleted": True}
 
-
 @app.get("/api/v1/sync-manager/stats")
 async def get_stats(token: str = Depends(verify_token)):
     pool = await get_db_pool()
@@ -189,7 +185,6 @@ async def get_stats(token: str = Depends(verify_token)):
         total = await conn.fetchval("SELECT COUNT(*) FROM sync_tasks")
         today = await conn.fetchval("SELECT COUNT(*) FROM sync_tasks WHERE created_at >= CURRENT_DATE")
         return {"total": total, "today": today, "service": "sync-manager"}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8133)

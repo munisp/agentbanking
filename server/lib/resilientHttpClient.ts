@@ -1,5 +1,6 @@
 // Production-grade resilient HTTP client with retries, circuit breaker, and timeout
 import { TRPCError } from "@trpc/server";
+import crypto from "crypto";
 
 interface CircuitBreakerState {
   failures: number;
@@ -89,7 +90,9 @@ export async function resilientFetch(
     }
 
     if (attempt < maxRetries) {
-      const delay = backoffMs * Math.pow(2, attempt) + Math.random() * 100;
+      const delay =
+        backoffMs * Math.pow(2, attempt) +
+        (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 100;
       await new Promise(r => setTimeout(r, delay));
     }
   }

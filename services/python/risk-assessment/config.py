@@ -7,7 +7,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Determine the base directory for relative paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """
@@ -16,7 +15,7 @@ class Settings(BaseSettings):
     Attributes:
         DATABASE_URL (str): The SQLAlchemy database connection URL.
     """
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR}/risk_assessment.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/risk_assessment")
     
     class Config:
         env_file = ".env"
@@ -37,8 +36,7 @@ settings = get_settings()
 
 # SQLAlchemy setup
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -55,9 +53,3 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
-# Ensure the database directory exists if using SQLite
-if "sqlite" in settings.DATABASE_URL:
-    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
-    db_dir = os.path.dirname(db_path)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir, exist_ok=True)

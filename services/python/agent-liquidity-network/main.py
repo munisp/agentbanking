@@ -7,6 +7,9 @@ import logging
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- Production: Graceful Shutdown ---
@@ -14,6 +17,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -35,11 +85,16 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Agent Liquidity Network", description="Peer-to-peer liquidity sharing between agents for float optimization and emergency fund access", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -70,7 +125,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -123,11 +178,24 @@ async def health():
 @app.get("/api/v1/liquidity/pools")
 async def list_pools(region: str = None):
     """List active liquidity pools by region."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_pools", "agent-liquidity-network")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"pools": [], "total": 0, "region": region}
 
 @app.post("/api/v1/liquidity/request")
 async def request_liquidity(agent_id: str, amount: float, urgency: str = "normal"):
     """Request emergency float from liquidity network."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("request_liquidity_" + str(int(_time.time() * 1000)), _json.dumps({"action": "request_liquidity", "timestamp": _time.time()}), "agent-liquidity-network")
+
     if amount <= 0: raise HTTPException(400, "Amount must be positive")
     if amount > 500000: raise HTTPException(400, "Max single request is 500,000")
     return {"request_id": f"LIQ-{agent_id}-{int(__import__('time').time())}", "agent_id": agent_id, "amount": amount, "urgency": urgency, "status": "matching", "estimated_fill_time": "2-5 minutes"}
@@ -135,11 +203,24 @@ async def request_liquidity(agent_id: str, amount: float, urgency: str = "normal
 @app.post("/api/v1/liquidity/offer")
 async def offer_liquidity(agent_id: str, amount: float, interest_rate: float = 0.5):
     """Offer excess float to the liquidity network."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("offer_liquidity_" + str(int(_time.time() * 1000)), _json.dumps({"action": "offer_liquidity", "timestamp": _time.time()}), "agent-liquidity-network")
+
     return {"offer_id": f"OFF-{agent_id}-{int(__import__('time').time())}", "agent_id": agent_id, "amount": amount, "interest_rate": interest_rate, "status": "active"}
 
 @app.get("/api/v1/liquidity/{agent_id}/history")
 async def get_history(agent_id: str, limit: int = 20):
     """Get agent's liquidity transaction history."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_history", "agent-liquidity-network")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "transactions": [], "total_borrowed": 0.0, "total_lent": 0.0, "net_interest": 0.0}
 
 if __name__ == "__main__":

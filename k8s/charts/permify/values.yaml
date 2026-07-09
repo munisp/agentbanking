@@ -1,9 +1,9 @@
-replicaCount: 2
+replicaCount: 4
 
 image:
   repository: ghcr.io/permify/permify
   pullPolicy: IfNotPresent
-  tag: "v0.9.0"
+  tag: "v1.2.2"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -45,16 +45,16 @@ ingress:
 
 resources:
   limits:
-    cpu: 500m
-    memory: 512Mi
+    cpu: "4"
+    memory: 8Gi
   requests:
-    cpu: 100m
-    memory: 128Mi
+    cpu: "2"
+    memory: 4Gi
 
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 4
+  maxReplicas: 20
   targetCPUUtilizationPercentage: 70
 
 nodeSelector: {}
@@ -75,13 +75,23 @@ affinity:
         topologyKey: kubernetes.io/hostname
 
 config:
-  PERMIFY_DB_URI: "postgres://user:password@postgres:5432/permify?sslmode=disable"
+  PERMIFY_DATABASE_ENGINE: "postgres"
+  PERMIFY_DATABASE_URI: "postgres://permify:$PERMIFY_DB_PASSWORD@pgbouncer:6432/permify?sslmode=disable"
+  PERMIFY_DATABASE_MAX_OPEN_CONNECTIONS: "200"
+  PERMIFY_DATABASE_MAX_IDLE_CONNECTIONS: "50"
+  PERMIFY_DATABASE_MAX_CONNECTION_LIFETIME: "1800s"
+  PERMIFY_SERVICE_CIRCUIT_BREAKER: "true"
+  PERMIFY_LOG_LEVEL: "warn"
+  PERMIFY_AUTHN_ENABLED: "true"
+  PERMIFY_AUTHN_METHOD: "preshared"
   PERMIFY_HTTP_PORT: "3478"
   PERMIFY_GRPC_PORT: "3476"
+  PERMIFY_PROFILER_ENABLED: "true"
+  PERMIFY_PROFILER_PORT: "6060"
 
 initContainers:
   enabled: true
   image:
     repository: ghcr.io/permify/permify
-    tag: "v0.9.0"
+    tag: "v1.2.2"
   command: ["permify", "migrate"]

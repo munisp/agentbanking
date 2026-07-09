@@ -42,6 +42,7 @@ import {
   geofenceZones,
   deviceLocations,
   commissionRules,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
@@ -58,6 +59,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -378,21 +380,28 @@ export const transactionsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "transactions",
-        "mutation",
-        "Executed transactions mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent) {
@@ -749,9 +758,7 @@ export const transactionsRouter = router({
         });
 
         if (tbResult) {
-          console.log(
-            `[TB] Transfer committed: ${tbResult.id} (syncStatus=${tbResult.syncStatus})`
-          );
+          // TigerBeetle transfer committed successfully
         } else {
           console.warn(
             `[TB] Sidecar unavailable — transaction ${ref} persisted to PostgreSQL only`
@@ -1330,6 +1337,15 @@ export const transactionsRouter = router({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Transaction is not pending reversal approval",
+          });
+        }
+
+        // Separation of duties: approver cannot be the same agent who requested the reversal
+        if (tx.agentId === agent.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Separation of duties violation: cannot approve your own reversal request",
           });
         }
 

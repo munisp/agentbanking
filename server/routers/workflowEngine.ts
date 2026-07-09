@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { workflowDefinitions, workflowInstances } from "../../drizzle/schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import {
@@ -22,6 +22,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -76,10 +82,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -93,6 +95,55 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishworkflowEngineMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
 
 export const workflowEngineRouter = router({
   listDefinitions: protectedProcedure
@@ -153,21 +204,28 @@ export const workflowEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "workflowEngine",
-        "mutation",
-        "Executed workflowEngine mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db)
@@ -187,6 +245,39 @@ export const workflowEngineRouter = router({
             createdBy: ctx.user?.id,
           })
           .returning();
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "workflowEngine",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
+        // Middleware fan-out (fail-open)
+
+        await publishworkflowEngineMiddleware(
+          "createDefinition",
+          `${Date.now()}`,
+          { action: "createDefinition" }
+        ).catch(() => {});
+
         return { definition: def };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -238,6 +329,13 @@ export const workflowEngineRouter = router({
             slaDeadline,
           })
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware(
+          "startInstance",
+          `${Date.now()}`,
+          { action: "startInstance" }
+        ).catch(() => {});
+
         return { instance };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -349,6 +447,11 @@ export const workflowEngineRouter = router({
             stepHistory: JSON.stringify(history),
           })
           .where(eq(workflowInstances.id, input.instanceId));
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware("advanceStep", `${Date.now()}`, {
+          action: "advanceStep",
+        }).catch(() => {});
+
         return {
           success: true,
           nextStep,
@@ -379,6 +482,13 @@ export const workflowEngineRouter = router({
           .update(workflowInstances)
           .set({ status: "cancelled", completedAt: new Date() })
           .where(eq(workflowInstances.id, input.instanceId));
+        // Middleware fan-out (fail-open)
+        await publishworkflowEngineMiddleware(
+          "cancelInstance",
+          `${Date.now()}`,
+          { action: "cancelInstance" }
+        ).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

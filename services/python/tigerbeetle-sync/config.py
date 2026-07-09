@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./tigerbeetle_sync.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/tigerbeetle_sync")
     
     # Service settings
     SERVICE_NAME: str = "tigerbeetle-sync"
@@ -28,14 +28,7 @@ settings = Settings()
 
 # --- Database Setup ---
 
-# Use connect_args for SQLite to allow multiple threads to access the same connection
 # For other databases (PostgreSQL, MySQL), this is not needed.
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

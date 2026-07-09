@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./settlement_service.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/settlement_service"
     
     # Service settings
     SERVICE_NAME: str = "settlement-service"
@@ -32,8 +32,6 @@ def get_settings() -> Settings:
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    get_settings().DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in get_settings().DATABASE_URL else {}
 )
 
 # Create a configured "Session" class

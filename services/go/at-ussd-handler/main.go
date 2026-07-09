@@ -93,6 +93,7 @@ type SessionStore struct {
 // ── Carrier Detection ────────────────────────────────────────────────────────
 
 // carrierPrefixes maps Nigerian phone prefixes to carrier names.
+var carrierPrefixesMu sync.RWMutex
 var carrierPrefixes = map[string]CarrierInfo{
 	"+2340803": {Name: "MTN", MCC: "621", MNC: "30", Country: "NG"},
 	"+2340806": {Name: "MTN", MCC: "621", MNC: "30", Country: "NG"},
@@ -495,6 +496,27 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 
@@ -517,7 +539,7 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 
 	log.Printf("[AT-USSD-Handler] Starting on :%s (env=%s)", port, getEnv("AT_ENVIRONMENT", "sandbox"))
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)))
 }
 
 // --- Production: Graceful Shutdown ---
@@ -536,7 +558,7 @@ func setupGracefulShutdown(srv *http.Server) {
 	}()
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

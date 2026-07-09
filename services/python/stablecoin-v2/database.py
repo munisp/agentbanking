@@ -8,11 +8,6 @@ from models import Base # Import Base from models.py
 # Use the database URL from settings
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
-# Check if it's a SQLite database to configure check_same_thread
-if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
 else:
     engine = create_engine(SQLALCHEMY_DATABASE_URL)
 

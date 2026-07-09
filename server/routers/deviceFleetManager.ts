@@ -1,7 +1,7 @@
 // Sprint 87: Upgraded from mock data to real DB queries — deviceFleetManager
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { mdmGeofenceViolations } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -20,6 +20,40 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("pos.device.fleet", key, { eventType, ...payload });
+  fluvioPublish("pos.device.fleet", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.device.fleet.updated", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_device_fleet_events", {
+    event_type: eventType,
+    ...payload,
+    source: "deviceFleetManager",
+  }).catch(() => {});
+}
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -208,21 +242,28 @@ const updateFirmware = protectedProcedure
     z.object({ id: z.number(), data: z.record(z.string(), z.any()).optional() })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
+    const txAmount =
       typeof input === "object" && "amount" in input
         ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "deviceFleetManager",
-      "mutation",
-      "Executed deviceFleetManager mutation"
-    );
-
+        : 0;
+    const fees = calculateFee(txAmount, "transfer");
+    const commission = calculateCommission(fees.fee, "transfer");
+    const tax = calculateTax(fees.fee, "vat");
     try {
       const db = (await getDb())!;
       const [existing] = await db
@@ -241,6 +282,17 @@ const updateFirmware = protectedProcedure
           .set(input.data)
           .where(eq(mdmGeofenceViolations.id, input.id))
           .returning();
+
+        await writeAuditLog({
+          action: "mutation",
+          resource: "deviceFleetManager",
+          status: "success",
+          metadata: { input: JSON.stringify(input).slice(0, 500) },
+        });
+        publishPosMiddleware("updateFirmware", String(input.id), {
+          action: "updateFirmware",
+          deviceId: input.id,
+        });
         return { success: true, ...updated, message: "Record updated" };
       }
       return { success: true, ...existing, message: "No changes applied" };
@@ -298,55 +350,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_DEVICEFLEETMANAGER = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_DEVICEFLEETMANAGER.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_DEVICEFLEETMANAGER.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"

@@ -2,7 +2,7 @@
 // Sprint 87: Enrollment lifecycle, progress tracking, certification issuance
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { trainingEnrollments, trainingCourses } from "../../drizzle/schema";
 import { eq, desc, and, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -19,6 +19,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["pending_review"],
@@ -82,10 +88,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -99,6 +101,55 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishtrainingEnrollmentsCrudMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `training.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `training_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `training_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("training", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
 
 export const trainingEnrollmentsRouter = router({
   list: protectedProcedure
@@ -171,21 +222,28 @@ export const trainingEnrollmentsRouter = router({
   enroll: protectedProcedure
     .input(z.object({ agentId: z.number(), courseId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "trainingEnrollmentsCrud",
-        "mutation",
-        "Executed trainingEnrollmentsCrud mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         // Check course exists and is active
@@ -230,6 +288,31 @@ export const trainingEnrollmentsRouter = router({
             progress: 0,
           })
           .returning();
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "trainingEnrollmentsCrud",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return {
           ...row,
           courseName: course.title,
@@ -274,6 +357,13 @@ export const trainingEnrollmentsRouter = router({
           .set(updates)
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "updateProgress",
+          `${Date.now()}`,
+          { action: "updateProgress" }
+        ).catch(() => {});
+
         return {
           ...row,
           message:
@@ -321,6 +411,13 @@ export const trainingEnrollmentsRouter = router({
           })
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
+        // Middleware fan-out (fail-open)
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "submitScore",
+          `${Date.now()}`,
+          { action: "submitScore" }
+        ).catch(() => {});
+
         return {
           ...row,
           passed,
@@ -382,6 +479,13 @@ export const trainingEnrollmentsRouter = router({
         await db
           .delete(trainingEnrollments)
           .where(eq(trainingEnrollments.id, input.id));
+        // Middleware fan-out (fail-open)
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "delete",
+          `${Date.now()}`,
+          { action: "delete" }
+        ).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

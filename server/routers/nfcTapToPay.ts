@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { sql, eq, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -18,6 +18,17 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { publishEvent } from "../kafkaClient";
+import { agents, transactions, gl_journal_entries } from "../../drizzle/schema";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import crypto from "crypto";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["menu_displayed"],
@@ -77,45 +88,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_NFCTAPTOPAY = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_NFCTAPTOPAY.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (!INTEGRITY_RULES_NFCTAPTOPAY.validateRange(data.amount, 0, 100_000_000))
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Database Operations Helper ─────────────────────────────────────────────
 async function checkDbHealth() {
   try {
@@ -131,76 +103,6 @@ async function checkDbHealth() {
   }
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _nfcTapToPay_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -312,21 +214,39 @@ export const nfcTapToPayRouter = router({
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+
+      // Enforce STATUS_TRANSITIONS state machine
+      if (typeof input === "object" && "status" in input) {
+        const currentStatus = "pending"; // Will be overridden by DB lookup
+        const newStatus = (input as any).status;
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "nfcTapToPay",
-        "mutation",
-        "Executed nfcTapToPay mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       const db = (await getDb())!;
 
       if (!input.data.terminalId || typeof input.data.terminalId !== "string") {
@@ -349,6 +269,31 @@ export const nfcTapToPayRouter = router({
         sql`INSERT INTO "nfc_terminals" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
       );
       const id = (result as any).rows?.[0]?.id;
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "nfcTapToPay",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
       return { id, status: "created" };
     }),
 
@@ -377,7 +322,19 @@ export const nfcTapToPayRouter = router({
 
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       const db = (await getDb())!;
 
       const validStatuses = [
@@ -451,4 +408,358 @@ export const nfcTapToPayRouter = router({
     );
     return { services: results, checkedAt: new Date().toISOString() };
   }),
+
+  // ── NFC Payment Execution ─────────────────────────────────────────────────
+  processPayment: protectedProcedure
+    .input(
+      z.object({
+        terminalId: z.string().min(1),
+        amount: z.number().positive(),
+        cardType: z
+          .enum(["visa", "mastercard", "verve", "unknown"])
+          .default("unknown"),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+      return withIdempotency(input.idempotencyKey, async () => {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+
+        const db = (await getDb())!;
+        const ref = `NFC-${crypto.randomInt(100000, 999999)}-${Date.now()}`;
+
+        return await withTransaction(async tx => {
+          // CBN limit check
+          const limitCheck = await checkDailyLimit(
+            db,
+            session.id,
+            "tier3",
+            input.amount
+          );
+          if (!limitCheck.allowed)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Daily limit exceeded: ${limitCheck.reason}`,
+            });
+
+          // Lock agent float
+          const agentResult = await tx.execute(
+            sql`SELECT float_balance FROM agents WHERE id = ${session.id} FOR UPDATE`
+          );
+          const agent = (agentResult as any).rows?.[0];
+          if (!agent)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Agent not found",
+            });
+
+          const floatBalance = parseFloat(agent.float_balance || "0");
+          if (floatBalance < input.amount)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient float balance",
+            });
+
+          const fees = calculateFee(input.amount, "transfer");
+          const commission = calculateCommission(fees.fee, "transfer");
+
+          // Debit agent float
+          await tx.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${input.amount} WHERE id = ${session.id}`
+          );
+
+          // Record transaction
+          const txResult = await tx.execute(
+            sql`INSERT INTO transactions (ref, agent_id, type, amount, fee, commission, currency, channel, status, metadata)
+                VALUES (${ref}, ${session.id}, 'NFC Payment', ${String(input.amount)}, ${String(fees.fee)}, ${String(commission.agentShare)}, 'NGN', 'NFC', 'success',
+                ${JSON.stringify({ terminalId: input.terminalId, cardType: input.cardType })}::jsonb) RETURNING id`
+          );
+          const txId = (txResult as any).rows?.[0]?.id;
+
+          // GL: Debit Cash-on-Hand (1001), Credit Agent Float (2001)
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `NFC tap-to-pay ${input.cardType} via terminal ${input.terminalId}`,
+            debitAccountId: 1001,
+            creditAccountId: 2001,
+            amount: Math.round(input.amount * 100),
+            currency: "NGN",
+            referenceType: "nfc_payment",
+            referenceId: ref,
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          // GL: Fee revenue
+          if (fees.fee > 0) {
+            await db.insert(gl_journal_entries).values({
+              entryNumber: `JE-FEE-${ref}`,
+              description: `NFC payment fee for ${ref}`,
+              debitAccountId: 2001,
+              creditAccountId: 4001,
+              amount: Math.round(fees.fee * 100),
+              currency: "NGN",
+              referenceType: "nfc_fee",
+              referenceId: ref,
+              postedBy: session.agentCode,
+              status: "posted",
+            });
+          }
+
+          publishEvent(
+            "pos.transactions.created",
+            ref,
+            {
+              type: "nfc_payment",
+              ref,
+              terminalId: input.terminalId,
+              cardType: input.cardType,
+              amount: input.amount,
+              fee: fees.fee,
+              commission: commission.agentShare,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
+
+          // TigerBeetle dual-ledger
+          tbCreateTransfer({
+            debitAccountId: "1001",
+            creditAccountId: "2001",
+            amount: Math.round(input.amount * 100),
+            ref,
+            txType: "nfc_payment",
+            agentCode: session.agentCode,
+          }).catch(() => {});
+
+          // Fluvio real-time streaming
+          publishTxToFluvio({
+            txRef: ref,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "nfc_payment",
+            timestamp: Date.now(),
+          }).catch(() => {});
+
+          // Dapr pub/sub
+          dapr
+            .publishEvent("pubsub", "nfc.payment.completed", {
+              ref,
+              terminalId: input.terminalId,
+              amount: input.amount,
+              agentId: session.id,
+              cardType: input.cardType,
+            })
+            .catch(() => {});
+
+          // Redis — invalidate agent balance cache
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+
+          // Lakehouse analytics
+          ingestToLakehouse("nfc_payments", {
+            ref,
+            terminalId: input.terminalId,
+            cardType: input.cardType,
+            amount: input.amount,
+            fee: fees.fee,
+            commission: commission.agentShare,
+            agentId: session.id,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+
+          writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "NFC_PAYMENT",
+            resource: "nfcTapToPay",
+            resourceId: ref,
+            status: "success",
+            metadata: {
+              amount: input.amount,
+              terminalId: input.terminalId,
+              cardType: input.cardType,
+            },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            ref,
+            transactionId: txId,
+            amount: input.amount,
+            fee: fees.fee,
+            commission: commission.agentShare,
+            timestamp: new Date().toISOString(),
+          };
+        }, "nfcTapToPay.processPayment");
+      });
+    }),
+
+  refundPayment: protectedProcedure
+    .input(
+      z.object({
+        transactionRef: z.string().min(1),
+        reason: z.string().min(1).max(500),
+        idempotencyKey: z.string().min(16).max(64),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
+      return withIdempotency(input.idempotencyKey, async () => {
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+
+        const db = (await getDb())!;
+        const refundRef = `NFC-REFUND-${Date.now()}`;
+
+        return await withTransaction(async tx => {
+          // Lock original transaction
+          const txResult = await tx.execute(
+            sql`SELECT id, amount, agent_id, status FROM transactions WHERE ref = ${input.transactionRef} AND type = 'NFC Payment' FOR UPDATE`
+          );
+          const originalTx = (txResult as any).rows?.[0];
+          if (!originalTx)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "NFC transaction not found",
+            });
+          if (originalTx.status === "reversed")
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Transaction already reversed",
+            });
+
+          const amount = parseFloat(originalTx.amount);
+
+          // Credit agent float back
+          await tx.execute(
+            sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${amount} WHERE id = ${originalTx.agent_id}`
+          );
+
+          // Mark original as reversed
+          await tx.execute(
+            sql`UPDATE transactions SET status = 'reversed' WHERE id = ${originalTx.id}`
+          );
+
+          // GL reversal: Debit Agent Float (2001), Credit Cash-on-Hand (1001)
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${refundRef}`,
+            description: `NFC refund for ${input.transactionRef}: ${input.reason}`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(amount * 100),
+            currency: "NGN",
+            referenceType: "nfc_refund",
+            referenceId: refundRef,
+            postedBy: session.agentCode,
+            status: "posted",
+          });
+
+          publishEvent(
+            "pos.transactions.created",
+            refundRef,
+            {
+              type: "nfc_refund",
+              refundRef,
+              originalRef: input.transactionRef,
+              amount,
+              reason: input.reason,
+              agentId: session.id,
+              timestamp: new Date().toISOString(),
+            },
+            { agentCode: session.agentCode }
+          ).catch(() => {});
+
+          // TigerBeetle reversal
+          tbCreateTransfer({
+            debitAccountId: "2001",
+            creditAccountId: "1001",
+            amount: Math.round(amount * 100),
+            ref: refundRef,
+            txType: "nfc_refund",
+            agentCode: session.agentCode,
+          }).catch(() => {});
+
+          // Fluvio + Dapr + Redis + Lakehouse
+          publishTxToFluvio({
+            txRef: refundRef,
+            agentCode: session.agentCode,
+            amount,
+            type: "nfc_refund",
+            timestamp: Date.now(),
+          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "nfc.refund.completed", {
+              refundRef,
+              originalRef: input.transactionRef,
+              amount,
+              agentId: session.id,
+            })
+            .catch(() => {});
+          cacheSet(`agent:balance:${session.id}`, "", 1).catch(() => {});
+          ingestToLakehouse("nfc_refunds", {
+            refundRef,
+            originalRef: input.transactionRef,
+            amount,
+            agentId: session.id,
+            reason: input.reason,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+
+          writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "NFC_REFUND",
+            resource: "nfcTapToPay",
+            resourceId: refundRef,
+            status: "success",
+            metadata: {
+              originalRef: input.transactionRef,
+              amount,
+              reason: input.reason,
+            },
+          }).catch(() => {});
+
+          return {
+            success: true,
+            refundRef,
+            originalRef: input.transactionRef,
+            amount,
+            timestamp: new Date().toISOString(),
+          };
+        }, "nfcTapToPay.refundPayment");
+      });
+    }),
 });

@@ -7,10 +7,7 @@ from .config import settings
 # --- Synchronous Engine for initial setup (e.g., creating tables) ---
 # In a real-world async application, you might only use the async engine.
 # We keep the sync engine for simplicity in this example's setup.
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
-)
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
 # --- Asynchronous Engine for FastAPI application ---
 async_engine = create_async_engine(

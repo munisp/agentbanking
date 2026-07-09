@@ -1,10 +1,94 @@
 #!/usr/bin/env python3
+
+# PostgreSQL persistence layer (replaces in-memory state)
+import asyncpg
+import json
+import os
+
+_pg_pool = None
+
+async def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        database_url = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agentbanking")
+        try:
+            _pg_pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection failed: {e} — using in-memory fallback")
+            return None
+    return _pg_pool
+
+async def pg_get_list(service: str, collection: str) -> list:
+    pool = await get_pg_pool()
+    if pool is None:
+        return []
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_list", service
+        )
+        return json.loads(row["value"]) if row else []
+    except:
+        return []
+
+async def pg_append_list(service: str, collection: str, item: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        items = await pg_get_list(service, collection)
+        items.append(item)
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_list", json.dumps(items), service
+        )
+    except:
+        pass
+
+async def pg_get_dict(service: str, collection: str) -> dict:
+    pool = await get_pg_pool()
+    if pool is None:
+        return {}
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_dict", service
+        )
+        return json.loads(row["value"]) if row else {}
+    except:
+        return {}
+
+async def pg_set_dict(service: str, collection: str, data: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_dict", json.dumps(data), service
+        )
+    except:
+        pass
+
 """
 White-Label Remittance API for B2B Integration
 Allows businesses to embed remittance services in their applications
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
@@ -18,6 +102,26 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/src")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title="White-Label Remittance API",
     description="B2B API for embedding remittance services",
@@ -25,6 +129,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+apply_middleware(app, enable_auth=True)
 
 # CORS middleware
 app.add_middleware(
@@ -39,9 +144,9 @@ app.add_middleware(
 security = HTTPBearer()
 
 # In-memory storage (use database in production)
-api_keys = {}
-transactions = {}
-webhooks = {}
+api_keys_cache = {}  # PG-backed via pg_get_dict("src", "api_keys")
+transactions_state_cache = {}  # PG-backed via pg_get_dict("src", "transactions_state")
+webhooks_cache = {}  # PG-backed via pg_get_dict("src", "webhooks")
 
 
 # ============================================================================
@@ -560,6 +665,15 @@ async def send_webhook(url: str, secret: Optional[str], event: str, data: Dict):
 # ============================================================================
 # Run Server
 # ============================================================================
+
+
+@app.on_event("startup")
+async def _startup():
+    await get_db_pool()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db_pool()
 
 if __name__ == "__main__":
     import uvicorn

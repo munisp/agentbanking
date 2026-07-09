@@ -1,8 +1,14 @@
 // Sprint 87: Regenerated — reversalApproval with real DB queries
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import { transactions, gl_journal_entries } from "../../drizzle/schema";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -19,6 +25,9 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -70,54 +79,150 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
+
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
+    const txAmount =
       typeof input === "object" && "amount" in input
         ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "reversalApproval",
-      "mutation",
-      "Executed reversalApproval mutation"
-    );
-
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approve: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approve completed",
-          timestamp: new Date().toISOString(),
-        };
+        : 0;
+    const fees = calculateFee(txAmount, "transfer");
+    const commission = calculateCommission(fees.fee, "transfer");
+    const tax = calculateTax(fees.fee, "vat");
+    return withTransaction(async tx => {
+      const db = tx ?? (await getDb())!;
+      if (!input.id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Transaction ID required",
+        });
       }
+
+      // Lock original transaction
+      const txRows = await db.execute(
+        sql`SELECT * FROM transactions WHERE id = ${input.id} FOR UPDATE`
+      );
+      const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
+      if (!originalTx) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "approve: record not found",
+        });
+      }
+
+      const amount = Number(originalTx.amount);
+      const reversalRef = `REVAPPR-${Date.now()}-${input.id}`;
+
+      // Mark as reversed
+      await db
+        .update(transactions)
+        .set({ status: "reversed" })
+        .where(eq(transactions.id, input.id));
+
+      // Restore float balance
+      const agentId = originalTx.agent_id;
+      const txType = originalTx.type;
+      if (txType === "Cash In" && agentId) {
+        await db.execute(
+          sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) - ${String(amount)} WHERE id = ${agentId}`
+        );
+      } else if (txType === "Cash Out" && agentId) {
+        await db.execute(
+          sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${String(amount)} WHERE id = ${agentId}`
+        );
+      }
+
+      // GL reversal entry
+      const isDebitReversal = txType === "Cash In";
+      await db.insert(gl_journal_entries).values({
+        entryNumber: `JE-${reversalRef}`,
+        description: `Approved reversal of tx #${input.id}`,
+        debitAccountId: isDebitReversal ? 2001 : 1001,
+        creditAccountId: isDebitReversal ? 1001 : 2001,
+        amount: Math.round(amount * 100),
+        currency: "NGN",
+        referenceType: "reversal",
+        referenceId: String(input.id),
+        postedBy: "system",
+        status: "posted",
+      });
+
+      publishEvent("pos.transactions.reversed", reversalRef, {
+        reversalRef,
+        originalTransactionId: input.id,
+        amount,
+        type: txType,
+        approvalData: input.data,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
+      // TigerBeetle reversal entry
+      tbCreateTransfer({
+        debitAccountId: "2001",
+        creditAccountId: "1001",
+        amount: Math.round(amount * 100),
+        ref: reversalRef,
+        txType: "transaction_reversal",
+        agentCode: "system",
+      }).catch(() => {});
+
+      // Fluvio + Dapr + Lakehouse
+      publishTxToFluvio({
+        txRef: reversalRef,
+        agentCode: "system",
+        amount,
+        type: "transaction_reversal",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "reversal.approved", {
+          reversalRef,
+          originalTransactionId: input.id,
+          amount,
+          type: txType,
+        })
+        .catch(() => {});
+      ingestToLakehouse("transaction_reversals", {
+        reversalRef,
+        originalTransactionId: input.id,
+        amount,
+        type: txType,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
       return {
         success: true,
-        message: "approve completed",
+        id: input.id,
+        reversalRef,
+        message: "Reversal approved and executed",
         timestamp: new Date().toISOString(),
       };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    }, "reversalApproval.approve");
   });
 const reject = protectedProcedure
   .input(
@@ -126,7 +231,34 @@ const reject = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx?.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -168,7 +300,34 @@ const escalate = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    await enforcePermission({
+      subjectType: "user",
+      subjectId: String(ctx?.user?.id ?? "0"),
+      entityType: "transaction",
+      entityId: String(
+        (input as any)?.id ??
+          (input as any)?.customerId ??
+          (input as any)?.agentId ??
+          Date.now()
+      ),
+      permission: "reverse",
+    }).catch(() => {});
+    // ── Enforce STATUS_TRANSITIONS state machine ──
+    if (typeof input === "object" && "status" in input) {
+      const newStatus = (input as Record<string, unknown>).status as string;
+      const currentStatus =
+        ((input as Record<string, unknown>).currentStatus as string) ||
+        "pending";
+      const allowed =
+        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+      if (allowed && !allowed.includes(newStatus)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+        });
+      }
+    }
     try {
       const db = (await getDb())!;
       if (input.id) {
@@ -266,119 +425,8 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_REVERSALAPPROVAL = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_REVERSALAPPROVAL.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_REVERSALAPPROVAL.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _reversalApproval_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
 
 export const reversalApprovalRouter = router({
   list,

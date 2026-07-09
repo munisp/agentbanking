@@ -7,14 +7,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 # Define the base directory for relative path resolution
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./sync_manager.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/sync_manager"
     
     # Service settings
     SERVICE_NAME: str = "sync-manager"
@@ -33,10 +32,8 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 # SQLAlchemy setup
-# The connect_args are only needed for SQLite
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -13,6 +13,63 @@ Features:
 - Bulk transfer support for batch settlements
 """
 import json
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
+def verify_auth(headers):
+    """Verify Bearer token from Authorization header."""
+    auth = headers.get("Authorization", "")
+    if not auth:
+        return None, (401, '{"error":"missing authorization header"}')
+    if not auth.startswith("Bearer ") or len(auth) < 17:
+        return None, (401, '{"error":"invalid token format"}')
+    return auth[7:], None
+
 import time
 import hashlib
 import base64
@@ -33,9 +90,8 @@ import psycopg2
 import psycopg2.extras
 
 def _init_persistence():
-    """Initialize SQLite persistence for mojaloop-connector."""
+    """Initialize PostgreSQL persistence for mojaloop-connector."""
     import os
-    db_path = os.environ.get("MOJALOOP_CONNECTOR_DB_PATH", "/tmp/mojaloop-connector.db")
     try:
         conn = psycopg2.connect(os.environ.get('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/mojaloop_connector'))
         
@@ -43,11 +99,10 @@ def _init_persistence():
         return conn
     except Exception as e:
         import logging
-        logging.warning(f"SQLite unavailable ({e}) — running in-memory only")
+        logging.warning(f"Database unavailable ({e}) — running in-memory only")
         return None
 
 _persistence_db = _init_persistence()
-
 
 _shutdown_handlers = []
 
@@ -69,11 +124,9 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 SERVICE_NAME = "mojaloop-connector"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = int(os.getenv("MOJALOOP_CONNECTOR_PORT", "9119"))
-
 
 class TransferState(Enum):
     RECEIVED = "RECEIVED"
@@ -81,7 +134,6 @@ class TransferState(Enum):
     COMMITTED = "COMMITTED"
     ABORTED = "ABORTED"
     EXPIRED = "EXPIRED"
-
 
 class PartyIdType(Enum):
     MSISDN = "MSISDN"
@@ -92,7 +144,6 @@ class PartyIdType(Enum):
     DEVICE = "DEVICE"
     IBAN = "IBAN"
 
-
 @dataclass
 class Party:
     party_id_type: str
@@ -101,7 +152,6 @@ class Party:
     name: str = ""
     currency: str = "NGN"
     account_type: str = "SAVINGS"
-
 
 @dataclass
 class Quote:
@@ -119,7 +169,6 @@ class Quote:
     ilp_packet: str = ""
     condition: str = ""
     state: str = "RECEIVED"
-
 
 @dataclass
 class Transfer:
@@ -139,7 +188,6 @@ class Transfer:
     error_code: str = ""
     error_description: str = ""
 
-
 @dataclass
 class SettlementWindow:
     window_id: str
@@ -149,7 +197,6 @@ class SettlementWindow:
     total_amount: float = 0.0
     transfer_count: int = 0
     participants: List[str] = field(default_factory=list)
-
 
 class MojaloopConnector:
     """Mojaloop FSPIOP-compliant connector for POS platform."""
@@ -378,14 +425,21 @@ class MojaloopConnector:
             "pending_transfers": sum(1 for t in self.transfers.values() if t.state == TransferState.RESERVED),
         }
 
-
 # ─── HTTP Server ─────────────────────────────────────────────────────────────
 
 connector = MojaloopConnector()
 
-
 class MojaloopHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Skip auth for health checks
+        if self.path not in ("/health", "/ready", "/metrics"):
+            token, err = verify_auth(dict(self.headers))
+            if err:
+                self.send_response(err[0])
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(err[1].encode())
+                return
         if self.path == "/health":
             self._json_response({"status": "healthy", "service": SERVICE_NAME, "version": SERVICE_VERSION})
         elif self.path == "/api/v1/metrics":
@@ -416,6 +470,13 @@ class MojaloopHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "not found"}, 404)
 
     def do_POST(self):
+        token, err = verify_auth(dict(self.headers))
+        if err:
+            self.send_response(err[0])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(err[1].encode())
+            return
         body = self._read_body()
         if self.path == "/api/v1/quotes":
             payer = Party(**body.get("payer", {}))
@@ -462,14 +523,12 @@ class MojaloopHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-
 def main():
     server = HTTPServer(("0.0.0.0", DEFAULT_PORT), MojaloopHandler)
     print(f"[{SERVICE_NAME}] v{SERVICE_VERSION} starting on port {DEFAULT_PORT}")
     print(f"[{SERVICE_NAME}] Registered DFSPs: {list(connector.dfsps.keys())}")
     print(f"[{SERVICE_NAME}] FX rates: {connector.fx_rates}")
     server.serve_forever()
-
 
 if __name__ == "__main__":
     main()

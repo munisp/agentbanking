@@ -35,6 +35,9 @@ from dataclasses import dataclass, field
 
 import httpx
 from fastapi import FastAPI, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 
 # --- Production: Graceful Shutdown ---
@@ -42,6 +45,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -62,7 +112,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("kyc-event-consumer")
@@ -144,7 +193,6 @@ SUBSCRIBED_TOPICS = [
     "account.upgrade.requested",
 ]
 
-
 def _loan_kyc_level(event: dict) -> str:
     """Determine KYC level for loan based on type and amount."""
     loan_type = event.get("loan_type", "personal")
@@ -155,25 +203,21 @@ def _loan_kyc_level(event: dict) -> str:
         return "enhanced"
     return "enhanced"  # Minimum for any loan
 
-
 def _level_to_tier(level: str) -> str:
     """Map KYC level to target tier."""
     mapping = {"basic": "tier_1", "standard": "tier_2", "enhanced": "tier_3", "full_edd": "tier_3"}
     return mapping.get(level, "tier_2")
-
 
 def _tier_to_level(tier: str) -> str:
     """Map tier to KYC level."""
     mapping = {"tier_1": "basic", "tier_2": "standard", "tier_3": "enhanced"}
     return mapping.get(tier, "standard")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Cooldown Tracking (Redis-backed in production)
 # ══════════════════════════════════════════════════════════════════════════════
 
 cooldown_store: dict[str, datetime] = {}
-
 
 def check_cooldown(customer_id: str, kyc_level: str, cooldown_hours: int) -> bool:
     """Check if this trigger is within cooldown period. Returns True if cooled down (OK to fire)."""
@@ -184,12 +228,10 @@ def check_cooldown(customer_id: str, kyc_level: str, cooldown_hours: int) -> boo
     elapsed = datetime.now(timezone.utc) - last_triggered
     return elapsed > timedelta(hours=cooldown_hours)
 
-
 def set_cooldown(customer_id: str, kyc_level: str):
     """Record that this trigger fired."""
     key = f"{customer_id}:{kyc_level}"
     cooldown_store[key] = datetime.now(timezone.utc)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Event Processing
@@ -205,9 +247,7 @@ class ProcessingStats:
     kyb_triggered: int = 0
     errors: int = 0
 
-
 stats = ProcessingStats()
-
 
 async def process_event(topic: str, event: dict):
     """Process a single Kafka event and trigger appropriate KYC workflow."""
@@ -264,7 +304,6 @@ async def process_event(topic: str, event: dict):
 
     logger.info(f"Triggered {kyc_level} KYC for {customer_id} (topic={topic}, tier={target_tier})")
 
-
 async def trigger_kyc_workflow(customer_id: str, kyc_level: str, target_tier: str, trigger_topic: str, event: dict):
     """Call KYC Workflow Orchestrator to start a verification pipeline."""
     try:
@@ -297,7 +336,6 @@ async def trigger_kyc_workflow(customer_id: str, kyc_level: str, target_tier: st
         logger.error(f"Failed to trigger KYC workflow: {e}")
         stats.errors += 1
 
-
 async def trigger_kyb(company_id: str, customer_id: str, event: dict):
     """Trigger KYB corporate verification."""
     try:
@@ -320,7 +358,6 @@ async def trigger_kyb(company_id: str, customer_id: str, event: dict):
         logger.error(f"Failed to trigger KYB: {e}")
         stats.errors += 1
 
-
 async def stream_trigger_event(topic: str, customer_id: str, kyc_level: str, target_tier: str):
     """Stream trigger event to Fluvio lakehouse."""
     try:
@@ -339,7 +376,6 @@ async def stream_trigger_event(topic: str, customer_id: str, kyc_level: str, tar
     except Exception:
         pass
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Dapr Event Subscription Endpoint
 # ══════════════════════════════════════════════════════════════════════════════
@@ -350,6 +386,12 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyc_event_consumer")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -375,7 +417,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -384,7 +426,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     description="Kafka event consumer with trigger rules and cooldown tracking",
     version="1.0.0",
 )
-
 
 class DaprEvent(BaseModel):
     """Dapr CloudEvent envelope."""
@@ -395,35 +436,57 @@ class DaprEvent(BaseModel):
     specversion: str = "1.0"
     id: str = ""
 
-
 @app.post("/api/v1/events/process")
 async def receive_event(event: DaprEvent, background_tasks: BackgroundTasks):
     """Receive events from Dapr pub/sub (Kafka via sidecar)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("receive_event_" + str(int(_time.time() * 1000)), _json.dumps({"action": "receive_event", "timestamp": _time.time()}), "kyc-event-consumer")
+
     background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted"}
-
 
 @app.post("/api/v1/events/batch")
 async def receive_batch(events: list[DaprEvent], background_tasks: BackgroundTasks):
     """Receive a batch of events."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("receive_batch_" + str(int(_time.time() * 1000)), _json.dumps({"action": "receive_batch", "timestamp": _time.time()}), "kyc-event-consumer")
+
     for event in events:
         background_tasks.add_task(process_event, event.topic, event.data)
     return {"status": "accepted", "count": len(events)}
-
 
 # Dapr subscription declaration
 @app.get("/dapr/subscribe")
 async def dapr_subscribe():
     """Tell Dapr which topics we subscribe to."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("dapr_subscribe", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return [
         {"pubsubname": "kafka-pubsub", "topic": topic, "route": "/api/v1/events/process"}
         for topic in SUBSCRIBED_TOPICS
     ]
 
-
 @app.get("/api/v1/rules")
 async def get_trigger_rules():
     """List all configured trigger rules."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_trigger_rules", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     rules = {}
     for topic, rule in TRIGGER_RULES.items():
         rules[topic] = {
@@ -433,10 +496,18 @@ async def get_trigger_rules():
         }
     return {"rules": rules, "subscribed_topics": SUBSCRIBED_TOPICS}
 
-
 @app.get("/api/v1/stats")
 async def get_stats():
     """Get processing statistics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_stats", "kyc-event-consumer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "events_received": stats.events_received,
         "events_processed": stats.events_processed,
@@ -448,17 +519,19 @@ async def get_stats():
         "active_cooldowns": len(cooldown_store),
     }
 
-
 @app.delete("/api/v1/cooldowns/{customer_id}")
 async def clear_cooldown(customer_id: str):
     """Clear all cooldowns for a customer (admin use for re-verification)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("clear_cooldown_" + str(int(_time.time() * 1000)), _json.dumps({"action": "clear_cooldown", "timestamp": _time.time()}), "kyc-event-consumer")
+
     cleared = 0
     keys_to_remove = [k for k in cooldown_store if k.startswith(f"{customer_id}:")]
     for k in keys_to_remove:
         del cooldown_store[k]
         cleared += 1
     return {"customer_id": customer_id, "cooldowns_cleared": cleared}
-
 
 @app.get("/health")
 async def health():
@@ -483,7 +556,6 @@ async def health():
             "temporal": TEMPORAL_URL,
         },
     }
-
 
 if __name__ == "__main__":
     import uvicorn

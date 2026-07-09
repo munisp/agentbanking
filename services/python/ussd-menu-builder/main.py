@@ -23,6 +23,87 @@ import sys
 import atexit
 import logging
 
+# PostgreSQL persistence layer (replaces in-memory state)
+import asyncpg
+import json
+import os
+
+_pg_pool = None
+
+async def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        database_url = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agentbanking")
+        try:
+            _pg_pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection failed: {e} — using in-memory fallback")
+            return None
+    return _pg_pool
+
+async def pg_get_list(service: str, collection: str) -> list:
+    pool = await get_pg_pool()
+    if pool is None:
+        return []
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_list", service
+        )
+        return json.loads(row["value"]) if row else []
+    except:
+        return []
+
+async def pg_append_list(service: str, collection: str, item: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        items = await pg_get_list(service, collection)
+        items.append(item)
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_list", json.dumps(items), service
+        )
+    except:
+        pass
+
+async def pg_get_dict(service: str, collection: str) -> dict:
+    pool = await get_pg_pool()
+    if pool is None:
+        return {}
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2",
+            f"{collection}_dict", service
+        )
+        return json.loads(row["value"]) if row else {}
+    except:
+        return {}
+
+async def pg_set_dict(service: str, collection: str, data: dict):
+    pool = await get_pg_pool()
+    if pool is None:
+        return
+    try:
+        await pool.execute(
+            """INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+               ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()""",
+            f"{collection}_dict", json.dumps(data), service
+        )
+    except:
+        pass
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -42,7 +123,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 app = Flask(__name__)
 
@@ -134,7 +214,7 @@ MENU_TREE = {
 
 # ── Custom Templates Store ────────────────────────────────────────────────────
 
-custom_templates = []
+custom_templates_cache = []  # PG-backed via pg_get_list("ussd-menu-builder", "custom_templates")
 
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
@@ -147,7 +227,6 @@ def find_node(tree, node_id):
         if result:
             return result
     return None
-
 
 def navigate_path(tree, path_parts):
     """Navigate the menu tree by a list of selection indices"""
@@ -163,7 +242,6 @@ def navigate_path(tree, path_parts):
         except (ValueError, IndexError):
             return None
     return current
-
 
 def render_menu_screen(node):
     """Render a USSD text screen for a menu node"""
@@ -208,7 +286,6 @@ def render_menu_screen(node):
 
     return {"text": f"END {node['title']}", "continue": False, "nodeId": node["id"]}
 
-
 def get_all_shortcuts(tree, prefix=""):
     """Recursively collect all shortcut codes"""
     shortcuts = []
@@ -223,13 +300,11 @@ def get_all_shortcuts(tree, prefix=""):
         shortcuts.extend(get_all_shortcuts(child, prefix))
     return shortcuts
 
-
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/menu", methods=["GET"])
 def get_menu():
     return jsonify(MENU_TREE)
-
 
 @app.route("/menu/navigate", methods=["POST"])
 def navigate_menu():
@@ -253,7 +328,6 @@ def navigate_menu():
 
     screen = render_menu_screen(node)
     return jsonify({**screen, "node": node})
-
 
 @app.route("/menu/render", methods=["POST"])
 def render_menu():
@@ -280,12 +354,10 @@ def render_menu():
 
     return jsonify(screen)
 
-
 @app.route("/menu/shortcuts", methods=["GET"])
 def get_shortcuts():
     shortcuts = get_all_shortcuts(MENU_TREE)
     return jsonify(shortcuts)
-
 
 @app.route("/menu/template", methods=["POST"])
 def create_template():
@@ -301,11 +373,9 @@ def create_template():
     custom_templates.append(template)
     return jsonify(template), 201
 
-
 @app.route("/menu/templates", methods=["GET"])
 def list_templates():
     return jsonify(custom_templates)
-
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -317,20 +387,17 @@ def health():
         "customTemplates": len(custom_templates),
     })
 
-
 def count_nodes(tree):
     count = 1
     for child in tree.get("children", []):
         count += count_nodes(child)
     return count
 
-
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8112))
     print(f"[ussd-menu-builder] Starting on :{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
 
 import psycopg2
 import psycopg2.extras
@@ -361,7 +428,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:

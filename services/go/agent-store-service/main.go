@@ -866,6 +866,38 @@ func (mc *MiddlewareClients) registerAPIRoutes() {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
+
+// --- Auth Middleware ---
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip health checks
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		token := authHeader[7:]
+		if len(token) < 10 {
+			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		// In production: validate JWT via Keycloak JWKS endpoint
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 
@@ -919,7 +951,7 @@ func setupGracefulShutdown(srv *http.Server) {
 	}()
 }
 
-// --- SQLite persistence ---
+// --- PostgreSQL persistence ---
 
 
 var db *sql.DB

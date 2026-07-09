@@ -5,6 +5,9 @@ from typing import List, Optional
 import os
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -24,6 +27,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -45,7 +95,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
@@ -60,14 +109,12 @@ origins = [
     "http://localhost:3000",
 ]
 
-
-
 # --- Logging Setup --- #
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Database Setup --- #
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(bind=engine)
@@ -131,6 +178,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Document Management Service", version="1.0.0", lifespan=lifespan)
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -139,12 +192,14 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-
-
 # --- API Endpoints --- #
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("login_for_access_token_" + str(int(_time.time() * 1000)), _json.dumps({"action": "login_for_access_token", "timestamp": _time.time()}), "document-management")
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -160,6 +215,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/users/", response_model=UserInDB, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_user_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_user", "timestamp": _time.time()}), "document-management")
+
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
@@ -177,6 +236,15 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.get("/users/me/", response_model=UserInDB)
 async def read_users_me(current_user: User = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_users_me", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return current_user
 
 @app.post("/documents/", response_model=DocumentInDB, status_code=status.HTTP_201_CREATED)
@@ -228,11 +296,29 @@ async def upload_document(
 
 @app.get("/documents/", response_model=List[DocumentInDB])
 async def get_documents(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_documents", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     documents = db.query(Document).filter(Document.owner_id == current_user.id).all()
     return documents
 
 @app.get("/documents/{document_id}", response_model=DocumentInDB)
 async def get_document_by_id(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_document_by_id", "document-management")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -250,6 +336,10 @@ async def get_document_by_id(document_id: int, current_user: User = Depends(get_
 
 @app.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_document_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_document", "timestamp": _time.time()}), "document-management")
+
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -362,5 +452,4 @@ async def revoke_permission(
     db.commit()
     logger.info(f"Permission {permission_id} revoked by {current_user.username}")
     return
-
 

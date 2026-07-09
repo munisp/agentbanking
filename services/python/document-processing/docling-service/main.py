@@ -13,6 +13,9 @@ from uuid import UUID, uuid4
 
 import boto3
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, String, DateTime, JSON, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
@@ -62,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 # FastAPI app
 app = FastAPI(title="Document Processing Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 # Database setup
 DATABASE_URL = "postgresql://user:password@localhost:5432/docprocessing"

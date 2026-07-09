@@ -12,6 +12,9 @@ Features:
 """
 
 from fastapi import FastAPI, HTTPException, Query
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -51,7 +54,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
@@ -67,6 +69,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Telco Integration Service", version="2.0.0")
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -97,7 +100,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -112,18 +115,15 @@ app.add_middleware(
 
 db_pool = None
 
-
 class TelcoProvider(str, Enum):
     MTN = "mtn"
     AIRTEL = "airtel"
     GLO = "glo"
     MOBILE_9 = "9mobile"
 
-
 class ProductType(str, Enum):
     AIRTIME = "airtime"
     DATA = "data"
-
 
 PROVIDER_SERVICE_IDS = {
     TelcoProvider.MTN: {"airtime": "mtn", "data": "mtn-data"},
@@ -137,7 +137,6 @@ COMMISSION_RATES = {
     ProductType.DATA: Decimal("0.04"),
 }
 
-
 class TelcoPurchase(BaseModel):
     phone_number: str = Field(..., min_length=11, max_length=14)
     provider: TelcoProvider
@@ -146,7 +145,6 @@ class TelcoPurchase(BaseModel):
     data_code: Optional[str] = None
     agent_id: Optional[str] = None
     request_id: Optional[str] = None
-
 
 class TelcoResponse(BaseModel):
     transaction_id: str
@@ -159,13 +157,11 @@ class TelcoResponse(BaseModel):
     provider_reference: Optional[str] = None
     created_at: datetime
 
-
 class DataPlan(BaseModel):
     code: str
     name: str
     amount: Decimal
     validity: str
-
 
 @app.on_event("startup")
 async def startup():
@@ -192,12 +188,10 @@ async def startup():
         """)
     logger.info("Telco Integration Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 async def _call_vtpass_api(endpoint: str, payload: dict, max_retries: int = 3) -> dict:
     headers = {
@@ -236,7 +230,6 @@ async def _call_vtpass_api(endpoint: str, payload: dict, max_retries: int = 3) -
                 continue
             raise
     raise HTTPException(status_code=502, detail="VTPass API unavailable after retries")
-
 
 @app.post("/purchase", response_model=TelcoResponse)
 async def purchase(purchase: TelcoPurchase):
@@ -344,7 +337,6 @@ async def purchase(purchase: TelcoPurchase):
             )
             raise HTTPException(status_code=502, detail=f"Provider error: {str(e)}")
 
-
 @app.get("/verify/{transaction_id}")
 async def verify_transaction(transaction_id: str):
     async with db_pool.acquire() as conn:
@@ -373,7 +365,6 @@ async def verify_transaction(transaction_id: str):
             provider_reference=row["provider_reference"], created_at=row["created_at"],
         )
 
-
 @app.get("/data-plans/{provider}", response_model=List[DataPlan])
 async def get_data_plans(provider: TelcoProvider):
     service_id = PROVIDER_SERVICE_IDS[provider]["data"]
@@ -392,7 +383,6 @@ async def get_data_plans(provider: TelcoProvider):
     except Exception as e:
         logger.error(f"Failed to fetch data plans: {e}")
         raise HTTPException(status_code=502, detail="Failed to fetch data plans from provider")
-
 
 @app.get("/transactions")
 async def list_transactions(
@@ -437,7 +427,6 @@ async def list_transactions(
             for r in rows
         ]
 
-
 @app.get("/health")
 async def health_check():
     healthy = True
@@ -452,7 +441,6 @@ async def health_check():
     details["vtpass"] = "configured" if VTPASS_API_KEY else "not_configured"
     details["status"] = "healthy" if healthy else "degraded"
     return details
-
 
 if __name__ == "__main__":
     import uvicorn

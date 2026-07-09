@@ -7,10 +7,7 @@ from config import settings
 from models import Base # Import Base from models.py
 
 # Create the SQLAlchemy engine
-engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
-)
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

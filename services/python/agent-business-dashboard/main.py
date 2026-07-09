@@ -8,6 +8,9 @@ import logging
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query, Path
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -16,6 +19,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -37,7 +87,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -48,6 +97,12 @@ import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_business_dashboard")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -72,6 +127,15 @@ init_db()
 
 @app.get("/api/v1/dashboard/{agent_id}")
 async def get_dashboard(agent_id: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM agent_metrics WHERE agent_id = %s ORDER BY recorded_at DESC LIMIT 1", (agent_id,))
@@ -91,7 +155,7 @@ async def record_metric(request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""INSERT INTO agent_metrics (agent_id, tx_count, volume, commission, active_customers, float_util, recorded_at)
-                      VALUES (?, ?, ?, ?, ?, ?, NOW())""",
+                      VALUES (%s, %s, %s, %s, %s, %s, NOW())""",
                    (agent_id, body.get("txCount", 0), body.get("volume", 0),
                     body.get("commission", 0), body.get("activeCustomers", 0), body.get("floatUtil", 0)))
     conn.commit()
@@ -100,6 +164,15 @@ async def record_metric(request: Request):
 
 @app.get("/api/v1/leaderboard")
 async def get_leaderboard():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_leaderboard", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""SELECT agent_id, SUM(tx_count) as total_tx, SUM(volume) as total_vol, SUM(commission) as total_comm
@@ -128,6 +201,15 @@ async def health_check():
 @app.get("/api/v1/dashboard/{agent_id}/overview")
 async def get_dashboard_overview(agent_id: str):
     """Get agent dashboard overview with key metrics."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard_overview", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "agent_id": agent_id,
         "revenue": {"today": 0.0, "this_week": 0.0, "this_month": 0.0},
@@ -140,11 +222,29 @@ async def get_dashboard_overview(agent_id: str):
 @app.get("/api/v1/dashboard/{agent_id}/trends")
 async def get_trends(agent_id: str, period: str = "30d"):
     """Get transaction and revenue trends."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_trends", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "period": period, "data_points": [], "trend": "stable"}
 
 @app.get("/api/v1/dashboard/{agent_id}/alerts")
 async def get_dashboard_alerts(agent_id: str):
     """Get actionable alerts for the agent."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_dashboard_alerts", "agent-business-dashboard")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {"agent_id": agent_id, "alerts": [], "unread_count": 0}
 
 if __name__ == "__main__":

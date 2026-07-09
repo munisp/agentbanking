@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables or .env file.
     """
     # Database settings
-    DATABASE_URL: str = "sqlite:///./transaction_history.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/transaction_history"
     
     # Logging settings
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -26,11 +26,9 @@ settings = Settings()
 # --- Database Configuration ---
 
 # SQLAlchemy Engine
-# The connect_args are only needed for SQLite to allow multiple threads to access the same connection.
 # For production databases like PostgreSQL, this should be removed.
 engine = create_engine(
-    settings.DATABASE_URL, 
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    settings.DATABASE_URL
 )
 
 # SessionLocal class

@@ -6,9 +6,10 @@
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
 import { z } from "zod";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -25,6 +26,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -93,10 +100,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -111,6 +114,55 @@ const _txPatterns = {
   },
 };
 
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishofflineSyncMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
+
 export const offlineSyncRouter = router({
   syncBatch: protectedProcedure
     .input(
@@ -121,21 +173,28 @@ export const offlineSyncRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "offlineSync",
-        "mutation",
-        "Executed offlineSync mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -191,6 +250,21 @@ export const offlineSyncRouter = router({
                 destinationBank: tx.destinationBank ?? null,
                 destinationAccount: tx.destinationAccount ?? null,
                 channel: tx.channel,
+                fee: String(
+                  calculateFee(
+                    tx.amount,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).fee
+                ),
+                commission: String(
+                  calculateCommission(
+                    calculateFee(
+                      tx.amount,
+                      tx.type === "Cash In" ? "cashIn" : "cashOut"
+                    ).fee,
+                    tx.type === "Cash In" ? "cashIn" : "cashOut"
+                  ).agentShare
+                ),
                 status: "pending",
                 deviceToken: input.deviceToken ?? null,
                 metadata: {
@@ -208,6 +282,24 @@ export const offlineSyncRouter = router({
                   floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
+
+              // Double-entry journal entry
+              await db.insert(gl_journal_entries).values({
+                entryNumber: `JE-CI-${Date.now()}`,
+                description: `offlineSync transaction`,
+                debitAccountId: 2001,
+                creditAccountId: 1001,
+                amount: Math.round(
+                  (typeof input === "object" && "amount" in input
+                    ? Number((input as any).amount)
+                    : 0) * 100
+                ),
+                currency: "NGN",
+                referenceType: "transaction",
+                referenceId: ref ?? String(Date.now()),
+                postedBy: session?.agentCode ?? "system",
+                status: "posted",
+              });
             }
             if (tx.type === "Cash In") {
               await db
@@ -403,6 +495,12 @@ export const offlineSyncRouter = router({
           status: "success",
           metadata: { retriedCount: updated.length },
         });
+
+        // Middleware fan-out (fail-open)
+
+        await publishofflineSyncMiddleware("retryFailed", `${Date.now()}`, {
+          action: "retryFailed",
+        }).catch(() => {});
 
         return { retriedCount: updated.length };
       } catch (error) {

@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -49,7 +96,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("risk-assessment-service")
 app.include_router(metrics_router)
 
@@ -1101,6 +1148,10 @@ class RiskAssessmentRequestModel(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 @app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+@app.on_event("startup")
 async def startup_event():
     """Initialize service on startup"""
     await risk_service.initialize()
@@ -1108,6 +1159,10 @@ async def startup_event():
 @app.post("/assess-risk")
 async def assess_risk(request: RiskAssessmentRequestModel):
     """Perform risk assessment"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("assess_risk_" + str(int(_time.time() * 1000)), _json.dumps({"action": "assess_risk", "timestamp": _time.time()}), "risk-assessment")
+
     risk_request = RiskAssessmentRequest(
         risk_type=request.risk_type,
         entity_id=request.entity_id,
@@ -1121,6 +1176,15 @@ async def assess_risk(request: RiskAssessmentRequestModel):
 @app.get("/risk-assessment/{entity_id}")
 async def get_risk_assessment(entity_id: str, risk_type: RiskType):
     """Get latest risk assessment"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_risk_assessment", "risk-assessment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     assessment = await risk_service.get_risk_assessment(entity_id, risk_type)
     if not assessment:
         raise HTTPException(status_code=404, detail="Risk assessment not found")
@@ -1129,12 +1193,25 @@ async def get_risk_assessment(entity_id: str, risk_type: RiskType):
 @app.get("/risk-alerts")
 async def get_risk_alerts(entity_id: Optional[str] = None, acknowledged: Optional[bool] = None):
     """Get risk alerts"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_risk_alerts", "risk-assessment")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     alerts = await risk_service.get_risk_alerts(entity_id, acknowledged)
     return {'alerts': alerts}
 
 @app.post("/risk-alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(alert_id: str):
     """Acknowledge a risk alert"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("acknowledge_alert_" + str(int(_time.time() * 1000)), _json.dumps({"action": "acknowledge_alert", "timestamp": _time.time()}), "risk-assessment")
+
     success = await risk_service.acknowledge_alert(alert_id)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")

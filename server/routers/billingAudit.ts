@@ -81,15 +81,14 @@ export async function recordBillingAudit(params: {
   if (kafkaUrl) {
     try {
       // In production, use kafkajs producer
-      console.log(`[BillingAudit] Kafka publish: billing.audit.${action}`, {
+      // Kafka publish: billing.audit event
+      void {
         auditId: entry.id,
         tenantId: ctx.tenantId,
-        userId: ctx.userId,
         action,
         resourceType,
         resourceId,
-        timestamp: entry.createdAt,
-      } as any);
+      };
     } catch (e) {
       console.warn(
         "[BillingAudit] Kafka publish failed:",
@@ -181,26 +180,18 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
 };
 
-// ── Domain Calculations ────────────────────────────────────────────────────
-function computeFees(amount: number, txType: string = "transfer") {
-  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
-  const feeResult = calculateFee(amount, txType);
-  const commResult = calculateCommission(feeResult.fee, txType);
-  const taxResult = calculateTax(feeResult.fee, "vat");
-  const totalDeductions = feeResult.fee + taxResult.taxAmount;
-  const netAmount = Math.max(0, amount - totalDeductions);
-  const rate = amount > 0 ? feeResult.fee / amount : 0;
-  return {
-    fee: feeResult.fee,
-    feeRate: parseFloat(rate.toFixed(4)),
-    commission: commResult.agentShare,
-    platformCommission: commResult.platformShare,
-    tax: taxResult.taxAmount,
-    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
-    netAmount: parseFloat(netAmount.toFixed(2)),
-    grossAmount: amount,
-  };
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
 }
+
+// ── Domain Calculations ────────────────────────────────────────────────────
 
 // ── Transaction Handling for billingAudit ───────────────────────────────────────
 // All mutations use withTransaction for atomicity.

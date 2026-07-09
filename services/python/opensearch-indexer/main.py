@@ -20,6 +20,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 
 # --- Production: Graceful Shutdown ---
@@ -27,6 +30,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -48,7 +98,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("opensearch-indexer")
 
@@ -58,6 +107,12 @@ OPENSEARCH_PASS = os.getenv("OPENSEARCH_PASS", "admin")
 PORT = int(os.getenv("PORT", "8092"))
 
 app = FastAPI(title="54Link OpenSearch Indexer", version="1.0.0")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -88,7 +143,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -103,7 +158,6 @@ metrics = {
     "started_at": datetime.now(timezone.utc).isoformat(),
 }
 
-
 # ── Models ───────────────────────────────────────────────────────────────────
 
 class IndexRequest(BaseModel):
@@ -111,19 +165,16 @@ class IndexRequest(BaseModel):
     documents: list[dict[str, Any]]
     batch_size: int | None = None
 
-
 class SearchRequest(BaseModel):
     index: str = "transactions"
     query: dict[str, Any]
     size: int = 20
     from_: int = 0
 
-
 class CreateIndexRequest(BaseModel):
     index: str
     mappings: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
-
 
 # ── OpenSearch Client ────────────────────────────────────────────────────────
 
@@ -149,7 +200,6 @@ async def os_request(method: str, path: str, body: dict | None = None) -> dict:
     except Exception as e:
         logger.error(f"OpenSearch request failed: {e}")
         raise HTTPException(status_code=502, detail=f"OpenSearch unavailable: {str(e)}")
-
 
 async def bulk_index(index: str, documents: list[dict]) -> dict:
     """Bulk index documents using OpenSearch _bulk API."""
@@ -177,7 +227,6 @@ async def bulk_index(index: str, documents: list[dict]) -> dict:
     except Exception as e:
         logger.error(f"Bulk index failed: {e}")
         raise HTTPException(status_code=502, detail=f"Bulk index failed: {str(e)}")
-
 
 # ── Transaction Index Mapping ────────────────────────────────────────────────
 
@@ -210,12 +259,15 @@ TRANSACTION_MAPPING = {
     },
 }
 
-
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post("/index")
 async def index_documents(req: IndexRequest):
     """Bulk index documents from Fluvio consumer."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("index_documents_" + str(int(_time.time() * 1000)), _json.dumps({"action": "index_documents", "timestamp": _time.time()}), "opensearch-indexer")
+
     if not req.documents:
         return {"indexed": 0, "errors": 0}
 
@@ -254,10 +306,13 @@ async def index_documents(req: IndexRequest):
         logger.error(f"Index batch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/search")
 async def search_documents(req: SearchRequest):
     """Proxy search request to OpenSearch."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("search_documents_" + str(int(_time.time() * 1000)), _json.dumps({"action": "search_documents", "timestamp": _time.time()}), "opensearch-indexer")
+
     body = {
         "query": req.query,
         "size": req.size,
@@ -266,10 +321,13 @@ async def search_documents(req: SearchRequest):
     result = await os_request("POST", f"{req.index}/_search", body)
     return result
 
-
 @app.post("/create-index")
 async def create_index(req: CreateIndexRequest):
     """Create an OpenSearch index with optional mappings."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_index_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_index", "timestamp": _time.time()}), "opensearch-indexer")
+
     body = req.mappings or TRANSACTION_MAPPING
     if req.settings:
         body["settings"] = req.settings
@@ -277,7 +335,6 @@ async def create_index(req: CreateIndexRequest):
     result = await os_request("PUT", req.index, body)
     logger.info(f"Created index '{req.index}': {result}")
     return result
-
 
 @app.get("/health")
 async def health():
@@ -302,7 +359,6 @@ async def health():
         "opensearch_url": OPENSEARCH_URL,
     }
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Indexing metrics."""
@@ -313,14 +369,119 @@ async def get_metrics():
         ),
     }
 
+# ── Settlement & Reconciliation Indexing Pipeline ────────────────────────────
+
+SETTLEMENT_MAPPING = {
+    "mappings": {
+        "properties": {
+            "batch_id": {"type": "keyword"},
+            "batch_ref": {"type": "keyword"},
+            "terminal_id": {"type": "keyword"},
+            "agent_id": {"type": "keyword"},
+            "status": {"type": "keyword"},
+            "total_amount": {"type": "float"},
+            "net_amount": {"type": "float"},
+            "total_fees": {"type": "float"},
+            "transaction_count": {"type": "integer"},
+            "settlement_ref": {"type": "keyword"},
+            "settled_at": {"type": "date"},
+            "created_at": {"type": "date"},
+            "indexed_at": {"type": "date"},
+        }
+    },
+    "settings": {"number_of_shards": 2, "number_of_replicas": 1, "refresh_interval": "5s"},
+}
+
+RECONCILIATION_MAPPING = {
+    "mappings": {
+        "properties": {
+            "reconciliation_id": {"type": "keyword"},
+            "period": {"type": "keyword"},
+            "status": {"type": "keyword"},
+            "revenue_variance_pct": {"type": "float"},
+            "volume_variance_pct": {"type": "float"},
+            "agent_variance_pct": {"type": "float"},
+            "projected_revenue": {"type": "float"},
+            "actual_revenue": {"type": "float"},
+            "generated_at": {"type": "date"},
+            "indexed_at": {"type": "date"},
+        }
+    },
+    "settings": {"number_of_shards": 1, "number_of_replicas": 1, "refresh_interval": "10s"},
+}
+
+class SettlementIndexRequest(BaseModel):
+    documents: list[dict[str, Any]]
+
+class ReconciliationIndexRequest(BaseModel):
+    documents: list[dict[str, Any]]
+
+@app.post("/index/settlements")
+async def index_settlements(req: SettlementIndexRequest):
+    """Index settlement batch documents into OpenSearch."""
+    if not req.documents:
+        return {"indexed": 0, "errors": 0}
+
+    start = time.monotonic()
+    try:
+        result = await bulk_index("settlement-batches", req.documents)
+        elapsed = time.monotonic() - start
+        indexed = len(req.documents)
+        metrics["total_indexed"] += indexed
+        metrics["total_batches"] += 1
+        logger.info(f"Indexed {indexed} settlement docs in {elapsed:.2f}s")
+        log_audit("INDEX_SETTLEMENTS", f"batch_{indexed}", json.dumps({"count": indexed}))
+        return {"indexed": indexed, "errors": 0, "elapsed_ms": round(elapsed * 1000)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        metrics["total_errors"] += len(req.documents)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/index/reconciliations")
+async def index_reconciliations(req: ReconciliationIndexRequest):
+    """Index reconciliation report documents into OpenSearch."""
+    if not req.documents:
+        return {"indexed": 0, "errors": 0}
+
+    start = time.monotonic()
+    try:
+        result = await bulk_index("reconciliation-reports", req.documents)
+        elapsed = time.monotonic() - start
+        indexed = len(req.documents)
+        metrics["total_indexed"] += indexed
+        metrics["total_batches"] += 1
+        logger.info(f"Indexed {indexed} reconciliation docs in {elapsed:.2f}s")
+        log_audit("INDEX_RECONCILIATIONS", f"recon_{indexed}", json.dumps({"count": indexed}))
+        return {"indexed": indexed, "errors": 0, "elapsed_ms": round(elapsed * 1000)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        metrics["total_errors"] += len(req.documents)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/create-settlement-index")
+async def create_settlement_index():
+    """Create the settlement-batches index with proper mappings."""
+    result = await os_request("PUT", "settlement-batches", SETTLEMENT_MAPPING)
+    logger.info(f"Created settlement-batches index: {result}")
+    return result
+
+@app.post("/create-reconciliation-index")
+async def create_reconciliation_index():
+    """Create the reconciliation-reports index with proper mappings."""
+    result = await os_request("PUT", "reconciliation-reports", RECONCILIATION_MAPPING)
+    logger.info(f"Created reconciliation-reports index: {result}")
+    return result
 
 if __name__ == "__main__":
     import uvicorn
 
     logger.info("=" * 60)
-    logger.info("  54Link OpenSearch Indexer v1.0.0")
+    logger.info("  54Link OpenSearch Indexer v2.0.0")
     logger.info(f"  OpenSearch: {OPENSEARCH_URL}")
     logger.info(f"  Port: {PORT}")
+    logger.info(f"  Settlement & Reconciliation pipeline: enabled")
     logger.info("=" * 60)
 
     uvicorn.run(app, host="0.0.0.0", port=PORT)

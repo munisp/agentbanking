@@ -33,7 +33,7 @@ jobs:
       matrix:
         environment: [dev, staging, production]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -61,7 +61,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ matrix.environment }}
           path: infra/terraform/tfplan-${{ matrix.environment }}
@@ -93,7 +93,7 @@ jobs:
     environment:
       name: infrastructure-production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

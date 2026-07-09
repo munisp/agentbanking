@@ -10,6 +10,9 @@ Features:
 """
 
 from fastapi import FastAPI, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 from typing import Dict, Any
 from datetime import datetime
@@ -44,13 +47,13 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/platform")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Platform Middleware Service", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -94,7 +97,7 @@ async def create_item(request: Request):
         raise HTTPException(status_code=400, detail="Name required")
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO items (name, status, data, created_at) VALUES (?, 'active', ?, NOW())",
+    cursor.execute("INSERT INTO items (name, status, data, created_at) VALUES (%s, 'active', %s, NOW())",
                    (name, str(body)))
     conn.commit()
     item_id = cursor.fetchone()[0]

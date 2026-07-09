@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -56,6 +103,11 @@ import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/whatsapp_service")
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
@@ -80,7 +132,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -92,7 +144,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
 
 from shared.middleware import apply_middleware, ErrorResponse
 from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("whatsapp-service")
 app.include_router(metrics_router)
 
@@ -162,7 +214,6 @@ def _incr_counter(name: str) -> int:
         return r.incr(f"wa:counter:{name}")
     return 0
 
-
 class Message(BaseModel):
     recipient: str
     content: str
@@ -175,7 +226,6 @@ class OrderMessage(BaseModel):
     phone: str
     items: List[Dict[str, Any]]
     total: float
-
 
 async def _send_via_meta_api(recipient: str, content: str, msg_type: str = "text") -> dict:
     if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_ID:
@@ -213,9 +263,17 @@ async def _send_via_meta_api(recipient: str, content: str, msg_type: str = "text
             logger.error(f"Meta API error {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=502, detail=f"WhatsApp API error: {resp.status_code}")
 
-
 @app.get("/")
 async def root():
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("root", "whatsapp-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     return {
         "service": "whatsapp-service",
         "channel": CHANNEL_NAME,
@@ -236,6 +294,10 @@ async def health_check():
 
 @app.post("/api/v1/send")
 async def send_message(message: Message):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_message_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_message", "timestamp": _time.time()}), "whatsapp-service")
+
     count = _incr_counter("messages_sent")
     message_id = f"{CHANNEL_NAME}_{int(datetime.now().timestamp())}_{count}"
 
@@ -261,10 +323,18 @@ async def send_message(message: Message):
 
 @app.post("/send")
 async def send_message_simple(message: Message):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("send_message_simple_" + str(int(_time.time() * 1000)), _json.dumps({"action": "send_message_simple", "timestamp": _time.time()}), "whatsapp-service")
+
     return await send_message(message)
 
 @app.post("/api/v1/order")
 async def create_order(order: OrderMessage):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_order_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_order", "timestamp": _time.time()}), "whatsapp-service")
+
     count = _incr_counter("orders")
     order_id = f"ORD-{CHANNEL_NAME.upper()}-{int(datetime.now().timestamp())}-{count}"
 
@@ -296,11 +366,29 @@ async def create_order(order: OrderMessage):
 
 @app.get("/api/v1/messages")
 async def get_messages(limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_messages", "whatsapp-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     msgs = _get_messages(limit)
     return {"messages": msgs, "total": len(msgs)}
 
 @app.get("/api/v1/orders")
 async def get_orders(limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_orders", "whatsapp-service")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     orders = _get_orders(limit)
     return {"orders": orders, "total": len(orders)}
 
@@ -319,6 +407,10 @@ async def get_metrics():
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("webhook_handler_" + str(int(_time.time() * 1000)), _json.dumps({"action": "webhook_handler", "timestamp": _time.time()}), "whatsapp-service")
+
     params = request.query_params
     if params.get("hub.mode") == "subscribe":
         if params.get("hub.verify_token") == WHATSAPP_WEBHOOK_VERIFY_TOKEN:

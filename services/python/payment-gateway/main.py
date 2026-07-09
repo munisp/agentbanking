@@ -5,6 +5,9 @@ Database-backed with idempotency, retry logic, and webhook handling
 """
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List
@@ -46,7 +49,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/payments")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 FLUTTERWAVE_SECRET_KEY = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
@@ -57,6 +59,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Payment Gateway Service", version="2.0.0")
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -87,7 +90,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -102,7 +105,6 @@ app.add_middleware(
 
 db_pool: Optional[asyncpg.Pool] = None
 
-
 class PaymentMethod(str, Enum):
     PAYSTACK = "paystack"
     FLUTTERWAVE = "flutterwave"
@@ -111,7 +113,6 @@ class PaymentMethod(str, Enum):
     USSD = "ussd"
     CARD = "card"
 
-
 class PaymentStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -119,7 +120,6 @@ class PaymentStatus(str, Enum):
     FAILED = "failed"
     REFUNDED = "refunded"
     CANCELLED = "cancelled"
-
 
 class PaymentRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
@@ -133,7 +133,6 @@ class PaymentRequest(BaseModel):
     idempotency_key: Optional[str] = None
     metadata: Optional[Dict] = None
 
-
 class PaymentResponse(BaseModel):
     payment_id: str
     status: PaymentStatus
@@ -144,11 +143,9 @@ class PaymentResponse(BaseModel):
     authorization_url: Optional[str] = None
     created_at: datetime
 
-
 class RefundRequest(BaseModel):
     reason: Optional[str] = None
     amount: Optional[Decimal] = None
-
 
 async def verify_bearer_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
@@ -157,7 +154,6 @@ async def verify_bearer_token(authorization: str = Header(...)):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     return token
-
 
 @app.on_event("startup")
 async def startup():
@@ -191,12 +187,10 @@ async def startup():
         """)
     logger.info("Payment Gateway Service started")
 
-
 @app.on_event("shutdown")
 async def shutdown():
     if db_pool:
         await db_pool.close()
-
 
 async def _initiate_paystack(payment_id: str, amount: Decimal, currency: str, email: str, callback_url: Optional[str]) -> Dict:
     if not PAYSTACK_SECRET_KEY:
@@ -221,7 +215,6 @@ async def _initiate_paystack(payment_id: str, amount: Decimal, currency: str, em
             "authorization_url": data["data"]["authorization_url"],
         }
 
-
 async def _initiate_flutterwave(payment_id: str, amount: Decimal, currency: str, email: str, callback_url: Optional[str]) -> Dict:
     if not FLUTTERWAVE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Flutterwave not configured")
@@ -244,7 +237,6 @@ async def _initiate_flutterwave(payment_id: str, amount: Decimal, currency: str,
             "provider_reference": payment_id,
             "authorization_url": data["data"]["link"],
         }
-
 
 async def _initiate_mpesa(payment_id: str, amount: Decimal, phone_number: str) -> Dict:
     if not MPESA_CONSUMER_KEY or not MPESA_CONSUMER_SECRET:
@@ -273,7 +265,6 @@ async def _initiate_mpesa(payment_id: str, amount: Decimal, phone_number: str) -
             "provider_reference": data.get("CheckoutRequestID", payment_id),
             "authorization_url": None,
         }
-
 
 @app.post("/api/v1/payments", response_model=PaymentResponse)
 async def create_payment(request: PaymentRequest, token: str = Depends(verify_bearer_token)):
@@ -336,7 +327,6 @@ async def create_payment(request: PaymentRequest, token: str = Depends(verify_be
         created_at=datetime.utcnow(),
     )
 
-
 @app.get("/api/v1/payments/{payment_id}", response_model=PaymentResponse)
 async def get_payment(payment_id: str, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -353,7 +343,6 @@ async def get_payment(payment_id: str, token: str = Depends(verify_bearer_token)
         authorization_url=row["authorization_url"],
         created_at=row["created_at"],
     )
-
 
 @app.get("/api/v1/payments", response_model=List[PaymentResponse])
 async def list_payments(
@@ -392,7 +381,6 @@ async def list_payments(
         for r in rows
     ]
 
-
 @app.post("/api/v1/payments/{payment_id}/refund")
 async def refund_payment(payment_id: str, req: RefundRequest, token: str = Depends(verify_bearer_token)):
     async with db_pool.acquire() as conn:
@@ -420,7 +408,6 @@ async def refund_payment(payment_id: str, req: RefundRequest, token: str = Depen
     logger.info(f"Refund of {refund_amount} processed for payment {payment_id}")
     return {"payment_id": payment_id, "refunded_amount": str(refund_amount), "status": new_status}
 
-
 @app.post("/webhooks/paystack")
 async def paystack_webhook(request: Request):
     body = await request.body()
@@ -442,7 +429,6 @@ async def paystack_webhook(request: Request):
         logger.info(f"Paystack webhook: charge.success for {ref}")
     return {"status": "ok"}
 
-
 @app.get("/health")
 async def health_check():
     db_ok = False
@@ -454,7 +440,6 @@ async def health_check():
         except Exception:
             pass
     return {"status": "healthy" if db_ok else "degraded", "service": "payment-gateway", "database": db_ok}
-
 
 if __name__ == "__main__":
     import uvicorn

@@ -3,6 +3,9 @@ Reporting Engine
 Port: 8130
 """
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -40,7 +43,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -61,6 +63,7 @@ async def verify_token(authorization: str = Header(...)):
     return token
 
 app = FastAPI(title="Reporting Engine", description="Reporting Engine for Remittance Platform", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -100,7 +103,6 @@ async def health_check():
         return {"status": "healthy", "service": "reporting-engine", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "reporting-engine", "error": str(e)}
-
 
 class TemplateCreate(BaseModel):
     name: str
@@ -153,7 +155,6 @@ async def list_executions(template_id: Optional[str] = None, skip: int = 0, limi
         else:
             rows = await conn.fetch("SELECT * FROM report_executions ORDER BY created_at DESC LIMIT $1 OFFSET $2", limit, skip)
         return {"executions": [dict(r) for r in rows]}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8130)

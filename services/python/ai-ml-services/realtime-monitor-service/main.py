@@ -4,6 +4,9 @@ Nigerian Remittance Platform - Real-time Dashboard Backend
 """
 
 from fastapi import FastAPI
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
@@ -78,12 +81,33 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/realtime_monitor_service")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title="Nigerian Remittance Platform - Real-time Dashboard API",
     description="Real-time dashboard backend with WebSocket support for the Nigerian Remittance Platform",
     version="1.0.0",
     lifespan=lifespan
 )
+apply_middleware(app, enable_auth=True)
 
 # Add CORS middleware
 app.add_middleware(

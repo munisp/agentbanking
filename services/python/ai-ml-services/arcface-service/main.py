@@ -4,6 +4,9 @@ High-accuracy face recognition service with 95%+ accuracy
 """
 
 from fastapi import FastAPI
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import logging
@@ -51,6 +54,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Create FastAPI application
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from contextlib import asynccontextmanager
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/arcface_service")
+_db_pool = None
+
+async def get_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _db_pool
+
+async def close_db_pool():
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        _db_pool = None
+
 app = FastAPI(
     title="ArcFace Face Matching Service",
     description="""
@@ -74,6 +97,7 @@ app = FastAPI(
     ## Authentication
     
     API key required for production use (set in headers: `X-API-Key`)
+apply_middleware(app, enable_auth=True)
     
     ## Rate Limits
     

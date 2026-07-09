@@ -3,8 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .service import Base
 
-DATABASE_URL = os.environ.get("COMM_HUB_DATABASE_URL", "sqlite:///./comm_hub.db")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+DATABASE_URL = os.environ.get("COMM_HUB_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/communication_hub")
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
 

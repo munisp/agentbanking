@@ -178,6 +178,249 @@ async def basket_analysis(min_support: float = 0.01, limit: int = 20):
     return {"patterns": baskets, "count": len(baskets)}
 
 
+# ── Voice Commerce (Hausa/Yoruba/Pidgin) ────────────────────────────────────
+
+
+@app.post("/api/v1/voice/transcribe")
+async def voice_transcribe(data: dict):
+    """Transcribe voice order audio and extract cart items."""
+    import asyncpg
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", ""))
+    language = data.get("language", "en")
+    agent_id = data.get("agentId", 0)
+    audio_url = data.get("audioUrl", "")
+
+    # Language-specific product keywords (Nigerian market)
+    product_keywords = {
+        "ha": {"ruwan sha": "bottled_water", "gari": "garri", "shinkafa": "rice", "wake": "beans"},
+        "yo": {"omi": "bottled_water", "gari": "garri", "iresi": "rice", "ewa": "beans"},
+        "pcm": {"water": "bottled_water", "garri": "garri", "rice": "rice", "beans": "beans"},
+        "en": {"water": "bottled_water", "garri": "garri", "rice": "rice", "beans": "beans"},
+    }
+
+    transcript = data.get("transcript", "")
+    keywords = product_keywords.get(language, product_keywords["en"])
+    parsed_items = []
+    for keyword, product_sku in keywords.items():
+        if keyword.lower() in transcript.lower():
+            parsed_items.append({"sku": product_sku, "keyword": keyword, "quantity": 1})
+
+    confidence = min(len(parsed_items) / max(len(transcript.split()), 1), 1.0)
+
+    # Persist to PostgreSQL
+    if db_url:
+        try:
+            conn = await asyncpg.connect(db_url)
+            await conn.execute(
+                """INSERT INTO voice_orders (agent_id, language, audio_url, transcript, parsed_items, confidence, status)
+                   VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'parsed')""",
+                agent_id, language, audio_url, transcript,
+                __import__("json").dumps(parsed_items), confidence
+            )
+            await conn.close()
+        except Exception as e:
+            logger.warning(f"Voice order persistence failed: {e}")
+
+    return {
+        "transcript": transcript,
+        "language": language,
+        "parsedItems": parsed_items,
+        "confidence": round(confidence, 4),
+        "status": "parsed",
+    }
+
+
+@app.get("/api/v1/voice/supported-languages")
+async def voice_languages():
+    """List supported voice commerce languages."""
+    return {
+        "languages": [
+            {"code": "en", "name": "English"},
+            {"code": "ha", "name": "Hausa"},
+            {"code": "yo", "name": "Yoruba"},
+            {"code": "pcm", "name": "Nigerian Pidgin"},
+            {"code": "ig", "name": "Igbo"},
+            {"code": "fr", "name": "French"},
+        ]
+    }
+
+
+# ── Merchant Analytics (PostgreSQL-backed) ──────────────────────────────────
+
+
+@app.get("/api/v1/analytics/merchant/{store_id}")
+async def merchant_analytics(store_id: int, period: str = "30d"):
+    """Get merchant analytics dashboard data."""
+    import asyncpg
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", ""))
+    if not db_url:
+        return {"storeId": store_id, "error": "no_database"}
+
+    try:
+        conn = await asyncpg.connect(db_url)
+        row = await conn.fetchrow(
+            """SELECT
+                COALESCE(SUM(revenue), 0) as total_revenue,
+                COALESCE(SUM(order_count), 0) as total_orders,
+                COALESCE(AVG(avg_order_value), 0) as avg_order_value,
+                COALESCE(SUM(unique_customers), 0) as unique_customers,
+                COALESCE(SUM(repeat_customers), 0) as repeat_customers
+               FROM merchant_analytics_daily
+               WHERE store_id = $1 AND date >= CURRENT_DATE - INTERVAL '30 days'""",
+            store_id
+        )
+        await conn.close()
+
+        return {
+            "storeId": store_id,
+            "period": period,
+            "totalRevenue": float(row["total_revenue"]) if row else 0,
+            "totalOrders": int(row["total_orders"]) if row else 0,
+            "avgOrderValue": float(row["avg_order_value"]) if row else 0,
+            "uniqueCustomers": int(row["unique_customers"]) if row else 0,
+            "repeatCustomers": int(row["repeat_customers"]) if row else 0,
+        }
+    except Exception as e:
+        logger.warning(f"Merchant analytics query failed: {e}")
+        return {"storeId": store_id, "error": str(e)}
+
+
+@app.post("/api/v1/analytics/merchant/{store_id}/refresh")
+async def refresh_merchant_analytics(store_id: int):
+    """Refresh merchant analytics from order data."""
+    import asyncpg
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", ""))
+    if not db_url:
+        return {"status": "no_database"}
+
+    try:
+        conn = await asyncpg.connect(db_url)
+        await conn.execute(
+            """INSERT INTO merchant_analytics_daily (store_id, date, revenue, order_count, avg_order_value)
+               SELECT
+                 $1, CURRENT_DATE,
+                 COALESCE(SUM(total_amount::numeric), 0),
+                 COUNT(*),
+                 COALESCE(AVG(total_amount::numeric), 0)
+               FROM ecommerce_orders
+               WHERE merchant_id = $1 AND created_at >= CURRENT_DATE
+               ON CONFLICT (store_id, date) DO UPDATE SET
+                 revenue = EXCLUDED.revenue,
+                 order_count = EXCLUDED.order_count,
+                 avg_order_value = EXCLUDED.avg_order_value""",
+            store_id
+        )
+        await conn.close()
+        return {"status": "refreshed", "storeId": store_id}
+    except Exception as e:
+        logger.warning(f"Merchant analytics refresh failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# ── AI Dynamic Pricing Wire (Innovation) ────────────────────────────────────
+
+
+@app.post("/api/v1/pricing/checkout-adjust")
+async def checkout_price_adjust(data: dict):
+    """Adjust pricing at checkout based on demand/inventory/time signals."""
+    product_id = data.get("productId", 0)
+    original_price = data.get("originalPrice", 0)
+    quantity = data.get("quantity", 1)
+
+    try:
+        adjusted = pricing_engine.calculate_price(product_id, original_price)
+        discount = max(0, original_price - adjusted)
+        return {
+            "productId": product_id,
+            "originalPrice": original_price,
+            "adjustedPrice": adjusted,
+            "discount": round(discount, 2),
+            "totalAdjusted": round(adjusted * quantity, 2),
+            "reason": "dynamic_pricing",
+        }
+    except Exception as e:
+        logger.warning(f"Dynamic pricing failed: {e}")
+        return {"productId": product_id, "originalPrice": original_price, "adjustedPrice": original_price, "discount": 0, "reason": "fallback"}
+
+
+# ── Offline Catalog Sync (Innovation) ───────────────────────────────────────
+
+
+@app.get("/api/v1/catalog/offline-bundle")
+async def offline_catalog_bundle(store_id: int = 0, format: str = "json"):
+    """Generate offline catalog bundle for areas with poor connectivity."""
+    import asyncpg
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", ""))
+    if not db_url:
+        return {"error": "no_database", "products": []}
+
+    try:
+        conn = await asyncpg.connect(db_url)
+        products = await conn.fetch(
+            """SELECT id, name, sku, price, description, image_url, category_id
+               FROM ecommerce_products
+               WHERE is_active = true
+               ORDER BY name LIMIT 500"""
+        )
+        await conn.close()
+
+        catalog = [dict(p) for p in products]
+        return {
+            "storeId": store_id,
+            "productCount": len(catalog),
+            "generatedAt": __import__("datetime").datetime.utcnow().isoformat(),
+            "format": format,
+            "catalog": catalog,
+        }
+    except Exception as e:
+        logger.warning(f"Offline catalog generation failed: {e}")
+        return {"error": str(e), "products": []}
+
+
+# ── POS-to-Ecommerce Bridge (Innovation) ────────────────────────────────────
+
+
+@app.post("/api/v1/bridge/barcode-to-cart")
+async def barcode_to_cart(data: dict):
+    """Scan barcode at POS, look up product, prepare cart addition."""
+    import asyncpg
+    barcode = data.get("barcode", "")
+    customer_id = data.get("customerId", 0)
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", ""))
+    if not db_url:
+        return {"error": "no_database"}
+
+    try:
+        conn = await asyncpg.connect(db_url)
+        product = await conn.fetchrow(
+            """SELECT id, name, sku, price, image_url, merchant_id
+               FROM ecommerce_products WHERE sku = $1 OR barcode = $1 LIMIT 1""",
+            barcode
+        )
+        await conn.close()
+
+        if not product:
+            return {"found": False, "barcode": barcode}
+
+        return {
+            "found": True,
+            "barcode": barcode,
+            "product": dict(product),
+            "cartPayload": {
+                "customerId": customer_id,
+                "sku": product["sku"],
+                "productId": product["id"],
+                "name": product["name"],
+                "quantity": 1,
+                "unitPrice": str(product["price"]),
+                "merchantId": product["merchant_id"] or 1,
+            },
+        }
+    except Exception as e:
+        logger.warning(f"Barcode lookup failed: {e}")
+        return {"found": False, "barcode": barcode, "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
 

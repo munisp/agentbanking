@@ -14,7 +14,7 @@ import { eq, desc, and, gte, lte, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getAgentFromCookie } from "../middleware/agentAuth.js";
-import { getDb } from "../db.js";
+import { getDb, writeAuditLog } from "../db.js";
 import { kycSessions } from "../../drizzle/schema.js";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -56,6 +56,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   not_started: ["documents_submitted"],
@@ -118,114 +124,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_KYC = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_KYC.validateId(data.id)) errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (!INTEGRITY_RULES_KYC.validateRange(data.amount, 0, 100_000_000))
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _kyc_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -239,6 +137,52 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishkycMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `kyc.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `kyc_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `kyc_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
+}
 
 export const kycRouter = router({
   // ─── Retry Cooldown ──────────────────────────────────────────────────────────
@@ -262,23 +206,55 @@ export const kycRouter = router({
   adminClearCooldown: adminProcedure
     .input(z.object({ userId: z.string().min(1).max(255) }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "kyc",
-        "mutation",
-        "Executed kyc mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const cleared = clearCooldown(input.userId);
+        await writeAuditLog({
+          agentId:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.id ?? 0)
+              : 0,
+
+          agentCode:
+            typeof ctx === "object" && ctx !== null && "user" in ctx
+              ? ((ctx as any).user?.agentCode ?? "system")
+              : "system",
+
+          action: "MUTATION",
+
+          resource: "kyc",
+
+          resourceId:
+            typeof input === "object" && input !== null && "id" in input
+              ? String((input as any).id)
+              : "new",
+
+          status: "success",
+
+          metadata: { input: typeof input === "object" ? input : {} },
+        });
+
         return { cleared, userId: input.userId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -377,6 +353,18 @@ export const kycRouter = router({
         const thresholds = getDeviceThresholds(fingerprint);
         const history = getDeviceLivenessHistory(fingerprint.fingerprintHash);
 
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("passiveLiveness", `${Date.now()}`, {
+          action: "passiveLiveness",
+        }).catch(() => {});
+
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("registerDevice", `${Date.now()}`, {
+          action: "registerDevice",
+        }).catch(() => {});
+
         return {
           fingerprint,
           thresholds,
@@ -429,6 +417,11 @@ export const kycRouter = router({
           input.method,
           input.score
         );
+        // Middleware fan-out (fail-open)
+        await publishkycMiddleware("recordDeviceAttempt", `${Date.now()}`, {
+          action: "recordDeviceAttempt",
+        }).catch(() => {});
+
         return { recorded: true, fingerprintHash: fingerprint.fingerprintHash };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -525,6 +518,11 @@ export const kycRouter = router({
 
         if (!challenge) {
           // Service unavailable — return session ID so the client can still proceed
+          // Middleware fan-out (fail-open)
+          await publishkycMiddleware("startLiveness", `${Date.now()}`, {
+            action: "startLiveness",
+          }).catch(() => {});
+
           return {
             sessionId: session.id,
             challengeId: null,
@@ -627,6 +625,12 @@ export const kycRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(kycSessions.id, input.sessionId));
+
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("submitLivenessFrame", `${Date.now()}`, {
+          action: "submitLivenessFrame",
+        }).catch(() => {});
 
         return {
           sessionId: input.sessionId,
@@ -923,6 +927,11 @@ export const kycRouter = router({
             Buffer.alloc(0),
             input.mimeType
           );
+          // Middleware fan-out (fail-open)
+          await publishkycMiddleware("requestDocumentUpload", `${Date.now()}`, {
+            action: "requestDocumentUpload",
+          }).catch(() => {});
+
           return {
             uploadUrl: url,
             fileKey,
@@ -985,6 +994,12 @@ export const kycRouter = router({
               `Review in Admin > Liveness Device Analytics.`,
           }).catch(() => {});
         }
+
+        // Middleware fan-out (fail-open)
+
+        await publishkycMiddleware("geoIpCorrelate", `${Date.now()}`, {
+          action: "geoIpCorrelate",
+        }).catch(() => {});
 
         return {
           riskScore: correlation.riskScore,

@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = "sqlite:///./upi_connector.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/upi_connector"
     
     # Application Configuration
     APP_NAME: str = "UPI Connector Service"

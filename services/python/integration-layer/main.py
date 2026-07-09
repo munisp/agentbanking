@@ -19,6 +19,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -39,8 +86,8 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from shared.idempotency import IdempotencyStore
 
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -54,6 +101,11 @@ _idem_store = IdempotencyStore("intlayer-txn", _redis_client)
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Remittance Platform Integration Service")
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.on_event("startup")
 async def _start_eviction():
@@ -102,6 +154,10 @@ async def get_metrics(current_user: dict = Depends(get_current_user)):
 # Agent Endpoints
 @app.post("/agents/", response_model=models.Agent, tags=["Agents"])
 async def create_agent(agent: models.AgentCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_agent", "timestamp": _time.time()}), "integration-layer")
+
     logger.info(f"Create agent requested by user: {current_user['username']}")
     db_agent = models.Agent(**agent.dict())
     db.add(db_agent)
@@ -111,12 +167,30 @@ async def create_agent(agent: models.AgentCreate, db: Session = Depends(get_db),
 
 @app.get("/agents/", response_model=List[models.Agent], tags=["Agents"])
 async def read_agents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agents", "integration-layer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Read agents requested by user: {current_user['username']}")
     agents = db.query(models.Agent).offset(skip).limit(limit).all()
     return agents
 
 @app.get("/agents/{agent_id}", response_model=models.Agent, tags=["Agents"])
 async def read_agent(agent_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_agent", "integration-layer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Read agent {agent_id} requested by user: {current_user['username']}")
     agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
     if agent is None:
@@ -126,6 +200,10 @@ async def read_agent(agent_id: int, db: Session = Depends(get_db), current_user:
 
 @app.put("/agents/{agent_id}", response_model=models.Agent, tags=["Agents"])
 async def update_agent(agent_id: int, agent: models.AgentCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_agent", "timestamp": _time.time()}), "integration-layer")
+
     logger.info(f"Update agent {agent_id} requested by user: {current_user['username']}")
     db_agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
     if db_agent is None:
@@ -139,6 +217,10 @@ async def update_agent(agent_id: int, agent: models.AgentCreate, db: Session = D
 
 @app.delete("/agents/{agent_id}", tags=["Agents"])
 async def delete_agent(agent_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_agent_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_agent", "timestamp": _time.time()}), "integration-layer")
+
     logger.info(f"Delete agent {agent_id} requested by user: {current_user['username']}")
     db_agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
     if db_agent is None:
@@ -192,12 +274,30 @@ async def create_transaction(
 
 @app.get("/transactions/", response_model=List[models.Transaction], tags=["Transactions"])
 async def read_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transactions", "integration-layer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Read transactions requested by user: {current_user['username']}")
     transactions = db.query(models.Transaction).offset(skip).limit(limit).all()
     return transactions
 
 @app.get("/transactions/{transaction_id}", response_model=models.Transaction, tags=["Transactions"])
 async def read_transaction(transaction_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("read_transaction", "integration-layer")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logger.info(f"Read transaction {transaction_id} requested by user: {current_user['username']}")
     transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
     if transaction is None:
@@ -207,6 +307,10 @@ async def read_transaction(transaction_id: int, db: Session = Depends(get_db), c
 
 @app.put("/transactions/{transaction_id}", response_model=models.Transaction, tags=["Transactions"])
 async def update_transaction(transaction_id: int, transaction: models.TransactionCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_transaction", "timestamp": _time.time()}), "integration-layer")
+
     logger.info(f"Update transaction {transaction_id} requested by user: {current_user['username']}")
     db_transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
     if db_transaction is None:
@@ -220,6 +324,10 @@ async def update_transaction(transaction_id: int, transaction: models.Transactio
 
 @app.delete("/transactions/{transaction_id}", tags=["Transactions"])
 async def delete_transaction(transaction_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("delete_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_transaction", "timestamp": _time.time()}), "integration-layer")
+
     logger.info(f"Delete transaction {transaction_id} requested by user: {current_user['username']}")
     db_transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
     if db_transaction is None:

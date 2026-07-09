@@ -100,7 +100,13 @@ function generateId(length: number): string {
   const chars = "0123456789abcdef";
   let result = "";
   for (let i = 0; i < length; i++) {
-    result += chars[Math.floor(Math.random() * chars.length)];
+    result +=
+      chars[
+        Math.floor(
+          (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) *
+            chars.length
+        )
+      ];
   }
   return result;
 }
@@ -189,7 +195,7 @@ export async function sendAlert(
   metadata?: Record<string, unknown>
 ): Promise<void> {
   const alert: Alert = {
-    id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `alert-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     severity,
     title,
     description,

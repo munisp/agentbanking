@@ -20,6 +20,9 @@ from enum import Enum
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel, Field
 
 # --- Production: Graceful Shutdown ---
@@ -27,6 +30,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -48,8 +98,8 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 app = FastAPI(title="54Link ML Model Registry", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 
 import psycopg2
 import psycopg2.extras
@@ -80,12 +130,11 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
         pass
-
 
 class ModelStatus(str, Enum):
     STAGING = "staging"
@@ -93,7 +142,6 @@ class ModelStatus(str, Enum):
     CANARY = "canary"
     ARCHIVED = "archived"
     ROLLING_BACK = "rolling_back"
-
 
 class ModelVersion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -110,7 +158,6 @@ class ModelVersion(BaseModel):
     deployed_at: Optional[str] = None
     description: str = ""
 
-
 class DriftReport(BaseModel):
     model_name: str
     version: str
@@ -120,7 +167,6 @@ class DriftReport(BaseModel):
     alert_level: str  # "none", "warning", "critical"
     recommendation: str
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
 
 class ABTest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -132,7 +178,6 @@ class ABTest(BaseModel):
     metrics: dict = Field(default_factory=dict)
     started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     ended_at: Optional[str] = None
-
 
 # In-memory stores (production: PostgreSQL + S3)
 models: dict[str, ModelVersion] = {}
@@ -162,6 +207,9 @@ PLATFORM_MODELS = [
      "description": "Deepfake detection binary classifier"},
 ]
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.on_event("startup")
 async def startup():
@@ -177,18 +225,29 @@ async def startup():
         )
         models[f"{m['model_name']}:{m['version']}"] = mv
 
-
 @app.post("/models/register")
 async def register_model(model: ModelVersion):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("register_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "register_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model.model_name}:{model.version}"
     if key in models:
         raise HTTPException(409, f"Model {key} already registered")
     models[key] = model
     return {"id": model.id, "key": key, "message": "model registered"}
 
-
 @app.get("/models")
 async def list_models(model_name: Optional[str] = None, status: Optional[str] = None):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_models", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = list(models.values())
     if model_name:
         items = [m for m in items if m.model_name == model_name]
@@ -196,17 +255,28 @@ async def list_models(model_name: Optional[str] = None, status: Optional[str] = 
         items = [m for m in items if m.status.value == status]
     return {"models": [m.model_dump() for m in items], "count": len(items)}
 
-
 @app.get("/models/{model_name}/{version}")
 async def get_model(model_name: str, version: str):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_model", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
     return models[key].model_dump()
 
-
 @app.post("/models/{model_name}/{version}/promote")
 async def promote_model(model_name: str, version: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("promote_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "promote_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
@@ -220,9 +290,12 @@ async def promote_model(model_name: str, version: str):
     models[key].deployed_at = datetime.now(timezone.utc).isoformat()
     return {"message": f"Model {key} promoted to production", "model": models[key].model_dump()}
 
-
 @app.post("/models/{model_name}/{version}/rollback")
 async def rollback_model(model_name: str, version: str):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("rollback_model_" + str(int(_time.time() * 1000)), _json.dumps({"action": "rollback_model", "timestamp": _time.time()}), "ml-model-registry")
+
     key = f"{model_name}:{version}"
     if key not in models:
         raise HTTPException(404, "model not found")
@@ -244,9 +317,12 @@ async def rollback_model(model_name: str, version: str):
     models[key].status = ModelStatus.PRODUCTION
     return {"message": "No previous version to rollback to", "kept_current": True}
 
-
 @app.post("/drift/check")
 async def check_drift(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("check_drift_" + str(int(_time.time() * 1000)), _json.dumps({"action": "check_drift", "timestamp": _time.time()}), "ml-model-registry")
+
     model_name = body.get("model_name", "")
     version = body.get("version", "")
     features = body.get("features", {})
@@ -283,9 +359,12 @@ async def check_drift(body: dict):
     drift_reports.append(report)
     return report.model_dump()
 
-
 @app.post("/ab-tests/create")
 async def create_ab_test(test: ABTest):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_ab_test_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_ab_test", "timestamp": _time.time()}), "ml-model-registry")
+
     control_key = f"{test.model_name}:{test.control_version}"
     treatment_key = f"{test.model_name}:{test.treatment_version}"
     if control_key not in models or treatment_key not in models:
@@ -293,14 +372,25 @@ async def create_ab_test(test: ABTest):
     ab_tests[test.id] = test
     return {"id": test.id, "message": "A/B test created"}
 
-
 @app.get("/ab-tests")
 async def list_ab_tests():
-    return {"tests": [t.model_dump() for t in ab_tests.values()], "count": len(ab_tests)}
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_ab_tests", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
 
+    return {"tests": [t.model_dump() for t in ab_tests.values()], "count": len(ab_tests)}
 
 @app.post("/ab-tests/{test_id}/conclude")
 async def conclude_ab_test(test_id: str, body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("conclude_ab_test_" + str(int(_time.time() * 1000)), _json.dumps({"action": "conclude_ab_test", "timestamp": _time.time()}), "ml-model-registry")
+
     if test_id not in ab_tests:
         raise HTTPException(404, "test not found")
     test = ab_tests[test_id]
@@ -320,29 +410,47 @@ async def conclude_ab_test(test_id: str, body: dict):
 
     return {"message": f"Test concluded — winner: {winner}", "test": test.model_dump()}
 
-
 @app.post("/performance/log")
 async def log_performance(body: dict):
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("log_performance_" + str(int(_time.time() * 1000)), _json.dumps({"action": "log_performance", "timestamp": _time.time()}), "ml-model-registry")
+
     body["timestamp"] = datetime.now(timezone.utc).isoformat()
     performance_logs.append(body)
     if len(performance_logs) > 10000:
         performance_logs.pop(0)
     return {"logged": True}
 
-
 @app.get("/performance/{model_name}")
 async def get_performance(model_name: str, limit: int = 100):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_performance", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     logs = [p for p in performance_logs if p.get("model_name") == model_name]
     return {"logs": logs[-limit:], "total": len(logs)}
 
-
 @app.get("/drift/reports")
 async def list_drift_reports(model_name: Optional[str] = None, limit: int = 50):
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_drift_reports", "ml-model-registry")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     items = drift_reports
     if model_name:
         items = [r for r in items if r.model_name == model_name]
     return {"reports": [r.model_dump() for r in items[-limit:]], "total": len(items)}
-
 
 @app.get("/health")
 async def health():

@@ -238,7 +238,7 @@ export function createAttachmentRecord(
   uploadedBy: string
 ): ChatAttachment {
   return {
-    id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `att-${Date.now()}-${(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295).toString(36).slice(2, 8)}`,
     sessionId,
     messageId,
     fileName: sanitizeFileName(fileName),

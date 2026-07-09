@@ -27,7 +27,7 @@ export default function AgentGamificationPage() {
   );
   const [search, setSearch] = useState("");
 
-  const leaderboardQuery = trpc.agentGamification.getLeaderboard.useQuery({
+  const leaderboardQuery = trpc.agentGamification.leaderboard.useQuery({
     limit: 50,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -38,7 +38,7 @@ export default function AgentGamificationPage() {
   const badgesQuery = trpc.agentGamification.listBadges.useQuery({
     limit: 100,
   });
-  const statsQuery = trpc.agentGamification.getStats.useQuery();
+  const statsQuery = trpc.agentGamification.availableAchievements.useQuery();
   const stats = statsQuery.data;
 
   return (
@@ -129,13 +129,13 @@ export default function AgentGamificationPage() {
           },
           {
             label: "Badges Awarded",
-            value: stats?.totalBadges ?? 0,
+            value: (stats as Record<string, unknown>)?.totalBadges ?? 0,
             icon: Medal,
             color: "text-purple-400",
           },
           {
             label: "Top Score",
-            value: (stats?.topScore ?? 0).toLocaleString(),
+            value: String((stats as Record<string, unknown>)?.topScore ?? 0),
             icon: Trophy,
             color: "text-emerald-400",
           },

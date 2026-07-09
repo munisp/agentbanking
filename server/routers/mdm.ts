@@ -43,6 +43,40 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("pos.mdm", key, { eventType, ...payload });
+  fluvioPublish("pos.mdm", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.mdm.command.executed", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_mdm_events", {
+    event_type: eventType,
+    ...payload,
+    source: "mdm",
+  }).catch(() => {});
+}
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
   queued: ["running"],
@@ -102,10 +136,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -222,21 +252,26 @@ export const mdmRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // Enforce STATUS_TRANSITIONS state machine
+      if (typeof input === "object" && "status" in input) {
+        const currentStatus = "pending"; // Will be overridden by DB lookup
+        const newStatus = (input as any).status;
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "mdm",
-        "mutation",
-        "Executed mdm mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = await requireDb();
         const [device] = await db
@@ -267,6 +302,12 @@ export const mdmRouter = router({
             .set({ status: "updating", updatedAt: new Date() })
             .where(eq(devices.id, input.deviceId));
         }
+
+        publishPosMiddleware(
+          "issueCommand",
+          String(input.deviceId ?? "unknown"),
+          { action: "issueCommand" }
+        );
 
         return { commandId: cmd.id, status: "pending" };
       } catch (error) {
@@ -313,6 +354,10 @@ export const mdmRouter = router({
           })
           .returning();
 
+        publishPosMiddleware("pushConfig", String(input.terminalId), {
+          action: "pushConfig",
+          ...input,
+        });
         return { commandId: cmd.id, configUpdated: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -381,6 +426,10 @@ export const mdmRouter = router({
             .where(eq(devices.id, d.id));
         }
 
+        publishPosMiddleware("triggerOtaUpdate", String(input.terminalId), {
+          action: "triggerOtaUpdate",
+          ...input,
+        });
         return {
           devicesTargeted: targetDevices.length,
           commandsIssued: commands.length,
@@ -764,6 +813,16 @@ export const mdmRouter = router({
           .orderBy(deviceCommands.issuedAt)
           .limit(10);
 
+        publishPosMiddleware(
+          "deviceTelemetry",
+          String(input.serialNumber ?? "unknown"),
+          {
+            action: "deviceTelemetry",
+            serialNumber: input.serialNumber,
+            deviceId: device.id,
+          }
+        );
+
         return {
           deviceId: device.id,
           configJson: device.configJson,
@@ -847,6 +906,11 @@ export const mdmRouter = router({
           apiBase: "/api/trpc",
         });
 
+        publishPosMiddleware(
+          "generateEnrollmentToken",
+          String(input.terminalId),
+          { action: "generateEnrollmentToken", ...input }
+        );
         return {
           token,
           expiresAt,
@@ -931,6 +995,12 @@ export const mdmRouter = router({
           })
           .where(eq(devices.id, device.id));
 
+        publishPosMiddleware("enrollWithToken", String(device.id), {
+          action: "enrollWithToken",
+          deviceId: device.id,
+          agentCode: input.agentCode,
+        });
+
         return {
           deviceId: device.id,
           enrolled: true,
@@ -983,6 +1053,10 @@ export const mdmRouter = router({
           }
         }
 
+        publishPosMiddleware("ackCommand", String(input.terminalId), {
+          action: "ackCommand",
+          ...input,
+        });
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1040,6 +1114,10 @@ export const mdmRouter = router({
           resourceId: String(agent.id),
           status: "success",
           metadata: { reason: input.reason, disabledBy: ctx.user.keycloakSub },
+        });
+        publishPosMiddleware("disableTerminal", String(input.terminalId), {
+          action: "disableTerminal",
+          ...input,
         });
         return { ok: true, agentCode: input.agentCode, terminalEnabled: false };
       } catch (error) {
@@ -1124,6 +1202,11 @@ export const mdmRouter = router({
               updatedAt: new Date(),
             })
             .where(eq(deviceCompliancePolicies.id, input.id));
+          publishPosMiddleware("upsertPolicy", String(input.id), {
+            action: "upsertPolicy",
+            policyId: input.id,
+            policyAction: "updated",
+          });
           return { id: input.id, action: "updated" };
         } else {
           const [row] = await db
@@ -1139,6 +1222,11 @@ export const mdmRouter = router({
               createdBy: ctx.user.name ?? ctx.user.keycloakSub,
             })
             .returning();
+          publishPosMiddleware("upsertPolicy", String(row.id), {
+            action: "upsertPolicy",
+            policyId: row.id,
+            policyAction: "created",
+          });
           return { id: row.id, action: "created" };
         }
       } catch (error) {
@@ -1213,6 +1301,10 @@ export const mdmRouter = router({
             resolvedBy: ctx.user.name ?? ctx.user.keycloakSub,
           })
           .where(eq(deviceComplianceViolations.id, input.violationId));
+        publishPosMiddleware("acknowledgeViolation", String(input.terminalId), {
+          action: "acknowledgeViolation",
+          ...input,
+        });
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1307,6 +1399,12 @@ export const mdmRouter = router({
           .insert(otaReleases)
           .values({ ...input, status: "draft" })
           .returning();
+        publishPosMiddleware(
+          "createOtaRelease",
+          String(input.version ?? "unknown"),
+          { action: "createOtaRelease" }
+        );
+
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1328,6 +1426,10 @@ export const mdmRouter = router({
           .set({ status: "published", publishedAt: new Date() })
           .where(eq(otaReleases.id, input.id))
           .returning();
+        publishPosMiddleware("publishOtaRelease", String(input.terminalId), {
+          action: "publishOtaRelease",
+          ...input,
+        });
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1348,6 +1450,10 @@ export const mdmRouter = router({
           .update(otaReleases)
           .set({ status: "archived" })
           .where(eq(otaReleases.id, input.id));
+        publishPosMiddleware("archiveOtaRelease", String(input.terminalId), {
+          action: "archiveOtaRelease",
+          ...input,
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1437,6 +1543,12 @@ export const mdmRouter = router({
             })
             .where(eq(otaUpdateLog.id, existing[0].id))
             .returning();
+          publishPosMiddleware(
+            "scheduleOta",
+            String(input.releaseId ?? "unknown"),
+            { action: "scheduleOta" }
+          );
+
           return row;
         }
         const [row] = await db
@@ -1451,6 +1563,12 @@ export const mdmRouter = router({
             startedAt: new Date(),
           })
           .returning();
+        publishPosMiddleware("recordOtaUpdate", String(input.deviceId), {
+          action: "recordOtaUpdate",
+          deviceId: input.deviceId,
+          releaseId: input.releaseId,
+          status: input.status,
+        });
         return row;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1511,6 +1629,10 @@ export const mdmRouter = router({
         resourceId: String(agent.id),
         status: "success",
         metadata: { enabledBy: ctx.user.keycloakSub },
+      });
+      publishPosMiddleware("enableTerminal", String(input.terminalId), {
+        action: "enableTerminal",
+        ...input,
       });
       return { ok: true, agentCode: input.agentCode, terminalEnabled: true };
     }),

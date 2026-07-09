@@ -201,6 +201,7 @@ import { advancedLoadingStatesRouter } from "./routers/advancedLoadingStates";
 import { financialNlEngineRouter } from "./routers/financialNlEngine";
 import { partnerRevenueSharingRouter } from "./routers/partnerRevenueSharing";
 import { agentGamificationRouter } from "./routers/agentGamification";
+import { microInsuranceRouter } from "./routers/microInsurance";
 import { bulkTransactionProcessingRouter } from "./routers/bulkTransactionProcessing";
 import { customer360ViewRouter } from "./routers/customer360View";
 import { platformFeatureFlagsRouter } from "./routers/platformFeatureFlags";
@@ -287,6 +288,7 @@ import { platformSlaMonitorRouter } from "./routers/platformSlaMonitor";
 import { bulkDisbursementEngineRouter } from "./routers/bulkDisbursementEngine";
 import { transactionReversalManagerRouter } from "./routers/transactionReversalManager";
 import { agentLoanOriginationRouter } from "./routers/agentLoanOrigination";
+import { agentLoanOrigination2Router } from "./routers/agentLoanOrigination2";
 import { multiChannelNotificationHubRouter } from "./routers/multiChannelNotificationHub";
 import { platformMigrationToolkitRouter } from "./routers/platformMigrationToolkit";
 import { agentPerformanceIncentivesRouter } from "./routers/agentPerformanceIncentives";
@@ -305,7 +307,8 @@ import { txVelocityMonitorRouter } from "./routers/txVelocityMonitor";
 import { customerSurveysRouter } from "./routers/customerSurveys";
 import { agentTerritoryHeatmapRouter } from "./routers/agentTerritoryHeatmap";
 import { gatewayHealthMonitorRouter } from "./routers/gatewayHealthMonitor";
-import { agentLoanOrigination2Router } from "./routers/agentLoanOrigination2";
+import { cashInRouter } from "./routers/cashIn";
+import { cashOutRouter } from "./routers/cashOut";
 import { mfaManagerRouter } from "./routers/mfaManager";
 import { incidentPlaybookRouter } from "./routers/incidentPlaybook";
 import { deviceFleetManagerRouter } from "./routers/deviceFleetManager";
@@ -467,6 +470,8 @@ import { splitPaymentsRouter } from "./routers/splitPayments";
 import { recurringPaymentsRouter } from "./routers/recurringPayments";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
+import { posBatchSettlementRouter } from "./routers/posBatchSettlement";
+import { posMiddlewareIntegration } from "./routers/posMiddlewareIntegration";
 import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
@@ -516,6 +521,10 @@ import { pensionMicroRouter } from "./routers/pensionMicro";
 import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
 import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
 import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
+import { aiAgentSupportRouter } from "./routers/aiAgentSupport";
+import { predictiveFloatRouter } from "./routers/predictiveFloat";
+import { insiderThreatManagementRouter } from "./routers/insiderThreatManagement";
+import { temporalSagaRouter as temporalSagaOrchestratorRouter } from "./routers/temporalSagaOrchestrator";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -839,6 +848,7 @@ export const appRouter = router({
   financialNlEngine: financialNlEngineRouter,
   partnerRevenueSharing: partnerRevenueSharingRouter,
   agentGamification: agentGamificationRouter,
+  microInsurance: microInsuranceRouter,
   bulkTransactionProcessing: bulkTransactionProcessingRouter,
   customer360View: customer360ViewRouter,
   platformFeatureFlags: platformFeatureFlagsRouter,
@@ -946,6 +956,7 @@ export const appRouter = router({
   bulkDisbursementEngine: bulkDisbursementEngineRouter,
   transactionReversalManager: transactionReversalManagerRouter,
   agentLoanOrigination: agentLoanOriginationRouter,
+  agentLoanOrigination2: agentLoanOrigination2Router,
   multiChannelNotificationHub: multiChannelNotificationHubRouter,
   platformMigrationToolkit: platformMigrationToolkitRouter,
   agentPerformanceIncentives: agentPerformanceIncentivesRouter,
@@ -960,7 +971,8 @@ export const appRouter = router({
   customerSurveys: customerSurveysRouter,
   agentTerritoryHeatmap: agentTerritoryHeatmapRouter,
   gatewayHealthMonitor: gatewayHealthMonitorRouter,
-  agentLoanOrigination2: agentLoanOrigination2Router,
+  cashIn: cashInRouter,
+  cashOut: cashOutRouter,
   mfaManager: mfaManagerRouter,
   incidentPlaybook: incidentPlaybookRouter,
   deviceFleetManager: deviceFleetManagerRouter,
@@ -1085,6 +1097,7 @@ export const appRouter = router({
   recurringPayments: recurringPaymentsRouter,
   terminalLeasing: terminalLeasingRouter,
   posDispute: posDisputeRouter,
+  posBatchSettlement: posBatchSettlementRouter,
   crossBorderRemittance: crossBorderRemittanceRouter,
   agentTrainingGamification: agentTrainingGamificationRouter,
   // Sprint 97: Frontend-Backend Gap Closure
@@ -1137,6 +1150,11 @@ export const appRouter = router({
   carbonCreditMarketplace: carbonCreditMarketplaceRouter,
   tokenizedAssets: tokenizedAssetsRouter,
   coalitionLoyalty: coalitionLoyaltyRouter,
+  aiAgentSupport: aiAgentSupportRouter,
+  predictiveFloat: predictiveFloatRouter,
+  insiderThreatManagement: insiderThreatManagementRouter,
+  temporalSagaOrchestrator: temporalSagaOrchestratorRouter,
+  posMiddlewareIntegration: posMiddlewareIntegration,
 });
 
 export type AppRouter = typeof appRouter;

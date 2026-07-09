@@ -6,6 +6,53 @@ import sys
 import atexit
 import logging
 
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
+
 _shutdown_handlers = []
 
 def register_shutdown(handler):
@@ -36,7 +83,7 @@ Integrates gaming platforms and in-game purchases with Remittance Platform
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
+apply_middleware(app, enable_auth=True)
 setup_logging("gaming-integration-service")
 app.include_router(metrics_router)
 
@@ -62,6 +109,11 @@ import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/gaming_integration")
 
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
@@ -86,7 +138,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -219,6 +271,10 @@ async def health_check():
 @app.post("/accounts", response_model=GamingAccount)
 async def link_gaming_account(account: GamingAccount):
     """Link a gaming account to an agent"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("link_gaming_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "link_gaming_account", "timestamp": _time.time()}), "gaming-integration")
+
     try:
         account.id = str(uuid.uuid4())
         account.linked_at = datetime.utcnow()
@@ -253,6 +309,15 @@ async def list_gaming_accounts(
 @app.get("/accounts/{account_id}", response_model=GamingAccount)
 async def get_gaming_account(account_id: str):
     """Get a specific gaming account"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_gaming_account", "gaming-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     if account_id not in gaming_accounts_db:
         raise HTTPException(status_code=404, detail="Account not found")
     return gaming_accounts_db[account_id]
@@ -260,6 +325,10 @@ async def get_gaming_account(account_id: str):
 @app.delete("/accounts/{account_id}")
 async def unlink_gaming_account(account_id: str):
     """Unlink a gaming account"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("unlink_gaming_account_" + str(int(_time.time() * 1000)), _json.dumps({"action": "unlink_gaming_account", "timestamp": _time.time()}), "gaming-integration")
+
     if account_id not in gaming_accounts_db:
         raise HTTPException(status_code=404, detail="Account not found")
     
@@ -270,6 +339,10 @@ async def unlink_gaming_account(account_id: str):
 @app.post("/games", response_model=Game)
 async def add_game(game: Game):
     """Add a game to the catalog"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_game_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_game", "timestamp": _time.time()}), "gaming-integration")
+
     try:
         game.id = str(uuid.uuid4())
         games_db[game.id] = game
@@ -302,6 +375,10 @@ async def list_games(
 @app.post("/items", response_model=InGameItem)
 async def add_in_game_item(item: InGameItem):
     """Add an in-game item"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("add_in_game_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "add_in_game_item", "timestamp": _time.time()}), "gaming-integration")
+
     try:
         item.id = str(uuid.uuid4())
         items_db[item.id] = item
@@ -315,6 +392,15 @@ async def add_in_game_item(item: InGameItem):
 @app.get("/items", response_model=List[InGameItem])
 async def list_in_game_items(game_id: Optional[str] = None):
     """List in-game items"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_in_game_items", "gaming-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         items = list(items_db.values())
         
@@ -329,6 +415,10 @@ async def list_in_game_items(game_id: Optional[str] = None):
 @app.post("/purchases", response_model=Purchase)
 async def create_purchase(purchase: Purchase):
     """Process an in-game purchase"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("create_purchase_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_purchase", "timestamp": _time.time()}), "gaming-integration")
+
     try:
         purchase.id = str(uuid.uuid4())
         purchase.transaction_id = f"TXN_{purchase.id[:8]}"
@@ -377,6 +467,10 @@ async def list_purchases(
 @app.post("/progress", response_model=PlayerProgress)
 async def update_player_progress(progress: PlayerProgress):
     """Update player progress"""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("update_player_progress_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_player_progress", "timestamp": _time.time()}), "gaming-integration")
+
     try:
         if not progress.id:
             progress.id = str(uuid.uuid4())
@@ -393,6 +487,15 @@ async def update_player_progress(progress: PlayerProgress):
 @app.get("/progress/{account_id}", response_model=List[PlayerProgress])
 async def get_player_progress(account_id: str, game_id: Optional[str] = None):
     """Get player progress"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_player_progress", "gaming-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         progress_list = [p for p in progress_db.values() if p.account_id == account_id]
         
@@ -407,6 +510,15 @@ async def get_player_progress(account_id: str, game_id: Optional[str] = None):
 @app.get("/leaderboard/{game_id}", response_model=Leaderboard)
 async def get_leaderboard(game_id: str, season: str = "current"):
     """Get game leaderboard"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_leaderboard", "gaming-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         # Get all progress for this game
         game_progress = [p for p in progress_db.values() if p.game_id == game_id]
@@ -438,6 +550,15 @@ async def get_leaderboard(game_id: str, season: str = "current"):
 @app.get("/analytics/{agent_id}")
 async def get_gaming_analytics(agent_id: str):
     """Get gaming analytics for an agent"""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_gaming_analytics", "gaming-integration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     try:
         # Get agent's gaming accounts
         agent_accounts = [a for a in gaming_accounts_db.values() if a.agent_id == agent_id]

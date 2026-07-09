@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Settings
-    DATABASE_URL: str = "sqlite:///./upi_integration.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/upi_integration"
 
     # Security Settings
     SECRET_KEY: str = "a-very-secret-key-that-should-be-changed-in-production"

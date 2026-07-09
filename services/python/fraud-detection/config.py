@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables or .env file.
     """
-    DATABASE_URL: str = "sqlite:///./fraud_detection.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/fraud_detection"
     
     ML_MODEL_THRESHOLD: float = 0.75
     RULES_ENGINE_ENABLED: bool = True
@@ -38,9 +38,8 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # 2. Database Setup
-# Use connect_args={"check_same_thread": False} for SQLite
 engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+    settings.DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -216,7 +215,6 @@ class MLService:
             return "REVIEW", f"Rules Engine: {len(rules_triggered)} rules triggered: {', '.join(rules_triggered)}"
 
         return "ALLOW", "ML Score below threshold and no critical rules triggered"
-
 
 def get_ml_service() -> MLService:
     """

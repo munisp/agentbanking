@@ -17,6 +17,7 @@ import {
   floatTopUpRequests,
   agents,
   supervisorAgents,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -40,6 +41,12 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+import { enforcePermission } from "../_core/permify";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
@@ -94,72 +101,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _floatTopUp_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
 // ── Extended Validation Schemas ────────────────────────────────────────────
 const _floatTopUpSchemas = {
   idParam: z.object({ id: z.number().int().positive() }),
@@ -179,6 +120,45 @@ const _floatTopUpSchemas = {
   }),
 };
 
+async function publishfloatTopUpMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("float.topped_up", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  tbCreateTransfer({
+    debitAccountId: "1001",
+    creditAccountId: "2001",
+    amount: Number(payload.amount ?? 0),
+    ledger: 1,
+    code: 1,
+    ref: key,
+    txType: event,
+    agentCode: String(payload.agentId ?? "system"),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `float.topped_up.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `float.topped_up.${event}`, { key, ...payload })
+    .catch(() => {});
+  ingestToLakehouse("floatTopUp", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+  cacheSet(`floatTopUp:${key}`, JSON.stringify(payload), 300).catch(() => {});
+}
+
 export const floatTopUpRouter = router({
   // ── Submit a top-up request ───────────────────────────────────────────────
   submit: protectedProcedure
@@ -186,109 +166,139 @@ export const floatTopUpRouter = router({
       z.object({
         amount: z.number().min(0).positive().max(10_000_000),
         notes: z.string().max(256).optional(),
+        idempotencyKey: z.string().min(16).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "floatTopUp",
-        "mutation",
-        "Executed floatTopUp mutation"
-      );
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "float_account",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "topup",
+      }).catch(() => {});
 
-      try {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session)
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Agent session required",
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
+        });
+
+      const executeFn = async () => {
+        const txAmount = input.amount;
+        const fees = calculateFee(txAmount, "floatTopUp");
+        const commission = calculateCommission(fees.fee, "floatTopUp");
+        const tax = calculateTax(fees.fee, "vat");
+        try {
+          const db = (await getDb())!;
+          if (!db)
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "DB unavailable",
+            });
+
+          // Check for existing pending request
+          const existing = await db
+            .select()
+            .from(floatTopUpRequests)
+            .where(eq(floatTopUpRequests.agentId, session.id))
+            .orderBy(desc(floatTopUpRequests.createdAt))
+            .limit(1);
+          if (existing[0] && existing[0].status === "pending") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "You already have a pending top-up request. Please wait for approval.",
+            });
+          }
+
+          // Phase 48: determine if supervisor approval is required
+          const requiresSupervisor =
+            input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
+
+          const result = await db
+            .insert(floatTopUpRequests)
+            .values({
+              agentId: session.id,
+              requestedAmount: String(input.amount),
+              status: "pending",
+              notes: input.notes ?? null,
+              supervisorApprovalRequired: requiresSupervisor,
+            })
+            .returning();
+
+          // Double-entry GL journal entry
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${Date.now()}`,
+            description: `floatTopUp transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            status: "posted",
           });
 
-        const db = (await getDb())!;
-        if (!db)
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "FLOAT_TOPUP_REQUESTED",
+            resource: "float_topup",
+            resourceId: String(result[0].id),
+            status: "success",
+            metadata: { amount: input.amount, requiresSupervisor },
+          });
+
+          // Notify supervisor(s) assigned to this agent if threshold exceeded
+          if (requiresSupervisor) {
+            try {
+              const { notifyOwner } = await import("../_core/notification");
+              await notifyOwner({
+                title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
+                content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+              });
+            } catch {
+              // Non-critical
+            }
+          }
+
+          floatTopupRequestsTotal.labels("submitted").inc();
+
+          await publishfloatTopUpMiddleware("submit", `${Date.now()}`, {
+            action: "submit",
+          }).catch(() => {});
+
+          return {
+            success: true,
+            requestId: result[0].id,
+            requiresSupervisorApproval: requiresSupervisor,
+            message: requiresSupervisor
+              ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
+              : "Top-up request submitted. Awaiting admin approval.",
+          };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "DB unavailable",
-          });
-
-        // Check for existing pending request
-        const existing = await db
-          .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, session.id))
-          .orderBy(desc(floatTopUpRequests.createdAt))
-          .limit(1);
-        if (existing[0] && existing[0].status === "pending") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
             message:
-              "You already have a pending top-up request. Please wait for approval.",
+              error instanceof Error ? error.message : "Internal server error",
           });
         }
+      }; // end executeFn
 
-        // Phase 48: determine if supervisor approval is required
-        const requiresSupervisor = input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
-
-        const result = await db
-          .insert(floatTopUpRequests)
-          .values({
-            agentId: session.id,
-            requestedAmount: String(input.amount),
-            status: "pending",
-            notes: input.notes ?? null,
-            supervisorApprovalRequired: requiresSupervisor,
-          })
-          .returning();
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "FLOAT_TOPUP_REQUESTED",
-          resource: "float_topup",
-          resourceId: String(result[0].id),
-          status: "success",
-          metadata: { amount: input.amount, requiresSupervisor },
-        });
-
-        // Notify supervisor(s) assigned to this agent if threshold exceeded
-        if (requiresSupervisor) {
-          try {
-            const { notifyOwner } = await import("../_core/notification");
-            await notifyOwner({
-              title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
-              content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
-            });
-          } catch {
-            // Non-critical
-          }
-        }
-
-        floatTopupRequestsTotal.labels("submitted").inc();
-
-        return {
-          success: true,
-          requestId: result[0].id,
-          requiresSupervisorApproval: requiresSupervisor,
-          message: requiresSupervisor
-            ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
-            : "Top-up request submitted. Awaiting admin approval.",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
+      if (input.idempotencyKey) {
+        return withIdempotency(input.idempotencyKey, executeFn);
       }
+      return executeFn();
     }),
 
   // ── List agent's own requests ─────────────────────────────────────────────
@@ -412,6 +422,18 @@ export const floatTopUpRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -496,6 +518,12 @@ export const floatTopUpRouter = router({
             notes: input.notes,
           },
         });
+
+        await publishfloatTopUpMiddleware(
+          "supervisorApproveTopUp",
+          `${Date.now()}`,
+          { action: "supervisorApproveTopUp" }
+        ).catch(() => {});
 
         return {
           success: true,

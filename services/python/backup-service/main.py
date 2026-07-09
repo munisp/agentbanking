@@ -3,6 +3,9 @@ Backup Service
 Port: 8113
 """
 from fastapi import FastAPI, HTTPException, Depends, Header
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -40,7 +43,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://remittance:remittance@localhost:5432/remittance")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -61,6 +63,7 @@ async def verify_token(authorization: str = Header(...)):
     return token
 
 app = FastAPI(title="Backup Service", description="Backup Service for Remittance Platform", version="1.0.0")
+apply_middleware(app, enable_auth=True)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -103,7 +106,6 @@ async def health_check():
         return {"status": "healthy", "service": "backup-service", "database": "connected"}
     except Exception as e:
         return {"status": "degraded", "service": "backup-service", "error": str(e)}
-
 
 class BackupCreate(BaseModel):
     backup_type: str
@@ -178,7 +180,6 @@ async def delete_backup(backup_id: str, token: str = Depends(verify_token)):
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Backup not found")
         return {"deleted": True}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8113)

@@ -21,7 +21,7 @@ jobs:
     name: Secret Scanning (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Full history needed for Gitleaks commit scanning
 
@@ -44,7 +44,7 @@ jobs:
     name: TypeScript type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -65,7 +65,7 @@ jobs:
     name: Lint (ESLint + Prettier)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -109,7 +109,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/
@@ -146,7 +146,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -177,7 +177,7 @@ jobs:
 
       - name: Upload Snyk JSON report as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snyk-vulnerability-report
           path: snyk-report.json
@@ -207,7 +207,7 @@ jobs:
       POSTGRES_URL: postgresql://localhost/placeholder
       DATABASE_URL: postgresql://localhost/placeholder
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -222,7 +222,7 @@ jobs:
         run: pnpm build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -236,13 +236,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (no push)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -285,7 +285,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -342,7 +342,7 @@ jobs:
 
       - name: Upload k6 smoke summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-smoke-summary
           path: k6-smoke-summary.json
@@ -390,7 +390,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -436,7 +436,7 @@ jobs:
 
       - name: Upload Playwright report (shard ${{ matrix.shardIndex }})
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-shard-${{ matrix.shardIndex }}
           path: playwright-report/
@@ -444,7 +444,7 @@ jobs:
 
       - name: Upload Playwright test results (shard ${{ matrix.shardIndex }})
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-shard-${{ matrix.shardIndex }}
           path: test-results/
@@ -463,7 +463,7 @@ jobs:
     needs: playwright
     if: always()
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -488,7 +488,7 @@ jobs:
             ./all-playwright-reports
 
       - name: Upload merged Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-merged
           path: playwright-report/
@@ -502,10 +502,10 @@ jobs:
     name: Go microservice tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.22"
           cache: true
@@ -545,7 +545,7 @@ jobs:
 
       - name: Upload Go test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-test-logs
           path: /tmp/go-*-test.log
@@ -559,7 +559,7 @@ jobs:
     name: Python microservice tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -608,7 +608,7 @@ jobs:
 
       - name: Upload Python test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-test-logs
           path: /tmp/py-*-test.log
@@ -661,7 +661,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -744,7 +744,7 @@ jobs:
 
       - name: Upload k6 OTA load test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-ota-results
           path: k6/results/
@@ -764,7 +764,7 @@ jobs:
     name: Prometheus alert rule validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install promtool
         run: |
@@ -800,7 +800,7 @@ jobs:
       issues: write
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -831,7 +831,7 @@ jobs:
           done
 
       - name: Run OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:3000'
           rules_file_name: '.zap/rules.tsv'
@@ -846,7 +846,7 @@ jobs:
         continue-on-error: false
 
       - name: Run OWASP ZAP API Scan
-        uses: zaproxy/action-api-scan@v0.7.0
+        uses: zaproxy/action-api-scan@v0.10.0
         with:
           target: 'http://localhost:3000/api/trpc'
           format: openapi
@@ -857,7 +857,7 @@ jobs:
 
       - name: Upload ZAP reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zap-security-reports
           path: |

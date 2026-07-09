@@ -1,0 +1,31 @@
+{
+  "model_name": "fraud_dnn",
+  "model_type": "fraud_detection",
+  "version": 1,
+  "stage": "production",
+  "registered_at": "2026-05-25T11:36:31.466654",
+  "description": "Fraud detection model (dnn)",
+  "artifact_path": "/home/ubuntu/repos/NGApp/services/python/ml-pipeline/models/registry/artifacts/fraud_dnn/v1/fraud_dnn_best.pt",
+  "artifact_hash": "379f46c512ccef95",
+  "artifact_size_bytes": 584765,
+  "metrics": {
+    "auc": 0.5377030056151402,
+    "avg_precision": 0.039871623896907196,
+    "f1": 0.06271280386412226,
+    "precision": 0.033713604631363865,
+    "recall": 0.44847112117780297,
+    "n_test": 30000,
+    "n_positive": 883,
+    "best_epoch": 15,
+    "best_val_auc": 0.5236316505584744
+  },
+  "parameters": {},
+  "tags": {
+    "dataset": "nigerian_synthetic_v1",
+    "framework": "pytorch"
+  },
+  "promoted_at": "2026-05-25T11:36:31.467048",
+  "deployed_at": null,
+  "deployment_endpoint": null,
+  "promotion_reason": "Initial training on synthetic data"
+}

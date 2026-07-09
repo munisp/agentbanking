@@ -13,6 +13,7 @@ import {
   terminalGroups,
   serviceRecords,
   agents,
+  gl_journal_entries,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -30,6 +31,41 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { fluvioProduce as fluvioPublish } from "../fluvio";
+import { dapr } from "../middleware/middlewareConnectors";
+import { ingestToLakehouse as lakehouseIngest } from "../lakehouse";
+import { cacheGet, cacheSet, cacheInvalidate } from "../lib/cacheClient";
+
+function publishPosMiddleware(
+  eventType: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("pos.terminal.fleet", key, { eventType, ...payload });
+  fluvioPublish("pos.terminal.fleet", {
+    key: "pos",
+    value: JSON.stringify({
+      eventType,
+      ...payload,
+      timestamp: new Date().toISOString(),
+    }),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", "pos.terminal.fleet.updated", {
+      eventType,
+      ...payload,
+    })
+    .catch(() => {});
+  lakehouseIngest("pos_terminal_fleet_events", {
+    event_type: eventType,
+    ...payload,
+    source: "posTerminalFleet",
+  }).catch(() => {});
+}
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   application: ["under_review"],
@@ -68,10 +104,6 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -201,21 +233,28 @@ export const posTerminalFleetRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "posTerminalFleet",
-        "mutation",
-        "Executed posTerminalFleet mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "posTransaction");
+      const commission = calculateCommission(fees.fee, "posTransaction");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -247,6 +286,21 @@ export const posTerminalFleetRouter = router({
           })
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `posTerminalFleet transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         await writeAuditLog({
           agentId: session.id,
           agentCode: session.agentCode,
@@ -257,6 +311,10 @@ export const posTerminalFleetRouter = router({
           metadata: { serialNumber: input.serialNumber, model: input.model },
         });
 
+        publishPosMiddleware("provision", input.serialNumber, {
+          action: "provision",
+          ...input,
+        });
         return terminal;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -315,6 +373,10 @@ export const posTerminalFleetRouter = router({
           metadata: { assignedTo: input.agentId },
         });
 
+        publishPosMiddleware("assign", String(input.terminalId), {
+          action: "assign",
+          ...input,
+        });
         return updated;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -356,6 +418,10 @@ export const posTerminalFleetRouter = router({
           .set(updateData)
           .where(eq(posTerminals.id, input.terminalId));
 
+        publishPosMiddleware("heartbeat", String(input.terminalId), {
+          action: "heartbeat",
+          ...input,
+        });
         return { acknowledged: true, serverTime: new Date().toISOString() };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -410,6 +476,12 @@ export const posTerminalFleetRouter = router({
           metadata: { command: input.command, params: input.params },
         });
 
+        publishPosMiddleware("sendCommand", String(input.terminalId), {
+          action: "sendCommand",
+          terminalId: input.terminalId,
+          command: input.command,
+        });
+
         return {
           commandId: crypto.randomUUID(),
           terminalId: input.terminalId,
@@ -455,6 +527,10 @@ export const posTerminalFleetRouter = router({
           metadata: { reason: input.reason },
         });
 
+        publishPosMiddleware("decommission", String(input.terminalId), {
+          action: "decommission",
+          ...input,
+        });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -546,6 +622,10 @@ export const posTerminalFleetRouter = router({
           metadata: { name: input.name },
         });
 
+        publishPosMiddleware("createGroup", input.name, {
+          action: "createGroup",
+          ...input,
+        });
         return group;
       } catch (error) {
         if (error instanceof TRPCError) throw error;

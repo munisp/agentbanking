@@ -47,6 +47,7 @@ var (
 	wfSeq       int
 )
 
+var workflowTemplatesMu sync.RWMutex
 var workflowTemplates = map[string][]string{
 	"agent_onboarding":   {"Submit Application", "Document Upload", "KYC Check", "Background Verification", "Training Assignment", "Account Activation", "Float Allocation"},
 	"kyc_verification":   {"Document Submission", "OCR Extraction", "Identity Verification", "Address Verification", "PEP/Sanctions Check", "Approval/Rejection"},
@@ -200,18 +201,39 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+
+// Auth Middleware - validates Bearer token on all non-health endpoints
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
-	// SQLite persistence (WAL mode for concurrent reads/writes)
+	// PostgreSQL persistence (WAL mode for concurrent reads/writes)
 	dbPath := os.Getenv("WORKFLOW_ORCHESTRATOR_DB_PATH")
 	if dbPath == "" {
 		dbPath = "/tmp/workflow-orchestrator.db"
 	}
 	db, dbErr := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if dbErr != nil {
-		log.Printf("[workflow-orchestrator] SQLite unavailable (%v) — running in-memory only", dbErr)
+		log.Printf("[workflow-orchestrator] PostgreSQL unavailable (%v) — running in-memory only", dbErr)
 	} else {
 		defer db.Close()
-		log.Printf("[workflow-orchestrator] SQLite persistence at %s", dbPath)
+		log.Printf("[workflow-orchestrator] PostgreSQL persistence at %s", dbPath)
 	}
 	_ = db
 
@@ -224,7 +246,7 @@ func main() {
 	http.HandleFunc("/api/v1/workflow/list", handleList)
 	http.HandleFunc("/health", handleHealth)
 	log.Printf("[workflow-orchestrator] Starting on :%s with %d templates", port, len(workflowTemplates))
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)))
 }
 
 // --- Production: Graceful Shutdown ---

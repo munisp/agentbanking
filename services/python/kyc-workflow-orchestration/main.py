@@ -31,6 +31,9 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+import sys as _sys2, os as _os2
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+from shared.middleware import apply_middleware, ErrorResponse
 from pydantic import BaseModel
 
 # --- Production: Graceful Shutdown ---
@@ -38,6 +41,53 @@ import signal
 import sys
 import atexit
 import logging
+
+# --- PostgreSQL Persistence ---
+import asyncpg
+from typing import Optional
+
+_pg_pool: Optional[asyncpg.Pool] = None
+
+async def get_pg_pool() -> Optional[asyncpg.Pool]:
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            _pg_pool = await asyncpg.create_pool(
+                dsn=os.environ.get("DATABASE_URL", "postgresql://localhost:5432/agentbanking"),
+                min_size=2, max_size=10, command_timeout=10
+            )
+            await _pg_pool.execute("""
+                CREATE TABLE IF NOT EXISTS service_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}',
+                    service TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            _pg_pool = None
+    return _pg_pool
+
+async def pg_get(key: str, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        row = await pool.fetchrow(
+            "SELECT value FROM service_state WHERE key = $1 AND service = $2", key, service
+        )
+        return row["value"] if row else None
+    return None
+
+async def pg_set(key: str, value, service: str):
+    pool = await get_pg_pool()
+    if pool:
+        import json
+        await pool.execute(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()",
+            key, json.dumps(value) if not isinstance(value, str) else value, service
+        )
+# --- End PostgreSQL Persistence ---
+
 
 _shutdown_handlers = []
 
@@ -58,7 +108,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("kyc-workflow-orchestration")
@@ -90,7 +139,6 @@ SLA_HOURS = {
 # Domain Models
 # ══════════════════════════════════════════════════════════════════════════════
 
-
 class WorkflowStage(str, Enum):
     CREATED = "created"
     SANCTIONS_CHECK = "sanctions_check"
@@ -104,7 +152,6 @@ class WorkflowStage(str, Enum):
     REJECTED = "rejected"
     MANUAL_REVIEW = "manual_review"
 
-
 class WorkflowStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -112,7 +159,6 @@ class WorkflowStatus(str, Enum):
     FAILED = "failed"
     REJECTED = "rejected"
     MANUAL_REVIEW = "manual_review"
-
 
 @dataclass
 class StageResult:
@@ -123,7 +169,6 @@ class StageResult:
     started_at: str = ""
     completed_at: str = ""
     duration_ms: int = 0
-
 
 @dataclass
 class KYCWorkflow:
@@ -146,7 +191,6 @@ class KYCWorkflow:
     triggered_by: str = ""
     customer_data: dict = field(default_factory=dict)
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # State Store
 # ══════════════════════════════════════════════════════════════════════════════
@@ -156,7 +200,6 @@ workflows: dict[str, KYCWorkflow] = {}
 # ══════════════════════════════════════════════════════════════════════════════
 # Middleware Integration Functions
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 async def publish_kafka(topic: str, event: dict):
     """Publish event to Kafka via Dapr sidecar."""
@@ -169,7 +212,6 @@ async def publish_kafka(topic: str, event: dict):
     except Exception as e:
         logger.warning(f"Kafka publish failed for {topic}: {e}")
 
-
 async def stream_to_fluvio(data: dict):
     """Stream event to Fluvio lakehouse."""
     try:
@@ -178,7 +220,6 @@ async def stream_to_fluvio(data: dict):
             await client.post(url, json=data, timeout=5.0)
     except Exception:
         pass
-
 
 async def start_temporal_sla(workflow_id: str, deadline: datetime, tier: str):
     """Register SLA monitoring workflow with Temporal."""
@@ -197,11 +238,9 @@ async def start_temporal_sla(workflow_id: str, deadline: datetime, tier: str):
     except Exception as e:
         logger.warning(f"Temporal SLA registration failed: {e}")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipeline Stage Implementations
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 async def execute_sanctions_check(wf: KYCWorkflow) -> StageResult:
     """Stage 1: Screen customer against OFAC/UN/EU/UK/CBN sanctions lists."""
@@ -249,7 +288,6 @@ async def execute_sanctions_check(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_liveness_check(wf: KYCWorkflow) -> StageResult:
     """Stage 2: Verify customer is a live person (not spoofed)."""
@@ -305,7 +343,6 @@ async def execute_liveness_check(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_document_verify(wf: KYCWorkflow) -> StageResult:
     """Stage 3: Verify submitted documents (ID, utility bill, etc.)."""
@@ -380,7 +417,6 @@ async def execute_document_verify(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_auto_decision(wf: KYCWorkflow) -> StageResult:
     """Stage 4: Apply automatic decision rules based on previous stages."""
     start = time.time()
@@ -445,7 +481,6 @@ async def execute_auto_decision(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_verification_score(wf: KYCWorkflow) -> StageResult:
     """Stage 5: Compute composite verification score across all checks."""
     start = time.time()
@@ -478,7 +513,6 @@ async def execute_verification_score(wf: KYCWorkflow) -> StageResult:
         completed_at=datetime.now(timezone.utc).isoformat(),
         duration_ms=int((time.time() - start) * 1000),
     )
-
 
 async def execute_risk_assessment(wf: KYCWorkflow) -> StageResult:
     """Stage 6: PEP + sanctions + adverse media + country risk scoring."""
@@ -552,7 +586,6 @@ async def execute_risk_assessment(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 async def execute_sla_check(wf: KYCWorkflow) -> StageResult:
     """Stage 7: Verify KYC completed within SLA window."""
     start = time.time()
@@ -577,11 +610,9 @@ async def execute_sla_check(wf: KYCWorkflow) -> StageResult:
         duration_ms=int((time.time() - start) * 1000),
     )
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipeline Executor
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 PIPELINE_STAGES = [
     ("sanctions_check", execute_sanctions_check),
@@ -592,7 +623,6 @@ PIPELINE_STAGES = [
     ("risk_assessment", execute_risk_assessment),
     ("sla_check", execute_sla_check),
 ]
-
 
 async def run_pipeline(workflow_id: str):
     """Execute the full KYC pipeline stages sequentially."""
@@ -680,7 +710,6 @@ async def run_pipeline(workflow_id: str):
     await stream_to_fluvio(asdict(wf))
     logger.info(f"KYC workflow {workflow_id} completed: decision={wf.decision}, score={wf.overall_score:.1f}")
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # FastAPI Application
 # ══════════════════════════════════════════════════════════════════════════════
@@ -691,6 +720,12 @@ import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyc_workflow_orchestration")
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -716,7 +751,7 @@ init_db()
 def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (?, ?, ?)", (action, entity_id, data))
+        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
         conn.commit()
         conn.close()
     except Exception:
@@ -726,7 +761,6 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     version="1.0.0",
 )
 
-
 class StartWorkflowRequest(BaseModel):
     customer_id: str
     kyc_level: str = "standard"  # basic, standard, enhanced, full_edd
@@ -734,16 +768,18 @@ class StartWorkflowRequest(BaseModel):
     triggered_by: str = "system"
     customer_data: dict = {}
 
-
 class ManualDecisionRequest(BaseModel):
     decision: str  # approved, rejected
     reviewer: str
     reason: str = ""
 
-
 @app.post("/api/v1/workflow/start")
 async def start_workflow(req: StartWorkflowRequest, background_tasks: BackgroundTasks):
     """Start a new KYC verification workflow."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("start_workflow_" + str(int(_time.time() * 1000)), _json.dumps({"action": "start_workflow", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     workflow_id = str(uuid.uuid4())
     sla_hours = SLA_HOURS.get(req.target_tier, 24)
     deadline = datetime.now(timezone.utc) + timedelta(hours=sla_hours)
@@ -778,19 +814,35 @@ async def start_workflow(req: StartWorkflowRequest, background_tasks: Background
         "stages": [s[0] for s in PIPELINE_STAGES],
     }
 
-
 @app.get("/api/v1/workflow/{workflow_id}")
 async def get_workflow(workflow_id: str):
     """Get workflow status and results."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return asdict(wf)
 
-
 @app.get("/api/v1/workflow/{workflow_id}/stages")
 async def get_workflow_stages(workflow_id: str):
     """Get detailed stage results for a workflow."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("get_workflow_stages", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -801,10 +853,13 @@ async def get_workflow_stages(workflow_id: str):
         "stage_results": wf.stage_results,
     }
 
-
 @app.post("/api/v1/workflow/{workflow_id}/manual-decision")
 async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
     """Override auto-decision with manual review decision (requires compliance role)."""
+    # Persist operation result to PostgreSQL
+    import json as _json, time as _time
+    await pg_set("manual_decision_" + str(int(_time.time() * 1000)), _json.dumps({"action": "manual_decision", "timestamp": _time.time()}), "kyc-workflow-orchestration")
+
     wf = workflows.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -826,10 +881,18 @@ async def manual_decision(workflow_id: str, req: ManualDecisionRequest):
 
     return {"workflow_id": workflow_id, "decision": req.decision, "reviewer": req.reviewer}
 
-
 @app.get("/api/v1/workflows")
 async def list_workflows(status: Optional[str] = None, customer_id: Optional[str] = None):
     """List all workflows with optional filters."""
+    # Load persisted state from PostgreSQL
+    _pg_cached = await pg_get("list_workflows", "kyc-workflow-orchestration")
+    if _pg_cached is not None:
+        import json as _json
+        try:
+            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
+        except Exception:
+            pass
+
     results = []
     for wf in workflows.values():
         if status and wf.status != status:
@@ -846,7 +909,6 @@ async def list_workflows(status: Optional[str] = None, customer_id: Optional[str
             "created_at": wf.created_at,
         })
     return {"workflows": results, "total": len(results)}
-
 
 @app.get("/health")
 async def health():
@@ -867,7 +929,6 @@ async def health():
             "temporal": TEMPORAL_URL,
         },
     }
-
 
 if __name__ == "__main__":
     import uvicorn

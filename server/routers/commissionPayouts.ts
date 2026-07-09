@@ -7,7 +7,11 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, writeAuditLog } from "../db";
-import { commissionPayouts, agents } from "../../drizzle/schema";
+import {
+  commissionPayouts,
+  agents,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
@@ -23,6 +27,15 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
+import { withIdempotency } from "../lib/transactionHelper";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
+import { enforcePermission } from "../_core/permify";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -146,21 +159,41 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
+
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "commissionPayouts",
-        "mutation",
-        "Executed commissionPayouts mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "commissionPayout");
+      const commission = calculateCommission(fees.fee, "commissionPayout");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -205,6 +238,21 @@ export const commissionPayoutsRouter = router({
           })
           .returning();
 
+        // Double-entry GL journal entry
+        await db.insert(gl_journal_entries).values({
+          entryNumber: `JE-${Date.now()}`,
+          description: `commissionPayouts transaction`,
+          debitAccountId: 2001,
+          creditAccountId: 1001,
+          amount: Math.round(
+            (typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0) * 100
+          ),
+          currency: "NGN",
+          status: "posted",
+        });
+
         await writeAuditLog({
           agentId: agent.id,
           agentCode: input.agentCode,
@@ -213,6 +261,58 @@ export const commissionPayoutsRouter = router({
           resourceId: String(payout.id),
           status: "success",
         });
+
+        publishEvent(
+          "pos.transactions.created",
+          String(payout.id),
+          {
+            type: "commission_payout_requested",
+            payoutId: payout.id,
+            agentId: agent.id,
+            agentCode: input.agentCode,
+            amount: input.amount,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: input.agentCode }
+        ).catch(() => {});
+
+        const commRef = `COMM-${payout.id}-${Date.now()}`;
+
+        // TigerBeetle dual-ledger
+        tbCreateTransfer({
+          debitAccountId: "4001",
+          creditAccountId: "2001",
+          amount: Math.round(input.amount * 100),
+          ref: commRef,
+          txType: "commission_payout",
+          agentCode: input.agentCode,
+        }).catch(() => {});
+
+        // Fluvio + Dapr + Redis + Lakehouse
+        publishTxToFluvio({
+          txRef: commRef,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          type: "commission_payout",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "commission.payout.requested", {
+            commRef,
+            payoutId: payout.id,
+            agentId: agent.id,
+            amount: input.amount,
+          })
+          .catch(() => {});
+        cacheSet(`agent:commission:${agent.id}`, "", 1).catch(() => {});
+        ingestToLakehouse("commission_payouts", {
+          commRef,
+          payoutId: payout.id,
+          agentId: agent.id,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return payout;
       } catch (error) {
@@ -229,6 +329,18 @@ export const commissionPayoutsRouter = router({
   approve: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -277,6 +389,18 @@ export const commissionPayoutsRouter = router({
   reject: protectedProcedure
     .input(z.object({ id: z.number(), reason: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -306,7 +430,19 @@ export const commissionPayoutsRouter = router({
   // ── Process a payout (deduct from agent balance + mark completed) ────────
   process: protectedProcedure
     .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

@@ -76,7 +76,57 @@ impl Config {
 // ── Middleware Clients ──────────────────────────────────────────────────────────
 
 struct DaprClient { http_port: u16 }
-struct RedisCache { url: String, data: RwLock<HashMap<String, String>> }
+struct AppState {
+    pg: PgPool,
+    redis_url: String,
+}
+
+impl AppState {
+    async fn new() -> Self {
+        let database_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/agentbanking".to_string());
+        let redis_url = std::env::var("REDIS_URL")
+            .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+        let pg = PgPool::connect(&database_url).await.unwrap_or_else(|e| {
+            eprintln!("Failed to connect to PostgreSQL: {}", e);
+            std::process::exit(1);
+        });
+
+        // Create service state table if needed
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS service_state (
+                key TEXT PRIMARY KEY,
+                value JSONB NOT NULL,
+                service TEXT NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )"
+        ).execute(&pg).await.ok();
+
+        Self { pg, redis_url }
+    }
+
+    async fn get_state(&self, key: &str) -> Option<String> {
+        sqlx::query_scalar::<_, String>("SELECT value::text FROM service_state WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&self.pg)
+            .await
+            .ok()
+            .flatten()
+    }
+
+    async fn set_state(&self, key: &str, value: &str, service: &str) {
+        sqlx::query(
+            "INSERT INTO service_state (key, value, service, updated_at) VALUES ($1, $2::jsonb, $3, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()"
+        )
+        .bind(key)
+        .bind(value)
+        .bind(service)
+        .execute(&self.pg)
+        .await
+        .ok();
+    }
+}
 struct TigerBeetleClient { addr: String }
 struct FluvioProducer { endpoint: String }
 struct OpenSearchClient { url: String }
@@ -110,7 +160,7 @@ impl DaprClient {
 
 impl RedisCache {
     fn new(url: String) -> Self {
-        Self { url, data: RwLock::new(HashMap::new()) }
+        Self { url, /* pg-backed state */ }
     }
 
     fn set(&self, key: &str, value: &str, _ttl_sec: u64) {
@@ -593,6 +643,24 @@ async fn search_records(
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
+
+
+fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#.to_string(),
+        ))?;
+    if !auth_header.starts_with("Bearer ") || auth_header.len() < 17 {
+        return Err((
+            hyper::StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid token format"}"#.to_string(),
+        ));
+    }
+    Ok(auth_header[7..].to_string())
+}
 
 #[tokio::main]
 async fn main() {

@@ -297,7 +297,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -405,7 +405,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -475,7 +475,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download all shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-report-shard-*
           path: all-playwright-reports
@@ -673,7 +673,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

@@ -259,15 +259,10 @@ export const bnplEngineRouter = router({
 
       // Fund-flow integration: a BNPL origination extends credit to the customer,
       // so emit the ledger + event fan-out (fail-open) the same way repayment does.
-      const originationRef = `BNPL-${id ?? "new"}-${Date.now()}`;
-      const originationAgentId =
-        typeof ctx === "object" && ctx !== null && "user" in ctx
-          ? ((ctx as any).user?.id ?? 0)
-          : 0;
-      const originationAgentCode =
-        typeof ctx === "object" && ctx !== null && "user" in ctx
-          ? ((ctx as any).user?.agentCode ?? "system")
-          : "system";
+      const originationRef = `BNPL-${id ?? "new"}-${crypto.randomUUID()}`;
+      const originationSession = await getAgentFromCookie(ctx.req);
+      const originationAgentId = originationSession?.id ?? ctx.user?.id ?? 0;
+      const originationAgentCode = originationSession?.agentCode ?? "system";
       publishEvent(
         "pos.transactions.created",
         originationRef,

@@ -28,9 +28,7 @@ globalThis.fetch = async (
   // worker teardown, causing "Closing rpc while onUserConsoleLog was pending".
   const isLocalSidecar =
     isLocalhost &&
-    (url.includes(":9090") ||
-      url.includes(":8156") ||
-      url.includes(":9000"));
+    (url.includes(":9090") || url.includes(":8156") || url.includes(":9000"));
 
   if (isExternalSidecar || isLocalSidecar) {
     return new Response(JSON.stringify({ ok: true, data: [], allowed: true }), {

@@ -224,6 +224,24 @@ export const posDisputeRouter = router({
           status: "posted",
         });
 
+        // TigerBeetle double-entry parity with the GL hold (only when a disputed amount is present)
+        {
+          const disputedAmount =
+            typeof input === "object" && "amount" in input
+              ? Number((input as any).amount)
+              : 0;
+          if (disputedAmount > 0) {
+            tbCreateTransfer({
+              debitAccountId: "2001",
+              creditAccountId: "1001",
+              amount: Math.round(disputedAmount * 100),
+              ref: `DISP-${dispute.id}`,
+              txType: "pos_dispute_hold",
+              agentCode: session.agentCode,
+            }).catch(() => {});
+          }
+        }
+
         await writeAuditLog({
           agentId: session.id,
           agentCode: session.agentCode,

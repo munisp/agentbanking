@@ -191,11 +191,7 @@ export const posBatchSettlementRouter = router({
           description: `posBatchSettlement transaction`,
           debitAccountId: 2001,
           creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
+          amount: Math.round(Number(netAmount) * 100),
           currency: "NGN",
           status: "posted",
         });

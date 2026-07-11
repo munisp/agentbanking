@@ -548,7 +548,7 @@ export const savingsProductsRouter = router({
           debitAccountId: "6001",
           creditAccountId: "2003",
           amount: Math.round(accruedInterest * 100),
-          ref: `JE-INT-${input.accountId}`,
+          ref: `JE-INT-${input.accountId}-${crypto.randomUUID().slice(0, 8)}`,
           txType: "savings_interest_accrual",
           agentCode: "system",
         }).catch(() => {});

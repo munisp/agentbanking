@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
+  date,
   index,
   integer,
   json,
@@ -5276,3 +5278,267 @@ export const idempotencyKeys = pgTable(
     expiryIdx: index("idem_expiry_idx").on(t.expiresAt),
   })
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MIDDLEWARE INTEGRATION AUDIT TABLES
+// Added by audit: 0047_middleware_integration_audit
+// Provides dedicated audit/log tables for all integrated middleware services.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Temporal Workflow Log ────────────────────────────────────────────────────
+export const temporalWorkflowStatusEnum = pgEnum("temporal_workflow_status", [
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "timed_out",
+  "terminated",
+]);
+
+export const temporalWorkflowLog = pgTable(
+  "temporal_workflow_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    workflowId: varchar("workflow_id", { length: 256 }).notNull(),
+    workflowType: varchar("workflow_type", { length: 128 }).notNull(),
+    runId: varchar("run_id", { length: 128 }),
+    taskQueue: varchar("task_queue", { length: 128 }).notNull().default("settlement-queue"),
+    namespace: varchar("namespace", { length: 64 }).notNull().default("default"),
+    status: temporalWorkflowStatusEnum("status").notNull().default("running"),
+    inputPayload: json("input_payload").$type<Record<string, unknown>>(),
+    resultPayload: json("result_payload").$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    triggeredBy: varchar("triggered_by", { length: 128 }),
+    agentCode: varchar("agent_code", { length: 32 }),
+    tenantId: integer("tenant_id"),
+    metadata: json("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    workflowIdIdx: index("twl_workflow_id_idx").on(t.workflowId),
+    workflowTypeIdx: index("twl_workflow_type_idx").on(t.workflowType),
+    statusIdx: index("twl_status_idx").on(t.status),
+    agentIdx: index("twl_agent_idx").on(t.agentCode),
+    startedAtIdx: index("twl_started_at_idx").on(t.startedAt),
+  })
+);
+export type TemporalWorkflowLog = typeof temporalWorkflowLog.$inferSelect;
+export type NewTemporalWorkflowLog = typeof temporalWorkflowLog.$inferInsert;
+
+// ─── Permify Check Log ────────────────────────────────────────────────────────
+export const permifyResultEnum = pgEnum("permify_result", [
+  "allowed",
+  "denied",
+  "error",
+  "fallback_open",
+]);
+
+export const permifyCheckLog = pgTable(
+  "permify_check_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("t1"),
+    subjectType: varchar("subject_type", { length: 64 }).notNull(),
+    subjectId: varchar("subject_id", { length: 128 }).notNull(),
+    entityType: varchar("entity_type", { length: 64 }).notNull(),
+    entityId: varchar("entity_id", { length: 128 }).notNull(),
+    permission: varchar("permission", { length: 128 }).notNull(),
+    result: permifyResultEnum("result").notNull(),
+    schemaVersion: varchar("schema_version", { length: 64 }),
+    snapToken: varchar("snap_token", { length: 128 }),
+    depth: integer("depth").notNull().default(20),
+    latencyMs: integer("latency_ms"),
+    errorMessage: text("error_message"),
+    requestId: varchar("request_id", { length: 128 }),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    subjectIdx: index("pcl_subject_idx").on(t.subjectType, t.subjectId),
+    entityIdx: index("pcl_entity_idx").on(t.entityType, t.entityId),
+    permissionIdx: index("pcl_permission_idx").on(t.permission),
+    resultIdx: index("pcl_result_idx").on(t.result),
+    createdAtIdx: index("pcl_created_at_idx").on(t.createdAt),
+  })
+);
+export type PermifyCheckLog = typeof permifyCheckLog.$inferSelect;
+export type NewPermifyCheckLog = typeof permifyCheckLog.$inferInsert;
+
+// ─── OpenAppSec Threat Log ────────────────────────────────────────────────────
+export const openappsecSeverityEnum = pgEnum("openappsec_severity", [
+  "critical",
+  "high",
+  "medium",
+  "low",
+]);
+
+export const openappsecActionEnum = pgEnum("openappsec_action", [
+  "block",
+  "detect",
+  "allow",
+]);
+
+export const openappsecThreatLog = pgTable(
+  "openappsec_threat_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    eventId: varchar("event_id", { length: 128 }).unique(),
+    timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    severity: openappsecSeverityEnum("severity").notNull().default("medium"),
+    action: openappsecActionEnum("action").notNull().default("detect"),
+    ipAddress: varchar("ip_address", { length: 45 }).notNull(),
+    method: varchar("method", { length: 16 }),
+    path: text("path"),
+    queryString: text("query_string"),
+    userAgent: text("user_agent"),
+    payloadSnippet: text("payload_snippet"),
+    threatScore: integer("threat_score").notNull().default(0),
+    countryCode: varchar("country_code", { length: 2 }),
+    requestId: varchar("request_id", { length: 128 }),
+    agentId: varchar("agent_id", { length: 128 }),
+    policyName: varchar("policy_name", { length: 128 }),
+    ruleName: varchar("rule_name", { length: 128 }),
+    blocked: boolean("blocked").notNull().default(false),
+    responseCode: integer("response_code"),
+    metadata: json("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    categoryIdx: index("oatl_category_idx").on(t.category),
+    severityIdx: index("oatl_severity_idx").on(t.severity),
+    ipIdx: index("oatl_ip_idx").on(t.ipAddress),
+    blockedIdx: index("oatl_blocked_idx").on(t.blocked),
+    timestampIdx: index("oatl_timestamp_idx").on(t.timestamp),
+  })
+);
+export type OpenappsecThreatLog = typeof openappsecThreatLog.$inferSelect;
+export type NewOpenappsecThreatLog = typeof openappsecThreatLog.$inferInsert;
+
+// ─── Fluvio Event Log ─────────────────────────────────────────────────────────
+export const fluvioEventStatusEnum = pgEnum("fluvio_event_status", [
+  "produced",
+  "consumed",
+  "failed",
+  "dead_letter",
+]);
+
+export const fluvioEventLog = pgTable(
+  "fluvio_event_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    topic: varchar("topic", { length: 128 }).notNull(),
+    partition: integer("partition").notNull().default(0),
+    offset: bigint("offset", { mode: "number" }),
+    key: varchar("key", { length: 256 }),
+    payload: json("payload").$type<Record<string, unknown>>().notNull(),
+    eventType: varchar("event_type", { length: 64 }),
+    agentCode: varchar("agent_code", { length: 32 }),
+    txRef: varchar("tx_ref", { length: 128 }),
+    status: fluvioEventStatusEnum("status").notNull().default("produced"),
+    errorMessage: text("error_message"),
+    retryCount: integer("retry_count").notNull().default(0),
+    producedAt: timestamp("produced_at", { withTimezone: true }).defaultNow().notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    topicIdx: index("fel_topic_idx").on(t.topic),
+    eventTypeIdx: index("fel_event_type_idx").on(t.eventType),
+    agentIdx: index("fel_agent_idx").on(t.agentCode),
+    txRefIdx: index("fel_tx_ref_idx").on(t.txRef),
+    statusIdx: index("fel_status_idx").on(t.status),
+    producedAtIdx: index("fel_produced_at_idx").on(t.producedAt),
+  })
+);
+export type FluvioEventLog = typeof fluvioEventLog.$inferSelect;
+export type NewFluvioEventLog = typeof fluvioEventLog.$inferInsert;
+
+// ─── Lakehouse Sync Log ───────────────────────────────────────────────────────
+export const lakehouseSyncStatusEnum = pgEnum("lakehouse_sync_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "skipped",
+]);
+
+export const lakehouseSyncLog = pgTable(
+  "lakehouse_sync_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    jobId: varchar("job_id", { length: 128 }).unique().notNull(),
+    bucket: varchar("bucket", { length: 128 }).notNull(),
+    objectKey: text("object_key").notNull(),
+    format: varchar("format", { length: 16 }).notNull().default("parquet"),
+    tableSource: varchar("table_source", { length: 128 }).notNull(),
+    recordCount: bigint("record_count", { mode: "number" }).notNull().default(0),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
+    status: lakehouseSyncStatusEnum("status").notNull().default("pending"),
+    errorMessage: text("error_message"),
+    checksum: varchar("checksum", { length: 128 }),
+    partitionDate: date("partition_date"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    triggeredBy: varchar("triggered_by", { length: 64 }).default("cron"),
+    metadata: json("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    bucketIdx: index("lsl_bucket_idx").on(t.bucket),
+    tableSourceIdx: index("lsl_table_source_idx").on(t.tableSource),
+    statusIdx: index("lsl_status_idx").on(t.status),
+    partitionIdx: index("lsl_partition_idx").on(t.partitionDate),
+    startedAtIdx: index("lsl_started_at_idx").on(t.startedAt),
+  })
+);
+export type LakehouseSyncLog = typeof lakehouseSyncLog.$inferSelect;
+export type NewLakehouseSyncLog = typeof lakehouseSyncLog.$inferInsert;
+
+// ─── Dapr Pub/Sub Log ─────────────────────────────────────────────────────────
+export const daprMessageStatusEnum = pgEnum("dapr_message_status", [
+  "published",
+  "consumed",
+  "failed",
+  "dead_letter",
+  "dropped",
+]);
+
+export const daprPubsubLog = pgTable(
+  "dapr_pubsub_log",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    messageId: varchar("message_id", { length: 256 }).unique(),
+    pubsubName: varchar("pubsub_name", { length: 128 }).notNull().default("54link-pubsub"),
+    topic: varchar("topic", { length: 128 }).notNull(),
+    direction: varchar("direction", { length: 16 }).notNull().default("publish"),
+    appId: varchar("app_id", { length: 128 }).notNull().default("pos-shell"),
+    payload: json("payload").$type<Record<string, unknown>>().notNull(),
+    status: daprMessageStatusEnum("status").notNull().default("published"),
+    errorMessage: text("error_message"),
+    retryCount: integer("retry_count").notNull().default(0),
+    correlationId: varchar("correlation_id", { length: 256 }),
+    traceId: varchar("trace_id", { length: 128 }),
+    agentCode: varchar("agent_code", { length: 32 }),
+    txRef: varchar("tx_ref", { length: 128 }),
+    publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => ({
+    topicIdx: index("dpl_topic_idx").on(t.topic),
+    appIdIdx: index("dpl_app_id_idx").on(t.appId),
+    statusIdx: index("dpl_status_idx").on(t.status),
+    agentIdx: index("dpl_agent_idx").on(t.agentCode),
+    txRefIdx: index("dpl_tx_ref_idx").on(t.txRef),
+    publishedAtIdx: index("dpl_published_at_idx").on(t.publishedAt),
+  })
+);
+export type DaprPubsubLog = typeof daprPubsubLog.$inferSelect;
+export type NewDaprPubsubLog = typeof daprPubsubLog.$inferInsert;

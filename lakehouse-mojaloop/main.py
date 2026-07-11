@@ -5,6 +5,9 @@ Lakehouse + Mojaloop Sidecar — Python FastAPI service providing:
 
 Connects to PostgreSQL for source data, writes Parquet/Delta to local storage,
 and provides Mojaloop-compatible transfer endpoints.
+
+Audit: All snapshot jobs are logged to the lakehouse_sync_log PostgreSQL table
+(migration 0047) for lineage tracking and replay capability.
 """
 import os
 import json
@@ -12,7 +15,8 @@ import uuid
 import hashlib
 import base64
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timezone, date as date_type
 from typing import Optional, Any
 
 from fastapi import FastAPI, HTTPException
@@ -34,6 +38,54 @@ app = FastAPI(
     version="1.0.0",
     description="Delta Lake snapshots & Mojaloop ILP adapter for 54Link POS Shell",
 )
+
+# ── Lakehouse Sync Log Helper ─────────────────────────────────────────────
+
+def _log_sync_to_db(
+    job_id: str,
+    bucket: str,
+    object_key: str,
+    table_source: str,
+    record_count: int,
+    size_bytes: int,
+    fmt: str,
+    status: str,
+    partition_date: Optional[str],
+    started_at: datetime,
+    duration_ms: int,
+    error_message: Optional[str] = None,
+    checksum: Optional[str] = None,
+) -> None:
+    """
+    Persist a lakehouse sync job record to the lakehouse_sync_log table.
+    Called after each snapshot completes (success or failure).
+    """
+    try:
+        import psycopg2
+        conn = psycopg2.connect(POSTGRES_URL)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO lakehouse_sync_log
+              (job_id, bucket, object_key, format, table_source, record_count,
+               size_bytes, status, error_message, checksum, partition_date,
+               started_at, completed_at, duration_ms, triggered_by, created_at)
+            VALUES
+              (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, 'lakehouse-sidecar', NOW())
+            ON CONFLICT (job_id) DO NOTHING
+            """,
+            (
+                job_id, bucket, object_key, fmt, table_source,
+                record_count, size_bytes, status, error_message, checksum,
+                partition_date, started_at, duration_ms,
+            ),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[Lakehouse] Failed to persist sync log: {e}")
+
 
 # ── Health ────────────────────────────────────────────────────────────────
 
@@ -77,6 +129,9 @@ async def snapshot_commission(req: SnapshotRequest):
     snapshot_id = f"comm-{req.date}-{uuid.uuid4().hex[:8]}"
     table_path = os.path.join(LAKEHOUSE_PATH, "commission", req.date)
     os.makedirs(table_path, exist_ok=True)
+    file_path = os.path.join(table_path, f"commission_ledger.{req.format}")
+    started_at = datetime.now(timezone.utc)
+    t0 = time.monotonic()
 
     try:
         row_count = await _export_table_snapshot(
@@ -92,11 +147,30 @@ async def snapshot_commission(req: SnapshotRequest):
             output_path=table_path,
             fmt=req.format,
         )
+        size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        checksum = _file_checksum(file_path)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"commission/{req.date}/commission_ledger.{req.format}",
+            table_source="commission_ledger", record_count=row_count,
+            size_bytes=size_bytes, fmt=req.format, status="completed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, checksum=checksum,
+        )
     except Exception as e:
         logger.warning(f"Commission snapshot failed (generating sample): {e}")
         row_count = _write_sample_snapshot(table_path, "commission_ledger", req.format)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"commission/{req.date}/commission_ledger.{req.format}",
+            table_source="commission_ledger", record_count=row_count,
+            size_bytes=0, fmt=req.format, status="failed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, error_message=str(e),
+        )
 
-    file_path = os.path.join(table_path, f"commission_ledger.{req.format}")
     logger.info(f"Commission snapshot: {snapshot_id} ({row_count} rows)")
 
     return SnapshotResponse(
@@ -118,6 +192,9 @@ async def snapshot_settlement(req: SnapshotRequest):
     snapshot_id = f"settle-{req.date}-{uuid.uuid4().hex[:8]}"
     table_path = os.path.join(LAKEHOUSE_PATH, "settlement", req.date)
     os.makedirs(table_path, exist_ok=True)
+    file_path = os.path.join(table_path, f"settlement_audit.{req.format}")
+    started_at = datetime.now(timezone.utc)
+    t0 = time.monotonic()
 
     try:
         row_count = await _export_table_snapshot(
@@ -132,11 +209,30 @@ async def snapshot_settlement(req: SnapshotRequest):
             output_path=table_path,
             fmt=req.format,
         )
+        size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        checksum = _file_checksum(file_path)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"settlement/{req.date}/settlement_audit.{req.format}",
+            table_source="audit_log", record_count=row_count,
+            size_bytes=size_bytes, fmt=req.format, status="completed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, checksum=checksum,
+        )
     except Exception as e:
         logger.warning(f"Settlement snapshot failed (generating sample): {e}")
         row_count = _write_sample_snapshot(table_path, "settlement_audit", req.format)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"settlement/{req.date}/settlement_audit.{req.format}",
+            table_source="audit_log", record_count=row_count,
+            size_bytes=0, fmt=req.format, status="failed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, error_message=str(e),
+        )
 
-    file_path = os.path.join(table_path, f"settlement_audit.{req.format}")
     return SnapshotResponse(
         snapshot_id=snapshot_id,
         table="settlement_audit",
@@ -156,6 +252,9 @@ async def snapshot_dispute(req: SnapshotRequest):
     snapshot_id = f"dispute-{req.date}-{uuid.uuid4().hex[:8]}"
     table_path = os.path.join(LAKEHOUSE_PATH, "dispute", req.date)
     os.makedirs(table_path, exist_ok=True)
+    file_path = os.path.join(table_path, f"disputes.{req.format}")
+    started_at = datetime.now(timezone.utc)
+    t0 = time.monotonic()
 
     try:
         row_count = await _export_table_snapshot(
@@ -171,11 +270,30 @@ async def snapshot_dispute(req: SnapshotRequest):
             output_path=table_path,
             fmt=req.format,
         )
+        size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        checksum = _file_checksum(file_path)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"dispute/{req.date}/disputes.{req.format}",
+            table_source="disputes", record_count=row_count,
+            size_bytes=size_bytes, fmt=req.format, status="completed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, checksum=checksum,
+        )
     except Exception as e:
         logger.warning(f"Dispute snapshot failed (generating sample): {e}")
         row_count = _write_sample_snapshot(table_path, "disputes", req.format)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_sync_to_db(
+            job_id=snapshot_id, bucket="54link-lakehouse",
+            object_key=f"dispute/{req.date}/disputes.{req.format}",
+            table_source="disputes", record_count=row_count,
+            size_bytes=0, fmt=req.format, status="failed",
+            partition_date=req.date, started_at=started_at,
+            duration_ms=duration_ms, error_message=str(e),
+        )
 
-    file_path = os.path.join(table_path, f"disputes.{req.format}")
     return SnapshotResponse(
         snapshot_id=snapshot_id,
         table="disputes",
@@ -257,6 +375,20 @@ def _write_sample_snapshot(output_path: str, table_name: str, fmt: str) -> int:
     file_path = os.path.join(output_path, f"{table_name}.{fmt}")
     pq.write_table(sample, file_path)
     return 1
+
+
+def _file_checksum(file_path: str) -> Optional[str]:
+    """Compute SHA-256 checksum of a file."""
+    try:
+        if not os.path.exists(file_path):
+            return None
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
 
 
 # ── Mojaloop: ILP Transfer Models ────────────────────────────────────────

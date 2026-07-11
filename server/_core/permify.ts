@@ -13,6 +13,9 @@
  *   - admins can read all transactions
  *   - float top-up approval requires supervisor or admin
  *   - fraud alert status update requires admin
+ *
+ * Audit: All permission checks are logged to the permify_check_log
+ * PostgreSQL table (migration 0047) for compliance and debugging.
  */
 import logger from "./logger";
 
@@ -32,6 +35,42 @@ interface PermifyCheckResponse {
     | "CHECK_RESULT_ALLOWED"
     | "CHECK_RESULT_DENIED"
     | "CHECK_RESULT_UNSPECIFIED";
+}
+
+/**
+ * Persist a Permify check result to the permify_check_log table.
+ * Fire-and-forget — never blocks the authorization path.
+ */
+async function persistCheckLog(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+  result: "allowed" | "denied" | "error" | "fallback_open";
+  latencyMs?: number;
+  errorMessage?: string;
+}): Promise<void> {
+  try {
+    const { getDb } = await import("../db");
+    const { permifyCheckLog } = await import("../../drizzle/schema");
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(permifyCheckLog).values({
+      tenantId: PERMIFY_TENANT_ID,
+      subjectType: params.subjectType,
+      subjectId: params.subjectId,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      permission: params.permission,
+      result: params.result,
+      depth: 20,
+      latencyMs: params.latencyMs,
+      errorMessage: params.errorMessage,
+    });
+  } catch {
+    // Persistence failure must never break the authorization path
+  }
 }
 
 /**
@@ -57,6 +96,8 @@ export async function permifyCheck(params: {
     subject: { type: params.subjectType, id: params.subjectId },
   };
 
+  const startMs = Date.now();
+
   try {
     const res = await fetch(
       `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/permissions/check`,
@@ -68,15 +109,20 @@ export async function permifyCheck(params: {
       }
     );
 
+    const latencyMs = Date.now() - startMs;
+
     if (!res.ok) {
       logger.warn(
         `[Permify] Check failed: ${res.status} — falling back to deny`
       );
+      void persistCheckLog({ ...params, result: "error", latencyMs, errorMessage: `HTTP ${res.status}` });
       return false;
     }
 
     const json = (await res.json()) as PermifyCheckResponse;
-    return json.can === "CHECK_RESULT_ALLOWED";
+    const allowed = json.can === "CHECK_RESULT_ALLOWED";
+    void persistCheckLog({ ...params, result: allowed ? "allowed" : "denied", latencyMs });
+    return allowed;
   } catch (err) {
     // Fail-open: when Permify is unavailable (e.g. dev without Docker), allow access.
     // In production, Permify is always running via docker-compose.production.yml.
@@ -84,6 +130,7 @@ export async function permifyCheck(params: {
       { err },
       "[Permify] Service unavailable — failing open (allow)"
     );
+    void persistCheckLog({ ...params, result: "fallback_open", latencyMs: Date.now() - startMs, errorMessage: String(err) });
     return true;
   }
 }

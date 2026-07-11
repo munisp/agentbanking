@@ -407,6 +407,10 @@ services:
       VAULT_TOKEN: ${VAULT_APP_TOKEN}
       TIGERBEETLE_ADDRESS: tigerbeetle:3001
       TEMPORAL_ADDRESS: temporal:7233
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+      FLUVIO_HTTP_URL: http://fluvio-http-gateway:9090
+      OPENAPPSEC_AGENT_URL: http://openappsec-agent:8092
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       <<: *hc-defaults
@@ -1094,3 +1098,140 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+
+  # ── Dapr Sidecar (attached to app service) ───────────────────────────────
+  # The Dapr sidecar runs in network_mode:service:app so it shares the same
+  # network namespace as the main app container, making the Dapr HTTP API
+  # available at localhost:3500 inside the app container.
+  app-dapr:
+    image: daprio/daprd:1.14.4
+    container_name: 54link-app-dapr
+    <<: *restart-policy
+    profiles: [app, all]
+    network_mode: "service:app"
+    command:
+      - ./daprd
+      - --app-id
+      - pos-shell
+      - --app-port
+      - "3000"
+      - --dapr-http-port
+      - "3500"
+      - --dapr-grpc-port
+      - "50001"
+      - --placement-host-address
+      - dapr-placement:50006
+      - --config
+      - /dapr/config.yaml
+      - --components-path
+      - /dapr/components
+      - --log-level
+      - info
+      - --enable-metrics
+      - --metrics-port
+      - "9095"
+    volumes:
+      - ./infra/dapr/config.yaml:/dapr/config.yaml:ro
+      - ./infra/dapr/components:/dapr/components:ro
+    environment:
+      NAMESPACE: default
+      KAFKA_BROKERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_APP_TOKEN:-}
+    depends_on:
+      dapr-placement:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3500/v1.0/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ── Fluvio HTTP Gateway ───────────────────────────────────────────────────
+  # Provides a REST API for producing/consuming Fluvio topic records.
+  # The Node.js server/fluvio.ts client uses FLUVIO_HTTP_URL=http://fluvio-http-gateway:9090
+  fluvio-http-gateway:
+    image: infinyon/fluvio:0.11.11
+    container_name: 54link-fluvio-http-gateway
+    <<: *restart-policy
+    profiles: [infra, all]
+    networks: [54link-infra]
+    command: fluvio-run http-gateway --port 9090 --sc-addr fluvio:9003
+    environment:
+      RUST_LOG: info
+      FLUVIO_SC_ADDR: fluvio:9003
+    ports:
+      - "9090:9090"
+    depends_on:
+      fluvio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  # ── OpenAppSec WAF Agent ──────────────────────────────────────────────────
+  # ML-based WAF agent that attaches to APISIX and enforces the policy
+  # defined in infra/security/waf/openappsec-policy.yaml.
+  # Provides OWASP Top 10 protection, bot detection, and API abuse prevention.
+  openappsec-agent:
+    image: ghcr.io/openappsec/agent:latest
+    container_name: 54link-openappsec-agent
+    <<: *restart-policy
+    profiles: [infra, all]
+    networks: [54link-infra, 54link-app]
+    privileged: true
+    environment:
+      OPENAPPSEC_UID: ${OPENAPPSEC_UID:-54link-production}
+      OPENAPPSEC_TOKEN: ${OPENAPPSEC_TOKEN:-}
+      OPENAPPSEC_MODE: prevent-learn
+      OPENAPPSEC_POLICY_FILE: /policy/openappsec-policy.yaml
+      OPENAPPSEC_LOG_LEVEL: info
+      OPENAPPSEC_UPSTREAM_HOST: apisix
+      OPENAPPSEC_UPSTREAM_PORT: "9080"
+      OPENAPPSEC_AGENT_PORT: "8092"
+      OPENAPPSEC_METRICS_PORT: "8093"
+      OPENAPPSEC_DB_URL: postgres://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}?sslmode=disable
+    volumes:
+      - ./infra/security/waf/openappsec-policy.yaml:/policy/openappsec-policy.yaml:ro
+    ports:
+      - "8092:8092"
+      - "8093:8093"
+    depends_on:
+      apisix:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8092/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M

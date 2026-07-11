@@ -9,6 +9,9 @@
  * - Geo-blocking for sanctioned regions
  * - Request/response inspection
  * - Threat intelligence feed integration
+ *
+ * Audit: All high/critical threats and all blocked requests are persisted
+ * to the openappsec_threat_log PostgreSQL table (migration 0047).
  */
 import type { Request, Response, NextFunction } from "express";
 
@@ -102,6 +105,40 @@ const GEO_BLOCKED_COUNTRIES = new Set(["KP", "IR", "SY", "CU", "RU"]);
 const threatLog: ThreatEvent[] = [];
 const MAX_THREAT_LOG = 10000;
 
+/**
+ * Persist a WAF threat event to the openappsec_threat_log PostgreSQL table.
+ * Runs asynchronously (fire-and-forget) so it never blocks the request path.
+ * Only persists high/critical threats and all blocked requests to avoid
+ * excessive write load from low-severity detections.
+ */
+async function persistThreatToDb(event: ThreatEvent): Promise<void> {
+  try {
+    const { getDb } = await import("../db");
+    const { openappsecThreatLog } = await import("../../drizzle/schema");
+    const db = await getDb();
+    if (!db) return;
+    await db
+      .insert(openappsecThreatLog)
+      .values({
+        eventId: event.id,
+        timestamp: new Date(event.timestamp),
+        category: event.category,
+        severity: event.severity,
+        action: event.blocked ? "block" : "detect",
+        ipAddress: event.ip,
+        method: event.method,
+        path: event.path,
+        userAgent: event.userAgent,
+        payloadSnippet: event.payload?.slice(0, 500),
+        threatScore: event.score,
+        blocked: event.blocked,
+      })
+      .onConflictDoNothing();
+  } catch {
+    // Persistence failure must never break the WAF middleware
+  }
+}
+
 function logThreat(event: ThreatEvent) {
   threatLog.push(event);
   if (threatLog.length > MAX_THREAT_LOG) threatLog.shift();
@@ -109,6 +146,10 @@ function logThreat(event: ThreatEvent) {
     console.warn(
       `[WAF] ${event.severity.toUpperCase()} threat: ${event.category} from ${event.ip} on ${event.method} ${event.path}`
     );
+  }
+  // Persist high/critical threats and all blocked requests to DB for audit
+  if (event.severity === "critical" || event.severity === "high" || event.blocked) {
+    void persistThreatToDb(event);
   }
 }
 

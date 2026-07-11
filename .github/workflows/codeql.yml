@@ -170,13 +170,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          for req in services/python/*/requirements.txt; do
-            pip install -r "$req" 2>/dev/null || true
-          done
-        continue-on-error: true
+      # NOTE: CodeQL uses buildless extraction for Python, so installing
+      # dependencies is not required for analysis. Installing every service's
+      # requirements.txt into one environment exhausted the runner disk
+      # (~80 MB left) and intermittently crashed the analyze step, so it is
+      # omitted intentionally.
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

@@ -67,6 +67,10 @@ jobs:
       VITE_FRONTEND_FORGE_API_KEY: e2e-frontend-forge-key
       VITE_FRONTEND_FORGE_API_URL: http://localhost:3001/api
       NODE_ENV: test
+      # The app drives every request from a single IP under Playwright, which
+      # trips the in-process connection throttle and per-IP rate limiters
+      # (503/429). Disable them for the E2E run; production keeps them on.
+      DISABLE_RATE_LIMITS: "true"
 
     steps:
       - name: Checkout repository
@@ -96,6 +100,16 @@ jobs:
         run: node scripts/seed-comprehensive.mjs
         env:
           POSTGRES_URL: ${{ env.POSTGRES_URL }}
+
+      # The specs authenticate as fixed fixtures (AGT001/1234, ADMIN1/0000,
+      # SUP001/9999). seed-comprehensive only generates randomized AGT#### rows
+      # with no PIN hash, so add the deterministic login fixtures the E2E flow
+      # logs in with. Idempotent upsert by agentCode.
+      - name: Seed E2E login fixtures (AGT001/ADMIN1/SUP001)
+        run: node scripts/seed-e2e.mjs
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_URL }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Build application
         run: pnpm build

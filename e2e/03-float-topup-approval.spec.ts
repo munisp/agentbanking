@@ -15,7 +15,9 @@ test.describe("Float Top-Up Approval Workflow", () => {
     for (const digit of ["1", "2", "3", "4"]) {
       await page.locator(`button[data-digit="${digit}"]`).first().click();
     }
-    await expect(page.locator("text=Cash In")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Cash In").first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Navigate to admin panel
     await page.goto("/admin");

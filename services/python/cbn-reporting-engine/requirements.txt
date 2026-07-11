@@ -1,6 +1,6 @@
 fastapi>=0.139.0
 pydantic>=2.5.0
 pytest-asyncio>=1.4.0
-pytest>=7.4.0
+pytest>=9.1.1
 sqlalchemy>=2.0.51
-uvicorn>=0.47.0
+uvicorn>=0.50.2

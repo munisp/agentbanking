@@ -23,6 +23,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import {
   validateAmount,
@@ -253,6 +254,35 @@ export const merchantPaymentsRouter = router({
           },
           { agentCode: session.agentCode }
         ).catch(() => {});
+
+        // TigerBeetle double-entry: agent float (2001) → merchant liability (1001)
+        tbCreateTransfer({
+          debitAccountId: "2001",
+          creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref,
+          txType: "merchant_payment",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: ref,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "merchant_payment",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("merchant_payments", {
+          ref,
+          transactionId: tx.id,
+          agentId: session.id,
+          merchantCode: input.merchantCode,
+          amount: input.amount,
+          merchantFee,
+          agentCommission,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return {
           ref,

@@ -15,6 +15,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -193,6 +194,31 @@ export const savingsProductsRouter = router({
           postedBy: "system",
           status: "posted",
         });
+        // TigerBeetle double-entry: cash (1001) → savings liability (3001)
+        tbCreateTransfer({
+          debitAccountId: "1001",
+          creditAccountId: "3001",
+          amount: Math.round(input.amount * 100),
+          ref,
+          txType: "savings_deposit",
+          agentCode: "system",
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: ref,
+            amount: input.amount,
+            type: "savings_deposit",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("savings_transactions", {
+          ref,
+          transactionId: tx.id,
+          accountId: input.accountId,
+          amount: input.amount,
+          type: "deposit",
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
         await db.insert(auditLog).values({
           action: "savings_deposit",
           resource: "savings_transactions",
@@ -288,6 +314,31 @@ export const savingsProductsRouter = router({
           postedBy: "system",
           status: "posted",
         });
+        // TigerBeetle double-entry: savings liability (3001) → cash (1001)
+        tbCreateTransfer({
+          debitAccountId: "3001",
+          creditAccountId: "1001",
+          amount: Math.round(input.amount * 100),
+          ref,
+          txType: "savings_withdrawal",
+          agentCode: "system",
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: ref,
+            amount: input.amount,
+            type: "savings_withdrawal",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("savings_transactions", {
+          ref,
+          transactionId: tx.id,
+          accountId: input.accountId,
+          amount: input.amount,
+          type: "withdrawal",
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
         await db.insert(auditLog).values({
           action: "savings_withdrawal",
           resource: "savings_transactions",
@@ -488,6 +539,26 @@ export const savingsProductsRouter = router({
         postedBy: "system",
         status: "posted",
       });
+
+      // TigerBeetle double-entry parity: interest expense (6001) → interest payable (2003)
+      if (accruedInterest > 0) {
+        tbCreateTransfer({
+          debitAccountId: "6001",
+          creditAccountId: "2003",
+          amount: Math.round(accruedInterest * 100),
+          ref: `JE-INT-${input.accountId}-${crypto.randomUUID().slice(0, 8)}`,
+          txType: "savings_interest_accrual",
+          agentCode: "system",
+        }).catch(() => {});
+        ingestToLakehouse("savings_interest_accruals", {
+          accountId: input.accountId,
+          productId: input.productId,
+          accruedInterest,
+          daysSinceAccrual,
+          annualRate,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+      }
 
       publishEvent("pos.transactions.created", input.accountId, {
         type: "savings_interest_accrual",

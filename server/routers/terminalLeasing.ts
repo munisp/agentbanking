@@ -6,6 +6,7 @@
  * PostgreSQL (lease records via terminalLeases table), TigerBeetle (billing ledger)
  */
 import { z } from "zod";
+import crypto from "crypto";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { terminalLeases, posTerminals, agents } from "../../drizzle/schema";
@@ -358,6 +359,38 @@ export const terminalLeasingRouter = router({
           })
           .where(eq(terminalLeases.id, input.leaseId))
           .returning();
+
+        const leasePaymentRef =
+          input.paymentRef ??
+          `LEASE-${input.leaseId}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+
+        // TigerBeetle double-entry: agent float (2001) → lease revenue (4001)
+        tbCreateTransfer({
+          debitAccountId: "2001",
+          creditAccountId: "4001",
+          amount: Math.round(input.amount * 100),
+          ref: leasePaymentRef,
+          txType: "lease_payment",
+          agentCode: session.agentCode,
+        }).catch(() => {});
+        fluvioPublish("tx.created", {
+          key: session.agentCode,
+          value: JSON.stringify({
+            txRef: leasePaymentRef,
+            agentCode: session.agentCode,
+            amount: input.amount,
+            type: "lease_payment",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        lakehouseIngest("lease_payments", {
+          ref: leasePaymentRef,
+          leaseId: input.leaseId,
+          agentId: session.id,
+          amount: input.amount,
+          totalPaid: newTotalPaid,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         logOperation("payment_recorded", {
           leaseId: input.leaseId,

@@ -191,14 +191,20 @@ export const posBatchSettlementRouter = router({
           description: `posBatchSettlement transaction`,
           debitAccountId: 2001,
           creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
+          amount: Math.round(Number(netAmount) * 100),
           currency: "NGN",
           status: "posted",
         });
+
+        // TigerBeetle double-entry: agent float (2001) → cash payout (1001)
+        tbCreateTransfer({
+          debitAccountId: "2001",
+          creditAccountId: "1001",
+          amount: Math.round(Number(netAmount) * 100),
+          ref: batchRef,
+          txType: "pos_batch_settlement",
+          agentCode: session.agentCode,
+        }).catch(() => {});
 
         logOperation("batch_created", {
           batchRef,

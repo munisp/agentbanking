@@ -11,6 +11,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -308,6 +309,32 @@ export const transactionReversalManagerRouter = router({
           amount,
           type: txType,
           reason: input.reason,
+          agentId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        // TigerBeetle double-entry: mirror the GL reversal accounts
+        tbCreateTransfer({
+          debitAccountId: isDebitReversal ? "2001" : "1001",
+          creditAccountId: isDebitReversal ? "1001" : "2001",
+          amount: Math.round(amount * 100),
+          ref: reversalRef,
+          txType: "transaction_reversal",
+          agentCode: String(agentId ?? "system"),
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: reversalRef,
+            amount,
+            type: "transaction_reversal",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("transaction_reversals", {
+          reversalRef,
+          originalRef: originalTx.ref,
+          originalTransactionId: input.transactionId,
+          amount,
           agentId,
           timestamp: new Date().toISOString(),
         }).catch(() => {});

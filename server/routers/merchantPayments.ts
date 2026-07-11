@@ -265,7 +265,6 @@ export const merchantPaymentsRouter = router({
           agentCode: session.agentCode,
         }).catch(() => {});
         fluvioProduce("tx.created", {
-          key: session.agentCode,
           value: JSON.stringify({
             txRef: ref,
             agentCode: session.agentCode,

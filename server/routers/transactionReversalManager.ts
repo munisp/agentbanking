@@ -323,7 +323,6 @@ export const transactionReversalManagerRouter = router({
           agentCode: String(agentId ?? "system"),
         }).catch(() => {});
         fluvioProduce("tx.created", {
-          key: String(agentId ?? "system"),
           value: JSON.stringify({
             txRef: reversalRef,
             amount,

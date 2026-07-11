@@ -321,7 +321,6 @@ export const disputeRefundRouter = router({
           agentCode: "system",
         }).catch(() => {});
         fluvioProduce("tx.created", {
-          key: String(input?.id ?? refundRef),
           value: JSON.stringify({
             txRef: refundRef,
             amount: refundAmount,

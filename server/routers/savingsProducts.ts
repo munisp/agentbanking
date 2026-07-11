@@ -204,7 +204,6 @@ export const savingsProductsRouter = router({
           agentCode: "system",
         }).catch(() => {});
         fluvioProduce("tx.created", {
-          key: String(input.agentId ?? input.accountId),
           value: JSON.stringify({
             txRef: ref,
             amount: input.amount,
@@ -325,7 +324,6 @@ export const savingsProductsRouter = router({
           agentCode: "system",
         }).catch(() => {});
         fluvioProduce("tx.created", {
-          key: String(input.agentId ?? input.accountId),
           value: JSON.stringify({
             txRef: ref,
             amount: input.amount,

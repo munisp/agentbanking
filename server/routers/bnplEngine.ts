@@ -256,6 +256,60 @@ export const bnplEngineRouter = router({
         sql`INSERT INTO "bnpl_applications" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
       );
       const id = (result as any).rows?.[0]?.id;
+
+      // Fund-flow integration: a BNPL origination extends credit to the customer,
+      // so emit the ledger + event fan-out (fail-open) the same way repayment does.
+      const originationRef = `BNPL-${id ?? "new"}-${crypto.randomUUID()}`;
+      const originationSession = await getAgentFromCookie(ctx.req);
+      const originationAgentId = originationSession?.id ?? ctx.user?.id ?? 0;
+      const originationAgentCode = originationSession?.agentCode ?? "system";
+      publishEvent(
+        "pos.transactions.created",
+        originationRef,
+        {
+          type: "bnpl_origination",
+          ref: originationRef,
+          applicationId: id,
+          amount,
+          installments,
+          customerId: input.data.customerId,
+          agentId: originationAgentId,
+          timestamp: new Date().toISOString(),
+        },
+        { agentCode: originationAgentCode }
+      ).catch(() => {});
+      tbCreateTransfer({
+        debitAccountId: "2001",
+        creditAccountId: "2004",
+        amount: Math.round(amount * 100),
+        ref: originationRef,
+        txType: "bnpl_origination",
+        agentCode: originationAgentCode,
+      }).catch(() => {});
+      publishTxToFluvio({
+        txRef: originationRef,
+        agentCode: originationAgentCode,
+        amount,
+        type: "bnpl_origination",
+        timestamp: Date.now(),
+      }).catch(() => {});
+      dapr
+        .publishEvent("pubsub", "bnpl.application.created", {
+          ref: originationRef,
+          applicationId: id,
+          amount,
+          installments,
+        })
+        .catch(() => {});
+      ingestToLakehouse("bnpl_originations", {
+        ref: originationRef,
+        applicationId: id,
+        amount,
+        installments,
+        agentId: originationAgentId,
+        timestamp: Date.now(),
+      }).catch(() => {});
+
       await writeAuditLog({
         agentId:
           typeof ctx === "object" && ctx !== null && "user" in ctx

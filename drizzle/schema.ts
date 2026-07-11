@@ -1,10 +1,14 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
+  date,
+  doublePrecision,
   index,
   integer,
   json,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -5276,3 +5280,694 @@ export const idempotencyKeys = pgTable(
     expiryIdx: index("idem_expiry_idx").on(t.expiresAt),
   })
 );
+
+// ─── Future-feature record tables (JSONB canonical shape) ───────────────────
+// These tables back the platform's extended-feature routers (BNPL, NFC, stablecoin,
+// payroll, pension, loyalty, carbon, education, health, embedded-finance, etc.).
+// Each stores the domain record as JSONB plus common lifecycle columns. Added to the
+// canonical schema so `drizzle-kit push` creates them (previously queried but never created).
+export const bnplApplications = pgTable(
+  "bnpl_applications",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("bnpl_applications_status_idx").on(t.status),
+    createdAtIdx: index("bnpl_applications_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const creditScores = pgTable(
+  "credit_scores",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("credit_scores_status_idx").on(t.status),
+    createdAtIdx: index("credit_scores_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const stableWallets = pgTable(
+  "stable_wallets",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("stable_wallets_status_idx").on(t.status),
+    createdAtIdx: index("stable_wallets_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const loyaltyMembers = pgTable(
+  "loyalty_members",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("loyalty_members_status_idx").on(t.status),
+    createdAtIdx: index("loyalty_members_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const nfcTerminals = pgTable(
+  "nfc_terminals",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("nfc_terminals_status_idx").on(t.status),
+    createdAtIdx: index("nfc_terminals_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const didIdentities = pgTable(
+  "did_identities",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("did_identities_status_idx").on(t.status),
+    createdAtIdx: index("did_identities_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const miniApps = pgTable(
+  "mini_apps",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("mini_apps_status_idx").on(t.status),
+    createdAtIdx: index("mini_apps_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const pensionAccounts = pgTable(
+  "pension_accounts",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("pension_accounts_status_idx").on(t.status),
+    createdAtIdx: index("pension_accounts_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const payrollEmployers = pgTable(
+  "payroll_employers",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("payroll_employers_status_idx").on(t.status),
+    createdAtIdx: index("payroll_employers_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const healthPolicies = pgTable(
+  "health_policies",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("health_policies_status_idx").on(t.status),
+    createdAtIdx: index("health_policies_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const carbonProjects = pgTable(
+  "carbon_projects",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("carbon_projects_status_idx").on(t.status),
+    createdAtIdx: index("carbon_projects_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const eduSchools = pgTable(
+  "edu_schools",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("edu_schools_status_idx").on(t.status),
+    createdAtIdx: index("edu_schools_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const anaasTenants = pgTable(
+  "anaas_tenants",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("anaas_tenants_status_idx").on(t.status),
+    createdAtIdx: index("anaas_tenants_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const wearableDevices = pgTable(
+  "wearable_devices",
+  {
+    id: serial("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    tenantId: varchar("tenant_id", { length: 64 }).notNull().default("default"),
+    agentId: integer("agent_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    statusIdx: index("wearable_devices_status_idx").on(t.status),
+    createdAtIdx: index("wearable_devices_created_at_idx").on(t.createdAt),
+  })
+);
+
+// ─── Ledger / settlement typed tables (queried via raw SQL) ─────────────────
+export const generalLedgerEntries = pgTable(
+  "general_ledger_entries",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    agentId: bigint("agent_id", { mode: "number" }),
+    accountId: varchar("account_id", { length: 32 }),
+    entryType: varchar("entry_type", { length: 16 }).notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    reference: varchar("reference", { length: 128 }),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    agentIdx: index("gle_agent_idx").on(t.agentId),
+    createdAtIdx: index("gle_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const recurringPayments = pgTable(
+  "recurring_payments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    agentId: bigint("agent_id", { mode: "number" }),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    paymentType: varchar("payment_type", { length: 64 }),
+    recipientAccount: varchar("recipient_account", { length: 128 }),
+    nextExecutionAt: timestamp("next_execution_at", { withTimezone: true }),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    dueIdx: index("recurring_payments_due_idx").on(t.status, t.nextExecutionAt),
+  })
+);
+
+export const posCardTransactions = pgTable(
+  "pos_card_transactions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    terminalId: varchar("terminal_id", { length: 64 }).notNull(),
+    merchantId: varchar("merchant_id", { length: 64 }),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    cardScheme: varchar("card_scheme", { length: 32 }),
+    processingCode: varchar("processing_code", { length: 16 }),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    terminalIdx: index("pos_card_tx_terminal_idx").on(
+      t.terminalId,
+      t.createdAt
+    ),
+  })
+);
+
+export const posCanaryMetrics = pgTable(
+  "pos_canary_metrics",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    releaseId: varchar("release_id", { length: 128 }).notNull(),
+    terminalId: varchar("terminal_id", { length: 64 }),
+    status: varchar("status", { length: 32 }).notNull().default("ok"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    releaseIdx: index("pos_canary_release_idx").on(t.releaseId, t.createdAt),
+  })
+);
+
+// ─── Orphaned raw-migration tables (0043–0046) missing from canonical schema ─
+// These were authored as raw .sql migrations that `db:push` never applies. They
+// are queried by server middleware/routers at runtime, so they are added to the
+// canonical schema here.
+export const eventOutbox = pgTable(
+  "event_outbox",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    aggregateType: varchar("aggregate_type", { length: 64 }).notNull(),
+    aggregateId: varchar("aggregate_id", { length: 128 }).notNull(),
+    eventType: varchar("event_type", { length: 128 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    published: boolean("published").notNull().default(false),
+    retryCount: integer("retry_count").notNull().default(0),
+    maxRetries: integer("max_retries").notNull().default(5),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  t => ({
+    unpublishedIdx: index("event_outbox_unpublished_idx").on(
+      t.published,
+      t.nextRetryAt
+    ),
+  })
+);
+
+export const eventDeadLetter = pgTable("event_dead_letter", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  originalEventId: bigint("original_event_id", { mode: "number" }),
+  eventType: varchar("event_type", { length: 128 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").notNull().default(0),
+  resolved: boolean("resolved").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
+export const feeWaterfall = pgTable("fee_waterfall", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  transactionRef: varchar("transaction_ref", { length: 128 }).notNull(),
+  totalFee: bigint("total_fee", { mode: "number" }).notNull(),
+  platformShare: bigint("platform_share", { mode: "number" }).notNull(),
+  agentShare: bigint("agent_share", { mode: "number" }).notNull(),
+  superAgentShare: bigint("super_agent_share", { mode: "number" }).notNull(),
+  taxShare: bigint("tax_share", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const floatThresholdAlerts = pgTable("float_threshold_alerts", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  currentBalance: bigint("current_balance", { mode: "number" }).notNull(),
+  thresholdPct: integer("threshold_pct").notNull(),
+  alertType: varchar("alert_type", { length: 32 }).notNull(),
+  notifiedVia: varchar("notified_via", { length: 64 }),
+  acknowledged: boolean("acknowledged").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const insiderAdminSessions = pgTable("insider_admin_sessions", {
+  agentId: bigint("agent_id", { mode: "number" }).primaryKey(),
+  lastActivity: timestamp("last_activity", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const insiderStaffActions = pgTable("insider_staff_actions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  action: varchar("action", { length: 128 }).notNull(),
+  amount: doublePrecision("amount").notNull().default(0),
+  recordedAt: timestamp("recorded_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const insiderStepUpTokens = pgTable("insider_step_up_tokens", {
+  token: varchar("token", { length: 128 }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const kycContinuousMonitoring = pgTable("kyc_continuous_monitoring", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  checkType: varchar("check_type", { length: 64 }).notNull(),
+  result: varchar("result", { length: 32 }).notNull(),
+  detailsJson: jsonb("details_json"),
+  checkedAt: timestamp("checked_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  nextCheck: timestamp("next_check", { withTimezone: true }),
+});
+
+export const kycDocumentExpiry = pgTable("kyc_document_expiry", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  docType: varchar("doc_type", { length: 64 }).notNull(),
+  docNumber: varchar("doc_number", { length: 128 }),
+  issuedAt: date("issued_at"),
+  expiresAt: date("expires_at").notNull(),
+  reminderSent: boolean("reminder_sent").default(false),
+  renewed: boolean("renewed").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const kycProviderLog = pgTable("kyc_provider_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  provider: varchar("provider", { length: 64 }).notNull(),
+  requestType: varchar("request_type", { length: 64 }).notNull(),
+  success: boolean("success").notNull(),
+  latencyMs: integer("latency_ms"),
+  errorCode: varchar("error_code", { length: 128 }),
+  fallbackUsed: boolean("fallback_used").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const kycTiers = pgTable("kyc_tiers", {
+  agentId: bigint("agent_id", { mode: "number" }).primaryKey(),
+  tier: integer("tier").notNull().default(1),
+  dailyLimit: bigint("daily_limit", { mode: "number" })
+    .notNull()
+    .default(50000),
+  monthlyLimit: bigint("monthly_limit", { mode: "number" })
+    .notNull()
+    .default(300000),
+  upgradedAt: timestamp("upgraded_at", { withTimezone: true }),
+  nextReview: timestamp("next_review", { withTimezone: true }),
+  documentsJson: jsonb("documents_json").default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const middlewareHealthLog = pgTable("middleware_health_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  serviceName: varchar("service_name", { length: 64 }).notNull(),
+  routerName: varchar("router_name", { length: 128 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull(),
+  latencyMs: integer("latency_ms"),
+  errorMessage: text("error_message"),
+  recordedAt: timestamp("recorded_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const posEodReconciliation = pgTable(
+  "pos_eod_reconciliation",
+  {
+    id: serial("id").primaryKey(),
+    terminalId: varchar("terminal_id", { length: 64 }).notNull(),
+    reconciliationDate: date("reconciliation_date").notNull(),
+    totalCashInKobo: bigint("total_cash_in_kobo", { mode: "number" }).default(
+      0
+    ),
+    totalCashOutKobo: bigint("total_cash_out_kobo", { mode: "number" }).default(
+      0
+    ),
+    totalFeesKobo: bigint("total_fees_kobo", { mode: "number" }).default(0),
+    txCount: integer("tx_count").default(0),
+    discrepancyKobo: bigint("discrepancy_kobo", { mode: "number" }).default(0),
+    status: varchar("status", { length: 16 }).default("pending"),
+    forcedAt: timestamp("forced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  t => ({
+    terminalDateIdx: uniqueIndex("pos_eod_terminal_date_idx").on(
+      t.terminalId,
+      t.reconciliationDate
+    ),
+  })
+);
+
+export const posGeoVelocityLog = pgTable("pos_geo_velocity_log", {
+  id: serial("id").primaryKey(),
+  terminalId: varchar("terminal_id", { length: 64 }).notNull(),
+  latitude: numeric("latitude", { precision: 10, scale: 7 }),
+  longitude: numeric("longitude", { precision: 10, scale: 7 }),
+  previousLat: numeric("previous_lat", { precision: 10, scale: 7 }),
+  previousLng: numeric("previous_lng", { precision: 10, scale: 7 }),
+  distanceKm: numeric("distance_km", { precision: 10, scale: 3 }),
+  timeDiffSeconds: integer("time_diff_seconds"),
+  velocityKmh: numeric("velocity_kmh", { precision: 10, scale: 3 }),
+  flagged: boolean("flagged").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const posOfflineLimits = pgTable("pos_offline_limits", {
+  id: serial("id").primaryKey(),
+  terminalId: varchar("terminal_id", { length: 64 }).notNull().unique(),
+  maxOfflineTxCount: integer("max_offline_tx_count").default(20),
+  maxOfflineAmountKobo: bigint("max_offline_amount_kobo", {
+    mode: "number",
+  }).default(50000000),
+  currentOfflineCount: integer("current_offline_count").default(0),
+  currentOfflineAmountKobo: bigint("current_offline_amount_kobo", {
+    mode: "number",
+  }).default(0),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }).defaultNow(),
+  floorLimitKobo: bigint("floor_limit_kobo", { mode: "number" }).default(
+    500000
+  ),
+});
+
+export const reconciliationRuns = pgTable("reconciliation_runs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  runDate: date("run_date").notNull(),
+  glTotal: bigint("gl_total", { mode: "number" }).notNull(),
+  tigerbeetleTotal: bigint("tigerbeetle_total", { mode: "number" }).notNull(),
+  floatTotal: bigint("float_total", { mode: "number" }).notNull(),
+  discrepancy: bigint("discrepancy", { mode: "number" }).notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  detailsJson: jsonb("details_json"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const recurringPaymentExecutions = pgTable(
+  "recurring_payment_executions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    scheduleId: bigint("schedule_id", { mode: "number" }).notNull(),
+    agentId: bigint("agent_id", { mode: "number" }).notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    executionTime: timestamp("execution_time", {
+      withTimezone: true,
+    }).notNull(),
+    transactionRef: varchar("transaction_ref", { length: 128 }),
+    errorMessage: text("error_message"),
+    retryCount: integer("retry_count").default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    scheduleIdx: index("recurring_exec_schedule_idx").on(t.scheduleId),
+    timeIdx: index("recurring_exec_time_idx").on(t.executionTime, t.status),
+  })
+);
+
+export const settlementBatches = pgTable("settlement_batches", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  batchRef: varchar("batch_ref", { length: 64 }).notNull().unique(),
+  settlementType: varchar("settlement_type", { length: 32 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  totalAmount: bigint("total_amount", { mode: "number" }).notNull().default(0),
+  transactionCount: integer("transaction_count").notNull().default(0),
+  cutOffTime: timestamp("cut_off_time", { withTimezone: true }).notNull(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const settlementBatchItems = pgTable("settlement_batch_items", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  batchId: bigint("batch_id", { mode: "number" }),
+  transactionRef: varchar("transaction_ref", { length: 128 }).notNull(),
+  agentId: bigint("agent_id", { mode: "number" }).notNull(),
+  amount: bigint("amount", { mode: "number" }).notNull(),
+  feeAmount: bigint("fee_amount", { mode: "number" }).notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+});
+
+export const simFailoverEvents = pgTable("sim_failover_events", {
+  id: text("id").primaryKey(),
+  terminalId: text("terminal_id").notNull(),
+  fromSlot: integer("from_slot").notNull(),
+  toSlot: integer("to_slot").notNull(),
+  fromCarrier: text("from_carrier").notNull().default(""),
+  toCarrier: text("to_carrier").notNull().default(""),
+  reason: text("reason").notNull().default(""),
+  triggerSignalDbm: integer("trigger_signal_dbm").notNull().default(0),
+  triggerLatencyMs: doublePrecision("trigger_latency_ms").notNull().default(0),
+  success: boolean("success").notNull().default(true),
+  switchedAt: timestamp("switched_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

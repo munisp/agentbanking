@@ -8,7 +8,7 @@
 version: "3.9"
 
 x-tigerbeetle-common: &tb-common
-  image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+  image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
   restart: unless-stopped
   networks: [54link-net]
   ulimits:

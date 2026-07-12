@@ -59,7 +59,7 @@ services:
 
   # ── PostgreSQL ───────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: pos_shell
       POSTGRES_USER: pos_user
@@ -86,7 +86,7 @@ services:
 
   # ── Redis ────────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     command: >
       redis-server
       --maxmemory 256mb
@@ -114,7 +114,7 @@ services:
 
   # ── TigerBeetle ─────────────────────────────────────────────────────
   tigerbeetle:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     command: start --addresses=0.0.0.0:3001 /data/0_0.tigerbeetle
     ports:
       - "${TB_PORT:-3001}:3001"
@@ -131,7 +131,7 @@ services:
 
   # ── Kafka (Redpanda — Kafka-compatible, lighter) ─────────────────────
   kafka:
-    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.14
     command:
       - redpanda start
       - --smp 1
@@ -162,7 +162,7 @@ services:
 
   # ── Prometheus (Metrics) ─────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:v2.51.0
+    image: prom/prometheus:v2.55.1
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
@@ -183,7 +183,7 @@ services:
 
   # ── Grafana (Dashboards) ─────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:10.4.0
+    image: grafana/grafana:11.6.1
     ports:
       - "${GRAFANA_PORT:-3100}:3000"
     environment:
@@ -206,7 +206,7 @@ services:
 
   # ── Nginx Reverse Proxy ──────────────────────────────────────────────
   nginx:
-    image: nginx:1.25-alpine
+    image: nginx:1.27-alpine
     ports:
       - "80:80"
       - "443:443"

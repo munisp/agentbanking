@@ -1,6 +1,6 @@
-fastapi==0.104.1
-sqlalchemy==2.0.23
-pydantic==2.5.2
-python-dotenv==1.0.0
-uvicorn==0.24.0.post1
+fastapi>=0.115.12
+sqlalchemy>=2.0.41
+pydantic>=2.11.7
+python-dotenv>=1.1.0
+uvicorn>=0.34.3
 

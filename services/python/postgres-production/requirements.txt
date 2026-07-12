@@ -1,16 +1,16 @@
 # Core dependencies
-Flask==2.3.3
-Flask-CORS==4.0.0
-SQLAlchemy==2.0.20
-psycopg2-binary==2.9.7
-alembic==1.12.0
+flask>=3.1.1
+flask-cors>=5.0.1
+sqlalchemy>=2.0.41
+psycopg2-binary>=2.9.10
+alembic>=1.16.2
 
 # Authentication
-PyJWT==2.8.0
+pyjwt>=2.10.1
 
 # Async support
 asyncio==3.4.3
-asyncpg==0.28.0
+asyncpg>=0.30.0
 
 # Monitoring
 prometheus-client==0.17.1
@@ -19,10 +19,10 @@ prometheus-client==0.17.1
 boto3==1.28.25
 
 # Testing
-pytest==7.4.2
-pytest-cov==4.1.0
-pytest-asyncio==0.21.1
+pytest>=8.3.5
+pytest-cov>=6.1.0
+pytest-asyncio>=1.0.0
 
 # Development
-python-dotenv==1.0.0
+python-dotenv>=1.1.0
 

@@ -4,7 +4,7 @@ sqlalchemy
 psycopg2-binary
 python-multipart
 passlib[bcrypt]
-python-jose[cryptography]
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 requests
 pydantic-settings
 "PyJWT[crypto]"

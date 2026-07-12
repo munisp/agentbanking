@@ -3,12 +3,12 @@
 # Date: November 11, 2025
 
 # JWT token handling
-PyJWT[crypto]==2.8.0
+pyjwt[crypto]>=2.10.1
 
 # HTTP client for Keycloak API calls
-httpx==0.25.2
+httpx>=0.28.1
 
 # FastAPI security utilities
-fastapi==0.104.1
-python-multipart==0.0.6
+fastapi>=0.115.12
+python-multipart>=0.0.20
 

@@ -291,7 +291,7 @@ services:
 
   # ── Redis — Session cache & rate-limit counters ───────────────────────────────
   redis:
-    image: redis:7.2-alpine
+    image: redis:7.4-alpine
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -320,7 +320,7 @@ services:
 
   # ── Prometheus — Metrics collection (monitoring profile) ─────────────────────
   prometheus:
-    image: prom/prometheus:v2.51.2
+    image: prom/prometheus:v2.55.1
     ports:
       - "9090:9090"
     volumes:
@@ -339,7 +339,7 @@ services:
 
   # ── Grafana — Dashboards (monitoring profile) ────────────────────────────────
   grafana:
-    image: grafana/grafana:10.4.2
+    image: grafana/grafana:11.6.1
     ports:
       - "3001:3000"
     environment:
@@ -359,7 +359,7 @@ services:
 
   # ── PostgreSQL Database ───────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: 54link-postgres
     ports:
       - "${PG_PORT:-5432}:5432"
@@ -381,7 +381,7 @@ services:
 
   # ── Keycloak Identity Provider ────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:26.2.5
     container_name: 54link-keycloak
     command: start-dev --import-realm
     ports:
@@ -427,7 +427,7 @@ services:
 
   # ── Temporal Workflow Engine ──────────────────────────────────────────────
   temporal:
-    image: temporalio/auto-setup:1.24
+    image: temporalio/auto-setup:1.27.2
     container_name: 54link-temporal
     ports:
       - "${TEMPORAL_PORT:-7233}:7233"
@@ -446,7 +446,7 @@ services:
 
   # ── Temporal Web UI ───────────────────────────────────────────────────────
   temporal-ui:
-    image: temporalio/ui:2.26.2
+    image: temporalio/ui:2.36.0
     container_name: 54link-temporal-ui
     ports:
       - "${TEMPORAL_UI_PORT:-8233}:8080"
@@ -485,7 +485,7 @@ services:
 
   # ── Apache Kafka (Event Streaming) ─────────────────────────────────────────
   kafka:
-    image: bitnami/kafka:3.7
+    image: bitnami/kafka:3.9
     container_name: 54link-kafka
     ports:
       - "9092:9092"
@@ -522,7 +522,7 @@ services:
 
   # ── Apache Airflow Webserver ───────────────────────────────────────────────
   airflow-webserver:
-    image: apache/airflow:2.9.0
+    image: apache/airflow:2.10.5
     container_name: 54link-airflow-web
     command: webserver
     ports:
@@ -548,7 +548,7 @@ services:
 
   # ── Apache Airflow Scheduler ───────────────────────────────────────────────
   airflow-scheduler:
-    image: apache/airflow:2.9.0
+    image: apache/airflow:2.10.5
     container_name: 54link-airflow-sched
     command: scheduler
     environment:
@@ -579,7 +579,7 @@ services:
 
   # ── dbt (Data Build Tool) ─────────────────────────────────────────────────
   dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.4
     container_name: 54link-dbt
     volumes:
       - ./infrastructure/dbt:/usr/app
@@ -595,7 +595,7 @@ services:
 
   # ── APISIX (API Gateway) ──────────────────────────────────────────────────
   apisix:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.12.0-debian
     container_name: 54link-apisix
     ports:
       - "9080:9080"

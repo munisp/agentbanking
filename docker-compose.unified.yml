@@ -14,7 +14,7 @@ services:
   # INFRASTRUCTURE
   # ============================================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: pos_shell
       POSTGRES_USER: postgres
@@ -30,7 +30,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     ports:
       - "6379:6379"
     volumes:
@@ -42,14 +42,14 @@ services:
       retries: 5
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
+    image: confluentinc/cp-zookeeper:7.9.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.9.0
     depends_on:
       - zookeeper
     environment:
@@ -73,7 +73,7 @@ services:
       - miniodata:/data
 
   temporal:
-    image: temporalio/auto-setup:1.22
+    image: temporalio/auto-setup:1.27.2
     depends_on:
       - postgres
     environment:
@@ -309,7 +309,7 @@ services:
   # MONITORING
   # ============================================================
   prometheus:
-    image: prom/prometheus:v2.48.0
+    image: prom/prometheus:v2.55.1
     volumes:
       - ./monitoring/prometheus:/etc/prometheus
       - promdata:/prometheus
@@ -320,7 +320,7 @@ services:
       - '--storage.tsdb.retention.time=30d'
 
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:11.6.1
     depends_on:
       - prometheus
     environment:

@@ -1,7 +1,8 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 from datetime import timedelta, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from decimal import Decimal

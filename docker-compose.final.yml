@@ -57,7 +57,7 @@ services:
   # Database
   # ============================================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: pos-shell-postgres
     restart: unless-stopped
     ports:
@@ -86,7 +86,7 @@ services:
   # Cache & Pub/Sub
   # ============================================================
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: pos-shell-redis
     restart: unless-stopped
     ports:
@@ -117,7 +117,7 @@ services:
   # Message Broker
   # ============================================================
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
+    image: confluentinc/cp-zookeeper:7.9.0
     container_name: pos-shell-zookeeper
     restart: unless-stopped
     environment:
@@ -131,7 +131,7 @@ services:
           memory: 256M
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.9.0
     container_name: pos-shell-kafka
     restart: unless-stopped
     ports:
@@ -163,7 +163,7 @@ services:
   # TigerBeetle (Financial Ledger)
   # ============================================================
   tigerbeetle:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.6
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     container_name: pos-shell-tigerbeetle
     restart: unless-stopped
     ports:
@@ -182,7 +182,7 @@ services:
   # Monitoring
   # ============================================================
   prometheus:
-    image: prom/prometheus:v2.48.0
+    image: prom/prometheus:v2.55.1
     container_name: pos-shell-prometheus
     restart: unless-stopped
     ports:
@@ -202,7 +202,7 @@ services:
           memory: 512M
 
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:11.6.1
     container_name: pos-shell-grafana
     restart: unless-stopped
     ports:
@@ -227,7 +227,7 @@ services:
   # Reverse Proxy
   # ============================================================
   nginx:
-    image: nginx:1.25-alpine
+    image: nginx:1.27-alpine
     container_name: pos-shell-nginx
     restart: unless-stopped
     ports:

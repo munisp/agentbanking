@@ -3,6 +3,6 @@ uvicorn
 sqlalchemy
 pydantic
 pydantic-settings
-python-jose[cryptography]
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 passlib[bcrypt]
 psycopg2-binary

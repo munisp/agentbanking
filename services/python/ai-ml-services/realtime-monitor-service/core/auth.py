@@ -5,7 +5,8 @@ Nigerian Remittance Platform
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 import os

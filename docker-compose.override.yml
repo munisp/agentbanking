@@ -31,7 +31,7 @@ services:
 
   # ── Local PostgreSQL (replaces remote DB in dev) ──────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: posadmin
       POSTGRES_PASSWORD: pos54link2026

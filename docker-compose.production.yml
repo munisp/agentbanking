@@ -67,7 +67,7 @@ services:
 
   # ── PostgreSQL (primary OLTP) ─────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: 54link-postgres
     <<: *restart-policy
     profiles: [infra, all]
@@ -88,7 +88,7 @@ services:
 
   # ── Redis (cache + distributed locks + session store) ─────────────────────
   redis:
-    image: redis:7.2-alpine
+    image: redis:7.4-alpine
     container_name: 54link-redis
     <<: *restart-policy
     profiles: [infra, all]
@@ -105,7 +105,7 @@ services:
 
   # ── Zookeeper (Kafka dependency) ──────────────────────────────────────────
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
+    image: confluentinc/cp-zookeeper:7.9.0
     container_name: 54link-zookeeper
     <<: *restart-policy
     profiles: [infra, all]
@@ -123,7 +123,7 @@ services:
 
   # ── Kafka (event bus) ─────────────────────────────────────────────────────
   kafka:
-    image: confluentinc/cp-kafka:7.6.1
+    image: confluentinc/cp-kafka:7.9.0
     container_name: 54link-kafka
     <<: *restart-policy
     profiles: [infra, all]
@@ -174,7 +174,7 @@ services:
 
   # ── TigerBeetle (financial ledger) ────────────────────────────────────────
   tigerbeetle:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     container_name: 54link-tigerbeetle
     <<: *restart-policy
     profiles: [infra, all]
@@ -195,7 +195,7 @@ services:
 
   # ── Temporal (workflow orchestration) ─────────────────────────────────────
   temporal:
-    image: temporalio/auto-setup:1.24.2
+    image: temporalio/auto-setup:1.27.2
     container_name: 54link-temporal
     <<: *restart-policy
     profiles: [infra, all]
@@ -223,7 +223,7 @@ services:
 
   # ── Temporal UI ───────────────────────────────────────────────────────────
   temporal-ui:
-    image: temporalio/ui:2.26.2
+    image: temporalio/ui:2.36.0
     container_name: 54link-temporal-ui
     <<: *restart-policy
     profiles: [infra, all]
@@ -238,7 +238,7 @@ services:
 
   # ── Keycloak (identity & access management) ───────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.4
+    image: quay.io/keycloak/keycloak:26.2.5
     container_name: 54link-keycloak
     <<: *restart-policy
     profiles: [infra, all]
@@ -272,7 +272,7 @@ services:
 
   # ── Permify (fine-grained authorization) ─────────────────────────────────
   permify:
-    image: ghcr.io/permify/permify:v0.10.1
+    image: ghcr.io/permify/permify:v1.2.9
     container_name: 54link-permify
     <<: *restart-policy
     profiles: [infra, all]
@@ -295,7 +295,7 @@ services:
 
   # ── Apache APISIX (API gateway) ───────────────────────────────────────────
   apisix-etcd:
-    image: bitnami/etcd:3.5.12
+    image: bitnami/etcd:3.5.21
     container_name: 54link-apisix-etcd
     <<: *restart-policy
     profiles: [infra, all]
@@ -308,7 +308,7 @@ services:
       <<: *hc-defaults
 
   apisix:
-    image: apache/apisix:3.9.1-debian
+    image: apache/apisix:3.12.0-debian
     container_name: 54link-apisix
     <<: *restart-policy
     profiles: [infra, all]
@@ -329,7 +329,7 @@ services:
 
   # ── HashiCorp Vault (secrets management) ──────────────────────────────────
   vault:
-    image: hashicorp/vault:1.16.3
+    image: hashicorp/vault:1.19.5
     container_name: 54link-vault
     <<: *restart-policy
     profiles: [infra, all]
@@ -357,7 +357,7 @@ services:
 
   # ── Vault Agent (auto-unseal + secret injection) ──────────────────────────
   vault-agent:
-    image: hashicorp/vault:1.16.3
+    image: hashicorp/vault:1.19.5
     container_name: 54link-vault-agent
     <<: *restart-policy
     profiles: [infra, all]
@@ -737,7 +737,7 @@ services:
 
   # ── Certbot (Let's Encrypt TLS) ───────────────────────────────────────────
   certbot:
-    image: certbot/certbot:v2.10.0
+    image: certbot/certbot:v4.1.1
     container_name: 54link-certbot
     profiles: [gateway, all]
     networks: [54link-app]
@@ -756,7 +756,7 @@ services:
 
   # ── Prometheus (metrics) ──────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:v2.53.0
+    image: prom/prometheus:v2.55.1
     container_name: 54link-prometheus
     <<: *restart-policy
     profiles: [observability, all]
@@ -779,7 +779,7 @@ services:
 
   # ── Grafana (dashboards) ──────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:11.1.0
+    image: grafana/grafana:11.6.1
     container_name: 54link-grafana
     <<: *restart-policy
     profiles: [observability, all]
@@ -810,7 +810,7 @@ services:
 
   # ── Loki (log aggregation) ────────────────────────────────────────────────
   loki:
-    image: grafana/loki:3.0.0
+    image: grafana/loki:3.5.1
     container_name: 54link-loki
     <<: *restart-policy
     profiles: [observability, all]
@@ -827,7 +827,7 @@ services:
 
   # ── Promtail (log shipper) ────────────────────────────────────────────────
   promtail:
-    image: grafana/promtail:3.0.0
+    image: grafana/promtail:3.5.1
     container_name: 54link-promtail
     <<: *restart-policy
     profiles: [observability, all]
@@ -842,7 +842,7 @@ services:
 
   # ── Alertmanager ─────────────────────────────────────────────────────────
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.28.1
     container_name: 54link-alertmanager
     <<: *restart-policy
     profiles: [observability, all]
@@ -862,7 +862,7 @@ services:
 
   # ── Node Exporter (host metrics) ──────────────────────────────────────────
   node-exporter:
-    image: prom/node-exporter:v1.8.1
+    image: prom/node-exporter:v1.9.1
     container_name: 54link-node-exporter
     <<: *restart-policy
     profiles: [observability, all]
@@ -881,7 +881,7 @@ services:
 
   # ── cAdvisor (container metrics) ──────────────────────────────────────────
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
     container_name: 54link-cadvisor
     <<: *restart-policy
     profiles: [observability, all]
@@ -929,7 +929,7 @@ services:
 
   # ── MinIO (S3-compatible object storage / Lakehouse) ──────────────────────
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: minio/minio:RELEASE.2025-07-12T20-26-34Z
     container_name: 54link-minio
     <<: *restart-policy
     profiles: [infra, all]
@@ -958,7 +958,7 @@ services:
 
   # ── MinIO Init (create buckets + lifecycle policies) ──────────────────────
   minio-init:
-    image: minio/mc:RELEASE.2024-11-17T19-35-25Z
+    image: minio/mc:RELEASE.2025-07-12T14-03-43Z
     container_name: 54link-minio-init
     profiles: [infra, all]
     networks: [54link-infra]
@@ -1003,7 +1003,7 @@ services:
 
   # ── Dapr Placement Service ─────────────────────────────────────────────────
   dapr-placement:
-    image: daprio/dapr:1.14.4
+    image: daprio/dapr:1.15.3
     container_name: 54link-dapr-placement
     <<: *restart-policy
     profiles: [infra, all]
@@ -1104,7 +1104,7 @@ services:
   # network namespace as the main app container, making the Dapr HTTP API
   # available at localhost:3500 inside the app container.
   app-dapr:
-    image: daprio/daprd:1.14.4
+    image: daprio/daprd:1.15.3
     container_name: 54link-app-dapr
     <<: *restart-policy
     profiles: [app, all]

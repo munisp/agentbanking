@@ -51,7 +51,7 @@ services:
 
   # ─── Redis (Rate Limiting, Caching, Session Store) ────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     command: >
       redis-server
       --maxmemory 256mb

@@ -1,8 +1,8 @@
-fastapi==0.104.1
-uvicorn==0.24.0.post1
-pydantic-settings==2.1.0
-SQLAlchemy==2.0.23
-psycopg2-binary==2.9.9
-python-jose[cryptography]==3.3.0
+fastapi>=0.115.12
+uvicorn>=0.34.3
+pydantic-settings>=2.7.0
+sqlalchemy>=2.0.41
+psycopg2-binary>=2.9.10
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 passlib[bcrypt]==1.7.4
 

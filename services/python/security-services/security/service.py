@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from fastapi import status, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 import bcrypt
 import logging
 

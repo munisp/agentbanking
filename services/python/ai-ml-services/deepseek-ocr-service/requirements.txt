@@ -1,11 +1,11 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.3
+python-multipart>=0.0.20
 torch==2.6.0
 torchvision==0.21.0
 transformers==4.51.1
-Pillow==10.1.0
+pillow>=10.4.0
 flash-attn==2.7.3
-pydantic==2.5.0
-python-jose[cryptography]==3.3.0
+pydantic>=2.11.7
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 passlib[bcrypt]==1.7.4

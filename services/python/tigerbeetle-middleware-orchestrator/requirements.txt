@@ -1,2 +1,2 @@
-aiohttp>=3.9
+aiohttp>=3.11.18
 aioredis>=2.0

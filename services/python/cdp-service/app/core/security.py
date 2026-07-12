@@ -5,7 +5,8 @@ JWT token management, password hashing, etc.
 
 from datetime import datetime, timedelta
 from typing import Optional, Dict
-from jose import JWTError, jwt
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 import secrets
 import hashlib

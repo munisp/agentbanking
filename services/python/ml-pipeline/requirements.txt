@@ -32,9 +32,9 @@ shap>=0.43.0
 lime>=0.2.0
 
 # Web Framework (for serving)
-fastapi>=0.104.0
-uvicorn>=0.24.0
+fastapi>=0.115.12
+uvicorn>=0.34.3
 
 # Database
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.41
+psycopg2-binary>=2.9.10

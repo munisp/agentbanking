@@ -1,26 +1,26 @@
 # Core Framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-python-multipart==0.0.6
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.3
+pydantic>=2.11.7
+python-multipart>=0.0.20
 
 # Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.12.1
+sqlalchemy>=2.0.41
+psycopg2-binary>=2.9.10
+alembic>=1.16.2
 
 # Redis & Caching
-redis==5.0.1
-hiredis==2.2.3
+redis>=5.2.1
+hiredis>=3.1.1
 
 # Kafka & Messaging
-kafka-python==2.0.2
-confluent-kafka==2.3.0
+kafka-python>=2.2.10
+confluent-kafka>=2.10.0
 
 # HTTP & Async
-httpx==0.25.1
-aiohttp==3.9.1
-requests==2.31.0
+httpx>=0.28.1
+aiohttp>=3.11.18
+requests>=2.32.4
 
 # AWS Services
 boto3==1.29.7
@@ -29,7 +29,7 @@ botocore==1.32.7
 # OCR Engines
 paddleocr==2.7.0.3
 easyocr==1.7.0
-pillow==10.1.0
+pillow>=10.4.0
 numpy==1.24.3
 opencv-python==4.8.1.78
 
@@ -38,9 +38,9 @@ pdf2image==1.16.3
 pytesseract==0.3.10
 
 # Security & Authentication
-pyjwt==2.8.0
-cryptography==41.0.7
-python-jose[cryptography]==3.3.0
+pyjwt>=2.10.1
+cryptography>=44.0.3
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 passlib[bcrypt]==1.7.4
 
 # Payment Processing
@@ -56,11 +56,11 @@ websockets==12.0
 python-socketio==5.10.0
 
 # Data Validation & Serialization
-pydantic-settings==2.1.0
+pydantic-settings>=2.7.0
 email-validator==2.1.0
 
 # Utilities
-python-dotenv==1.0.0
+python-dotenv>=1.1.0
 pytz==2023.3
 python-dateutil==2.8.2
 
@@ -69,22 +69,22 @@ prometheus-client==0.19.0
 python-json-logger==2.0.7
 
 # Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
+pytest>=8.3.5
+pytest-asyncio>=1.0.0
+pytest-cov>=6.1.0
 httpx-mock==0.12.1
 
 # Development
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
-isort==5.12.0
+black>=25.1.0
+flake8>=7.2.0
+mypy>=1.15.0
+isort>=6.0.1
 
 # Temporal (Workflow Engine)
-temporalio==1.4.0
+temporalio>=1.10.0
 
 # Dapr
-dapr==1.12.0
+dapr>=1.14.0
 dapr-ext-grpc==1.12.0
 
 # Additional Dependencies

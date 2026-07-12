@@ -24,7 +24,8 @@ import httpx
 import redis
 import json
 import os
-from jose import jwt, JWTError
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 import asyncpg
 import logging
 

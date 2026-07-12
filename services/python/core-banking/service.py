@@ -7,8 +7,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from passlib.context import CryptContext
-from jose import jwt, JWTError
-
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 from config import settings
 from models import User, Customer, Account, Transaction
 from schemas import (

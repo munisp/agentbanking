@@ -1,8 +1,8 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-requests==2.31.0
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
-httpx==0.25.1
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.3
+pydantic>=2.11.7
+requests>=2.32.4
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+python-multipart>=0.0.20
+httpx>=0.28.1
 

@@ -205,6 +205,28 @@ Checks the amount a spender is allowed to withdraw."""
 
 # --- API Wrapper --- 
 app = Flask(__name__)
+# ─── Security Hardening (CVE-2024-34069, CVE-2026-27205) ─────────────────────
+import os as _os
+_flask_env = _os.getenv("FLASK_ENV", _os.getenv("APP_ENV", "production")).lower()
+if _flask_env != "development":
+    app.config["DEBUG"] = False
+    app.config["TESTING"] = False
+    _os.environ["WERKZEUG_DEBUG_PIN"] = "off"
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SECRET_KEY"] = _os.getenv("FLASK_SECRET_KEY", _os.urandom(32).hex())
+
+@app.after_request
+def _add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers.pop("Server", None)
+    return response
+# ─────────────────────────────────────────────────────────────────────────────
+
 gateway = StablecoinGateway()
 
 @app.route('/balance', methods=['GET'])

@@ -66,7 +66,7 @@ services:
   # Redis Cache
   # ============================================================================
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: arcface-redis-staging
     restart: unless-stopped
     

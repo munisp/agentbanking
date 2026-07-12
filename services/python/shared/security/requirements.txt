@@ -1,0 +1,19 @@
+# Shared Security Module Requirements
+# All versions are minimum patched versions addressing known CVEs
+
+# JWT (replaces python-jose CVE-2024-33663)
+PyJWT>=2.10.1
+
+# Cryptography
+cryptography>=44.0.3
+
+# FastAPI + Starlette (CVE-2024-47874, CVE-2026-54283)
+fastapi>=0.115.12
+starlette>=0.46.2
+
+# HTTP
+httpx>=0.28.1
+requests>=2.32.4
+
+# Utilities
+python-dotenv>=1.1.0

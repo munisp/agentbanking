@@ -8,7 +8,8 @@ from typing import Annotated, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, EmailStr, constr
-from jose import JWTError, jwt
+import jwt  # Migrated from python-jose (CVE-2024-33663) to PyJWT
+from jwt.exceptions import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 from starlette.responses import JSONResponse
 

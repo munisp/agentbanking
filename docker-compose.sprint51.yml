@@ -48,7 +48,7 @@ services:
   # ── Database ──
   postgres:
     <<: *common
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: posshell
       POSTGRES_USER: posadmin
@@ -66,7 +66,7 @@ services:
   # ── Cache & Sessions ──
   redis:
     <<: *common
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"

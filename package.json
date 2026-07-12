@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "UNLICENSED",
-  "description": "54Link Agency Banking POS Platform — Production",
+  "description": "54Link Agency Banking POS Platform \u2014 Production",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -20,7 +20,12 @@
     "db:migrate:rollback": "npx tsx scripts/migrate.ts --rollback",
     "db:studio": "drizzle-kit studio",
     "db:seed": "node seed.mjs",
-    "db:seed:integration": "node seed-integration.mjs"
+    "db:seed:integration": "node seed-integration.mjs",
+    "db:seed:tsx": "npx tsx drizzle/seed.ts",
+    "db:seed:reset": "npx tsx drizzle/seed.ts --reset",
+    "db:validate": "npx tsx drizzle/validate-schema.ts",
+    "db:validate:fix": "npx tsx drizzle/validate-schema.ts --fix",
+    "db:introspect": "drizzle-kit introspect"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

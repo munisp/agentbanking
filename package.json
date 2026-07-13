@@ -72,7 +72,7 @@
     "@tanstack/react-query": "^5.90.2",
     "@temporalio/activity": "^1.15.0",
     "@temporalio/client": "^1.15.0",
-    "@temporalio/worker": "^1.15.0",
+    "@temporalio/worker": "^1.20.2",
     "@temporalio/workflow": "^1.15.0",
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",

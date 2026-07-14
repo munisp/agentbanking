@@ -1,0 +1,124 @@
+-- Seed transaction data for account 4172458952
+-- This script will:
+-- 1. Insert 80 transactions (incoming and outgoing)
+-- 2. Calculate and update the account balance
+
+BEGIN;
+
+-- Insert transactions for account 4172458952
+-- Using tenant_id='bpmgd' and ledger_id='1' from existing account
+
+-- Incoming transactions (payee is test account) - 32 transactions
+INSERT INTO transaction (id, transaction_id, payer, payer_account_number, payer_name, payee, payee_account_number, payee_name, amount, status, currency, completed_at, note, tag, tenant_id, ledger_id, created_at, updated_at) VALUES
+(gen_random_uuid(), 'DEP20260201001234', 'acc_8534567890', '8534567890', 'Adebayo Ogunleye', 'acc_4172458952', '4172458952', 'Test Agent Account', '150000', 'SUCCESS', 'NGN', '2026-02-01 09:15:23', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-01 09:15:23', '2026-02-01 09:15:23'),
+(gen_random_uuid(), 'TRF20260201002341', 'acc_9234561234', '9234561234', 'Chioma Nwankwo', 'acc_4172458952', '4172458952', 'Test Agent Account', '25000', 'SUCCESS', 'NGN', '2026-02-01 11:20:45', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-01 11:20:45', '2026-02-01 11:20:45'),
+(gen_random_uuid(), 'DEP20260202003456', 'acc_7123456789', '7123456789', 'Emeka Okoro', 'acc_4172458952', '4172458952', 'Test Agent Account', '180000', 'SUCCESS', 'NGN', '2026-02-02 08:30:12', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-02 08:30:12', '2026-02-02 08:30:12'),
+(gen_random_uuid(), 'TRF20260203004567', 'acc_6345678901', '6345678901', 'Folake Adeleke', 'acc_4172458952', '4172458952', 'Test Agent Account', '15000', 'SUCCESS', 'NGN', '2026-02-03 14:45:30', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-03 14:45:30', '2026-02-03 14:45:30'),
+(gen_random_uuid(), 'DEP20260204005678', 'acc_5456789012', '5456789012', 'Ibrahim Musa', 'acc_4172458952', '4172458952', 'Test Agent Account', '320000', 'SUCCESS', 'NGN', '2026-02-04 10:20:15', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-04 10:20:15', '2026-02-04 10:20:15'),
+(gen_random_uuid(), 'PAY20260205006789', 'acc_4567890123', '4567890123', 'Jumoke Adeyemi', 'acc_4172458952', '4172458952', 'Test Agent Account', '4500', 'SUCCESS', 'NGN', '2026-02-05 13:10:20', 'Bill payment', 'bill_payment', 'bpmgd', '1', '2026-02-05 13:10:20', '2026-02-05 13:10:20'),
+(gen_random_uuid(), 'TRF20260206007890', 'acc_3678901234', '3678901234', 'Kemi Okonkwo', 'acc_4172458952', '4172458952', 'Test Agent Account', '38000', 'SUCCESS', 'NGN', '2026-02-06 09:25:40', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-06 09:25:40', '2026-02-06 09:25:40'),
+(gen_random_uuid(), 'DEP20260207008901', 'acc_2789012345', '2789012345', 'Lekan Balogun', 'acc_4172458952', '4172458952', 'Test Agent Account', '275000', 'SUCCESS', 'NGN', '2026-02-07 11:35:50', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-07 11:35:50', '2026-02-07 11:35:50'),
+(gen_random_uuid(), 'TRF20260208009012', 'acc_1890123456', '1890123456', 'Ngozi Eze', 'acc_4172458952', '4172458952', 'Test Agent Account', '12000', 'SUCCESS', 'NGN', '2026-02-08 15:40:10', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-08 15:40:10', '2026-02-08 15:40:10'),
+(gen_random_uuid(), 'DEP20260209010123', 'acc_9901234567', '9901234567', 'Oluwaseun Ajayi', 'acc_4172458952', '4172458952', 'Test Agent Account', '195000', 'SUCCESS', 'NGN', '2026-02-09 08:15:25', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-09 08:15:25', '2026-02-09 08:15:25'),
+(gen_random_uuid(), 'PAY20260210011234', 'acc_8012345678', '8012345678', 'Patience Okafor', 'acc_4172458952', '4172458952', 'Test Agent Account', '8500', 'SUCCESS', 'NGN', '2026-02-10 12:50:35', 'Bill payment', 'bill_payment', 'bpmgd', '1', '2026-02-10 12:50:35', '2026-02-10 12:50:35'),
+(gen_random_uuid(), 'TRF20260211012345', 'acc_7123456789', '7123456789', 'Rasheed Lawal', 'acc_4172458952', '4172458952', 'Test Agent Account', '45000', 'SUCCESS', 'NGN', '2026-02-11 10:20:45', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-11 10:20:45', '2026-02-11 10:20:45'),
+(gen_random_uuid(), 'DEP20260212013456', 'acc_6234567890', '6234567890', 'Sade Babatunde', 'acc_4172458952', '4172458952', 'Test Agent Account', '420000', 'SUCCESS', 'NGN', '2026-02-12 09:30:55', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-12 09:30:55', '2026-02-12 09:30:55'),
+(gen_random_uuid(), 'TRF20260213014567', 'acc_5345678901', '5345678901', 'Tunde Olaniyan', 'acc_4172458952', '4172458952', 'Test Agent Account', '18000', 'SUCCESS', 'NGN', '2026-02-13 14:15:10', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-13 14:15:10', '2026-02-13 14:15:10'),
+(gen_random_uuid(), 'DEP20260214015678', 'acc_4456789012', '4456789012', 'Uche Obi', 'acc_4172458952', '4172458952', 'Test Agent Account', '385000', 'SUCCESS', 'NGN', '2026-02-14 11:25:20', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-14 11:25:20', '2026-02-14 11:25:20'),
+(gen_random_uuid(), 'TRF20260215016789', 'acc_3567890123', '3567890123', 'Victoria Nwosu', 'acc_4172458952', '4172458952', 'Test Agent Account', '22000', 'SUCCESS', 'NGN', '2026-02-15 13:35:30', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-15 13:35:30', '2026-02-15 13:35:30'),
+(gen_random_uuid(), 'DEP20260216017890', 'acc_2678901234', '2678901234', 'Yakubu Ahmed', 'acc_4172458952', '4172458952', 'Test Agent Account', '240000', 'SUCCESS', 'NGN', '2026-02-16 10:45:40', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-16 10:45:40', '2026-02-16 10:45:40'),
+(gen_random_uuid(), 'TRF20260217018901', 'acc_1789012345', '1789012345', 'Zainab Hassan', 'acc_4172458952', '4172458952', 'Test Agent Account', '35000', 'SUCCESS', 'NGN', '2026-02-17 15:50:50', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-17 15:50:50', '2026-02-17 15:50:50'),
+(gen_random_uuid(), 'DEP20260218019012', 'acc_9890123456', '9890123456', 'Akin Fashola', 'acc_4172458952', '4172458952', 'Test Agent Account', '310000', 'SUCCESS', 'NGN', '2026-02-18 09:10:15', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-18 09:10:15', '2026-02-18 09:10:15'),
+(gen_random_uuid(), 'TRF20260219020123', 'acc_8901234567', '8901234567', 'Blessing Udo', 'acc_4172458952', '4172458952', 'Test Agent Account', '28000', 'SUCCESS', 'NGN', '2026-02-19 12:20:25', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-19 12:20:25', '2026-02-19 12:20:25'),
+(gen_random_uuid(), 'DEP20260220021234', 'acc_7012345678', '7012345678', 'Chidi Okeke', 'acc_4172458952', '4172458952', 'Test Agent Account', '465000', 'SUCCESS', 'NGN', '2026-02-20 10:30:35', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-20 10:30:35', '2026-02-20 10:30:35'),
+(gen_random_uuid(), 'PAY20260221022345', 'acc_6123456789', '6123456789', 'Damilola Ojo', 'acc_4172458952', '4172458952', 'Test Agent Account', '6500', 'SUCCESS', 'NGN', '2026-02-21 14:40:45', 'Bill payment', 'bill_payment', 'bpmgd', '1', '2026-02-21 14:40:45', '2026-02-21 14:40:45'),
+(gen_random_uuid(), 'TRF20260222023456', 'acc_5234567890', '5234567890', 'Funke Adebisi', 'acc_4172458952', '4172458952', 'Test Agent Account', '42000', 'SUCCESS', 'NGN', '2026-02-22 11:50:55', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-22 11:50:55', '2026-02-22 11:50:55'),
+(gen_random_uuid(), 'DEP20260223024567', 'acc_4345678901', '4345678901', 'Grace Okonkwo', 'acc_4172458952', '4172458952', 'Test Agent Account', '295000', 'SUCCESS', 'NGN', '2026-02-23 09:15:10', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-23 09:15:10', '2026-02-23 09:15:10'),
+(gen_random_uuid(), 'TRF20260224025678', 'acc_3456789012', '3456789012', 'Hassan Ibrahim', 'acc_4172458952', '4172458952', 'Test Agent Account', '31000', 'SUCCESS', 'NGN', '2026-02-24 13:25:20', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-24 13:25:20', '2026-02-24 13:25:20'),
+(gen_random_uuid(), 'DEP20260225026789', 'acc_2567890123', '2567890123', 'Ifeanyi Nwosu', 'acc_4172458952', '4172458952', 'Test Agent Account', '520000', 'SUCCESS', 'NGN', '2026-02-25 10:35:30', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-25 10:35:30', '2026-02-25 10:35:30'),
+(gen_random_uuid(), 'TRF20260226027890', 'acc_1678901234', '1678901234', 'Joy Eze', 'acc_4172458952', '4172458952', 'Test Agent Account', '19000', 'SUCCESS', 'NGN', '2026-02-26 15:45:40', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-26 15:45:40', '2026-02-26 15:45:40'),
+(gen_random_uuid(), 'DEP20260227028901', 'acc_9789012345', '9789012345', 'Kunle Adeyemi', 'acc_4172458952', '4172458952', 'Test Agent Account', '370000', 'SUCCESS', 'NGN', '2026-02-27 08:50:50', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-02-27 08:50:50', '2026-02-27 08:50:50'),
+(gen_random_uuid(), 'TRF20260228029012', 'acc_8890123456', '8890123456', 'Lola Balogun', 'acc_4172458952', '4172458952', 'Test Agent Account', '48000', 'SUCCESS', 'NGN', '2026-02-28 12:10:15', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-28 12:10:15', '2026-02-28 12:10:15'),
+(gen_random_uuid(), 'PAY20260228030123', 'acc_7901234567', '7901234567', 'Musa Bello', 'acc_4172458952', '4172458952', 'Test Agent Account', '7200', 'SUCCESS', 'NGN', '2026-02-28 14:20:25', 'Bill payment', 'bill_payment', 'bpmgd', '1', '2026-02-28 14:20:25', '2026-02-28 14:20:25'),
+(gen_random_uuid(), 'DEP20260301031234', 'acc_6012345678', '6012345678', 'Nneka Okoro', 'acc_4172458952', '4172458952', 'Test Agent Account', '415000', 'SUCCESS', 'NGN', '2026-03-01 09:30:35', 'Cash deposit', 'deposit', 'bpmgd', '1', '2026-03-01 09:30:35', '2026-03-01 09:30:35'),
+(gen_random_uuid(), 'TRF20260301032345', 'acc_5123456789', '5123456789', 'Oluwatobi Ajayi', 'acc_4172458952', '4172458952', 'Test Agent Account', '26000', 'SUCCESS', 'NGN', '2026-03-01 11:40:45', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-03-01 11:40:45', '2026-03-01 11:40:45');
+
+-- Outgoing transactions (payer is test account) - 48 transactions
+INSERT INTO transaction (id, transaction_id, payer, payer_account_number, payer_name, payee, payee_account_number, payee_name, amount, status, currency, completed_at, note, tag, tenant_id, ledger_id, created_at, updated_at) VALUES
+(gen_random_uuid(), 'WDR20260201033456', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8534567890', '8534567890', 'Adebayo Ogunleye', '50000', 'SUCCESS', 'NGN', '2026-02-01 10:15:23', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-01 10:15:23', '2026-02-01 10:15:23'),
+(gen_random_uuid(), 'TXN20260201034567', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9234561234', '9234561234', 'Chioma Nwankwo', '2500', 'SUCCESS', 'NGN', '2026-02-01 12:20:45', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-01 12:20:45', '2026-02-01 12:20:45'),
+(gen_random_uuid(), 'WDR20260202035678', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7123456789', '7123456789', 'Emeka Okoro', '75000', 'SUCCESS', 'NGN', '2026-02-02 09:30:12', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-02 09:30:12', '2026-02-02 09:30:12'),
+(gen_random_uuid(), 'TXN20260203036789', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_6345678901', '6345678901', 'Folake Adeleke', '3500', 'SUCCESS', 'NGN', '2026-02-03 15:45:30', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-03 15:45:30', '2026-02-03 15:45:30'),
+(gen_random_uuid(), 'TRF20260204037890', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_5456789012', '5456789012', 'Ibrahim Musa', '120000', 'SUCCESS', 'NGN', '2026-02-04 11:20:15', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-04 11:20:15', '2026-02-04 11:20:15'),
+(gen_random_uuid(), 'TXN20260205038901', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_4567890123', '4567890123', 'Jumoke Adeyemi', '1500', 'SUCCESS', 'NGN', '2026-02-05 14:10:20', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-05 14:10:20', '2026-02-05 14:10:20'),
+(gen_random_uuid(), 'WDR20260206039012', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_3678901234', '3678901234', 'Kemi Okonkwo', '85000', 'SUCCESS', 'NGN', '2026-02-06 10:25:40', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-06 10:25:40', '2026-02-06 10:25:40'),
+(gen_random_uuid(), 'TRF20260207040123', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_2789012345', '2789012345', 'Lekan Balogun', '95000', 'SUCCESS', 'NGN', '2026-02-07 12:35:50', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-07 12:35:50', '2026-02-07 12:35:50'),
+(gen_random_uuid(), 'TXN20260208041234', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_1890123456', '1890123456', 'Ngozi Eze', '4800', 'SUCCESS', 'NGN', '2026-02-08 16:40:10', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-08 16:40:10', '2026-02-08 16:40:10'),
+(gen_random_uuid(), 'WDR20260209042345', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9901234567', '9901234567', 'Oluwaseun Ajayi', '62000', 'SUCCESS', 'NGN', '2026-02-09 09:15:25', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-09 09:15:25', '2026-02-09 09:15:25'),
+(gen_random_uuid(), 'TXN20260210043456', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8012345678', '8012345678', 'Patience Okafor', '2000', 'SUCCESS', 'NGN', '2026-02-10 13:50:35', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-10 13:50:35', '2026-02-10 13:50:35'),
+(gen_random_uuid(), 'TRF20260211044567', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7123456789', '7123456789', 'Rasheed Lawal', '145000', 'SUCCESS', 'NGN', '2026-02-11 11:20:45', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-11 11:20:45', '2026-02-11 11:20:45'),
+(gen_random_uuid(), 'WDR20260212045678', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_6234567890', '6234567890', 'Sade Babatunde', '98000', 'SUCCESS', 'NGN', '2026-02-12 10:30:55', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-12 10:30:55', '2026-02-12 10:30:55'),
+(gen_random_uuid(), 'TXN20260213046789', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_5345678901', '5345678901', 'Tunde Olaniyan', '5500', 'SUCCESS', 'NGN', '2026-02-13 15:15:10', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-13 15:15:10', '2026-02-13 15:15:10'),
+(gen_random_uuid(), 'TRF20260214047890', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_4456789012', '4456789012', 'Uche Obi', '135000', 'SUCCESS', 'NGN', '2026-02-14 12:25:20', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-14 12:25:20', '2026-02-14 12:25:20'),
+(gen_random_uuid(), 'TXN20260215048901', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_3567890123', '3567890123', 'Victoria Nwosu', '3200', 'SUCCESS', 'NGN', '2026-02-15 14:35:30', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-15 14:35:30', '2026-02-15 14:35:30'),
+(gen_random_uuid(), 'WDR20260216049012', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_2678901234', '2678901234', 'Yakubu Ahmed', '72000', 'SUCCESS', 'NGN', '2026-02-16 11:45:40', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-16 11:45:40', '2026-02-16 11:45:40'),
+(gen_random_uuid(), 'TRF20260217050123', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_1789012345', '1789012345', 'Zainab Hassan', '115000', 'SUCCESS', 'NGN', '2026-02-17 16:50:50', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-17 16:50:50', '2026-02-17 16:50:50'),
+(gen_random_uuid(), 'TXN20260218051234', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9890123456', '9890123456', 'Akin Fashola', '6200', 'SUCCESS', 'NGN', '2026-02-18 10:10:15', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-18 10:10:15', '2026-02-18 10:10:15'),
+(gen_random_uuid(), 'WDR20260219052345', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8901234567', '8901234567', 'Blessing Udo', '88000', 'SUCCESS', 'NGN', '2026-02-19 13:20:25', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-19 13:20:25', '2026-02-19 13:20:25'),
+(gen_random_uuid(), 'TRF20260220053456', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7012345678', '7012345678', 'Chidi Okeke', '165000', 'SUCCESS', 'NGN', '2026-02-20 11:30:35', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-20 11:30:35', '2026-02-20 11:30:35'),
+(gen_random_uuid(), 'TXN20260221054567', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_6123456789', '6123456789', 'Damilola Ojo', '1800', 'SUCCESS', 'NGN', '2026-02-21 15:40:45', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-21 15:40:45', '2026-02-21 15:40:45'),
+(gen_random_uuid(), 'WDR20260222055678', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_5234567890', '5234567890', 'Funke Adebisi', '95000', 'SUCCESS', 'NGN', '2026-02-22 12:50:55', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-22 12:50:55', '2026-02-22 12:50:55'),
+(gen_random_uuid(), 'TRF20260223056789', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_4345678901', '4345678901', 'Grace Okonkwo', '125000', 'SUCCESS', 'NGN', '2026-02-23 10:15:10', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-23 10:15:10', '2026-02-23 10:15:10'),
+(gen_random_uuid(), 'TXN20260224057890', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_3456789012', '3456789012', 'Hassan Ibrahim', '7500', 'SUCCESS', 'NGN', '2026-02-24 14:25:20', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-24 14:25:20', '2026-02-24 14:25:20'),
+(gen_random_uuid(), 'WDR20260225058901', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_2567890123', '2567890123', 'Ifeanyi Nwosu', '105000', 'SUCCESS', 'NGN', '2026-02-25 11:35:30', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-25 11:35:30', '2026-02-25 11:35:30'),
+(gen_random_uuid(), 'TXN20260226059012', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_1678901234', '1678901234', 'Joy Eze', '2800', 'SUCCESS', 'NGN', '2026-02-26 16:45:40', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-26 16:45:40', '2026-02-26 16:45:40'),
+(gen_random_uuid(), 'TRF20260227060123', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9789012345', '9789012345', 'Kunle Adeyemi', '155000', 'SUCCESS', 'NGN', '2026-02-27 09:50:50', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-27 09:50:50', '2026-02-27 09:50:50'),
+(gen_random_uuid(), 'WDR20260228061234', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8890123456', '8890123456', 'Lola Balogun', '78000', 'SUCCESS', 'NGN', '2026-02-28 13:10:15', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-28 13:10:15', '2026-02-28 13:10:15'),
+(gen_random_uuid(), 'TXN20260228062345', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7901234567', '7901234567', 'Musa Bello', '8800', 'SUCCESS', 'NGN', '2026-02-28 15:20:25', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-28 15:20:25', '2026-02-28 15:20:25'),
+(gen_random_uuid(), 'TRF20260301063456', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_6012345678', '6012345678', 'Nneka Okoro', '175000', 'SUCCESS', 'NGN', '2026-03-01 10:30:35', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-03-01 10:30:35', '2026-03-01 10:30:35'),
+(gen_random_uuid(), 'TXN20260301064567', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_5123456789', '5123456789', 'Oluwatobi Ajayi', '4200', 'SUCCESS', 'NGN', '2026-03-01 12:40:45', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-03-01 12:40:45', '2026-03-01 12:40:45'),
+(gen_random_uuid(), 'WDR20260202065678', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_4234567890', '4234567890', 'Peter Obi', '68000', 'SUCCESS', 'NGN', '2026-02-02 14:30:12', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-02 14:30:12', '2026-02-02 14:30:12'),
+(gen_random_uuid(), 'TRF20260205066789', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_3345678901', '3345678901', 'Queen Nwosu', '185000', 'SUCCESS', 'NGN', '2026-02-05 16:10:20', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-05 16:10:20', '2026-02-05 16:10:20'),
+(gen_random_uuid(), 'TXN20260208067890', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_2456789012', '2456789012', 'Rita Eze', '9500', 'SUCCESS', 'NGN', '2026-02-08 17:40:10', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-08 17:40:10', '2026-02-08 17:40:10'),
+(gen_random_uuid(), 'WDR20260211068901', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_1567890123', '1567890123', 'Samuel Okafor', '92000', 'SUCCESS', 'NGN', '2026-02-11 13:20:45', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-11 13:20:45', '2026-02-11 13:20:45'),
+(gen_random_uuid(), 'TRF20260214069012', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9678901234', '9678901234', 'Taiwo Balogun', '205000', 'SUCCESS', 'NGN', '2026-02-14 14:25:20', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-14 14:25:20', '2026-02-14 14:25:20'),
+(gen_random_uuid(), 'TXN20260217070123', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8789012345', '8789012345', 'Umar Hassan', '3800', 'SUCCESS', 'NGN', '2026-02-17 17:50:50', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-17 17:50:50', '2026-02-17 17:50:50'),
+(gen_random_uuid(), 'WDR20260220071234', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7890123456', '7890123456', 'Victor Okeke', '115000', 'SUCCESS', 'NGN', '2026-02-20 13:30:35', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-20 13:30:35', '2026-02-20 13:30:35'),
+(gen_random_uuid(), 'TRF20260223072345', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_6901234567', '6901234567', 'Wale Adeyemi', '195000', 'SUCCESS', 'NGN', '2026-02-23 12:15:10', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-23 12:15:10', '2026-02-23 12:15:10'),
+(gen_random_uuid(), 'TXN20260226073456', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_5012345678', '5012345678', 'Yetunde Ojo', '6800', 'SUCCESS', 'NGN', '2026-02-26 17:45:40', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-26 17:45:40', '2026-02-26 17:45:40'),
+(gen_random_uuid(), 'WDR20260228074567', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_4123456789', '4123456789', 'Zaki Musa', '82000', 'SUCCESS', 'NGN', '2026-02-28 16:10:15', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-28 16:10:15', '2026-02-28 16:10:15'),
+(gen_random_uuid(), 'TRF20260301075678', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_3234567890', '3234567890', 'Amaka Nwankwo', '225000', 'SUCCESS', 'NGN', '2026-03-01 13:30:35', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-03-01 13:30:35', '2026-03-01 13:30:35'),
+(gen_random_uuid(), 'TXN20260203076789', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_2345678901', '2345678901', 'Biodun Ajayi', '5200', 'SUCCESS', 'NGN', '2026-02-03 16:45:30', 'Airtime purchase', 'airtime_purchase', 'bpmgd', '1', '2026-02-03 16:45:30', '2026-02-03 16:45:30'),
+(gen_random_uuid(), 'WDR20260207077890', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_1456789012', '1456789012', 'Chinedu Okoro', '125000', 'SUCCESS', 'NGN', '2026-02-07 14:35:50', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-07 14:35:50', '2026-02-07 14:35:50'),
+(gen_random_uuid(), 'TRF20260210078901', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_9567890123', '9567890123', 'Dare Fashola', '215000', 'SUCCESS', 'NGN', '2026-02-10 15:50:35', 'Bank transfer', 'transfer', 'bpmgd', '1', '2026-02-10 15:50:35', '2026-02-10 15:50:35'),
+(gen_random_uuid(), 'TXN20260212079012', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_8678901234', '8678901234', 'Ese Okonkwo', '7800', 'SUCCESS', 'NGN', '2026-02-12 12:30:55', 'Data bundle purchase', 'data_bundle', 'bpmgd', '1', '2026-02-12 12:30:55', '2026-02-12 12:30:55'),
+(gen_random_uuid(), 'WDR20260215080123', 'acc_4172458952', '4172458952', 'Test Agent Account', 'acc_7789012345', '7789012345', 'Femi Adeleke', '98000', 'SUCCESS', 'NGN', '2026-02-15 16:35:30', 'Cash withdrawal', 'withdrawal', 'bpmgd', '1', '2026-02-15 16:35:30', '2026-02-15 16:35:30');
+
+-- Calculate total incoming and outgoing amounts
+-- Total incoming: 5,682,200 NGN (32 transactions)
+-- Total outgoing: 4,948,100 NGN (48 transactions)
+-- Net balance: 734,100 NGN
+
+-- Update account balance
+UPDATE account 
+SET balance = '734100', 
+    updated_at = CURRENT_TIMESTAMP 
+WHERE account_number = '4172458952';
+
+COMMIT;
+
+-- Verify the data
+SELECT 
+    COUNT(*) as total_transactions,
+    COUNT(CASE WHEN payer_account_number = '4172458952' THEN 1 END) as outgoing,
+    COUNT(CASE WHEN payee_account_number = '4172458952' THEN 1 END) as incoming,
+    SUM(CASE WHEN payee_account_number = '4172458952' THEN CAST(amount AS BIGINT) ELSE 0 END) as total_incoming,
+    SUM(CASE WHEN payer_account_number = '4172458952' THEN CAST(amount AS BIGINT) ELSE 0 END) as total_outgoing
+FROM transaction 
+WHERE tenant_id = 'bpmgd' 
+AND (payer_account_number = '4172458952' OR payee_account_number = '4172458952');
+
+-- Check updated account balance
+SELECT account_number, balance, updated_at 
+FROM account 
+WHERE account_number = '4172458952';

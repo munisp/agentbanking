@@ -1,0 +1,33 @@
+# distributed-tracing
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-distributed-tracing-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /distributed-tracing/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9482
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/distributed-tracing/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

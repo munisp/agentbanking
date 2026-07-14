@@ -1,0 +1,33 @@
+# go-ledger-sync
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-go-ledger-sync-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /go-ledger-sync/*
+      backends:
+        - serviceName: core-ledger
+          servicePort: 9327
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/go-ledger-sync/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

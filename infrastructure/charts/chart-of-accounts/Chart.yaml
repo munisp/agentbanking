@@ -1,0 +1,6 @@
+apiVersion: v2
+name: chart-of-accounts
+description: 54agent Chart of Accounts Service
+type: application
+version: 0.0.9
+appVersion: "1.0.0"

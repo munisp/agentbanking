@@ -1,0 +1,66 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23" agent="ChatGPT" version="24.7.8">
+  <diagram name="POS Terminal Service DB ERD">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="POS Terminal Service" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="400" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Entities -->
+
+        <mxCell id="terminalGroup" value="TerminalGroup&#xa;----------------------&#xa;id (PK)&#xa;name (unique)&#xa;description" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="220" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="terminal" value="Terminal&#xa;----------------------&#xa;id (PK)&#xa;device_id&#xa;location&#xa;status&#xa;serial_number (unique)&#xa;business_id (FK)&#xa;terminal_group_id (FK)&#xa;software_version&#xa;battery_level&#xa;is_online" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="260" height="200" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="serviceRecord" value="ServiceRecord&#xa;----------------------&#xa;id (PK)&#xa;terminal_id (FK)&#xa;service_date&#xa;service_type&#xa;performed_by&#xa;cost&#xa;resolution" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="320" width="260" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="softwareUpdate" value="SoftwareUpdate&#xa;----------------------&#xa;id (PK)&#xa;version (unique)&#xa;release_date&#xa;criticality&#xa;download_url" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="640" y="80" width="240" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scheduledTask" value="ScheduledTask&#xa;----------------------&#xa;id (PK)&#xa;name&#xa;task_type&#xa;target_type&#xa;target_id&#xa;status&#xa;next_run_time" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="640" y="260" width="240" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="auditLog" value="AuditLog&#xa;----------------------&#xa;id (PK)&#xa;timestamp&#xa;user_id&#xa;action&#xa;resource_type&#xa;resource_id&#xa;ip_address" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="640" y="460" width="240" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="business" value="Business (External)&#xa;----------------------&#xa;id (PK)&#xa;name" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="200" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Relationships -->
+
+        <mxCell id="rel1"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;endArrow=ERmany;strokeWidth=2;"
+          edge="1" parent="1" source="terminalGroup" target="terminal">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rel2"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;endArrow=ERmany;strokeWidth=2;"
+          edge="1" parent="1" source="terminal" target="serviceRecord">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rel3"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;endArrow=ERmany;strokeWidth=2;"
+          edge="1" parent="1" source="business" target="terminal">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

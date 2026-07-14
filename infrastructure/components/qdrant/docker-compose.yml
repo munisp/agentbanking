@@ -1,0 +1,27 @@
+version: "3.9"
+
+# Qdrant vector database — semantic search and AI-powered features:
+#   - Agent churn prediction embeddings
+#   - Customer 360 similarity matching
+#   - Compliance document semantic search
+#   - Territory clustering ML features
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - ./config.yaml:/qdrant/config/production.yaml
+    environment:
+      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-changeme}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  qdrant_storage:

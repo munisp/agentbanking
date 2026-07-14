@@ -1,0 +1,321 @@
+# NetworkPolicy manifests for 54agent Agency Banking Platform
+# Namespace: 54agent
+#
+# These policies implement default-deny for all ingress and egress,
+# then explicitly allow only required traffic paths.
+# The APISIX ingress controller lives in the "ingress-apisix" namespace.
+
+---
+# 1. settlement-service
+#    Ingress : apisix (ingress-apisix ns), commission-settlement
+#    Egress  : commission-settlement (:8080), payment-processing-service (:8080), postgres (:25060), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: settlement-service-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: settlement-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+    - from:
+        - podSelector:
+            matchLabels:
+              app: commission-settlement
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: commission-settlement
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: payment-processing-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 2. commission-settlement
+#    Ingress : apisix (ingress-apisix ns), settlement-service, agent-service
+#    Egress  : settlement-service (:8080), postgres (:25060), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: commission-settlement-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: commission-settlement
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+    - from:
+        - podSelector:
+            matchLabels:
+              app: settlement-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-service
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: settlement-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 3. float-management
+#    Ingress : apisix (ingress-apisix ns), agent-service
+#    Egress  : postgres (:25060), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: float-management-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: float-management
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-service
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 4. transaction-ledger
+#    Ingress : apisix (ingress-apisix ns), payment-processing-service, agent-service
+#    Egress  : postgres (:25060), redis (:6379), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: transaction-ledger-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: transaction-ledger
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+    - from:
+        - podSelector:
+            matchLabels:
+              app: payment-processing-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agent-service
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 5. auth-service
+#    Ingress : apisix (all traffic — auth is the entry point for every route)
+#    Egress  : postgres (:25060), keycloak (:8080), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 6. agent-service
+#    Ingress : apisix (ingress-apisix ns)
+#    Egress  : auth-service (:8080), commission-settlement (:8080),
+#              float-management (:8080), postgres (:25060), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-service-netpol
+  namespace: 54agent
+spec:
+  podSelector:
+    matchLabels:
+      app: agent-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-apisix
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: commission-settlement
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: float-management
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 25060
+    - to: []   # DNS
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

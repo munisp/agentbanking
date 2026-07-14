@@ -1,0 +1,58 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-supply-chain-govt
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9585
+    - port: 9586
+    - port: 9587
+    - port: 9588
+    - port: 9589
+    - port: 9590
+    - port: 9591
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 448Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: supply-chain-govt
+  appPort: 9586
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9585"
+  PORT_BASE: "9585"
+  SERVICE_GROUP: supply-chain-govt
+  SERVICES: "agritech-payments,government-integration,i18n-currency,inventory-management,inventory-service,supply-chain,supply-chain-go"

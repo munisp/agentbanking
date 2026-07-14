@@ -1,0 +1,733 @@
+> Task :gradle-plugin:settings-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:shared:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:shared:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:compileJava NO-SOURCE
+> Task :gradle-plugin:shared:processResources NO-SOURCE
+> Task :gradle-plugin:shared:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:processResources NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:classes UP-TO-DATE
+> Task :gradle-plugin:shared:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin-shared:jar UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:compileKotlin UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:settings-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:settings-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-settings-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle-plugin:react-native-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-launcher-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-launcher-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:compileJava NO-SOURCE
+> Task :gradle-plugin:react-native-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:processResources UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:classes UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:processResources UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:classes UP-TO-DATE
+> Task :expo-gradle-plugin:expo-max-sdk-override-plugin:jar UP-TO-DATE
+> Task :expo-gradle-plugin:expo-autolinking-plugin:jar UP-TO-DATE
+> Task :gradle-plugin:react-native-gradle-plugin:jar UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-dev-launcher-gradle-plugin:classes UP-TO-DATE
+> Task :expo-dev-launcher-gradle-plugin:jar UP-TO-DATE
+> Task :expo-module-gradle-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-module-gradle-plugin:compileKotlin UP-TO-DATE
+> Task :expo-module-gradle-plugin:compileJava NO-SOURCE
+> Task :expo-module-gradle-plugin:pluginDescriptors UP-TO-DATE
+> Task :expo-module-gradle-plugin:processResources UP-TO-DATE
+> Task :expo-module-gradle-plugin:classes UP-TO-DATE
+> Task :expo-module-gradle-plugin:jar UP-TO-DATE
+
+> Configure project :app
+ ℹ️  [33mApplying gradle plugin[0m '[32mexpo-max-sdk-override-plugin[0m'
+  [expo-max-sdk-override-plugin] This plugin will find all permissions declared with `android:maxSdkVersion`. If there exists a declaration with the `android:maxSdkVersion` annotation and another one without, the plugin will remove the annotation from the final merged manifest. In order to see a log with the changes run a clean build of the app.
+ ℹ️  [33mApplying gradle plugin[0m '[32mexpo-dev-launcher-gradle-plugin[0m'
+
+> Configure project :
+[32m[ExpoRootProject][0m Using the following versions:
+  - buildTools:  [32m36.0.0[0m
+  - minSdk:      [32m24[0m
+  - compileSdk:  [32m36[0m
+  - targetSdk:   [32m36[0m
+  - ndk:         [32m27.1.12297006[0m
+  - kotlin:      [32m2.1.20[0m
+  - ksp:         [32m2.1.20-2.0.1[0m
+
+> Configure project :expo-modules-core
+Linking react-native-worklets native libs into expo-modules-core build tasks
+task ':react-native-worklets:mergeDebugNativeLibs'
+task ':react-native-worklets:mergeReleaseNativeLibs'
+
+> Configure project :expo
+
+Using expo modules
+  - [32mexpo-log-box[0m (55.0.10)
+  - [32mexpo-constants[0m (55.0.14)
+  - [32mexpo-dev-client[0m (55.0.27)
+  - [32mexpo-dev-launcher[0m (55.0.28)
+  - [32mexpo-dev-menu[0m (55.0.23)
+  - [32mexpo-dev-menu-interface[0m (55.0.2)
+  - [32mexpo-json-utils[0m (55.0.2)
+  - [32mexpo-manifests[0m (55.0.15)
+  - [32mexpo-modules-core[0m (55.0.22)
+  - [32mexpo-updates-interface[0m (55.1.5)
+  - [33m[📦][0m [32mexpo-dom-webview[0m (55.0.5)
+  - [33m[📦][0m [32mexpo-application[0m (55.0.14)
+  - [33m[📦][0m [32mexpo-asset[0m (55.0.15)
+  - [33m[📦][0m [32mexpo-av[0m (16.0.8)
+  - [33m[📦][0m [32mexpo-camera[0m (55.0.15)
+  - [33m[📦][0m [32mexpo-clipboard[0m (55.0.13)
+  - [33m[📦][0m [32mexpo-file-system[0m (55.0.16)
+  - [33m[📦][0m [32mexpo-font[0m (55.0.6)
+  - [33m[📦][0m [32mexpo-haptics[0m (55.0.14)
+  - [33m[📦][0m [32mexpo-image-loader[0m (55.0.0)
+  - [33m[📦][0m [32mexpo-image-picker[0m (55.0.18)
+  - [33m[📦][0m [32mexpo-keep-awake[0m (55.0.6)
+  - [33m[📦][0m [32mexpo-location[0m (55.1.8)
+  - [33m[📦][0m [32mexpo-notifications[0m (55.0.19)
+  - [33m[📦][0m [32mexpo-print[0m (55.0.13)
+  - [33m[📦][0m [32mexpo-secure-store[0m (55.0.13)
+  - [33m[📦][0m [32mexpo-sharing[0m (55.0.18)
+  - [33m[📦][0m [32mexpo-sqlite[0m (55.0.15)
+  - [33m[📦][0m [32mexpo-task-manager[0m (55.0.14)
+  - [33m[📦][0m [32munimodules-app-loader[0m (55.0.4)
+
+
+> Task :expo-modules-core:preBuild UP-TO-DATE
+> Task :expo-dev-launcher:preBuild UP-TO-DATE
+> Task :expo-dev-client:preBuild UP-TO-DATE
+> Task :expo-manifests:preBuild UP-TO-DATE
+> Task :expo-updates-interface:preBuild UP-TO-DATE
+> Task :expo-log-box:preBuild UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-menu-interface:preBuild UP-TO-DATE
+> Task :expo-json-utils:preBuild UP-TO-DATE
+> Task :expo-dev-menu:preBuild UP-TO-DATE
+> Task :react-native-nfc-manager:preBuild UP-TO-DATE
+> Task :expo-dev-client:preDebugBuild UP-TO-DATE
+> Task :expo-dev-launcher:preDebugBuild UP-TO-DATE
+> Task :expo:generatePackagesList UP-TO-DATE
+> Task :app:generateAutolinkingNewArchitectureFiles UP-TO-DATE
+> Task :expo:preBuild UP-TO-DATE
+> Task :expo:preDebugBuild UP-TO-DATE
+> Task :expo-dev-client:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-dev-menu:preDebugBuild UP-TO-DATE
+> Task :expo-dev-launcher:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-dev-menu-interface:preDebugBuild UP-TO-DATE
+> Task :app:generateAutolinkingPackageList UP-TO-DATE
+> Task :expo:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-json-utils:preDebugBuild UP-TO-DATE
+> Task :app:generateCodegenSchemaFromJavaScript SKIPPED
+> Task :expo-dev-menu-interface:writeDebugAarMetadata UP-TO-DATE
+> Task :app:generateCodegenArtifactsFromSchema SKIPPED
+> Task :expo-log-box:preDebugBuild UP-TO-DATE
+> Task :react-native-safe-area-context:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :react-native-gesture-handler:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :expo-json-utils:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-manifests:preDebugBuild UP-TO-DATE
+> Task :expo-log-box:writeDebugAarMetadata UP-TO-DATE
+> Task :app:generateReactNativeEntryPoint UP-TO-DATE
+> Task :expo-modules-core:preDebugBuild UP-TO-DATE
+> Task :expo-updates-interface:preDebugBuild UP-TO-DATE
+> Task :expo-manifests:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-nfc-manager:preDebugBuild UP-TO-DATE
+> Task :expo-modules-core:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-nfc-manager:writeDebugAarMetadata UP-TO-DATE
+> Task :expo:generateDebugResValues UP-TO-DATE
+> Task :expo-dev-client:generateDebugResValues UP-TO-DATE
+> Task :expo-updates-interface:writeDebugAarMetadata UP-TO-DATE
+> Task :expo:generateDebugResources UP-TO-DATE
+> Task :react-native-vector-icons:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :expo-dev-client:generateDebugResources UP-TO-DATE
+> Task :expo-dev-launcher:generateDebugResValues UP-TO-DATE
+> Task :expo-dev-menu:writeDebugAarMetadata UP-TO-DATE
+> Task :expo:packageDebugResources UP-TO-DATE
+> Task :expo-dev-menu:generateDebugResValues UP-TO-DATE
+> Task :react-native-screens:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :expo-dev-client:packageDebugResources UP-TO-DATE
+> Task :expo-dev-menu-interface:generateDebugResValues UP-TO-DATE
+> Task :react-native-safe-area-context:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-gesture-handler:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-safe-area-context:preBuild UP-TO-DATE
+> Task :react-native-gesture-handler:preBuild UP-TO-DATE
+> Task :react-native-safe-area-context:preDebugBuild UP-TO-DATE
+> Task :react-native-gesture-handler:preDebugBuild UP-TO-DATE
+> Task :expo-json-utils:generateDebugResValues UP-TO-DATE
+> Task :expo-dev-menu-interface:generateDebugResources UP-TO-DATE
+> Task :react-native-gesture-handler:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-safe-area-context:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-log-box:generateDebugResValues UP-TO-DATE
+> Task :expo-manifests:generateDebugResValues UP-TO-DATE
+> Task :react-native-svg:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :expo-json-utils:generateDebugResources UP-TO-DATE
+> Task :react-native-vector-icons:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-vector-icons:preBuild UP-TO-DATE
+> Task :react-native-vector-icons:preDebugBuild UP-TO-DATE
+> Task :expo-log-box:generateDebugResources UP-TO-DATE
+> Task :expo-manifests:generateDebugResources UP-TO-DATE
+> Task :expo-dev-launcher:generateDebugResources UP-TO-DATE
+> Task :react-native-vector-icons:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-dev-menu-interface:packageDebugResources UP-TO-DATE
+> Task :expo-modules-core:generateDebugResValues UP-TO-DATE
+> Task :expo-updates-interface:generateDebugResValues UP-TO-DATE
+> Task :expo-json-utils:packageDebugResources UP-TO-DATE
+> Task :expo-dev-menu:generateDebugResources UP-TO-DATE
+> Task :expo-modules-core:generateDebugResources UP-TO-DATE
+> Task :expo-updates-interface:generateDebugResources UP-TO-DATE
+> Task :react-native-gesture-handler:generateDebugResValues UP-TO-DATE
+> Task :expo-manifests:packageDebugResources UP-TO-DATE
+> Task :expo-log-box:packageDebugResources UP-TO-DATE
+> Task :react-native-nfc-manager:generateDebugResValues UP-TO-DATE
+> Task :react-native-safe-area-context:generateDebugResValues UP-TO-DATE
+> Task :react-native-gesture-handler:generateDebugResources UP-TO-DATE
+> Task :react-native-safe-area-context:generateDebugResources UP-TO-DATE
+> Task :react-native-nfc-manager:generateDebugResources UP-TO-DATE
+> Task :expo-modules-core:packageDebugResources UP-TO-DATE
+> Task :expo-updates-interface:packageDebugResources UP-TO-DATE
+> Task :react-native-vector-icons:generateDebugResValues UP-TO-DATE
+> Task :expo:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-vector-icons:generateDebugResources UP-TO-DATE
+> Task :react-native-safe-area-context:packageDebugResources UP-TO-DATE
+> Task :expo:processDebugManifest UP-TO-DATE
+> Task :expo-dev-launcher:packageDebugResources UP-TO-DATE
+> Task :expo-dev-client:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-menu-interface:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-vector-icons:packageDebugResources UP-TO-DATE
+> Task :expo-dev-launcher:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-menu:packageDebugResources UP-TO-DATE
+> Task :expo-json-utils:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-menu:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-nfc-manager:packageDebugResources UP-TO-DATE
+> Task :expo-dev-client:processDebugManifest UP-TO-DATE
+> Task :react-native-screens:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-screens:preBuild UP-TO-DATE
+> Task :react-native-screens:preDebugBuild UP-TO-DATE
+> Task :expo-log-box:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-manifests:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-gesture-handler:packageDebugResources UP-TO-DATE
+> Task :react-native-screens:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-screens:generateDebugResValues UP-TO-DATE
+> Task :expo-modules-core:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-launcher:processDebugManifest UP-TO-DATE
+> Task :expo-dev-menu:processDebugManifest UP-TO-DATE
+> Task :expo-json-utils:processDebugManifest UP-TO-DATE
+> Task :expo-updates-interface:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-nfc-manager:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-gesture-handler:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-log-box:processDebugManifest UP-TO-DATE
+> Task :expo-manifests:processDebugManifest UP-TO-DATE
+> Task :expo-dev-menu-interface:processDebugManifest UP-TO-DATE
+> Task :expo-modules-core:processDebugManifest UP-TO-DATE
+> Task :react-native-svg:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-svg:preBuild UP-TO-DATE
+> Task :react-native-safe-area-context:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-svg:preDebugBuild UP-TO-DATE
+> Task :react-native-vector-icons:extractDeepLinksDebug UP-TO-DATE
+> Task :expo:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-dev-client:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-svg:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-updates-interface:processDebugManifest UP-TO-DATE
+> Task :react-native-nfc-manager:processDebugManifest UP-TO-DATE
+> Task :react-native-svg:generateDebugResValues UP-TO-DATE
+> Task :expo:parseDebugLocalResources UP-TO-DATE
+> Task :expo-dev-client:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-gesture-handler:processDebugManifest UP-TO-DATE
+> Task :react-native-svg:generateDebugResources UP-TO-DATE
+> Task :react-native-safe-area-context:processDebugManifest UP-TO-DATE
+> Task :react-native-vector-icons:processDebugManifest UP-TO-DATE
+> Task :expo-dev-menu-interface:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-json-utils:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-log-box:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-log-box:parseDebugLocalResources UP-TO-DATE
+> Task :expo-json-utils:parseDebugLocalResources UP-TO-DATE
+> Task :expo-dev-client:generateDebugRFile UP-TO-DATE
+> Task :expo:generateDebugRFile UP-TO-DATE
+> Task :react-native-screens:generateDebugResources UP-TO-DATE
+> Task :react-native-svg:packageDebugResources UP-TO-DATE
+> Task :expo-manifests:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-dev-launcher:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-dev-menu:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-modules-core:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-svg:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-menu-interface:parseDebugLocalResources UP-TO-DATE
+> Task :expo-manifests:parseDebugLocalResources UP-TO-DATE
+> Task :expo-log-box:generateDebugRFile UP-TO-DATE
+> Task :expo-dev-launcher:parseDebugLocalResources UP-TO-DATE
+> Task :expo-json-utils:generateDebugRFile UP-TO-DATE
+> Task :expo-modules-core:parseDebugLocalResources UP-TO-DATE
+> Task :expo-dev-menu:parseDebugLocalResources UP-TO-DATE
+> Task :expo-updates-interface:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-gesture-handler:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-dev-menu-interface:generateDebugRFile UP-TO-DATE
+> Task :expo-manifests:generateDebugRFile UP-TO-DATE
+> Task :expo-updates-interface:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-svg:processDebugManifest UP-TO-DATE
+> Task :expo-dev-launcher:generateDebugRFile UP-TO-DATE
+> Task :react-native-safe-area-context:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-nfc-manager:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-gesture-handler:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-vector-icons:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-svg:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-modules-core:generateDebugRFile UP-TO-DATE
+> Task :expo-dev-menu:generateDebugRFile UP-TO-DATE
+> Task :react-native-safe-area-context:parseDebugLocalResources UP-TO-DATE
+> Task :expo-updates-interface:generateDebugRFile UP-TO-DATE
+> Task :expo:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-modules-core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-nfc-manager:parseDebugLocalResources UP-TO-DATE
+> Task :expo-dev-client:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-vector-icons:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-svg:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-gesture-handler:generateDebugRFile UP-TO-DATE
+> Task :expo:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-modules-core:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-dev-launcher:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-safe-area-context:generateDebugRFile UP-TO-DATE
+> Task :expo-dev-menu:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-menu-interface:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-nfc-manager:generateDebugRFile UP-TO-DATE
+> Task :expo-json-utils:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-modules-core:javaPreCompileDebug UP-TO-DATE
+> Task :expo-dev-menu-interface:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-manifests:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-menu:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-svg:generateDebugRFile UP-TO-DATE
+> Task :react-native-vector-icons:generateDebugRFile UP-TO-DATE
+> Task :expo-updates-interface:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-menu-interface:javaPreCompileDebug UP-TO-DATE
+> Task :expo-log-box:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-dev-menu:javaPreCompileDebug UP-TO-DATE
+> Task :expo-json-utils:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-updates-interface:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-manifests:generateDebugBuildConfig UP-TO-DATE
+> Task :expo:javaPreCompileDebug UP-TO-DATE
+> Task :expo-json-utils:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-gesture-handler:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-updates-interface:javaPreCompileDebug UP-TO-DATE
+> Task :expo-log-box:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-safe-area-context:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-gesture-handler:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-log-box:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-svg:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-nfc-manager:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-safe-area-context:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-manifests:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-svg:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-gesture-handler:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-nfc-manager:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-vector-icons:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-screens:packageDebugResources UP-TO-DATE
+> Task :react-native-vector-icons:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-screens:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-dev-client:dataBindingMergeDependencyArtifactsDebug UP-TO-DATE
+> Task :react-native-screens:processDebugManifest UP-TO-DATE
+> Task :expo-dev-client:dataBindingGenBaseClassesDebug UP-TO-DATE
+> Task :expo-dev-client:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-dev-client:javaPreCompileDebug UP-TO-DATE
+> Task :expo-dev-launcher:dataBindingMergeDependencyArtifactsDebug UP-TO-DATE
+> Task :react-native-screens:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-screens:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-nfc-manager:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-vector-icons:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-nfc-manager:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :react-native-vector-icons:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :react-native-screens:generateDebugRFile UP-TO-DATE
+> Task :react-native-screens:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-screens:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-dev-launcher:dataBindingGenBaseClassesDebug UP-TO-DATE
+> Task :expo-dev-launcher:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-dev-launcher:checkApolloVersions UP-TO-DATE
+> Task :expo-dev-launcher:generateServiceApolloOptions UP-TO-DATE
+> Task :react-native-safe-area-context:compileDebugKotlin UP-TO-DATE
+> Task :react-native-safe-area-context:javaPreCompileDebug UP-TO-DATE
+> Task :expo-dev-launcher:generateServiceApolloSources UP-TO-DATE
+> Task :expo-dev-launcher:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-svg:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-svg:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :react-native-safe-area-context:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-safe-area-context:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :react-native-worklets:assertMinimalReactNativeVersionTask
+> Task :react-native-worklets:assertNewArchitectureEnabledTask SKIPPED
+> Task :react-native-worklets:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :react-native-worklets:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-worklets:prepareWorkletsHeadersForPrefabs UP-TO-DATE
+> Task :react-native-worklets:preBuild
+> Task :react-native-worklets:preDebugBuild
+> Task :react-native-worklets:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-worklets:generateDebugResValues UP-TO-DATE
+> Task :react-native-screens:compileDebugKotlin UP-TO-DATE
+> Task :react-native-worklets:generateDebugResources UP-TO-DATE
+> Task :react-native-screens:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-worklets:packageDebugResources UP-TO-DATE
+> Task :react-native-reanimated:assertMinimalReactNativeVersionTask
+> Task :react-native-reanimated:assertNewArchitectureEnabledTask SKIPPED
+> Task :react-native-worklets:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-worklets:processDebugManifest UP-TO-DATE
+> Task :react-native-worklets:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-worklets:parseDebugLocalResources UP-TO-DATE
+> Task :react-native-worklets:generateDebugRFile UP-TO-DATE
+> Task :react-native-worklets:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :react-native-screens:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-worklets:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-screens:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :react-native-worklets:compileDebugKotlin NO-SOURCE
+> Task :react-native-worklets:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-worklets:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-worklets:bundleLibCompileToJarDebug UP-TO-DATE
+
+> Task :expo-constants:createExpoConfig
+The NODE_ENV environment variable is required but was not specified. Ensure the project is bundled with Expo CLI or NODE_ENV is set. Using only .env.local and .env
+
+> Task :expo-constants:preBuild
+> Task :expo-constants:preDebugBuild
+> Task :expo-constants:writeDebugAarMetadata UP-TO-DATE
+> Task :expo-constants:generateDebugResValues UP-TO-DATE
+> Task :expo-constants:generateDebugResources UP-TO-DATE
+> Task :expo-constants:packageDebugResources UP-TO-DATE
+> Task :expo-constants:extractDeepLinksDebug UP-TO-DATE
+> Task :expo-constants:processDebugManifest UP-TO-DATE
+> Task :expo-constants:compileDebugLibraryResources UP-TO-DATE
+> Task :expo-constants:parseDebugLocalResources UP-TO-DATE
+> Task :expo-constants:generateDebugRFile UP-TO-DATE
+> Task :expo-constants:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :expo-constants:generateDebugBuildConfig UP-TO-DATE
+> Task :expo-constants:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-reanimated:assertWorkletsVersionTask
+> Task :react-native-reanimated:generateCodegenSchemaFromJavaScript UP-TO-DATE
+> Task :react-native-reanimated:generateCodegenArtifactsFromSchema UP-TO-DATE
+> Task :react-native-reanimated:prepareReanimatedHeadersForPrefabs UP-TO-DATE
+> Task :react-native-reanimated:preBuild
+> Task :react-native-reanimated:preDebugBuild
+> Task :app:preBuild
+> Task :app:preDebugBuild
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-reanimated:writeDebugAarMetadata UP-TO-DATE
+> Task :react-native-reanimated:generateDebugResValues UP-TO-DATE
+> Task :react-native-reanimated:generateDebugResources UP-TO-DATE
+> Task :react-native-reanimated:packageDebugResources UP-TO-DATE
+> Task :react-native-reanimated:extractDeepLinksDebug UP-TO-DATE
+> Task :react-native-reanimated:processDebugManifest UP-TO-DATE
+> Task :react-native-reanimated:compileDebugLibraryResources UP-TO-DATE
+> Task :react-native-reanimated:parseDebugLocalResources UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :react-native-reanimated:generateDebugRFile UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :react-native-reanimated:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-reanimated:javaPreCompileDebug UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :react-native-reanimated:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-reanimated:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:expoDebugOverrideMaxSdkConflicts UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :react-native-gesture-handler:compileDebugKotlin UP-TO-DATE
+> Task :react-native-gesture-handler:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-gesture-handler:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-modules-core:compileDebugKotlin UP-TO-DATE
+> Task :expo-modules-core:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-modules-core:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-dev-menu-interface:compileDebugKotlin NO-SOURCE
+> Task :expo-dev-client:compileDebugKotlin NO-SOURCE
+> Task :expo-dev-client:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-dev-client:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-dev-menu-interface:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-dev-menu-interface:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-json-utils:compileDebugKotlin UP-TO-DATE
+> Task :expo-updates-interface:compileDebugKotlin UP-TO-DATE
+> Task :expo-constants:compileDebugKotlin UP-TO-DATE
+> Task :expo-json-utils:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-json-utils:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-updates-interface:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-constants:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-constants:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-updates-interface:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-log-box:compileDebugKotlin UP-TO-DATE
+> Task :expo-log-box:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-log-box:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-manifests:compileDebugKotlin UP-TO-DATE
+> Task :expo-manifests:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-manifests:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-dev-menu:compileDebugKotlin UP-TO-DATE
+> Task :expo-dev-menu:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-dev-menu:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo-dev-launcher:compileDebugKotlin UP-TO-DATE
+> Task :expo-dev-launcher:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo-dev-launcher:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :expo:compileDebugKotlin UP-TO-DATE
+> Task :expo:compileDebugJavaWithJavac UP-TO-DATE
+> Task :expo:bundleLibCompileToJarDebug UP-TO-DATE
+
+> Task :app:compileDebugKotlin FAILED
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:27:1 Class 'SunmiModule' is not abstract and does not implement abstract member:
+fun getName(): String
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:9 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:13 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:43:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:24 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:45:25 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:24 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:46:25 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:24 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:47:25 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:24 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:48:25 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:24 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:49:25 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:50:19 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:51:19 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:52:19 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:15 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:16 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:53:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:54:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:55:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:56:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:57:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:58:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:59:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:33 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:60:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:26 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:27 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:34 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:35 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:39 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:61:40 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:17 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:30 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:31 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:35 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:62:36 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:17 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:30 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:31 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:35 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:36 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:40 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:63:41 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:17 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:30 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:31 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:35 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:36 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:41 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:64:42 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:17 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:30 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:31 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:35 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:36 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:44 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:65:45 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:11 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:12 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:17 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:18 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:22 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:30 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:31 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:37 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:38 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:43 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:66:44 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:1 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:8 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:13 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:14 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:20 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:67:21 Syntax error: Expecting member declaration.
+e: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/app/src/main/java/com/tani1964/posagentapp/SunmiModule.kt:593:2 Syntax error: Missing '}.
+
+[Incubating] Problems report is available at: file:///Users/tanitoluwaifegbesan/Documents/work/54agent/54agent_Agent_banking/uis/agent_uis/pos-agent-app/android/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.0.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 10s
+338 actionable tasks: 5 executed, 333 up-to-date

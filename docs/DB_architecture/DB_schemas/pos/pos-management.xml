@@ -1,0 +1,63 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="POS Management Service DB Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="POS Terminal Service" style="text;html=1;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="400" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- POS Device -->
+        <mxCell id="pos_device" value="POSDevice&#xa;----------------&#xa;id (PK)&#xa;serial_number&#xa;model&#xa;agent_id&#xa;status&#xa;location_id&#xa;last_heartbeat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="120" y="120" width="240" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Application -->
+        <mxCell id="application" value="Application&#xa;----------------&#xa;id (PK)&#xa;name&#xa;version&#xa;type&#xa;checksum" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="520" y="120" width="240" height="160" as="geometry"/>
+        </mxCell>
+
+        <!-- POS Application (Join Table) -->
+        <mxCell id="pos_application" value="POSApplication&#xa;----------------&#xa;id (PK)&#xa;pos_device_id (FK)&#xa;application_id (FK)&#xa;status&#xa;version&#xa;install_date" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="340" width="260" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Remote Command -->
+        <mxCell id="remote_command" value="RemoteCommand&#xa;----------------&#xa;id (PK)&#xa;pos_device_id (FK)&#xa;command&#xa;status&#xa;parameters&#xa;result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="120" y="560" width="240" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Transaction -->
+        <mxCell id="transaction" value="Transaction&#xa;----------------&#xa;id (PK)&#xa;pos_device_id (FK)&#xa;transaction_id&#xa;type&#xa;amount&#xa;status" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="520" y="560" width="240" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Relationships -->
+
+        <!-- POSDevice -> POSApplication -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="pos_device" target="pos_application">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Application -> POSApplication -->
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="application" target="pos_application">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- POSDevice -> RemoteCommand -->
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="pos_device" target="remote_command">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- POSDevice -> Transaction -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="pos_device" target="transaction">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,80 @@
+{
+  "nav": {
+    "dashboard": "Allon Sarrafa",
+    "cash_in": "Saka Kudi",
+    "cash_out": "Fitar Kudi",
+    "float": "Neman Float",
+    "commission": "Kudin Aiki",
+    "loyalty": "Aminci",
+    "transactions": "Ma'amaloli",
+    "transfer": "Canja Kudi",
+    "bills": "Biyan Kudin Ayyuka",
+    "pos": "Na'urorin POS",
+    "orders": "Oda",
+    "profile": "Bayanan Kai",
+    "training": "Makarantar Horon",
+    "performance": "Ci Gabana",
+    "disputes": "Rikice-rikice",
+    "messages": "Sakonni",
+    "savings": "Ajiya",
+    "virtual_cards": "Katunan Dijital",
+    "beneficiaries": "Masu Amfani",
+    "compliance": "Dokokin Aiki"
+  },
+  "common": {
+    "loading": "Ana lodi...",
+    "save": "Ajiye",
+    "cancel": "Soke",
+    "confirm": "Tabbatar",
+    "delete": "Share",
+    "edit": "Gyara",
+    "close": "Rufe",
+    "submit": "Aika",
+    "search": "Nema",
+    "refresh": "Sabunta",
+    "back": "Koma Baya",
+    "next": "Gaba",
+    "success": "An yi nasara",
+    "error": "Kuskure",
+    "amount": "Adadin Kudi",
+    "account": "Asusu",
+    "phone": "Lambar Waya",
+    "balance": "Ma'aunin Kudi",
+    "date": "Kwanan Wata",
+    "status": "Yanayi",
+    "actions": "Ayyuka",
+    "no_data": "Babu bayanai",
+    "logout": "Fita"
+  },
+  "transactions": {
+    "title": "Ma'amaloli",
+    "type": "Nau'in Ma'amala",
+    "reference": "Lambar Ref",
+    "debit": "Cirewa",
+    "credit": "Kari",
+    "pending": "Ana Jira",
+    "completed": "An Kammala",
+    "failed": "Ya gaza",
+    "reversed": "An Mayar"
+  },
+  "float": {
+    "title": "Sarrafa Float",
+    "request": "Nemi Float",
+    "current_balance": "Ma'aunin Float Yanzu",
+    "low_warning": "Ma'aunin float ya yi kasa. Don Allah a cika."
+  },
+  "cash_in": {
+    "title": "Saka Kudi",
+    "customer_account": "Lambar Asusu na Abokin Ciniki",
+    "verify": "Tabbatar da Asusu",
+    "deposit": "Saka Kudi",
+    "enter_amount": "Shigar da adadin kudi"
+  },
+  "cash_out": {
+    "title": "Fitar Kudi",
+    "customer_account": "Lambar Asusu na Abokin Ciniki",
+    "verify": "Tabbatar da Asusu",
+    "withdraw": "Fitar Kudi",
+    "enter_amount": "Shigar da adadin kudi"
+  }
+}

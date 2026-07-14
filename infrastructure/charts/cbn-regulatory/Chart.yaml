@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cbn-regulatory
+description: 54agent Cbn Regulatory Consolidated Helm Chart
+type: application
+version: 0.0.7
+appVersion: "1.0.0"

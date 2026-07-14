@@ -1,0 +1,46 @@
+[package]
+name = "sim-orchestrator"
+version = "0.0.1"
+edition = "2021"
+authors = ["54agent Team"]
+description = "Intelligent SIM network orchestrator for 54agent POS terminals"
+readme = "../README.md"
+
+# ── Feature flags ──────────────────────────────────────────────────────────────
+# std:        Linux/Android targets (PAX A920, Sunmi P2, dev machine)
+# freertos:   FreeRTOS / ThreadX / Zephyr bare-metal targets (no_std)
+# Default is std for ease of development and CI.
+[features]
+default = ["std"]
+std = [
+    "dep:tokio",
+    "dep:reqwest",
+    "serde_json/std",
+    "serde/std",
+]
+freertos = []   # no_std path — no tokio, no reqwest, uses HAL traits only
+
+[dependencies]
+heapless = { version = "0.8", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# std-only deps
+tokio = { version = "1", features = ["full"], optional = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+
+# Logging — uses defmt for no_std, log/env_logger for std
+log = { version = "0.4", default-features = false }
+env_logger = { version = "0.11" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[lib]
+name = "sim_orchestrator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sim-orchestrator"
+path = "src/main.rs"
+required-features = ["std"]

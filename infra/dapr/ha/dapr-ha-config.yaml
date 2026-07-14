@@ -13,13 +13,11 @@ spec:
     workloadCertTTL: "24h"
     allowedClockSkew: "15m"
 
-  # ── Tracing (reduced sampling for high throughput) ───────────────────────────
+  # ── Tracing ─────────────────────────────────────────────────────────────────
   tracing:
-    samplingRate: "0.01"                 # 1% sampling for millions of TPS
-    otel:
-      endpointAddress: "otel-collector:4317"
-      isSecure: false
-      protocol: grpc                     # gRPC is faster than HTTP for traces
+    samplingRate: "0.1"
+    zipkin:
+      endpointAddress: "http://zipkin:9411/api/v2/spans"
 
   # ── Metrics ─────────────────────────────────────────────────────────────────
   metric:
@@ -55,33 +53,24 @@ spec:
         trustDomain: "pos54.local"
         namespace: "production"
 
-  # ── Features (high-throughput bulk operations) ──────────────────────────────
-  features:
-    - name: PubSub.BulkPublish
-      enabled: true
-    - name: PubSub.BulkSubscribe
-      enabled: true
-    - name: Actor.TypeMetadata
-      enabled: true
-
-  # ── API (gRPC for throughput) ──────────────────────────────────────────────
+  # ── API ─────────────────────────────────────────────────────────────────────
   api:
     allowed:
       - name: state
         version: v1.0
-        protocol: grpc
+        protocol: http
       - name: publish
         version: v1.0
-        protocol: grpc
+        protocol: http
       - name: bindings
         version: v1.0
-        protocol: grpc
+        protocol: http
       - name: invoke
         version: v1.0
-        protocol: grpc
+        protocol: http
       - name: secrets
         version: v1.0
-        protocol: grpc
+        protocol: http
 
 ---
 ###############################################################################

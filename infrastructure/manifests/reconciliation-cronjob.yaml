@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-reconciliation
+  namespace: 54agent
+spec:
+  schedule: "0 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: 54agent
+          restartPolicy: OnFailure
+          containers:
+            - name: reconcile
+              image: curlimages/curl:8.6.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BASE="http://reconciliation-service.54agent.svc.cluster.local:8150"
+                  echo "=== Daily Reconciliation $(date) ==="
+                  echo "--- Float vs Ledger ---"
+                  curl -sf -X POST "$BASE/reconcile/float-vs-ledger" -H "Content-Type: application/json" | grep -o '"status":"[^"]*"'
+                  echo "--- Settlement vs Commission ---"
+                  curl -sf -X POST "$BASE/reconcile/settlement-vs-commission?days=1" -H "Content-Type: application/json" | grep -o '"status":"[^"]*"'
+                  echo "=== Done ==="

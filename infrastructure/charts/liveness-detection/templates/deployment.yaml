@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "liveness-detection.fullname" . }}
+  labels:
+    {{- include "liveness-detection.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "liveness-detection.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        dapr.io/app-id: "{{ .Values.dapr.appId }}"
+        dapr.io/app-port: "{{ .Values.dapr.appPort }}"
+        dapr.io/enabled: "{{ .Values.dapr.enabled }}"
+        dapr.io/enable-metrics: "{{ .Values.dapr.enableMetrics }}"
+        dapr.io/metrics-port: "{{ .Values.dapr.metricsPort }}"
+        dapr.io/sidecar-listen-addresses: "{{ .Values.dapr.sidecarListenAddresses }}"
+        dapr.io/sidecar-cpu-request: '{{ index .Values.dapr "cpu-request" }}'
+        dapr.io/sidecar-cpu-limit: '{{ index .Values.dapr "cpu-limit" }}'
+        dapr.io/sidecar-memory-request: '{{ index .Values.dapr "memory-request" }}'
+        dapr.io/sidecar-memory-limit: '{{ index .Values.dapr "memory-limit" }}'
+      labels:
+        {{- include "liveness-detection.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "liveness-detection.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: 54agent-shared-database-svc-secret
+            - secretRef:
+                name: 54agent-shared-redis-svc-secret
+            - secretRef:
+                name: 54agent-shared-kafka-svc-secret
+            - secretRef:
+                name: 54agent-shared-keycloak-svc-secret
+            - secretRef:
+                name: 54agent-shared-dapr-svc-secret
+            - secretRef:
+                name: 54agent-shared-temporal-svc-secret
+            - secretRef:
+                name: 54agent-shared-tigerbeetle-svc-secret
+            - secretRef:
+                name: 54agent-shared-infrastructure-svc-secret
+            - secretRef:
+                name: 54agent-shared-app-svc-secret
+            - secretRef:
+                name: {{ include "liveness-detection.fullname" . }}-secrets
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

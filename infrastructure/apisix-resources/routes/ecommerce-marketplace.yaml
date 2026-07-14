@@ -1,0 +1,459 @@
+# ecommerce-marketplace — 18 services | ports 9410-9427
+# E-commerce & marketplace — Amazon, eBay, Jumia, Konga, storefronts
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-ecommerce-marketplace-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /agent-commerce-integration/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9410
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/agent-commerce-integration/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-2
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /agent-ecommerce-platform/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9411
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/agent-ecommerce-platform/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-3
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /agent-store-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9412
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/agent-store-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-4
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /amazon-ebay-integration/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9413
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/amazon-ebay-integration/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-5
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /amazon-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9414
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/amazon-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-6
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ebay-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9415
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ebay-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-7
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ecommerce-cart-rust/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9416
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ecommerce-cart-rust/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-8
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ecommerce-catalog-go/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9417
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ecommerce-catalog-go/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-9
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ecommerce-intelligence-py/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9418
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ecommerce-intelligence-py/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-10
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ecommerce-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9419
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ecommerce-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-11
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /gaming-integration/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9420
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/gaming-integration/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-12
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /gaming-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9421
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/gaming-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-13
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /jumia-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9422
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/jumia-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-14
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /konga-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9423
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/konga-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-15
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /marketplace-integration/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9424
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/marketplace-integration/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-16
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /marketplace-integrations-go/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9425
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/marketplace-integrations-go/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-17
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /store-map-service/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9426
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/store-map-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-18
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /storefront-advertising/*
+      backends:
+        - serviceName: ecommerce-marketplace
+          servicePort: 9427
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/storefront-advertising/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

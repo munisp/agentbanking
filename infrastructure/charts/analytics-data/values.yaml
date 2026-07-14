@@ -1,0 +1,70 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-analytics-data
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9162
+    - port: 9163
+    - port: 9164
+    - port: 9165
+    - port: 9166
+    - port: 9167
+    - port: 9168
+    - port: 9169
+    - port: 9170
+    - port: 9171
+    - port: 9172
+    - port: 9173
+    - port: 9174
+    - port: 9175
+    - port: 9176
+    - port: 9177
+    - port: 9178
+    - port: 9179
+    - port: 9180
+resources:
+  requests:
+    cpu: 200m
+    memory: 304Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1216Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: analytics-data
+  appPort: 9164
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9162"
+  PORT_BASE: "9162"
+  SERVICE_GROUP: analytics-data
+  SERVICES: "analytics,analytics-dashboard,analytics-service,analytics-service-ts,business-intelligence,cdp-service,cocoindex-service,connectivity-analytics,customer-analytics,dashboard-service,epr-kgqa-service,opensearch-analytics,opensearch-indexer,projections-targets,reporting-engine,reporting-service,store-analytics-engine,unified-analytics,ussd-analytics"

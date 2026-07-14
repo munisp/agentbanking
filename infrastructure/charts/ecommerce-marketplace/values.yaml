@@ -1,0 +1,69 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-ecommerce-marketplace
+  pullPolicy: IfNotPresent
+  tag: "0.0.6"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9410
+    - port: 9411
+    - port: 9412
+    - port: 9413
+    - port: 9414
+    - port: 9415
+    - port: 9416
+    - port: 9417
+    - port: 9418
+    - port: 9419
+    - port: 9420
+    - port: 9421
+    - port: 9422
+    - port: 9423
+    - port: 9424
+    - port: 9425
+    - port: 9426
+    - port: 9427
+resources:
+  requests:
+    cpu: 200m
+    memory: 288Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1152Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: ecommerce-marketplace
+  appPort: 9410
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9410"
+  PORT_BASE: "9410"
+  SERVICE_GROUP: ecommerce-marketplace
+  SERVICES: "agent-commerce-integration,agent-ecommerce-platform,agent-store-service,amazon-ebay-integration,amazon-service,ebay-service,ecommerce-cart-rust,ecommerce-catalog-go,ecommerce-intelligence-py,ecommerce-service,gaming-integration,gaming-service,jumia-service,konga-service,marketplace-integration,marketplace-integrations-go,store-map-service,storefront-advertising"

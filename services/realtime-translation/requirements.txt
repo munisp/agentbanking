@@ -1,0 +1,59 @@
+# ============================================================
+# Real-time Translation Service — Dependencies
+# 54agent Agency Banking Platform
+#
+# Engine: 100% open-source, self-hosted
+#   Primary:  Meta NLLB-200 (facebook/nllb-200-distilled-600M)
+#   Fallback: Helsinki-NLP Opus-MT bilingual models
+#   Detect:   langdetect (offline)
+#
+# NO Google Translate. NO OpenAI. NO external translation API.
+# ============================================================
+
+# Web framework
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.3
+
+# Database
+sqlalchemy>=2.0.41
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.10
+
+# Cache
+redis>=5.2.1
+
+# Event streaming
+aiokafka>=0.12.0
+
+# HTTP client (internal service calls only)
+httpx>=0.28.1
+
+# Data validation
+pydantic>=2.11.7
+
+# Auth
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+passlib[bcrypt]>=1.7.4
+
+# Utilities
+python-multipart>=0.0.20
+aiofiles>=23.2.1
+
+# ── Open-source translation models ──────────────────────────
+# Hugging Face Transformers (NLLB-200 + Helsinki-NLP Opus-MT)
+transformers>=4.35.0
+
+# PyTorch (CPU build; use torch>=2.1.0+cu118 for GPU inference)
+torch>=2.1.0
+
+# SentencePiece tokenizer (required by NLLB-200 and Opus-MT)
+sentencepiece>=0.1.99
+
+# Sacremoses (tokenization for Helsinki-NLP Opus-MT models)
+sacremoses>=0.1.1
+
+# Offline language detection (no external API)
+langdetect>=1.0.9
+
+# Accelerate (optional — speeds up model loading on multi-core CPUs)
+accelerate>=0.24.0

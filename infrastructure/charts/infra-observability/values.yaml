@@ -1,0 +1,61 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-infra-observability
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9481
+    - port: 9482
+    - port: 9483
+    - port: 9484
+    - port: 9485
+    - port: 9486
+    - port: 9487
+    - port: 9488
+    - port: 9489
+    - port: 9490
+resources:
+  requests:
+    cpu: 200m
+    memory: 160Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 640Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: infra-observability
+  appPort: 9482
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9481"
+  PORT_BASE: "9481"
+  SERVICE_GROUP: infra-observability
+  SERVICES: "chaos-engineering,distributed-tracing,logging-service,metrics-service,monitoring,monitoring-dashboard,telemetry-aggregator,telemetry-api-gateway,telemetry-collector,telemetry-ingestion"

@@ -1,0 +1,259 @@
+# infra-observability — 10 services | ports 9481-9490
+# Observability — monitoring, telemetry, tracing, chaos engineering
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-infra-observability-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /chaos-engineering/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9481
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/chaos-engineering/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-2
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /distributed-tracing/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9482
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/distributed-tracing/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-3
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /logging-service/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9483
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/logging-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-4
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /metrics-service/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9484
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/metrics-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-5
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /monitoring/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9485
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/monitoring/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-6
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /monitoring-dashboard/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9486
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/monitoring-dashboard/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-7
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /telemetry-aggregator/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9487
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/telemetry-aggregator/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-8
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /telemetry-api-gateway/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9488
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/telemetry-api-gateway/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-9
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /telemetry-collector/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9489
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/telemetry-collector/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-10
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /telemetry-ingestion/*
+      backends:
+        - serviceName: infra-observability
+          servicePort: 9490
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/telemetry-ingestion/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

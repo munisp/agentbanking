@@ -1,0 +1,309 @@
+# ai-ml — 12 services | ports 9148-9159
+# AI/ML — models, inference, forecasting, GNN, revenue, credit scoring
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-ai-ml-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ai-credit-scoring/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9148
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ai-credit-scoring/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-2
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ai-document-validation/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9149
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ai-document-validation/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-3
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ai-ml-services/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9150
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ai-ml-services/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-4
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ai-orchestration/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9151
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ai-orchestration/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-5
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /demand-forecasting-py/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9152
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/demand-forecasting-py/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-6
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /gnn-engine/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9153
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/gnn-engine/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-7
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ml-engine/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9154
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ml-engine/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-8
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ml-model-registry/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9155
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ml-model-registry/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-9
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /ml-pipeline/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9156
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/ml-pipeline/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-10
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /neural-network-service/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9157
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/neural-network-service/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-11
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /python-ml-engine/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9158
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/python-ml-engine/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+
+    - name: rule-12
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+        paths:
+          - /revenue-forecast-ml/*
+      backends:
+        - serviceName: ai-ml
+          servicePort: 9159
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/revenue-forecast-ml/(.*)"
+              - "/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

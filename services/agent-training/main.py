@@ -1,0 +1,106 @@
+"""
+Agent Field Training - FastAPI microservice
+Field training management with mentor assignment, shadowing sessions, and competency assessments
+"""
+import os
+import sys
+import logging
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+# --- Production: Graceful Shutdown ---
+import signal
+import sys
+import atexit
+import logging
+
+_shutdown_handlers = []
+
+def register_shutdown(handler):
+    _shutdown_handlers.append(handler)
+
+def _graceful_shutdown(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    logging.info(f"[shutdown] Received {sig_name}, shutting down gracefully...")
+    for handler in reversed(_shutdown_handlers):
+        try:
+            handler()
+        except Exception as e:
+            logging.warning(f"[shutdown] Handler error: {e}")
+    logging.info("[shutdown] Cleanup complete, exiting")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Agent Field Training",
+    description="Field training management with mentor assignment, shadowing sessions, and competency assessments",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/health")
+async def health_check():
+    """Service health check endpoint."""
+    return {"status": "healthy", "service": "agent-training", "version": "1.0.0", "timestamp": datetime.utcnow().isoformat()}
+
+@app.post("/api/v1/training/sessions")
+async def create_training_session(trainer_id: str, trainee_ids: list, topic: str, scheduled_date: str):
+    """Schedule a field training session."""
+    return {
+        "session_id": f"TRN-{int(__import__('time').time())}",
+        "trainer_id": trainer_id,
+        "trainee_count": len(trainee_ids),
+        "topic": topic,
+        "scheduled_date": scheduled_date,
+        "status": "scheduled",
+    }
+
+@app.get("/api/v1/training/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get training session details."""
+    return {"session_id": session_id, "trainer_id": "", "trainees": [], "topic": "", "status": "scheduled", "attendance": []}
+
+@app.post("/api/v1/training/mentors/assign")
+async def assign_mentor(mentor_id: str, mentee_id: str, duration_weeks: int = 4):
+    """Assign a mentor to a new agent."""
+    return {
+        "assignment_id": f"MNT-{mentor_id}-{mentee_id}",
+        "mentor_id": mentor_id,
+        "mentee_id": mentee_id,
+        "duration_weeks": duration_weeks,
+        "start_date": __import__('datetime').date.today().isoformat(),
+        "status": "active",
+    }
+
+@app.post("/api/v1/training/competency/{agent_id}/assess")
+async def assess_competency(agent_id: str, skills: dict):
+    """Record competency assessment for an agent."""
+    return {
+        "agent_id": agent_id,
+        "assessment_date": __import__('datetime').date.today().isoformat(),
+        "skills": skills,
+        "overall_score": sum(skills.values()) / len(skills) if skills else 0,
+        "certification_eligible": sum(skills.values()) / len(skills) >= 70 if skills else False,
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: core-ledger
+description: 54agent Core Ledger Consolidated Helm Chart
+type: application
+version: 0.0.5
+appVersion: "1.0.0"

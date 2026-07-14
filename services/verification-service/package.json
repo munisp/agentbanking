@@ -1,0 +1,52 @@
+{
+  "name": "54agent-verification-service",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "license": "MIT",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsc",
+    "dev": "NODE_ENV=development nodemon --exec ts-node src/index.ts",
+    "start": "NODE_ENV=production && node dist/index.js",
+    "entity:create": "./node_modules/.bin/ts-node ./node_modules/.bin/typeorm entity:create ./src/entity",
+    "test": "NODE_ENV=test jest",
+    "typeorm": "npx typeorm-ts-node-commonjs --dataSource ./src/database/dataSource.ts",
+    "typeorm:migrate": "npm run typeorm -- migration:run",
+    "typeorm:generate": "npm run typeorm -- migration:generate ./src/database/migrations/migration",
+    "typeorm:revert": "npm run typeorm -- migration:revert",
+    "create-test-client": "node create-test-client.js"
+  },
+  "dependencies": {
+    "@temporalio/activity": "^1.11.7",
+    "@temporalio/client": "^1.11.7",
+    "@temporalio/common": "^1.11.7",
+    "@temporalio/worker": "^1.11.7",
+    "@temporalio/workflow": "^1.11.7",
+    "axios": "^1.9.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "http-status": "1.7.4",
+    "morgan": "^1.10.0",
+    "pg": "^8.11.5",
+    "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1",
+    "typeorm": "^0.3.20",
+    "typescript": "^5.4.4",
+    "winston": "^3.13.0",
+    "yamljs": "^0.3.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/express-useragent": "^1.0.5",
+    "@types/morgan": "^1.9.9",
+    "@types/swagger-ui-express": "^4.1.7",
+    "@types/yamljs": "^0.2.34",
+    "nodemon": "^3.1.0",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2"
+  }
+}

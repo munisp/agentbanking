@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: realtime-notification-service
+  namespace: 54agent
+spec:
+  type: ExternalName
+  externalName: realtime-notification-service.54agent.svc.cluster.local
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

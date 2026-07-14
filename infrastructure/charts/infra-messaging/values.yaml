@@ -1,0 +1,62 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-infra-messaging
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9446
+    - port: 9447
+    - port: 9448
+    - port: 9449
+    - port: 9450
+    - port: 9451
+    - port: 9452
+    - port: 9453
+    - port: 9454
+    - port: 9455
+    - port: 9456
+resources:
+  requests:
+    cpu: 200m
+    memory: 176Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 704Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: infra-messaging
+  appPort: 9450
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9446"
+  PORT_BASE: "9446"
+  SERVICE_GROUP: infra-messaging
+  SERVICES: "dapr-sidecar,fluvio-consumer,fluvio-producer,fluvio-smartmodule,fluvio-streaming,offline-sync,offline-sync-orchestrator,realtime-services,unified-streaming,websocket-service"

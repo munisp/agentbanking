@@ -1,0 +1,72 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-agent-pos
+  pullPolicy: IfNotPresent
+  tag: "0.0.2"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9125
+    - port: 9126
+    - port: 9127
+    - port: 9128
+    - port: 9129
+    - port: 9130
+    - port: 9131
+    - port: 9132
+    - port: 9133
+    - port: 9134
+    - port: 9135
+    - port: 9136
+    - port: 9137
+    - port: 9138
+    - port: 9139
+    - port: 9140
+    - port: 9141
+    - port: 9142
+    - port: 9143
+    - port: 9144
+    - port: 9145
+resources:
+  requests:
+    cpu: 200m
+    memory: 336Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1344Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: agent-pos
+  appPort: 9127
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9125"
+  PORT_BASE: "9125"
+  SERVICE_GROUP: agent-pos
+  SERVICES: "android-native,device-management,firmware-distribution,ios-native,iot-smart-pos,mdm-compliance-engine,mdm-geofence-service,mdm-service,ota-service,pos-fluvio-consumer,pos-geofencing,pos-hardware-management,pos-integration,pos-management,pos-printer,pos-shell-config,pos-terminal-management,power-management,terminal-heartbeat,terminal-ownership,territory-management"

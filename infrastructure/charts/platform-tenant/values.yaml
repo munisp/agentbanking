@@ -1,0 +1,64 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-platform-tenant
+  pullPolicy: IfNotPresent
+  tag: "0.0.7"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9541
+    - port: 9542
+    - port: 9543
+    - port: 9544
+    - port: 9545
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 320Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: platform-tenant
+  appPort: 9545
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  DB_DATABASE: "link_core_banking"
+  DB_DATABASE_TYPE: "postgres"
+  NODE_ENV: "production"
+  DAPR_HOST: "localhost"
+  APP_PORT: "9541"
+  PORT_BASE: "9541"
+  SERVICE_GROUP: platform-tenant
+  SERVICES: "config-service,enhanced-platform,enterprise-services,super-app-framework,tenant-management"
+  # billing-aggregator runs in the separate "billing" k8s namespace (see
+  # k8s/sprint80-billing-services.yaml), so Dapr cross-namespace invocation
+  # requires the "<app-id>.<namespace>" form.
+  BILLING_SERVICE_APP_ID: "billing-aggregator.billing"

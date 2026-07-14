@@ -1,0 +1,6 @@
+apiVersion: v2
+name: supply-chain-govt
+description: 54agent Supply Chain Govt Consolidated Helm Chart
+type: application
+version: 0.0.3
+appVersion: "1.0.0"

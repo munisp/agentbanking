@@ -1,0 +1,48 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-pbac-engine
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  port: 8091
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    ephemeral-storage: 256Mi
+    cpu: 200m
+    memory: 256Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: pbac-engine
+  appPort: 8091
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 50m
+  cpu-limit: 100m
+  memory-request: 64Mi
+  memory-limit: 256Mi
+secrets:
+  PBAC_ENGINE_PORT: "8091"

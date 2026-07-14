@@ -1,0 +1,42 @@
+# Security — PCI-DSS required
+bcrypt==4.2.1
+cryptography==44.0.2
+
+fastapi==0.124.2
+uvicorn==0.38.0
+
+# Database
+asyncpg==0.31.0
+
+# Env config
+python-dotenv==1.2.1
+
+# HTTP + utils
+requests==2.32.5
+httpx==0.28.1
+anyio==4.12.0
+
+# Kafka
+confluent-kafka==2.8.0
+
+# Data validation (FastAPI dependency chain)
+pydantic==2.12.5
+pydantic_core==2.41.5
+annotated-types==0.7.0
+typing_extensions==4.15.0
+typing-inspection==0.4.2
+
+# Starlette (FastAPI core dependency)
+starlette==0.50.0
+
+# Networking / SSL / utils
+certifi==2025.11.12
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.6.2
+
+# Web server dependencies
+h11==0.16.0
+
+# Optional but commonly required for middleware/logging stacks
+click==8.3.1

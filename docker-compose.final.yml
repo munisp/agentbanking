@@ -26,11 +26,11 @@ services:
       - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY:-pk_test_default}
       - VITE_APP_ID=${VITE_APP_ID:-pos-shell-demo}
       - VITE_APP_TITLE=${VITE_APP_TITLE:-54Link POS Shell}
-      - OWNER_OPEN_ID=${OWNER_OPEN_ID:-owner-default}
+      - VITE_APP_ID=${VITE_APP_ID:-54link-production}
       - OWNER_NAME=${OWNER_NAME:-Admin}
-      - BUILT_IN_FORGE_API_URL=${BUILT_IN_FORGE_API_URL:-http://localhost:8080}
-      - BUILT_IN_FORGE_API_KEY=${BUILT_IN_FORGE_API_KEY:-default-forge-key}
-      - OAUTH_SERVER_URL=${OAUTH_SERVER_URL:-http://localhost:8081}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-CHANGE_ME}
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
       - VITE_OAUTH_PORTAL_URL=${VITE_OAUTH_PORTAL_URL:-http://localhost:8082}
     depends_on:
       postgres:

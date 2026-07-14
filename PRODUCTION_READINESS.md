@@ -20,7 +20,7 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 | API Layer               | tRPC 11 + Express 4 + Node.js      | Type-safe RPC with superjson serialisation    |
 | Database                | PostgreSQL (Drizzle ORM)           | Primary data store with 55 tables             |
 | Real-time               | Socket.IO + SSE                    | Live fraud alerts, terminal presence          |
-| Auth                    | Manus OAuth + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login           |
+| Auth                    | Keycloak OIDC + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login           |
 | OTA Service             | Go (Gin)                           | Firmware update delivery for POS terminals    |
 | FIDO2 Service           | Go (Gin)                           | WebAuthn challenge/verify for biometric auth  |
 | Credit Scoring          | Python (Flask + scikit-learn)      | Agent creditworthiness scoring                |

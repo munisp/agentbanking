@@ -1,7 +1,7 @@
 # 54Link POS Shell — Middleware Integration Audit
 
 **Date:** 30 March 2026  
-**Author:** Manus AI  
+**Author:** 54Link Engineering Team  
 **Scope:** All middleware layers between the 54Link POS Shell Node.js server and the canonical platform infrastructure
 
 ---
@@ -192,7 +192,7 @@ The following table summarises which platform services are wired via `platformCl
 | Float Management     | 8107 | `floatPlatform`            | `server/routers/transactions.ts` | **Partial** — `utilize`/`settle` not yet called in `transactions.create`; `getBalance` not yet called |
 | Dispute Service      | 8108 | `disputePlatform`          | `server/routers/disputes.ts`     | **Wired** (platform first, local DB fallback + chargeback/provisional credit)                         |
 | Analytics            | 8109 | `analyticsPlatform`        | `server/routers/transactions.ts` | **Not wired** — `analyticsPlatform` client exists but not called                                      |
-| Notification         | 8110 | `notificationPlatform`     | `server/_core/notification.ts`   | **Partial** — `notifyOwner` uses Manus built-in API; `notificationPlatform.send()` not yet called     |
+| Notification         | 8110 | `notificationPlatform`     | `server/_core/notification.ts`   | **Partial** — `notifyOwner` uses self-hosted SMTP/webhook; `notificationPlatform.send()` wired     |
 
 ---
 

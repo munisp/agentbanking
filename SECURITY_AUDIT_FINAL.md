@@ -50,7 +50,7 @@ The 54Link POS Shell platform has undergone comprehensive security hardening acr
 
 **Implemented Controls:**
 
-- Manus OAuth 2.0 with PKCE flow
+- Keycloak OAuth 2.0 with PKCE flow
 - JWT session tokens with HMAC-SHA256 signing
 - Role-based access control (admin/user/agent)
 - Protected procedures via `protectedProcedure` middleware

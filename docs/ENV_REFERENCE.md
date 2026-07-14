@@ -15,23 +15,23 @@ This document lists every environment variable used by the platform, grouped by 
 | `ALLOWED_ORIGINS` | No       | `*`           | Comma-separated CORS allowed origins             |
 | `API_VERSION`     | No       | `v1`          | API version prefix                               |
 
-## Manus OAuth
+## Authentication (Keycloak OIDC)
 
 | Variable                | Required | Default | Description                       |
 | ----------------------- | -------- | ------- | --------------------------------- |
-| `VITE_APP_ID`           | Yes      | —       | Manus OAuth application ID        |
-| `OAUTH_SERVER_URL`      | Yes      | —       | Manus OAuth backend base URL      |
-| `VITE_OAUTH_PORTAL_URL` | Yes      | —       | Manus login portal URL (frontend) |
-| `OWNER_OPEN_ID`         | No       | —       | Owner's Manus OpenID              |
+| `VITE_APP_ID`           | Yes      | —       | Application ID                    |
+| `KEYCLOAK_URL`          | Yes      | —       | Keycloak OIDC backend base URL    |
+| `VITE_KEYCLOAK_URL`     | Yes      | —       | Keycloak login portal URL (frontend) |
 
-## Manus Built-in APIs
+
+## AI / LLM APIs
 
 | Variable                      | Required | Default | Description                                      |
 | ----------------------------- | -------- | ------- | ------------------------------------------------ |
-| `BUILT_IN_FORGE_API_URL`      | Yes      | —       | Manus built-in API base URL (LLM, storage, etc.) |
-| `BUILT_IN_FORGE_API_KEY`      | Yes      | —       | Bearer token for server-side Manus API calls     |
-| `VITE_FRONTEND_FORGE_API_KEY` | No       | —       | Bearer token for frontend Manus API calls        |
-| `VITE_FRONTEND_FORGE_API_URL` | No       | —       | Frontend Manus API URL                           |
+| `OPENAI_API_BASE`             | No       | `https://api.openai.com/v1` | OpenAI-compatible API base URL (works with Ollama, LocalAI, Azure OpenAI) |
+| `OPENAI_API_KEY`              | Yes      | —       | API key for the OpenAI-compatible LLM provider   |
+| `VITE_OPENAI_API_KEY`   | No       | —       | Bearer token for frontend AI/LLM calls           |
+| `VITE_OPENAI_API_BASE`  | No       | —       | Frontend AI/LLM API base URL                     |
 
 ## Keycloak IAM
 
@@ -212,4 +212,4 @@ This document lists every environment variable used by the platform, grouped by 
 
 **Total: 98 environment variables across 18 service groups.**
 
-> **Production minimum:** Set `DATABASE_URL`, `JWT_SECRET`, `VITE_APP_ID`, `OAUTH_SERVER_URL`, `VITE_OAUTH_PORTAL_URL`, `BUILT_IN_FORGE_API_URL`, and `BUILT_IN_FORGE_API_KEY`. All other variables have sensible defaults for development.
+> **Production minimum:** Set `DATABASE_URL`, `JWT_SECRET`, `VITE_APP_ID`, `KEYCLOAK_URL`, `OPENAI_API_KEY`, and `OPENAI_API_BASE`. All other variables have sensible defaults for development.

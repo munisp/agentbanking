@@ -10,7 +10,7 @@ function createAuthContext(): TrpcContext {
     openId: "test-user-sprint28",
     email: "agent@posshell.test",
     name: "Test Agent",
-    loginMethod: "manus",
+    loginMethod: "keycloak",
     role: "admin",
     createdAt: new Date(),
     updatedAt: new Date(),

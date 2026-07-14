@@ -213,7 +213,7 @@ const ENV_RULES: EnvRule[] = [
     description: "54Link OAuth application ID",
   },
   {
-    key: "OAUTH_SERVER_URL",
+    key: "KEYCLOAK_URL",
     required: true,
     description: "54Link OAuth backend URL",
     pattern: /^https?:\/\//,
@@ -224,15 +224,15 @@ const ENV_RULES: EnvRule[] = [
     description: "54Link login portal URL",
     pattern: /^https?:\/\//,
   },
-  { key: "OWNER_OPEN_ID", required: false, description: "Owner's OpenID" },
+  { key: "VITE_APP_ID", required: false, description: "Application ID" },
   { key: "OWNER_NAME", required: false, description: "Owner's display name" },
   {
-    key: "BUILT_IN_FORGE_API_URL",
+    key: "OPENAI_API_BASE",
     required: false,
     description: "54Link platform API URL",
   },
   {
-    key: "BUILT_IN_FORGE_API_KEY",
+    key: "OPENAI_API_KEY",
     required: false,
     description: "54Link platform API key",
   },

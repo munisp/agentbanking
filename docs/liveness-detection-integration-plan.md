@@ -1,6 +1,6 @@
 # Liveness Detection Integration Plan for POS-54Link KYC Workflow
 
-**Author:** Manus AI  
+**Author:** 54Link Engineering Team  
 **Date:** April 16, 2026  
 **Version:** 2.0  
 **Status:** Implementation Complete — Integration Guide

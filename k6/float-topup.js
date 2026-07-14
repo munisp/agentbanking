@@ -5,7 +5,7 @@
  *
  * Usage:
  *   k6 run k6/float-topup.js
- *   BASE_URL=https://your-app.manus.space k6 run k6/float-topup.js
+ *   BASE_URL=https://your-app.your-domain.com k6 run k6/float-topup.js
  */
 import http from "k6/http";
 import { check, sleep } from "k6";

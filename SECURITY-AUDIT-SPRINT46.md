@@ -53,7 +53,7 @@ The 54Link POS Shell platform has been subjected to a comprehensive security aud
 
 ### 2. Authentication Architecture
 
-- OAuth2 via Manus Auth (Keycloak-compatible)
+- OAuth2 via Keycloak OIDC
 - JWT session cookies with HttpOnly, Secure, SameSite=Strict
 - Role-based access control (admin/user)
 - Session expiry and refresh token rotation

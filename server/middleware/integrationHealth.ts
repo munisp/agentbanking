@@ -160,7 +160,7 @@ async function checkTemporal(): Promise<ServiceHealth> {
 }
 
 async function checkKeycloak(): Promise<ServiceHealth> {
-  const url = process.env.KEYCLOAK_URL ?? process.env.OAUTH_SERVER_URL;
+  const url = process.env.KEYCLOAK_URL;
   if (!url)
     return {
       name: "Keycloak",

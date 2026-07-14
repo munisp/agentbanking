@@ -6,7 +6,7 @@
  *  - Logout: redirect to /api/auth/logout (clears cookie + Keycloak end-session)
  *  - Session: trpc.auth.me.useQuery() reads the current user from the DB
  *
- * The hook interface is unchanged from the Manus OAuth version so all
+ * The hook interface is unchanged from the original OAuth version so all
  * existing consumers continue to work without modification.
  */
 

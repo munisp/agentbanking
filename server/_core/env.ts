@@ -17,13 +17,39 @@ export const ENV = {
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   postgresUrl: process.env.POSTGRES_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
   port: parseInt(process.env.PORT ?? "3000", 10),
   apiVersion: process.env.API_VERSION ?? "1.0.0",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+
+  // ── Notification (self-hosted SMTP + webhook) ─────────────────────────────
+  // Set SMTP_HOST + NOTIFY_EMAIL for email delivery.
+  // Set NOTIFY_WEBHOOK_URL for Slack/Discord/custom webhook delivery.
+  smtpHost: process.env.SMTP_HOST ?? "",
+  smtpPort: process.env.SMTP_PORT ?? "587",
+  smtpUser: process.env.SMTP_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? "",
+  smtpSecure: process.env.SMTP_SECURE ?? "false",
+  notifyEmail: process.env.NOTIFY_EMAIL ?? "",
+  notifyWebhookUrl: process.env.NOTIFY_WEBHOOK_URL ?? "",
+
+  // ── S3/MinIO file storage ─────────────────────────────────────────────────
+  s3Endpoint: process.env.S3_ENDPOINT ?? "http://minio:9000",
+  s3Bucket: process.env.S3_BUCKET ?? "54link-storage",
+  s3AccessKey: process.env.S3_ACCESS_KEY ?? "",
+  s3SecretKey: process.env.S3_SECRET_KEY ?? "",
+  s3PublicUrl: process.env.S3_PUBLIC_URL ?? "",
+
+  // ── Geocoding ─────────────────────────────────────────────────────────────
+  // Default: OpenStreetMap Nominatim (free, no key required).
+  // Set GEOCODING_PROVIDER=google and GEOCODING_API_KEY for paid providers.
+  geocodingProvider: process.env.GEOCODING_PROVIDER ?? "nominatim",
+  geocodingApiKey: process.env.GEOCODING_API_KEY ?? "",
+
+  // ── AI / LLM (OpenAI-compatible) ──────────────────────────────────────────
+  // Used by imageGeneration.ts, voiceTranscription.ts, and llm.ts.
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiApiBase: process.env.OPENAI_API_BASE ?? "https://api.openai.com/v1",
+  imageGenModel: process.env.IMAGE_GEN_MODEL ?? "dall-e-3",
 
   // ── Redis ───────────────────────────────────────────────────────────────────
   redisUrl: process.env.REDIS_URL ?? "redis://redis:6379",

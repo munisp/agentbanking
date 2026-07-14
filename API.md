@@ -2,7 +2,7 @@
 
 **Version:** Phase 136  
 **Transport:** HTTP Batch (POST `/api/trpc`)  
-**Auth:** Session cookie (`session=<jwt>`) for agent procedures; Manus OAuth for admin SSO
+**Auth:** Session cookie (`session=<jwt>`) for agent procedures; Keycloak OIDC for admin SSO
 
 All procedures use [tRPC v11](https://trpc.io) with [Superjson](https://github.com/blitz-js/superjson) serialization.
 
@@ -10,15 +10,15 @@ All procedures use [tRPC v11](https://trpc.io) with [Superjson](https://github.c
 
 ## Authentication Procedures
 
-### `auth.me` — Get current user (Manus OAuth)
+### `auth.me` — Get current user (Keycloak OIDC)
 
 **Type:** Query | **Auth:** Public  
-Returns the currently authenticated Manus OAuth user or null.
+Returns the currently authenticated Keycloak OIDC user or null.
 
-### `auth.logout` — Logout (Manus OAuth)
+### `auth.logout` — Logout (Keycloak OIDC)
 
 **Type:** Mutation | **Auth:** Protected  
-Clears the Manus OAuth session cookie.
+Clears the Keycloak OIDC session cookie.
 
 ---
 

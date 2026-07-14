@@ -1,92 +1,55 @@
 /**
- * Image generation helper using internal ImageService
+ * imageGeneration.ts — Self-hosted image generation via OpenAI-compatible API.
+ * No external platform dependency.
  *
- * Example usage:
- *   const { url: imageUrl } = await generateImage({
- *     prompt: "A serene landscape with mountains"
- *   });
- *
- * For editing:
- *   const { url: imageUrl } = await generateImage({
- *     prompt: "Add a rainbow to this landscape",
- *     originalImages: [{
- *       url: "https://example.com/original.jpg",
- *       mimeType: "image/jpeg"
- *     }]
- *   });
+ * Env vars:
+ *   OPENAI_API_KEY  — API key (required)
+ *   OPENAI_API_BASE — base URL (default: https://api.openai.com/v1)
+ *   IMAGE_GEN_MODEL — model name (default: dall-e-3)
  */
 import { storagePut } from "server/storage";
-import { ENV } from "./env";
 
 export type GenerateImageOptions = {
   prompt: string;
-  originalImages?: Array<{
-    url?: string;
-    b64Json?: string;
-    mimeType?: string;
-  }>;
+  originalImages?: Array<{ url?: string; b64Json?: string; mimeType?: string }>;
 };
-
-export type GenerateImageResponse = {
-  url?: string;
-};
+export type GenerateImageResponse = { url?: string };
 
 export async function generateImage(
   options: GenerateImageOptions
 ): Promise<GenerateImageResponse> {
-  if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
-  }
-  if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
-  }
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
 
-  // Build the full URL by appending the service path to the base URL
-  const baseUrl = ENV.forgeApiUrl.endsWith("/")
-    ? ENV.forgeApiUrl
-    : `${ENV.forgeApiUrl}/`;
-  const fullUrl = new URL(
-    "images.v1.ImageService/GenerateImage",
-    baseUrl
-  ).toString();
+  const baseUrl = (process.env.OPENAI_API_BASE ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  const model = process.env.IMAGE_GEN_MODEL ?? "dall-e-3";
 
-  const response = await fetch(fullUrl, {
+  const response = await fetch(`${baseUrl}/images/generations`, {
     method: "POST",
     headers: {
-      accept: "application/json",
       "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
+      model,
       prompt: options.prompt,
-      original_images: options.originalImages || [],
+      n: 1,
+      size: "1024x1024",
+      response_format: "b64_json",
     }),
   });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(
-      `Image generation request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
-    );
+    throw new Error(`Image generation failed (${response.status}): ${detail}`);
   }
 
-  const result = (await response.json()) as {
-    image: {
-      b64Json: string;
-      mimeType: string;
-    };
-  };
-  const base64Data = result.image.b64Json;
-  const buffer = Buffer.from(base64Data, "base64");
+  const payload = await response.json();
+  const b64 = payload?.data?.[0]?.b64_json as string | undefined;
+  if (!b64) return {};
 
-  // Save to S3
-  const { url } = await storagePut(
-    `generated/${Date.now()}.png`,
-    buffer,
-    result.image.mimeType
-  );
-  return {
-    url,
-  };
+  const buffer = Buffer.from(b64, "base64");
+  const key = `generated/${Date.now()}.png`;
+  const { url } = await storagePut(key, buffer, "image/png");
+  return { url };
 }

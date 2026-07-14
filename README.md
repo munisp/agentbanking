@@ -49,7 +49,7 @@ A comprehensive agency banking platform built for managing POS terminal networks
 | State      | TanStack React Query, tRPC React hooks          |
 | Backend    | Express 4, tRPC 11, Node.js 22                  |
 | Database   | PostgreSQL (Drizzle ORM), 71 tables             |
-| Auth       | Manus OAuth, JWT sessions                       |
+| Auth       | Keycloak OIDC, JWT sessions                     |
 | Payments   | Stripe (subscriptions + one-time)               |
 | Real-time  | Socket.IO notifications                         |
 | Storage    | AWS S3                                          |

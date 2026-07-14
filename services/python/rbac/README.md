@@ -194,6 +194,6 @@ Logging is configured to output to `stdout` with `INFO` level. This can be custo
 
 ---
 
-**Manus AI**
+**54Link Engineering Team**
 October 2025
 

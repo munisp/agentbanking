@@ -1,6 +1,6 @@
 /**
  * AdminPanel — 54Link Supervisor / Back-Office Dashboard
- * Route: /admin  (protected — requires agent.role === "admin" OR Manus OAuth admin role)
+ * Route: /admin  (protected — requires agent.role === "admin" OR Keycloak admin role)
  *
  * Sections:
  *  1. Overview KPIs  — total volume, active agents, fraud rate, avg commission

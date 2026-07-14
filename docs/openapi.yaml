@@ -8,7 +8,7 @@ info:
     
     ## Authentication
     All endpoints require a valid JWT token in the Authorization header.
-    Tokens are issued via Manus OAuth at `/api/oauth/callback`.
+    Tokens are issued via Keycloak OIDC at `/api/oauth/callback`.
     
     ## Rate Limiting
     - Standard endpoints: 100 req/min per tenant
@@ -530,7 +530,7 @@ paths:
       tags: [Production Billing]
       summary: Monthly invoice cron
       description: |
-        Automated monthly invoice generation triggered by Manus Heartbeat.
+        Automated monthly invoice generation triggered by the built-in cron scheduler.
         Generates invoices for all active tenants based on their billing plans.
       operationId: monthlyInvoiceCron
       responses:

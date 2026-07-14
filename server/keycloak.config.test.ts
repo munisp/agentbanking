@@ -134,7 +134,7 @@ describe("Keycloak — buildAuthorizationUrl", () => {
       "https://auth.54link.io/realms/54link/protocol/openid-connect/auth";
     const params = new URLSearchParams({
       client_id: "pos-shell",
-      redirect_uri: "https://pos-shell.manus.space/api/auth/keycloak/callback",
+      redirect_uri: "https://your-app.your-domain.com/api/auth/keycloak/callback",
       response_type: "code",
       scope: "openid profile email",
       state: "random-state-value",

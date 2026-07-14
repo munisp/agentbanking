@@ -395,7 +395,8 @@ export class KeycloakConnector {
   constructor() {
     this.baseUrl =
       process.env.KEYCLOAK_URL ??
-      process.env.OAUTH_SERVER_URL ??
+      process.env.KEYCLOAK_URL ??
+      
       "http://localhost:8080";
     this.realm = process.env.KEYCLOAK_REALM ?? "pos-shell";
     this.clientId = process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell-app";

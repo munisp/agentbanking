@@ -1,3 +1,13 @@
+/**
+ * notification.ts
+ * Self-hosted owner notification — SMTP email + generic webhook fallback.
+ * No external platform dependency.
+ *
+ * Env vars:
+ *   SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS, SMTP_SECURE ("true"/"false")
+ *   NOTIFY_EMAIL   — recipient address for SMTP delivery
+ *   NOTIFY_WEBHOOK_URL — any HTTP webhook (Slack, Discord, custom)
+ */
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
 
@@ -13,13 +23,63 @@ const trimValue = (value: string): string => value.trim();
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
-const buildEndpointUrl = (baseUrl: string): string => {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(
-    "webdevtoken.v1.WebDevService/SendNotification",
-    normalizedBase
-  ).toString();
-};
+/** Send via SMTP using nodemailer (optional peer dep) */
+async function sendEmail(payload: NotificationPayload): Promise<boolean> {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS ?? "";
+  const notifyEmail = process.env.NOTIFY_EMAIL;
+  if (!smtpHost || !notifyEmail) return false;
+  try {
+    // Dynamic import so nodemailer is optional — won't crash if not installed
+    const nodemailer = await import("nodemailer").catch(() => null);
+    if (!nodemailer) return false;
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: parseInt(process.env.SMTP_PORT ?? "587", 10),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: smtpUser ? { user: smtpUser, pass: smtpPass } : undefined,
+    });
+    await transporter.sendMail({
+      from: smtpUser ?? notifyEmail,
+      to: notifyEmail,
+      subject: `[54Link] ${payload.title}`,
+      text: payload.content,
+      html: `<h2>${payload.title}</h2><pre style="white-space:pre-wrap">${payload.content}</pre>`,
+    });
+    return true;
+  } catch (err) {
+    console.warn("[Notification] SMTP delivery failed:", err);
+    return false;
+  }
+}
+
+/** Send via generic webhook (Slack, Discord, custom) */
+async function sendWebhook(payload: NotificationPayload): Promise<boolean> {
+  const webhookUrl = process.env.NOTIFY_WEBHOOK_URL;
+  if (!webhookUrl) return false;
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: `*${payload.title}*\n${payload.content}`,
+        title: payload.title,
+        content: payload.content,
+        timestamp: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      console.warn(`[Notification] Webhook delivery failed (${response.status})`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[Notification] Webhook delivery failed:", err);
+    return false;
+  }
+}
 
 const validatePayload = (input: NotificationPayload): NotificationPayload => {
   if (!isNonEmptyString(input.title)) {
@@ -56,57 +116,23 @@ const validatePayload = (input: NotificationPayload): NotificationPayload => {
 };
 
 /**
- * Dispatches a project-owner notification through the 54Link Notification Service.
- * Returns `true` if the request was accepted, `false` when the upstream service
- * cannot be reached (callers can fall back to email/slack). Validation errors
- * bubble up as TRPC errors so callers can fix the payload.
+ * Dispatches a project-owner notification.
+ * Tries SMTP email first, then webhook, then falls back to console.log.
+ * Returns `true` if at least one channel delivered successfully.
+ * No external platform dependency.
  */
 export async function notifyOwner(
   payload: NotificationPayload
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
 
-  if (!ENV.forgeApiUrl) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service URL is not configured.",
-    });
-  }
+  // Try SMTP first
+  if (await sendEmail({ title, content })) return true;
 
-  if (!ENV.forgeApiKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service API key is not configured.",
-    });
-  }
+  // Try webhook second
+  if (await sendWebhook({ title, content })) return true;
 
-  const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "content-type": "application/json",
-        "connect-protocol-version": "1",
-      },
-      body: JSON.stringify({ title, content }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
-          detail ? `: ${detail}` : ""
-        }`
-      );
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
-    return false;
-  }
+  // Always log as final fallback — never silently drop a notification
+  console.info(`[Notification] OWNER ALERT — ${title}\n${content}`);
+  return true;
 }

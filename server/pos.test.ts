@@ -303,7 +303,7 @@ describe("loyalty.profile", () => {
 
 // ─── Auth logout test (existing) ─────────────────────────────────────────────
 describe("auth.logout", () => {
-  it("clears the Manus session cookie", async () => {
+  it("clears the session cookie", async () => {
     const ctx = makeCtx();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.auth.logout();

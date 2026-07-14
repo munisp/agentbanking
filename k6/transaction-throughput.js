@@ -6,7 +6,7 @@
  * Usage:
  *   k6 run k6/transaction-throughput.js
  *   k6 run --vus 50 --duration 2m k6/transaction-throughput.js
- *   BASE_URL=https://your-app.manus.space k6 run k6/transaction-throughput.js
+ *   BASE_URL=https://your-app.your-domain.com k6 run k6/transaction-throughput.js
  *
  * Environment variables:
  *   BASE_URL      Target base URL (default: http://localhost:3000)

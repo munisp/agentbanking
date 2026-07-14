@@ -169,7 +169,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Permify RBAC with agent/admin/supervisor roles
 - HashiCorp Vault for secret management
 - JWT session management with refresh tokens
-- Manus OAuth integration
+- Keycloak OIDC integration
 
 ---
 

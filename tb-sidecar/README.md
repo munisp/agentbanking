@@ -110,7 +110,7 @@ The main Node.js server uses Termii for SMS delivery (OTP codes, transaction rec
 
 1. Sign up at [https://termii.com](https://termii.com)
 2. Navigate to **Settings → API Keys** and copy your key
-3. In the Manus project, open **Settings → Secrets** and add:
+3. In your deployment environment, configure the following secrets:
    - `TERMII_API_KEY` — your Termii API key
 4. Restart the server
 

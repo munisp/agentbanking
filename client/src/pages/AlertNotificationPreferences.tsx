@@ -296,7 +296,7 @@ export default function AlertNotificationPreferences() {
                               </p>
                               <p className="text-xs text-gray-500">
                                 {channel === "push" &&
-                                  "Manus platform notifications"}
+                                  "Platform notifications"}
                                 {channel === "email" && currentPref.adminEmail}
                                 {channel === "sms" &&
                                   (currentPref.adminPhone ||

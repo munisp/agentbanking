@@ -7,7 +7,7 @@
  * Usage:
  *   k6 run k6/mdm-ota-update.js
  *   k6 run --vus 200 --duration 5m k6/mdm-ota-update.js
- *   BASE_URL=https://your-app.manus.space k6 run k6/mdm-ota-update.js
+ *   BASE_URL=https://your-app.your-domain.com k6 run k6/mdm-ota-update.js
  *
  * Environment variables:
  *   BASE_URL        Target base URL (default: http://localhost:3000)

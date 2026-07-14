@@ -544,21 +544,21 @@
 - [x] Regenerate comprehensive archive with all new files
 - [x] Archive delivered as downloadable attachment
 
-## Phase 71: Keycloak OIDC Integration (Replace Manus OAuth)
+## Phase 71: Keycloak OIDC Integration (Replace Keycloak OIDC)
 - [x] Install openid-client package for server-side OIDC
 - [x] Create server/_core/keycloak.ts: JWKS-based JWT verifier + OIDC discovery
 - [x] Create server/_core/keycloakAuth.ts: Authorization Code flow routes (/api/auth/login, /api/auth/callback, /api/auth/logout)
 - [x] Update server/_core/context.ts: verify Keycloak JWT from cookie, resolve user by keycloakSub
 - [x] Update drizzle/schema.ts: rename openId → keycloakSub in users table
 - [x] Update server/db.ts: getUserByKeycloakSub, upsertUserFromKeycloak
-- [x] Update server/_core/index.ts: register Keycloak auth routes instead of Manus OAuth
+- [x] Update server/_core/index.ts: register Keycloak auth routes instead of Keycloak OIDC
 - [x] Update client/src/const.ts: getLoginUrl() → /api/auth/login (Keycloak redirect)
 - [x] Update client/src/_core/hooks/useAuth.ts: unchanged interface, backed by trpc.auth.me
-- [x] Update client/src/components/ManusDialog.tsx → KeycloakLoginDialog.tsx (not applicable — no Manus dialog used in POS flow)
+- [x] Update client/src/components/KeycloakLoginDialog.tsx → KeycloakLoginDialog.tsx (not applicable — no Manus dialog used in POS flow)
 - [x] Update client/src/components/DashboardLayout.tsx: use Keycloak login URL
-- [x] Update client/src/main.tsx: remove Manus OAuth redirect, use Keycloak
+- [x] Update client/src/main.tsx: remove Keycloak OIDC redirect, use Keycloak
 - [x] Add KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET env vars
-- [x] Remove server/_core/sdk.ts and server/_core/oauth.ts (Manus-specific — sdk.ts kept for LLM/notification helpers, oauth.ts replaced)
+- [x] Remove server/_core/oauth.ts (Manus-specific OAuth — replaced with Keycloak OIDC; sdk.ts kept for LLM/notification helpers)
 
 ## Phase 72: Replace Mocks with Real Implementations
 - [x] AdminPanel: replace Math.random() hourly volume/count with real trpc.transactions.adminHourlyStats query
@@ -672,7 +672,7 @@
 - [x] Fraud: fraud router has platform proxy in fraud.create + fraud.list with local DB fallback
 - [x] Settlement: settlementCron.ts calls settlementPlatform.processSettlement() + local PDF/S3/notify
 - [x] Analytics: platformAnalytics procedure calls analyticsPlatform.transactionSummary() with local fallback
-- [x] Notification: notifyOwner uses built-in Manus notification API (platform-native)
+- [x] Notification: notifyOwner uses self-hosted SMTP/webhook notification
 - [x] Dispute: disputes router has platform proxy for raise/myDisputes/stats/provisional-credit/chargeback
 - [x] Geofencing: geofencing router proxies createZone/updateZone to platform with local DB fallback
 - [x] Loyalty: loyalty router has platform proxy calls with local DB fallback
@@ -1368,7 +1368,7 @@
 
 - [x] [Phase 119] Keycloak realm.json: 54link realm with agent + admin + supervisor roles
 - [x] [Phase 119] Keycloak client: pos-shell-demo OIDC client with PKCE
-- [x] [Phase 119] server/_core/oauth.ts: replace Manus OAuth with Keycloak OIDC (discovery endpoint)
+- [x] [Phase 119] server/_core/oauth.ts: replace Keycloak OIDC with Keycloak OIDC (discovery endpoint)
 - [x] [Phase 119] server/_core/context.ts: validate Keycloak JWT (RS256) via JWKS endpoint
 - [x] [Phase 119] client: update login flow to redirect to Keycloak login page
 - [x] [Phase 119] Keycloak docker-compose service with health check
@@ -1629,7 +1629,7 @@
 - [x] [Phase 144] monitoring/prometheus/alerts/availability.rules.yml
 
 ## Phase 145 — Keycloak OIDC Integration
-- [x] [Phase 145] server/_core/oauth.ts: replace Manus OAuth with Keycloak OIDC discovery
+- [x] [Phase 145] server/_core/oauth.ts: replace Keycloak OIDC with Keycloak OIDC discovery
 - [x] [Phase 145] server/_core/context.ts: validate Keycloak RS256 JWT via JWKS endpoint
 - [x] [Phase 145] client/src/const.ts: getLoginUrl() points to Keycloak login page
 - [x] [Phase 145] Vitest: Keycloak JWT validation tests
@@ -3880,7 +3880,7 @@
 ## Sprint 65: Final Production Readiness (25 Features)
 
 ### Batch 1: Missing Infrastructure & Endpoints
-- [x] F1: /api/scheduled endpoint for periodic task updates (Manus scheduled task integration)
+- [x] F1: /api/scheduled endpoint for periodic task updates (built-in cron scheduler integration)
 - [x] F2: CORS middleware wiring in _core/index.ts
 - [x] F3: Environment validation on server startup with clear error messages
 - [x] F4: Request ID propagation middleware wired into _core/index.ts

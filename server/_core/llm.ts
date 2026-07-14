@@ -214,14 +214,16 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://api.54link.io/v1/chat/completions";
+const resolveApiUrl = () => {
+  const base = (ENV.openaiApiBase ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  return `${base}/chat/completions`;
+};
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!ENV.openaiApiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is not configured. Set the OPENAI_API_KEY environment variable."
+    );
   }
 };
 
@@ -321,7 +323,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${ENV.openaiApiKey}`,
     },
     body: JSON.stringify(payload),
   });

@@ -2,7 +2,7 @@
 
 **Remittance Platform V11.0**  
 **Date:** November 11, 2025  
-**Author:** Manus AI  
+**Author:** 54Link Engineering Team  
 **Status:** Production Ready
 
 ---

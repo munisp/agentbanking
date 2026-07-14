@@ -2,7 +2,7 @@
  * Sprint 93 — Security Alert Notification Service
  *
  * Wires ransomware mitigation alerts, bulk-op limit triggers, and other
- * critical security events to the notifyOwner helper (Manus push notification)
+ * critical security events to the notifyOwner helper (SMTP/webhook notification)
  * plus email and SMS delivery channels.
  *
  * Design:
@@ -328,7 +328,7 @@ async function deliverViaEmail(
 
   try {
     // Production: integrate with SendGrid/SES/Mailgun
-    // For now, use the Manus notification service as email proxy
+    // Use the self-hosted notification service (SMTP/webhook)
     const success = await notifyOwner({
       title: `[EMAIL] ${formatAlertTitle(event)}`,
       content: [

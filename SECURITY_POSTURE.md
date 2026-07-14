@@ -20,7 +20,7 @@ observability, and incident response.
 | ------------------ | ------------------------------------------------------ | ------ |
 | Supply chain       | Gitleaks, Snyk, CodeQL, Dependabot, npm audit          | Active |
 | Secrets management | CSPRNG, VAPID auto-gen, rotate-secrets, env validation | Active |
-| Authentication     | JWT (jose), Manus OAuth, CRON_SECRET, INTERNAL_API_KEY | Active |
+| Authentication     | JWT (jose), Keycloak OIDC, CRON_SECRET, INTERNAL_API_KEY | Active |
 | Authorisation      | protectedProcedure, adminProcedure, role-based access  | Active |
 | Transport security | TLS termination, HSTS, CSP nonce, CORS allowlist       | Active |
 | Runtime hardening  | Helmet, rate limiting, body limits, non-root Docker    | Active |
@@ -130,7 +130,7 @@ exit with a descriptive error rather than starting in a degraded state.
 
 ### 3.1 Authentication Architecture
 
-The platform uses Manus OAuth 2.0 for user authentication. The OAuth flow completes at
+The platform uses Keycloak OAuth 2.0 for user authentication. The OAuth flow completes at
 `/api/oauth/callback`, which issues a signed JWT session cookie using `jose` (JOSE standard
 library). The JWT is signed with `HS256` using the `JWT_SECRET` environment variable and
 has a 7-day expiry.
@@ -180,7 +180,7 @@ default-src 'self'
 script-src 'self' 'nonce-{nonce}' 'strict-dynamic'
 style-src 'self' 'unsafe-inline' fonts.googleapis.com
 font-src 'self' fonts.gstatic.com
-img-src 'self' data: blob: cdn.manus.im
+img-src 'self' data: blob: cdn.your-domain.com
 connect-src 'self' {analytics-cdn}
 media-src 'none'
 worker-src 'self' blob:

@@ -26,13 +26,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:-pos-shell-jwt-secret-2026}
       - REDIS_URL=redis://redis:6379
       - VITE_APP_ID=${VITE_APP_ID:-pos-shell-demo}
-      - OAUTH_SERVER_URL=${OAUTH_SERVER_URL:-https://auth.manus.space}
-      - VITE_OAUTH_PORTAL_URL=${VITE_OAUTH_PORTAL_URL:-https://auth.manus.space/login}
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
+      - VITE_KEYCLOAK_URL=${VITE_KEYCLOAK_URL:-http://keycloak:8080}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
-      - BUILT_IN_FORGE_API_URL=${BUILT_IN_FORGE_API_URL}
-      - BUILT_IN_FORGE_API_KEY=${BUILT_IN_FORGE_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-CHANGE_ME}
     depends_on:
       postgres:
         condition: service_healthy

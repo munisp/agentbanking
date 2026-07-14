@@ -1,11 +1,11 @@
 /**
- * Quick example (matches curl usage):
- *   await callDataApi("Youtube/search", {
- *     query: { gl: "US", hl: "en", q: "54link" },
- *   })
+ * dataApi.ts — Generic external API proxy helper.
+ * No external platform dependency.
+ *
+ * Replaces the legacy CallApi proxy with direct HTTP calls.
+ * Callers should use specific service clients (e.g. stripe, twilio) instead
+ * of this generic helper where possible.
  */
-import { ENV } from "./env";
-
 export type DataApiCallOptions = {
   query?: Record<string, unknown>;
   body?: Record<string, unknown>;
@@ -13,41 +13,42 @@ export type DataApiCallOptions = {
   formData?: Record<string, unknown>;
 };
 
+/**
+ * Generic HTTP API call helper.
+ * Provide the full URL as apiId (e.g. "https://api.example.com/v1/resource").
+ * For backward compatibility, apiId values that look like "Service/method"
+ * are logged as warnings and return an empty object.
+ */
 export async function callDataApi(
   apiId: string,
   options: DataApiCallOptions = {}
 ): Promise<unknown> {
-  if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
-  }
-  if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
+  // Detect legacy "Service/method" style calls and warn
+  if (!apiId.startsWith("http")) {
+    console.warn(
+      `[DataApi] Legacy apiId format "${apiId}" is not supported. ` +
+      "Replace with a direct HTTP call to the target API."
+    );
+    return {};
   }
 
-  // Build the full URL by appending the service path to the base URL
-  const baseUrl = ENV.forgeApiUrl.endsWith("/")
-    ? ENV.forgeApiUrl
-    : `${ENV.forgeApiUrl}/`;
-  const fullUrl = new URL(
-    "webdevtoken.v1.WebDevService/CallApi",
-    baseUrl
-  ).toString();
+  let url = apiId;
+  if (options.pathParams) {
+    for (const [k, v] of Object.entries(options.pathParams)) {
+      url = url.replace(`{${k}}`, encodeURIComponent(String(v)));
+    }
+  }
+  if (options.query) {
+    const qs = new URLSearchParams(
+      Object.entries(options.query).map(([k, v]) => [k, String(v)])
+    );
+    url = `${url}?${qs.toString()}`;
+  }
 
-  const response = await fetch(fullUrl, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify({
-      apiId,
-      query: options.query,
-      body: options.body,
-      path_params: options.pathParams,
-      multipart_form_data: options.formData,
-    }),
+  const response = await fetch(url, {
+    method: options.body || options.formData ? "POST" : "GET",
+    headers: { "content-type": "application/json" },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
 
   if (!response.ok) {
@@ -56,14 +57,5 @@ export async function callDataApi(
       `Data API request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
     );
   }
-
-  const payload = await response.json().catch(() => ({}));
-  if (payload && typeof payload === "object" && "jsonData" in payload) {
-    try {
-      return JSON.parse((payload as Record<string, string>).jsonData ?? "{}");
-    } catch {
-      return (payload as Record<string, unknown>).jsonData;
-    }
-  }
-  return payload;
+  return response.json().catch(() => ({}));
 }

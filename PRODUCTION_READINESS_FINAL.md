@@ -26,7 +26,7 @@ The platform delivers a complete agency banking solution for the Nigerian market
 | Ledger         | TigerBeetle (Go sidecar)                   | Double-entry financial ledger    |
 | Streaming      | Apache Kafka + Fluvio                      | Event streaming, SmartModules    |
 | Workflow       | Temporal                                   | Durable workflow orchestration   |
-| Auth           | Keycloak + Manus OAuth                     | Identity, RBAC                   |
+| Auth           | Keycloak OIDC + JWT + FIDO2/WebAuthn       | Identity, RBAC                   |
 | Secrets        | HashiCorp Vault                            | Secrets management, PKI          |
 | Authz          | Permify                                    | Fine-grained authorization       |
 | Gateway        | APISix                                     | API gateway, rate limiting, mTLS |

@@ -33,7 +33,7 @@
 │                                                                               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
 │  │ Auth Router  │  │ Transaction  │  │  Float Mgmt  │  │  MDM Router  │    │
-│  │ (Manus OAuth)│  │   Router     │  │   Router     │  │  (OTA/Geo)   │    │
+│  │ (Keycloak OIDC)│  │   Router     │  │   Router     │  │  (OTA/Geo)   │    │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
 │  │ Customer     │  │ Developer    │  │  Management  │  │  Resilience  │    │
@@ -72,7 +72,7 @@
 | -------------- | ---------------------------- | ------------------------------------------- |
 | Frontend       | React 19 + Vite + Tailwind 4 | Web PWA (POSShell, AdminPanel, all portals) |
 | API            | tRPC 11 + Express 4          | Type-safe RPC with superjson                |
-| Auth           | Manus OAuth + JWT + FIDO2    | Session management + biometric              |
+| Auth           | Keycloak OIDC + JWT + FIDO2  | Session management + biometric              |
 | Database       | PostgreSQL + Drizzle ORM     | Primary relational store                    |
 | Ledger         | TigerBeetle                  | Double-entry financial ledger               |
 | Cache          | Redis                        | Session cache, pub/sub, rate limiting       |

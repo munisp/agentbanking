@@ -15,7 +15,7 @@ function makeAuthCtx(): TrpcContext {
       openId: "billing-test-user",
       email: "billing@54link.com",
       name: "Billing Test User",
-      loginMethod: "manus",
+      loginMethod: "keycloak",
       role: "admin",
       createdAt: new Date(),
       updatedAt: new Date(),

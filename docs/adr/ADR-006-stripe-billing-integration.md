@@ -12,7 +12,7 @@ The billing engine needs a reliable payment processing provider that supports in
 
 We integrate **Stripe** as the primary payment processor for all billing operations. Stripe handles invoice creation, payment collection, subscription management, and provides webhook events for lifecycle tracking. Our system maintains only Stripe resource IDs locally, fetching detailed payment data from Stripe's API when needed.
 
-Webhook events handled: invoice.paid (mark paid, update ledger), invoice.payment_failed (trigger dunning workflow), invoice.overdue (escalate to collections). Monthly invoice generation is automated via Manus Heartbeat cron at /api/scheduled/monthly-invoices.
+Webhook events handled: invoice.paid (mark paid, update ledger), invoice.payment_failed (trigger dunning workflow), invoice.overdue (escalate to collections). Monthly invoice generation is automated via the built-in cron scheduler at /api/scheduled/monthly-invoices.
 
 ## Consequences
 

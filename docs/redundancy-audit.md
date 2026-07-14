@@ -16,7 +16,7 @@
 | `/home/ubuntu/.archived-stale/`      | ~80 MB  | Stale phase archives (65–70, production-overhaul) | **Stale — can be deleted**       |
 | `/home/ubuntu/tb-data/`              | ~2 MB   | TigerBeetle sidecar data files                    | Active — used by sidecar         |
 | `/home/ubuntu/webdev-static-assets/` | ~5 MB   | CDN-uploaded static assets                        | Active — referenced by POS Shell |
-| `/home/ubuntu/skills/`               | <1 MB   | Manus skill definitions                           | System — do not touch            |
+| `/home/ubuntu/skills/`               | <1 MB   | Agent skill definitions                           | System — do not touch            |
 
 ---
 
@@ -67,9 +67,9 @@ The platform monorepo contains multiple implementations of the same service in d
 | Go notification         | `platform/services/go-services/notification-service/`    | Go             | 8110 | Multi-channel (SMS/email/push/in-app) |
 | Python notification     | `platform/backend/python-services/notification-service/` | Python/FastAPI | 8110 | Same API                              |
 | POS Shell Termii direct | `server/routers/smsReceipt.ts`                           | TypeScript     | —    | Direct Termii API call                |
-| Manus notifyOwner       | `server/_core/notification.ts`                           | TypeScript     | —    | Owner-only, Manus built-in            |
+| notifyOwner             | `server/_core/notification.ts`                           | TypeScript     | —    | Owner-only, SMTP/webhook              |
 
-**Canonical:** Go notification service (`:8110`) for agent/customer notifications. Manus notifyOwner for owner alerts. Termii direct for SMS receipts (acceptable — low complexity).
+**Canonical:** Go notification service (`:8110`) for agent/customer notifications. SMTP/webhook notifyOwner for owner alerts. Termii direct for SMS receipts (acceptable — low complexity).
 
 ### 3.3 Analytics Service
 

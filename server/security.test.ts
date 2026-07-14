@@ -34,7 +34,7 @@ function makeCtx(overrides?: Partial<TrpcContext>): TrpcContext {
     openId: "test-open-id",
     email: "admin@54link.test",
     name: "Test Admin",
-    loginMethod: "manus",
+    loginMethod: "keycloak",
     role: "admin",
     createdAt: new Date(),
     updatedAt: new Date(),

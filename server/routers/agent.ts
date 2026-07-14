@@ -13,6 +13,7 @@
  */
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
+import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import {
   createAgent,
@@ -229,7 +230,6 @@ export const agentRouter = router({
         });
 
         // Store agent session in cookie (reuse JWT_SECRET)
-        const { SignJWT } = await import("jose");
         const secret = new TextEncoder().encode(getJwtSecret());
         const token = await new SignJWT({
           sub: String(agent.id),
@@ -297,7 +297,6 @@ export const agentRouter = router({
       if (!match) return null;
 
       try {
-        const { jwtVerify } = await import("jose");
         const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(match[1], secret);
         const agentId = Number(payload.sub);

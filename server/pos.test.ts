@@ -50,12 +50,12 @@ vi.mock("bcryptjs", () => ({
 
 // ─── Mock jose ────────────────────────────────────────────────────────────────
 vi.mock("jose", () => ({
-  SignJWT: vi.fn().mockImplementation(() => ({
-    setProtectedHeader: vi.fn().mockReturnThis(),
-    setIssuedAt: vi.fn().mockReturnThis(),
-    setExpirationTime: vi.fn().mockReturnThis(),
-    sign: vi.fn().mockResolvedValue("mock.jwt.token"),
-  })),
+  SignJWT: class MockSignJWT {
+    setProtectedHeader() { return this; }
+    setIssuedAt() { return this; }
+    setExpirationTime() { return this; }
+    async sign() { return "mock.jwt.token"; }
+  },
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",

@@ -350,6 +350,7 @@ import {
   eventBusRouter,
   serviceHealthRouter,
   cacheRouter,
+  sprint15FeaturesRouter,
 } from "./routers/sprint15Features";
 import { serviceHealthAggregatorRouter } from "./routers/serviceHealthAggregator";
 import { paymentNotificationSystemRouter } from "./routers/paymentNotificationSystem";
@@ -1155,6 +1156,8 @@ export const appRouter = router({
   insiderThreatManagement: insiderThreatManagementRouter,
   temporalSagaOrchestrator: temporalSagaOrchestratorRouter,
   posMiddlewareIntegration: posMiddlewareIntegration,
+  // ── Sprint 15 Consolidated Features ──
+  sprint15Features: sprint15FeaturesRouter,
 });
 
 export type AppRouter = typeof appRouter;

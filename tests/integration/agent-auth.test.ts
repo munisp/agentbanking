@@ -45,23 +45,28 @@ vi.mock("bcryptjs", () => ({
   hash: vi.fn().mockResolvedValue("$2b$10$hash"),
 }));
 
-vi.mock("jose", () => ({
-  SignJWT: vi.fn().mockImplementation(() => ({
-    setProtectedHeader: vi.fn().mockReturnThis(),
-    setIssuedAt: vi.fn().mockReturnThis(),
-    setExpirationTime: vi.fn().mockReturnThis(),
-    sign: vi.fn().mockResolvedValue("mock.jwt.token"),
-  })),
-  jwtVerify: vi.fn().mockResolvedValue({
-    payload: {
-      sub: "1",
-      agentCode: "AGT001",
-      name: "Emeka Obi",
-      tier: "Gold",
-      role: "agent",
-    },
-  }),
-}));
+vi.mock("jose", () => {
+  // SignJWT must be a proper class (constructor) because agent.ts uses `new SignJWT(...)`
+  class MockSignJWT {
+    constructor(_payload: unknown) {}
+    setProtectedHeader(_header: unknown) { return this; }
+    setIssuedAt() { return this; }
+    setExpirationTime(_exp: unknown) { return this; }
+    async sign(_secret: unknown) { return "mock.jwt.token"; }
+  }
+  return {
+    SignJWT: MockSignJWT,
+    jwtVerify: vi.fn().mockResolvedValue({
+      payload: {
+        sub: "1",
+        agentCode: "AGT001",
+        name: "Emeka Obi",
+        tier: "Gold",
+        role: "agent",
+      },
+    }),
+  };
+});
 
 import {
   getAgentByCode,
@@ -80,12 +85,16 @@ const mockAgent = {
   role: "agent" as const,
   tier: "Gold" as const,
   floatBalance: 500000,
+  floatLimit: 1000000,
   commissionBalance: 12000,
   loyaltyPoints: 850,
+  streak: 5,
+  rank: 12,
   isActive: true,
   location: "Lagos",
   createdAt: new Date(),
   lastLoginAt: new Date(),
+  updatedAt: new Date(),
 };
 
 function makeRes() {

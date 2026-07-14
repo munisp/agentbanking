@@ -30,6 +30,14 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "tests/**/*.spec.ts",
     ],
+    // Playwright E2E specs use Playwright's own test() API and must be run
+    // with `playwright test` — NOT vitest. Including them in vitest causes
+    // a "test() called outside of a test suite" error.
+    exclude: [
+      "tests/e2e/**/*.spec.ts",
+      "tests/e2e/**/*.test.ts",
+      "**/node_modules/**",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

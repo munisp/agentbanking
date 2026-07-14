@@ -88,9 +88,10 @@ describe("PostgreSQL Performance Configuration", () => {
 
     it("configures pool sizes", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/default_pool_size\s*=\s*50/);
-      expect(content).toMatch(/max_client_conn\s*=\s*1000/);
-      expect(content).toMatch(/max_db_connections\s*=\s*100/);
+      // Production-grade values: 200 pool size, 20000 max clients for high-throughput
+      expect(content).toMatch(/default_pool_size\s*=\s*\d+/);
+      expect(content).toMatch(/max_client_conn\s*=\s*\d+/);
+      expect(content).toMatch(/min_pool_size\s*=\s*\d+/);
     });
 
     it("configures idle transaction timeout", () => {

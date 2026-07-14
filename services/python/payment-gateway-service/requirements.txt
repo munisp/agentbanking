@@ -15,7 +15,7 @@ httpx>=0.28.1
 aiohttp==3.14.1
 
 # Authentication and security
-PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+PyJWT>=2.13.0  # Replaced python-jose: CVE-2024-33663 algorithm confusion
 passlib[bcrypt]==1.7.4
 python-dotenv==1.2.2
 cryptography>=44.0.3

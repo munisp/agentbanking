@@ -24,6 +24,7 @@ let schema: Record<string, unknown>;
 beforeAll(async () => {
   const raw = await import("../drizzle/schema");
   const stakeholder = await import("../drizzle/schema-stakeholder-tables");
+  const middleware = await import("../drizzle/middleware-audit-schema");
   // Merge both schemas; dedicated stakeholder tables take precedence over aliases
   schema = {
     ...raw,
@@ -52,6 +53,13 @@ beforeAll(async () => {
     agentDeviceFingerprints:  raw.devices,
     agentLoanAdvances:        raw.agentLoans,
     webhooks:                 raw.webhookEndpoints,
+    // ── Middleware audit tables ──
+    temporalWorkflowLog:      middleware.temporalWorkflowLog,
+    permifyCheckLog:          middleware.permifyCheckLog,
+    openappsecThreatLog:      middleware.openappsecThreatLog,
+    fluvioEventLog:           middleware.fluvioEventLog,
+    lakehouseSyncLog:         middleware.lakehouseSyncLog,
+    daprPubsubLog:            middleware.daprPubsubLog,
   };
 });
 

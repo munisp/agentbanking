@@ -1,19 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  bigserial,
-  boolean,
-  index,
-  integer,
-  json,
-  numeric,
-  pgEnum,
-  pgTable,
-  serial,
-  text,
-  timestamp,
-  uniqueIndex,
-  varchar,
-} from "drizzle-orm/pg-core";
+import { bigserial, boolean, check, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 export const roleEnum = pgEnum("role", ["user", "admin", "supervisor"]);
@@ -264,7 +250,7 @@ export const users = pgTable(
     stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
     stripePlanId: varchar("stripePlanId", { length: 128 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
     lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   },
   t => ({
@@ -330,7 +316,7 @@ export const agents = pgTable(
       scale: 2,
     }), // override default split %
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentCodeIdx: uniqueIndex("agents_agentCode_idx").on(t.agentCode),
@@ -382,12 +368,12 @@ export const transactions = pgTable(
     approvedBy: varchar("approvedBy", { length: 64 }),
     approvedAt: timestamp("approvedAt"),
     deviceToken: varchar("deviceToken", { length: 64 }),
-    metadata: json("metadata"),
+    metadata: jsonb("metadata"),
     // P0-B: Soft delete + tenant isolation
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdCreatedAtIdx: index("tx_agentId_createdAt_idx").on(
@@ -423,7 +409,7 @@ export const fraudAlerts = pgTable(
     customerName: varchar("customerName", { length: 128 }),
     amount: numeric("amount", { precision: 15, scale: 2 }),
     reason: text("reason").notNull(),
-    aiExplanation: json("aiExplanation"),
+    aiExplanation: jsonb("aiExplanation"),
     fraudScore: numeric("fraudScore", { precision: 5, scale: 2 }),
     status: fraudStatusEnum("status").default("open").notNull(),
     assignedTo: varchar("assignedTo", { length: 64 }),
@@ -435,7 +421,7 @@ export const fraudAlerts = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdIdx: index("fraud_agentId_idx").on(t.agentId),
@@ -485,7 +471,7 @@ export const chatSessions = pgTable(
     rating: integer("rating"),
     resolvedAt: timestamp("resolvedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("chat_agentId_status_idx").on(t.agentId, t.status),
@@ -526,7 +512,7 @@ export const auditLog = pgTable(
     ipAddress: varchar("ipAddress", { length: 45 }),
     userAgent: varchar("userAgent", { length: 256 }),
     status: auditStatusEnum("status").default("success"),
-    metadata: json("metadata"),
+    metadata: jsonb("metadata"),
     // P0-B: Tenant isolation
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -564,7 +550,7 @@ export const floatTopUpRequests = pgTable(
     // P0-B: Tenant isolation
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("topup_agentId_status_idx").on(t.agentId, t.status),
@@ -611,8 +597,8 @@ export const devices = pgTable(
     imei: varchar("imei", { length: 20 }),
     simIccid: varchar("simIccid", { length: 22 }),
     lastSeenAt: timestamp("lastSeenAt"),
-    lastLocation: json("lastLocation"),
-    configJson: json("configJson"),
+    lastLocation: jsonb("lastLocation"),
+    configJson: jsonb("configJson"),
     // Legacy MDM fields used by routers
     ipAddress: varchar("ipAddress", { length: 45 }),
     location: varchar("location", { length: 128 }),
@@ -639,7 +625,7 @@ export const devices = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     serialNumberIdx: uniqueIndex("devices_serialNumber_idx").on(t.serialNumber),
@@ -658,7 +644,7 @@ export const deviceCommands = pgTable(
     id: serial("id").primaryKey(),
     deviceId: integer("deviceId").notNull(),
     command: varchar("command", { length: 64 }).notNull(),
-    payload: json("payload"),
+    payload: jsonb("payload"),
     status: varchar("status", { length: 32 }).default("pending").notNull(),
     // Legacy fields used by routers
     issuedBy: varchar("issuedBy", { length: 64 }),
@@ -667,7 +653,7 @@ export const deviceCommands = pgTable(
     completedAt: timestamp("completedAt"),
     errorMessage: text("errorMessage"),
     executedAt: timestamp("executedAt"),
-    result: json("result"),
+    result: jsonb("result"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -727,7 +713,7 @@ export const disputes = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("dispute_agentId_status_idx").on(
@@ -797,7 +783,7 @@ export const refunds = pgTable(
     tenantId: integer("tenantId"),
     deletedAt: timestamp("deletedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdIdx: index("refund_agentId_idx").on(t.agentId),
@@ -818,7 +804,7 @@ export const platformSettings = pgTable(
     value: text("value"),
     description: text("description"),
     updatedBy: varchar("updatedBy", { length: 64 }),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     ps_key_idx: index("ps_key_idx").on(t.key),
@@ -850,7 +836,7 @@ export const velocityLimits = pgTable(
       .notNull(),
     hourlyTxCount: integer("hourlyTxCount").default(50).notNull(),
     dailyTxCount: integer("dailyTxCount").default(200).notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     vl_tier_idx: index("vl_tier_idx").on(t.tier),
@@ -876,16 +862,16 @@ export const complianceReports = pgTable(
     lowAlerts: integer("lowAlerts").default(0).notNull(),
     escalatedAlerts: integer("escalatedAlerts").default(0).notNull(),
     resolvedAlerts: integer("resolvedAlerts").default(0).notNull(),
-    topOffendersJson: json("topOffendersJson"),
+    topOffendersJson: jsonb("topOffendersJson"),
     pdfUrl: text("pdfUrl"),
     pdfKey: varchar("pdfKey", { length: 256 }),
     status: varchar("status", { length: 32 }).default("draft").notNull(),
     generatedBy: varchar("generatedBy", { length: 64 }),
     fileUrl: text("fileUrl"),
-    summary: json("summary"),
+    summary: jsonb("summary"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdPeriodIdx: index("compliance_tenantId_period_idx").on(
@@ -914,10 +900,10 @@ export const geofenceZones = pgTable(
     centerLat: numeric("centerLat", { precision: 10, scale: 7 }),
     centerLng: numeric("centerLng", { precision: 10, scale: 7 }),
     radiusMeters: integer("radiusMeters"),
-    polygonJson: json("polygonJson"),
+    polygonJson: jsonb("polygonJson"),
     isActive: boolean("isActive").default(true).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     gz_isActive_idx: index("gz_isActive_idx").on(t.isActive),
@@ -1001,14 +987,14 @@ export const kycSessions = pgTable(
     // Legacy KYC fields used by routers
     livenessMethod: varchar("livenessMethod", { length: 64 }),
     livenessChallenge: varchar("livenessChallenge", { length: 128 }),
-    livenessRaw: json("livenessRaw"),
-    ocrRaw: json("ocrRaw"),
+    livenessRaw: jsonb("livenessRaw"),
+    ocrRaw: jsonb("ocrRaw"),
     docType: varchar("docType", { length: 32 }),
     docExtractedName: varchar("docExtractedName", { length: 256 }),
     docExtractedDob: varchar("docExtractedDob", { length: 32 }),
     docExtractedIdNumber: varchar("docExtractedIdNumber", { length: 64 }),
     docConfidence: numeric("docConfidence", { precision: 5, scale: 4 }),
-    docFraudIndicators: json("docFraudIndicators").$type<string[]>(),
+    docFraudIndicators: jsonb("docFraudIndicators").$type<string[]>(),
     complianceRecordId: varchar("complianceRecordId", { length: 64 }),
     rejectionReason: text("rejectionReason"),
     reviewedBy: varchar("reviewedBy", { length: 64 }),
@@ -1019,7 +1005,7 @@ export const kycSessions = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("kyc_agentId_status_idx").on(t.agentId, t.status),
@@ -1045,8 +1031,8 @@ export const posTerminals = pgTable(
     imei: varchar("imei", { length: 20 }),
     simIccid: varchar("simIccid", { length: 22 }),
     lastSeenAt: timestamp("lastSeenAt"),
-    lastLocation: json("lastLocation"),
-    configJson: json("configJson"),
+    lastLocation: jsonb("lastLocation"),
+    configJson: jsonb("configJson"),
     groupId: integer("groupId"),
     // Legacy fields used by routers
     lastCommand: varchar("lastCommand", { length: 64 }),
@@ -1055,7 +1041,7 @@ export const posTerminals = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     serialNumberIdx: uniqueIndex("pos_serialNumber_idx").on(t.serialNumber),
@@ -1074,7 +1060,7 @@ export const terminalGroups = pgTable(
     id: serial("id").primaryKey(),
     name: varchar("name", { length: 128 }).notNull(),
     description: text("description"),
-    configJson: json("configJson"),
+    configJson: jsonb("configJson"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -1095,7 +1081,7 @@ export const serviceRecords = pgTable(
     technicianName: varchar("technicianName", { length: 128 }),
     issueDescription: text("issueDescription").notNull(),
     resolution: text("resolution"),
-    partsReplaced: json("partsReplaced").$type<string[]>(),
+    partsReplaced: jsonb("partsReplaced").$type<string[]>(),
     serviceDate: timestamp("serviceDate").defaultNow().notNull(),
     nextServiceDate: timestamp("nextServiceDate"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1117,7 +1103,7 @@ export const softwareUpdates = pgTable(
     downloadUrl: text("downloadUrl").notNull(),
     checksum: varchar("checksum", { length: 128 }),
     isForced: boolean("isForced").default(false).notNull(),
-    targetModels: json("targetModels").$type<string[]>(),
+    targetModels: jsonb("targetModels").$type<string[]>(),
     appliedCount: integer("appliedCount").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
@@ -1142,13 +1128,13 @@ export const commissionRules = pgTable(
     value: numeric("value", { precision: 10, scale: 4 }).notNull(),
     minAmount: numeric("minAmount", { precision: 15, scale: 2 }),
     maxAmount: numeric("maxAmount", { precision: 15, scale: 2 }),
-    tieredJson: json("tieredJson"),
+    tieredJson: jsonb("tieredJson"),
     agentTier: agentTierEnum("agentTier"),
     isActive: boolean("isActive").default(true).notNull(),
     effectiveFrom: timestamp("effectiveFrom").defaultNow().notNull(),
     effectiveTo: timestamp("effectiveTo"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     cr_txType_idx: index("cr_txType_idx").on(t.txType),
@@ -1171,7 +1157,7 @@ export const qrCodes = pgTable(
     amount: numeric("amount", { precision: 15, scale: 2 }),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     description: text("description"),
-    metadata: json("metadata"),
+    metadata: jsonb("metadata"),
     expiresAt: timestamp("expiresAt"),
     usedAt: timestamp("usedAt"),
     usedByCustomerId: integer("usedByCustomerId"),
@@ -1203,7 +1189,7 @@ export const inventoryItems = pgTable(
     supplierId: varchar("supplierId", { length: 64 }),
     lastRestockedAt: timestamp("lastRestockedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     inv_status_idx: index("inv_status_idx").on(t.status),
@@ -1233,7 +1219,7 @@ export const multiSimProfiles = pgTable(
     failoverPriority: integer("failoverPriority").default(1).notNull(),
     lastCheckedAt: timestamp("lastCheckedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     msp_terminalId_idx: index("msp_terminalId_idx").on(t.terminalId),
@@ -1261,7 +1247,7 @@ export const reversalRequests = pgTable(
     reviewNote: text("reviewNote"),
     tbReversalId: varchar("tbReversalId", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("reversal_agentId_status_idx").on(
@@ -1287,12 +1273,12 @@ export const shareableLinks = pgTable(
     amount: numeric("amount", { precision: 15, scale: 2 }),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     description: text("description"),
-    metadata: json("metadata"),
+    metadata: jsonb("metadata"),
     clickCount: integer("clickCount").default(0).notNull(),
     conversionCount: integer("conversionCount").default(0).notNull(),
     expiresAt: timestamp("expiresAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdIdx: index("links_agentId_idx").on(t.agentId),
@@ -1336,7 +1322,7 @@ export const customers = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     phoneIdx: uniqueIndex("customers_phone_idx").on(t.phone),
@@ -1367,12 +1353,12 @@ export const tenants = pgTable(
       .notNull(),
     contactEmail: varchar("contactEmail", { length: 320 }),
     contactPhone: varchar("contactPhone", { length: 20 }),
-    configJson: json("configJson"),
+    configJson: jsonb("configJson"),
     keycloakRealmId: varchar("keycloakRealmId", { length: 128 }),
     // P1-A: Webhook HMAC secret per tenant
     webhookSecret: varchar("webhookSecret", { length: 128 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     slugIdx: uniqueIndex("tenants_slug_idx").on(t.slug),
@@ -1394,7 +1380,7 @@ export const erpSyncLog = pgTable(
     erpDocName: varchar("erpDocName", { length: 128 }),
     status: erpSyncStatusEnum("status").default("pending").notNull(),
     errorMessage: text("errorMessage"),
-    payload: json("payload"),
+    payload: jsonb("payload"),
     syncedAt: timestamp("syncedAt"),
     retryCount: integer("retryCount").default(0).notNull(),
     maxRetries: integer("maxRetries").default(5).notNull(),
@@ -1432,7 +1418,7 @@ export const storefrontAds = pgTable(
     startsAt: timestamp("startsAt"),
     endsAt: timestamp("endsAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     sa_status_idx: index("sa_status_idx").on(t.status),
@@ -1483,7 +1469,7 @@ export const erpConfig = pgTable(
     apiKey: text("apiKey").default(""),
     username: varchar("username", { length: 128 }).default(""),
     database: varchar("database", { length: 128 }).default(""),
-    fieldMappings: json("fieldMappings")
+    fieldMappings: jsonb("fieldMappings")
       .$type<Record<string, string>>()
       .default({}),
     syncEnabled: boolean("syncEnabled").default(false).notNull(),
@@ -1496,7 +1482,7 @@ export const erpConfig = pgTable(
     lastSyncError: text("lastSyncError"),
     lastSyncCount: integer("lastSyncCount").default(0),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     ec_erpType_idx2: index("ec_erpType_idx2").on(t.erpType),
@@ -1523,7 +1509,7 @@ export const mqttBridgeConfig = pgTable(
     clientId: varchar("clientId", { length: 128 }).default(
       "54agent-fluvio-bridge"
     ),
-    topicMappings: json("topicMappings")
+    topicMappings: jsonb("topicMappings")
       .$type<
         Array<{
           mqttTopic: string;
@@ -1540,7 +1526,7 @@ export const mqttBridgeConfig = pgTable(
     lastTestStatus: varchar("lastTestStatus", { length: 32 }).default("never"),
     lastTestError: text("lastTestError"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     mbc_enabled_idx: index("mbc_enabled_idx").on(t.enabled),
@@ -1558,7 +1544,7 @@ export const analyticsMetrics = pgTable(
     metricName: varchar("metricName", { length: 128 }).notNull(),
     value: numeric("value", { precision: 20, scale: 4 }).notNull(),
     bucketMinute: timestamp("bucketMinute").notNull(),
-    tags: json("tags").$type<Record<string, string>>().default({}),
+    tags: jsonb("tags").$type<Record<string, string>>().default({}),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -1605,7 +1591,7 @@ export const emailQueue = pgTable(
     toName: varchar("toName", { length: 128 }),
     subject: varchar("subject", { length: 256 }).notNull(),
     templateName: varchar("templateName", { length: 64 }).notNull(),
-    templateData: json("templateData")
+    templateData: jsonb("templateData")
       .$type<Record<string, unknown>>()
       .default({}),
     status: emailStatusEnum("status").default("queued").notNull(),
@@ -1659,7 +1645,7 @@ export const merchants = pgTable(
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     merchantCodeIdx: uniqueIndex("merchants_merchantCode_idx").on(
@@ -1720,7 +1706,7 @@ export const apiKeys = pgTable(
       .notNull(),
     tenantId: integer("tenantId"),
     status: apiKeyStatusEnum("status").default("active").notNull(),
-    scopes: json("scopes").$type<string[]>().default([]),
+    scopes: jsonb("scopes").$type<string[]>().default([]),
     rateLimit: integer("rateLimit").default(1000).notNull(), // requests per hour
     lastUsedAt: timestamp("lastUsedAt"),
     expiresAt: timestamp("expiresAt"),
@@ -1776,7 +1762,7 @@ export const fido2Credentials = pgTable(
     publicKey: text("publicKey").notNull(), // COSE public key, base64url
     counter: integer("counter").default(0).notNull(),
     deviceType: varchar("deviceType", { length: 64 }), // "platform" | "cross-platform"
-    transports: json("transports").$type<string[]>().default([]),
+    transports: jsonb("transports").$type<string[]>().default([]),
     status: fido2StatusEnum("status").default("active").notNull(),
     lastUsedAt: timestamp("lastUsedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1824,7 +1810,7 @@ export const creditScoreHistory = pgTable(
       .notNull(),
     score: integer("score").notNull(),
     rating: creditRatingEnum("rating").notNull(),
-    factors: json("factors").$type<Record<string, number>>().default({}),
+    factors: jsonb("factors").$type<Record<string, number>>().default({}),
     computedAt: timestamp("computedAt").defaultNow().notNull(),
   },
   t => ({
@@ -1862,7 +1848,7 @@ export const creditApplications = pgTable(
     dueAt: timestamp("dueAt"),
     repaidAt: timestamp("repaidAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdStatusIdx: index("credit_app_agentId_status_idx").on(
@@ -1889,12 +1875,12 @@ export const otaReleases = pgTable(
     fileSize: integer("fileSize").notNull(), // bytes
     isForced: boolean("isForced").default(false).notNull(),
     rolloutPercent: integer("rolloutPercent").default(100).notNull(),
-    targetModels: json("targetModels").$type<string[]>().default([]),
+    targetModels: jsonb("targetModels").$type<string[]>().default([]),
     minCurrentVersion: varchar("minCurrentVersion", { length: 32 }),
     status: varchar("status", { length: 32 }).default("draft").notNull(), // draft|active|deprecated
     publishedAt: timestamp("publishedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     versionIdx: uniqueIndex("ota_version_idx").on(t.version),
@@ -1948,7 +1934,7 @@ export const dataRightsRequests = pgTable(
     notes: text("notes"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     statusCreatedAtIdx: index("ddr_status_createdAt_idx").on(
@@ -1990,7 +1976,7 @@ export const fraudRules = pgTable(
     lastHitAt: timestamp("lastHitAt"),
     createdBy: varchar("createdBy", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     categoryEnabledIdx: index("fraud_rules_category_enabled_idx").on(
@@ -2014,7 +2000,7 @@ export const agentPushSubscriptions = pgTable(
     authKey: text("authKey").notNull(),
     userAgent: text("userAgent"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
     // Alert throttling: skip re-alert if sent within 30 minutes
     lastAlertedAt: timestamp("lastAlertedAt"),
   },
@@ -2068,7 +2054,7 @@ export const systemConfig = pgTable(
     description: text("description"),
     updatedBy: varchar("updatedBy", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     keyIdx: uniqueIndex("system_config_key_idx").on(t.key),
@@ -2131,7 +2117,7 @@ export const simOrchestratorConfig = pgTable(
       .default("54agent-sim-orchestrator-default-key"),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     terminalIdx: uniqueIndex("sim_orchestrator_config_terminal_idx").on(
@@ -2186,7 +2172,7 @@ export const deviceCompliancePolicies = pgTable(
     description: text("description"),
     tenantId: integer("tenantId"),
     // Policy rules stored as JSON: { minAppVersion, minOsVersion, requirePin, maxBatteryThreshold, geofenceRequired, allowedNetworkTypes }
-    rules: json("rules").notNull().$type<{
+    rules: jsonb("rules").notNull().$type<{
       minAppVersion?: string;
       minOsVersion?: string;
       requirePin?: boolean;
@@ -2202,7 +2188,7 @@ export const deviceCompliancePolicies = pgTable(
     ), // notify|restrict|wipe
     createdBy: varchar("createdBy", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdIdx: index("dcp_tenantId_idx").on(t.tenantId),
@@ -2228,7 +2214,7 @@ export const deviceComplianceViolations = pgTable(
     agentCode: varchar("agentCode", { length: 32 }),
     violationType: varchar("violationType", { length: 64 }).notNull(), // low_battery|outdated_app|outdated_os|missing_pin|geofence_breach|inactive|disallowed_network
     severity: varchar("severity", { length: 16 }).notNull(), // low|medium|high|critical
-    details: json("details"), // { actual, expected, threshold }
+    details: jsonb("details"), // { actual, expected, threshold }
     status: varchar("status", { length: 32 }).default("open").notNull(), // open|acknowledged|resolved|suppressed
     enforcementAction: varchar("enforcementAction", { length: 32 }), // notify|restrict|wipe (what was triggered)
     resolvedAt: timestamp("resolvedAt"),
@@ -2339,7 +2325,7 @@ export const commissionPayouts = pgTable(
     nubanRef: varchar("nuban_ref", { length: 64 }),
     processedAt: timestamp("processed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     cp_agentId_idx: index("cp_agentId_idx").on(t.agentId),
@@ -2401,7 +2387,7 @@ export const webhookEndpoints = pgTable(
     lastDeliveryAt: timestamp("last_delivery_at"),
     lastStatusCode: integer("last_status_code"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     we_tenantId_idx: index("we_tenantId_idx").on(t.tenantId),
@@ -2425,7 +2411,7 @@ export const webhookDeliveries = pgTable(
       .references(() => webhookEndpoints.id),
     subscriptionId: integer("subscription_id"),
     eventType: varchar("event_type", { length: 64 }).notNull(),
-    payload: json("payload").notNull(),
+    payload: jsonb("payload").notNull(),
     status: webhookDeliveryStatusEnum("status").default("pending").notNull(),
     statusCode: integer("status_code"),
     responseCode: integer("response_code"),
@@ -2476,7 +2462,7 @@ export const agentOnboardingProgress = pgTable(
     activatedAt: timestamp("activated_at"),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     aop_agentId_idx: index("aop_agentId_idx").on(t.agentId),
@@ -2549,11 +2535,11 @@ export const rateAlerts = pgTable(
     status: rateAlertStatusEnum("status").default("active").notNull(),
     currentRate: numeric("current_rate", { precision: 18, scale: 8 }),
     triggeredAt: timestamp("triggered_at"),
-    notifiedVia: json("notified_via").$type<string[]>().default([]),
+    notifiedVia: jsonb("notified_via").$type<string[]>().default([]),
     expiresAt: timestamp("expires_at"),
     note: varchar("note", { length: 256 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentStatusIdx: index("rate_alert_agent_status_idx").on(
@@ -2591,7 +2577,7 @@ export const emailDeliveryLog = pgTable(
     clickedAt: timestamp("clicked_at"),
     bouncedAt: timestamp("bounced_at"),
     errorMessage: text("error_message"),
-    metadata: json("metadata").$type<Record<string, unknown>>().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   t => ({
@@ -2633,7 +2619,7 @@ export const inviteCodes = pgTable(
     notes: text("notes"),
     expiresAt: timestamp("expiresAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     codeIdx: uniqueIndex("invite_codes_code_idx").on(t.code),
@@ -2679,7 +2665,7 @@ export const tenantBranding = pgTable(
     customCss: text("customCss"),
     isLive: boolean("isLive").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdIdx: uniqueIndex("tenant_branding_tenantId_idx").on(t.tenantId),
@@ -2720,14 +2706,14 @@ export const tenantCorridors = pgTable(
     estimatedDeliveryMinutes: integer("estimatedDeliveryMinutes")
       .default(30)
       .notNull(),
-    paymentMethods: json("paymentMethods")
+    paymentMethods: jsonb("paymentMethods")
       .$type<string[]>()
       .default(["bank_transfer", "mobile_money"]),
-    deliveryMethods: json("deliveryMethods")
+    deliveryMethods: jsonb("deliveryMethods")
       .$type<string[]>()
       .default(["bank_deposit", "mobile_wallet"]),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdIdx: index("tenant_corridors_tenantId_idx").on(t.tenantId),
@@ -2762,13 +2748,13 @@ export const tenantFeeOverrides = pgTable(
       .default("50000.00")
       .notNull(),
     tieredRules:
-      json("tieredRules").$type<
+      jsonb("tieredRules").$type<
         Array<{ minAmount: number; maxAmount: number; fee: number }>
       >(),
     description: text("description"),
     isActive: boolean("isActive").default(true).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdIdx: index("tenant_fee_overrides_tenantId_idx").on(t.tenantId),
@@ -2801,7 +2787,7 @@ export const tenantUsers = pgTable(
     acceptedAt: timestamp("acceptedAt"),
     lastActiveAt: timestamp("lastActiveAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     tenantIdIdx: index("tenant_users_tenantId_idx").on(t.tenantId),
@@ -2881,7 +2867,7 @@ export const agentBankAccounts = pgTable(
     isDefault: boolean("is_default").default(false),
     verified: boolean("verified").default(false),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     aba_agentId_idx: index("aba_agentId_idx").on(t.agentId),
@@ -2901,7 +2887,7 @@ export const kycDocuments = pgTable(
     verifiedAt: timestamp("verified_at"),
     rejectionReason: text("rejection_reason"),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     kd_agentId_idx: index("kd_agentId_idx").on(t.agentId),
@@ -3058,7 +3044,7 @@ export const transactionLimits = pgTable(
     perTxLimit: numeric("per_tx_limit", { precision: 15, scale: 2 }).notNull(),
     isActive: boolean("is_active").default(true),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     tl_agentTier_txType_idx: index("tl_agentTier_txType_idx").on(
@@ -3227,7 +3213,7 @@ export const agentLoans = pgTable(
     collateralType: text("collateral_type"),
     collateralValue: numeric("collateral_value", { precision: 15, scale: 2 }),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     al_agentId_idx: index("al_agentId_idx").on(t.agentId),
@@ -3257,7 +3243,7 @@ export const feeRules = pgTable(
     priority: integer("priority").default(0),
     createdBy: integer("created_by"),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     fer_txType_idx: index("fer_txType_idx").on(t.txType),
@@ -3485,7 +3471,7 @@ export const analyticsDashboards = pgTable(
     filters: text("filters"),
     refreshInterval: integer("refresh_interval").default(300),
     createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
   },
   t => ({
     ad_ownerId_idx: index("ad_ownerId_idx").on(t.ownerId),
@@ -4032,7 +4018,7 @@ export const commissionTiers = pgTable(
     effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
     effectiveTo: timestamp("effective_to"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     txTypeIdx: index("ct_transaction_type_idx").on(t.transactionType),
@@ -4069,7 +4055,7 @@ export const commissionSplits = pgTable(
     effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
     effectiveTo: timestamp("effective_to"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     txTypeIdx: index("cs_transaction_type_idx").on(t.transactionType),
@@ -4108,8 +4094,8 @@ export const commissionAuditTrail = pgTable(
     entityType: varchar("entity_type", { length: 32 }).notNull(), // tier, split, payout, clawback
     entityId: varchar("entity_id", { length: 32 }).notNull(),
     action: varchar("action", { length: 32 }).notNull(), // created, updated, deleted, approved, rejected
-    previousValue: json("previous_value"),
-    newValue: json("new_value"),
+    previousValue: jsonb("previous_value"),
+    newValue: jsonb("new_value"),
     performedBy: varchar("performed_by", { length: 64 }).notNull(),
     reason: text("reason"),
     ipAddress: varchar("ip_address", { length: 45 }),
@@ -4147,7 +4133,7 @@ export const loadTestRuns = pgTable(
     zipfSkew: numeric("zipf_skew", { precision: 4, scale: 2 }).default("1.07"),
     merchantCount: integer("merchant_count").default(1000),
     // Results (stored as JSON for flexibility)
-    results: json("results").$type<{
+    results: jsonb("results").$type<{
       totalRequests: number;
       successCount: number;
       errorCount: number;
@@ -4285,8 +4271,8 @@ export const billingRevenuePeriods = pgTable(
     })
       .notNull()
       .default("0.00"),
-    breakdownByType: json("breakdown_by_type"),
-    breakdownByRegion: json("breakdown_by_region"),
+    breakdownByType: jsonb("breakdown_by_type"),
+    breakdownByRegion: jsonb("breakdown_by_region"),
     activeAgents: integer("active_agents").notNull().default(0),
     activePosTerminals: integer("active_pos_terminals").notNull().default(0),
     avgTxPerAgent: numeric("avg_tx_per_agent", {
@@ -4375,7 +4361,7 @@ export const billingReconciliationReports = pgTable(
       scale: 2,
     }),
     agentVariancePct: numeric("agent_variance_pct", { precision: 8, scale: 2 }),
-    insights: json("insights"),
+    insights: jsonb("insights"),
     generatedBy: varchar("generated_by", { length: 64 }).default(
       "billing-reconciliation-engine"
     ),
@@ -4447,7 +4433,7 @@ export const billingRoleAssignments = pgTable(
     userId: integer("user_id").notNull(),
     tenantId: integer("tenant_id").notNull(),
     billingRole: billingRoleEnum("billing_role").notNull(),
-    permissions: json("permissions").$type<string[]>(),
+    permissions: jsonb("permissions").$type<string[]>(),
     grantedBy: integer("granted_by").notNull(),
     grantedAt: timestamp("granted_at").notNull().defaultNow(),
     expiresAt: timestamp("expires_at"),
@@ -4473,9 +4459,9 @@ export const billingAuditLog = pgTable(
     action: billingAuditActionEnum("action").notNull(),
     resourceType: varchar("resource_type", { length: 64 }).notNull(),
     resourceId: varchar("resource_id", { length: 128 }),
-    beforeState: json("before_state"),
-    afterState: json("after_state"),
-    metadata: json("metadata"),
+    beforeState: jsonb("before_state"),
+    afterState: jsonb("after_state"),
+    metadata: jsonb("metadata"),
     ipAddress: varchar("ip_address", { length: 45 }),
     userAgent: varchar("user_agent", { length: 512 }),
     sessionId: varchar("session_id", { length: 128 }),
@@ -4502,9 +4488,9 @@ export const tenantBillingConfig = pgTable(
     billingModel: billingModelTypeEnum("billing_model")
       .notNull()
       .default("revenue_share"),
-    revenueShareConfig: json("revenue_share_config"),
-    subscriptionConfig: json("subscription_config"),
-    hybridConfig: json("hybrid_config"),
+    revenueShareConfig: jsonb("revenue_share_config"),
+    subscriptionConfig: jsonb("subscription_config"),
+    hybridConfig: jsonb("hybrid_config"),
     currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
     effectiveDate: timestamp("effective_date").notNull().defaultNow(),
     contractEndDate: timestamp("contract_end_date"),
@@ -4533,7 +4519,7 @@ export const billingProvisioningHistory = pgTable(
     tenantId: integer("tenant_id").notNull(),
     step: varchar("step", { length: 64 }).notNull(),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
-    details: json("details"),
+    details: jsonb("details"),
     temporalWorkflowId: varchar("temporal_workflow_id", { length: 128 }),
     startedAt: timestamp("started_at").notNull().defaultNow(),
     completedAt: timestamp("completed_at"),
@@ -4575,7 +4561,7 @@ export const faceEnrollments = pgTable(
     expiresAt: timestamp("expiresAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     userIdIdx: index("fe_userId_idx").on(t.userId),
@@ -4601,13 +4587,13 @@ export const biometricAuditEvents = pgTable(
     livenessMethod: varchar("livenessMethod", { length: 32 }),
     matchScore: numeric("matchScore", { precision: 5, scale: 4 }),
     processingTimeMs: integer("processingTimeMs"),
-    deviceInfo: json("deviceInfo").$type<{
+    deviceInfo: jsonb("deviceInfo").$type<{
       userAgent?: string;
       platform?: string;
       screen?: string;
     }>(),
     ipAddress: varchar("ipAddress", { length: 64 }),
-    geoLocation: json("geoLocation").$type<{
+    geoLocation: jsonb("geoLocation").$type<{
       lat?: number;
       lng?: number;
       country?: string;
@@ -4638,7 +4624,7 @@ export const receiptTemplates = pgTable("receipt_templates", {
   footerTemplate: text("footerTemplate"),
   isDefault: boolean("isDefault").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
 });
 export type ReceiptTemplate = typeof receiptTemplates.$inferSelect;
 
@@ -4707,10 +4693,10 @@ export const ecommerceProducts = pgTable(
     agentId: integer("agent_id"),
     weight: numeric("weight", { precision: 8, scale: 2 }),
     dimensions: varchar("dimensions", { length: 64 }),
-    tags: json("tags").$type<string[]>().default([]),
-    attributes: json("attributes").$type<Record<string, string>>().default({}),
+    tags: jsonb("tags").$type<string[]>().default([]),
+    attributes: jsonb("attributes").$type<Record<string, string>>().default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     skuIdx: uniqueIndex("ecom_prod_sku_idx").on(t.sku),
@@ -4735,7 +4721,7 @@ export const ecommerceInventory = pgTable(
       .default("default")
       .notNull(),
     lastRestocked: timestamp("last_restocked").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     skuIdx: uniqueIndex("ecom_inv_sku_idx").on(t.sku),
@@ -4795,7 +4781,7 @@ export const ecommerceOrders = pgTable(
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     paymentMethod: varchar("payment_method", { length: 32 }).notNull(),
     paymentRef: varchar("payment_ref", { length: 128 }),
-    shippingAddress: json("shipping_address").$type<{
+    shippingAddress: jsonb("shipping_address").$type<{
       street: string;
       city: string;
       state: string;
@@ -4807,7 +4793,7 @@ export const ecommerceOrders = pgTable(
     offlineCreated: boolean("offline_created").default(false).notNull(),
     syncedAt: timestamp("synced_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     fulfilledAt: timestamp("fulfilled_at"),
     cancelledAt: timestamp("cancelled_at"),
   },
@@ -4855,7 +4841,7 @@ export const ecommerceCarts = pgTable(
     offlineCreated: boolean("offline_created").default(false).notNull(),
     deviceId: varchar("device_id", { length: 128 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     expiresAt: timestamp("expires_at"),
   },
   t => ({
@@ -4898,7 +4884,7 @@ export const ecommerceInteractions = pgTable(
     customerId: integer("customer_id").notNull(),
     productId: integer("product_id").notNull(),
     interactionType: ecommerceInteractionTypeEnum("interaction_type").notNull(),
-    metadata: json("metadata").$type<Record<string, unknown>>().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   t => ({
@@ -4938,7 +4924,7 @@ export const agentStores = pgTable(
     lga: varchar("lga", { length: 128 }),
     latitude: numeric("latitude", { precision: 10, scale: 7 }),
     longitude: numeric("longitude", { precision: 10, scale: 7 }),
-    businessHours: json("business_hours").$type<{
+    businessHours: jsonb("business_hours").$type<{
       monday?: { open: string; close: string };
       tuesday?: { open: string; close: string };
       wednesday?: { open: string; close: string };
@@ -4947,8 +4933,8 @@ export const agentStores = pgTable(
       saturday?: { open: string; close: string };
       sunday?: { open: string; close: string };
     }>(),
-    categories: json("categories").$type<string[]>().default([]),
-    tags: json("tags").$type<string[]>().default([]),
+    categories: jsonb("categories").$type<string[]>().default([]),
+    tags: jsonb("tags").$type<string[]>().default([]),
     deliveryEnabled: boolean("delivery_enabled").default(true).notNull(),
     pickupEnabled: boolean("pickup_enabled").default(true).notNull(),
     minOrderAmount: numeric("min_order_amount", {
@@ -4973,7 +4959,7 @@ export const agentStores = pgTable(
     }).default("0"),
     reviewCount: integer("review_count").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     agentIdx: uniqueIndex("agent_store_agent_idx").on(t.agentId),
@@ -4998,7 +4984,7 @@ export const deliveryZones = pgTable(
     deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 }).notNull(),
     estimatedMinutes: integer("estimated_minutes").default(60),
     maxDistanceKm: numeric("max_distance_km", { precision: 8, scale: 2 }),
-    areas: json("areas").$type<string[]>().default([]),
+    areas: jsonb("areas").$type<string[]>().default([]),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -5024,11 +5010,11 @@ export const productReviews = pgTable(
       .default(false)
       .notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
-    images: json("images").$type<string[]>().default([]),
+    images: jsonb("images").$type<string[]>().default([]),
     sellerReply: text("seller_reply"),
     sellerRepliedAt: timestamp("seller_replied_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     productIdx: index("review_product_idx").on(t.productId),
@@ -5129,7 +5115,7 @@ export const deliveryTracking = pgTable(
     latitude: numeric("latitude", { precision: 10, scale: 7 }),
     longitude: numeric("longitude", { precision: 10, scale: 7 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     orderIdx: uniqueIndex("dt_order_idx").on(t.orderId),
@@ -5157,7 +5143,7 @@ export const amlScreenings = pgTable(
     highRiskCountry: boolean("high_risk_country").notNull().default(false),
     screenedAt: timestamp("screened_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   t => ({
     statusIdx: index("aml_status_idx").on(t.status),
@@ -5201,3 +5187,326 @@ export const idempotencyKeys = pgTable(
     expiryIdx: index("idem_expiry_idx").on(t.expiresAt),
   })
 );
+
+
+// ── Auto-generated TypeScript types ─────────────────────────────────────────
+export type UsersSelect = typeof users.$inferSelect;
+export type UsersInsert = typeof users.$inferInsert;
+export type AgentsSelect = typeof agents.$inferSelect;
+export type AgentsInsert = typeof agents.$inferInsert;
+export type TransactionsSelect = typeof transactions.$inferSelect;
+export type TransactionsInsert = typeof transactions.$inferInsert;
+export type FraudAlertsSelect = typeof fraudAlerts.$inferSelect;
+export type FraudAlertsInsert = typeof fraudAlerts.$inferInsert;
+export type LoyaltyHistorySelect = typeof loyaltyHistory.$inferSelect;
+export type LoyaltyHistoryInsert = typeof loyaltyHistory.$inferInsert;
+export type ChatSessionsSelect = typeof chatSessions.$inferSelect;
+export type ChatSessionsInsert = typeof chatSessions.$inferInsert;
+export type ChatMessagesSelect = typeof chatMessages.$inferSelect;
+export type ChatMessagesInsert = typeof chatMessages.$inferInsert;
+export type AuditLogSelect = typeof auditLog.$inferSelect;
+export type AuditLogInsert = typeof auditLog.$inferInsert;
+export type FloatTopUpRequestsSelect = typeof floatTopUpRequests.$inferSelect;
+export type FloatTopUpRequestsInsert = typeof floatTopUpRequests.$inferInsert;
+export type OtpTokensSelect = typeof otpTokens.$inferSelect;
+export type OtpTokensInsert = typeof otpTokens.$inferInsert;
+export type DevicesSelect = typeof devices.$inferSelect;
+export type DevicesInsert = typeof devices.$inferInsert;
+export type DeviceCommandsSelect = typeof deviceCommands.$inferSelect;
+export type DeviceCommandsInsert = typeof deviceCommands.$inferInsert;
+export type SupervisorAgentsSelect = typeof supervisorAgents.$inferSelect;
+export type SupervisorAgentsInsert = typeof supervisorAgents.$inferInsert;
+export type DisputesSelect = typeof disputes.$inferSelect;
+export type DisputesInsert = typeof disputes.$inferInsert;
+export type DisputeMessagesSelect = typeof disputeMessages.$inferSelect;
+export type DisputeMessagesInsert = typeof disputeMessages.$inferInsert;
+export type RefundsSelect = typeof refunds.$inferSelect;
+export type RefundsInsert = typeof refunds.$inferInsert;
+export type PlatformSettingsSelect = typeof platformSettings.$inferSelect;
+export type PlatformSettingsInsert = typeof platformSettings.$inferInsert;
+export type VelocityLimitsSelect = typeof velocityLimits.$inferSelect;
+export type VelocityLimitsInsert = typeof velocityLimits.$inferInsert;
+export type ComplianceReportsSelect = typeof complianceReports.$inferSelect;
+export type ComplianceReportsInsert = typeof complianceReports.$inferInsert;
+export type GeofenceZonesSelect = typeof geofenceZones.$inferSelect;
+export type GeofenceZonesInsert = typeof geofenceZones.$inferInsert;
+export type AgentGeofenceZonesSelect = typeof agentGeofenceZones.$inferSelect;
+export type AgentGeofenceZonesInsert = typeof agentGeofenceZones.$inferInsert;
+export type DeviceLocationsSelect = typeof deviceLocations.$inferSelect;
+export type DeviceLocationsInsert = typeof deviceLocations.$inferInsert;
+export type KycSessionsSelect = typeof kycSessions.$inferSelect;
+export type KycSessionsInsert = typeof kycSessions.$inferInsert;
+export type PosTerminalsSelect = typeof posTerminals.$inferSelect;
+export type PosTerminalsInsert = typeof posTerminals.$inferInsert;
+export type TerminalGroupsSelect = typeof terminalGroups.$inferSelect;
+export type TerminalGroupsInsert = typeof terminalGroups.$inferInsert;
+export type ServiceRecordsSelect = typeof serviceRecords.$inferSelect;
+export type ServiceRecordsInsert = typeof serviceRecords.$inferInsert;
+export type SoftwareUpdatesSelect = typeof softwareUpdates.$inferSelect;
+export type SoftwareUpdatesInsert = typeof softwareUpdates.$inferInsert;
+export type CommissionRulesSelect = typeof commissionRules.$inferSelect;
+export type CommissionRulesInsert = typeof commissionRules.$inferInsert;
+export type QrCodesSelect = typeof qrCodes.$inferSelect;
+export type QrCodesInsert = typeof qrCodes.$inferInsert;
+export type InventoryItemsSelect = typeof inventoryItems.$inferSelect;
+export type InventoryItemsInsert = typeof inventoryItems.$inferInsert;
+export type MultiSimProfilesSelect = typeof multiSimProfiles.$inferSelect;
+export type MultiSimProfilesInsert = typeof multiSimProfiles.$inferInsert;
+export type ReversalRequestsSelect = typeof reversalRequests.$inferSelect;
+export type ReversalRequestsInsert = typeof reversalRequests.$inferInsert;
+export type ShareableLinksSelect = typeof shareableLinks.$inferSelect;
+export type ShareableLinksInsert = typeof shareableLinks.$inferInsert;
+export type CustomersSelect = typeof customers.$inferSelect;
+export type CustomersInsert = typeof customers.$inferInsert;
+export type TenantsSelect = typeof tenants.$inferSelect;
+export type TenantsInsert = typeof tenants.$inferInsert;
+export type ErpSyncLogSelect = typeof erpSyncLog.$inferSelect;
+export type ErpSyncLogInsert = typeof erpSyncLog.$inferInsert;
+export type StorefrontAdsSelect = typeof storefrontAds.$inferSelect;
+export type StorefrontAdsInsert = typeof storefrontAds.$inferInsert;
+export type VatRecordsSelect = typeof vatRecords.$inferSelect;
+export type VatRecordsInsert = typeof vatRecords.$inferInsert;
+export type ErpConfigSelect = typeof erpConfig.$inferSelect;
+export type MqttBridgeConfigSelect = typeof mqttBridgeConfig.$inferSelect;
+export type AnalyticsMetricsSelect = typeof analyticsMetrics.$inferSelect;
+export type AnalyticsMetricsInsert = typeof analyticsMetrics.$inferInsert;
+export type WebhookSecretsSelect = typeof webhookSecrets.$inferSelect;
+export type WebhookSecretsInsert = typeof webhookSecrets.$inferInsert;
+export type EmailQueueSelect = typeof emailQueue.$inferSelect;
+export type EmailQueueInsert = typeof emailQueue.$inferInsert;
+export type MerchantsSelect = typeof merchants.$inferSelect;
+export type MerchantsInsert = typeof merchants.$inferInsert;
+export type MerchantSettlementsSelect = typeof merchantSettlements.$inferSelect;
+export type MerchantSettlementsInsert = typeof merchantSettlements.$inferInsert;
+export type ApiKeysSelect = typeof apiKeys.$inferSelect;
+export type ApiKeysInsert = typeof apiKeys.$inferInsert;
+export type ApiKeyUsageSelect = typeof apiKeyUsage.$inferSelect;
+export type ApiKeyUsageInsert = typeof apiKeyUsage.$inferInsert;
+export type Fido2CredentialsSelect = typeof fido2Credentials.$inferSelect;
+export type Fido2CredentialsInsert = typeof fido2Credentials.$inferInsert;
+export type Fido2ChallengesSelect = typeof fido2Challenges.$inferSelect;
+export type Fido2ChallengesInsert = typeof fido2Challenges.$inferInsert;
+export type CreditScoreHistorySelect = typeof creditScoreHistory.$inferSelect;
+export type CreditScoreHistoryInsert = typeof creditScoreHistory.$inferInsert;
+export type CreditApplicationsSelect = typeof creditApplications.$inferSelect;
+export type CreditApplicationsInsert = typeof creditApplications.$inferInsert;
+export type OtaReleasesSelect = typeof otaReleases.$inferSelect;
+export type OtaReleasesInsert = typeof otaReleases.$inferInsert;
+export type OtaUpdateLogSelect = typeof otaUpdateLog.$inferSelect;
+export type OtaUpdateLogInsert = typeof otaUpdateLog.$inferInsert;
+export type DataRightsRequestsSelect = typeof dataRightsRequests.$inferSelect;
+export type DataRightsRequestsInsert = typeof dataRightsRequests.$inferInsert;
+export type FraudRulesSelect = typeof fraudRules.$inferSelect;
+export type FraudRulesInsert = typeof fraudRules.$inferInsert;
+export type AgentPushSubscriptionsSelect = typeof agentPushSubscriptions.$inferSelect;
+export type AgentPushSubscriptionsInsert = typeof agentPushSubscriptions.$inferInsert;
+export type ConnectivityLogSelect = typeof connectivityLog.$inferSelect;
+export type ConnectivityLogInsert = typeof connectivityLog.$inferInsert;
+export type SystemConfigSelect = typeof systemConfig.$inferSelect;
+export type SystemConfigInsert = typeof systemConfig.$inferInsert;
+export type SimProbeLogSelect = typeof simProbeLog.$inferSelect;
+export type SimProbeLogInsert = typeof simProbeLog.$inferInsert;
+export type SimOrchestratorConfigSelect = typeof simOrchestratorConfig.$inferSelect;
+export type SimOrchestratorConfigInsert = typeof simOrchestratorConfig.$inferInsert;
+export type SimFailoverLogSelect = typeof simFailoverLog.$inferSelect;
+export type SimFailoverLogInsert = typeof simFailoverLog.$inferInsert;
+export type DeviceCompliancePoliciesSelect = typeof deviceCompliancePolicies.$inferSelect;
+export type DeviceCompliancePoliciesInsert = typeof deviceCompliancePolicies.$inferInsert;
+export type DeviceComplianceViolationsSelect = typeof deviceComplianceViolations.$inferSelect;
+export type DeviceComplianceViolationsInsert = typeof deviceComplianceViolations.$inferInsert;
+export type MdmGeofenceViolationsSelect = typeof mdmGeofenceViolations.$inferSelect;
+export type MdmGeofenceViolationsInsert = typeof mdmGeofenceViolations.$inferInsert;
+export type DlqMessagesSelect = typeof dlqMessages.$inferSelect;
+export type DlqMessagesInsert = typeof dlqMessages.$inferInsert;
+export type CommissionPayoutsSelect = typeof commissionPayouts.$inferSelect;
+export type CommissionPayoutsInsert = typeof commissionPayouts.$inferInsert;
+export type ReferralsSelect = typeof referrals.$inferSelect;
+export type ReferralsInsert = typeof referrals.$inferInsert;
+export type WebhookEndpointsSelect = typeof webhookEndpoints.$inferSelect;
+export type WebhookEndpointsInsert = typeof webhookEndpoints.$inferInsert;
+export type WebhookDeliveriesSelect = typeof webhookDeliveries.$inferSelect;
+export type WebhookDeliveriesInsert = typeof webhookDeliveries.$inferInsert;
+export type AgentOnboardingProgressSelect = typeof agentOnboardingProgress.$inferSelect;
+export type AgentOnboardingProgressInsert = typeof agentOnboardingProgress.$inferInsert;
+export type SettlementReconciliationSelect = typeof settlementReconciliation.$inferSelect;
+export type SettlementReconciliationInsert = typeof settlementReconciliation.$inferInsert;
+export type RateAlertsSelect = typeof rateAlerts.$inferSelect;
+export type RateAlertsInsert = typeof rateAlerts.$inferInsert;
+export type EmailDeliveryLogSelect = typeof emailDeliveryLog.$inferSelect;
+export type EmailDeliveryLogInsert = typeof emailDeliveryLog.$inferInsert;
+export type InviteCodesSelect = typeof inviteCodes.$inferSelect;
+export type InviteCodesInsert = typeof inviteCodes.$inferInsert;
+export type TenantBrandingSelect = typeof tenantBranding.$inferSelect;
+export type TenantBrandingInsert = typeof tenantBranding.$inferInsert;
+export type TenantCorridorsSelect = typeof tenantCorridors.$inferSelect;
+export type TenantCorridorsInsert = typeof tenantCorridors.$inferInsert;
+export type TenantFeeOverridesSelect = typeof tenantFeeOverrides.$inferSelect;
+export type TenantFeeOverridesInsert = typeof tenantFeeOverrides.$inferInsert;
+export type TenantUsersSelect = typeof tenantUsers.$inferSelect;
+export type TenantUsersInsert = typeof tenantUsers.$inferInsert;
+export type CommissionCascadeHistorySelect = typeof commissionCascadeHistory.$inferSelect;
+export type CommissionCascadeHistoryInsert = typeof commissionCascadeHistory.$inferInsert;
+export type AgentBankAccountsSelect = typeof agentBankAccounts.$inferSelect;
+export type AgentBankAccountsInsert = typeof agentBankAccounts.$inferInsert;
+export type KycDocumentsSelect = typeof kycDocuments.$inferSelect;
+export type KycDocumentsInsert = typeof kycDocuments.$inferInsert;
+export type FloatReconciliationsSelect = typeof floatReconciliations.$inferSelect;
+export type FloatReconciliationsInsert = typeof floatReconciliations.$inferInsert;
+export type AgentPerformanceScoresSelect = typeof agentPerformanceScores.$inferSelect;
+export type AgentPerformanceScoresInsert = typeof agentPerformanceScores.$inferInsert;
+export type CommissionClawbacksSelect = typeof commissionClawbacks.$inferSelect;
+export type CommissionClawbacksInsert = typeof commissionClawbacks.$inferInsert;
+export type PnlReportsSelect = typeof pnlReports.$inferSelect;
+export type PnlReportsInsert = typeof pnlReports.$inferInsert;
+export type GeoFencesSelect = typeof geoFences.$inferSelect;
+export type GeoFencesInsert = typeof geoFences.$inferInsert;
+export type TransactionLimitsSelect = typeof transactionLimits.$inferSelect;
+export type TransactionLimitsInsert = typeof transactionLimits.$inferInsert;
+export type ComplianceChecksSelect = typeof complianceChecks.$inferSelect;
+export type ComplianceChecksInsert = typeof complianceChecks.$inferInsert;
+export type AgentSuspensionLogSelect = typeof agentSuspensionLog.$inferSelect;
+export type AgentSuspensionLogInsert = typeof agentSuspensionLog.$inferInsert;
+export type TxMonitoringAlertsSelect = typeof txMonitoringAlerts.$inferSelect;
+export type TxMonitoringAlertsInsert = typeof txMonitoringAlerts.$inferInsert;
+export type FraudMlScoresSelect = typeof fraudMlScores.$inferSelect;
+export type FraudMlScoresInsert = typeof fraudMlScores.$inferInsert;
+export type NotificationDispatchLogSelect = typeof notificationDispatchLog.$inferSelect;
+export type NotificationDispatchLogInsert = typeof notificationDispatchLog.$inferInsert;
+export type AgentLoansSelect = typeof agentLoans.$inferSelect;
+export type AgentLoansInsert = typeof agentLoans.$inferInsert;
+export type FeeRulesSelect = typeof feeRules.$inferSelect;
+export type FeeRulesInsert = typeof feeRules.$inferInsert;
+export type FeeAuditTrailSelect = typeof feeAuditTrail.$inferSelect;
+export type FeeAuditTrailInsert = typeof feeAuditTrail.$inferInsert;
+export type MerchantKycDocsSelect = typeof merchantKycDocs.$inferSelect;
+export type MerchantKycDocsInsert = typeof merchantKycDocs.$inferInsert;
+export type MerchantPayoutsSelect = typeof merchantPayouts.$inferSelect;
+export type MerchantPayoutsInsert = typeof merchantPayouts.$inferInsert;
+export type ComplianceFilingsSelect = typeof complianceFilings.$inferSelect;
+export type ComplianceFilingsInsert = typeof complianceFilings.$inferInsert;
+export type AgentAchievementsSelect = typeof agentAchievements.$inferSelect;
+export type AgentAchievementsInsert = typeof agentAchievements.$inferInsert;
+export type AgentBadgesSelect = typeof agentBadges.$inferSelect;
+export type AgentBadgesInsert = typeof agentBadges.$inferInsert;
+export type TenantFeatureTogglesSelect = typeof tenantFeatureToggles.$inferSelect;
+export type TenantFeatureTogglesInsert = typeof tenantFeatureToggles.$inferInsert;
+export type ReconciliationBatchesSelect = typeof reconciliationBatches.$inferSelect;
+export type ReconciliationBatchesInsert = typeof reconciliationBatches.$inferInsert;
+export type ReconciliationItemsSelect = typeof reconciliationItems.$inferSelect;
+export type ReconciliationItemsInsert = typeof reconciliationItems.$inferInsert;
+export type AnalyticsDashboardsSelect = typeof analyticsDashboards.$inferSelect;
+export type AnalyticsDashboardsInsert = typeof analyticsDashboards.$inferInsert;
+export type CustomerJourneyStepsSelect = typeof customerJourneySteps.$inferSelect;
+export type CustomerJourneyStepsInsert = typeof customerJourneySteps.$inferInsert;
+export type RateLimitRulesSelect = typeof rateLimitRules.$inferSelect;
+export type RateLimitRulesInsert = typeof rateLimitRules.$inferInsert;
+export type BackupSnapshotsSelect = typeof backupSnapshots.$inferSelect;
+export type BackupSnapshotsInsert = typeof backupSnapshots.$inferInsert;
+export type WorkflowDefinitionsSelect = typeof workflowDefinitions.$inferSelect;
+export type WorkflowDefinitionsInsert = typeof workflowDefinitions.$inferInsert;
+export type WorkflowInstancesSelect = typeof workflowInstances.$inferSelect;
+export type WorkflowInstancesInsert = typeof workflowInstances.$inferInsert;
+export type GlEntriesSelect = typeof glEntries.$inferSelect;
+export type GlEntriesInsert = typeof glEntries.$inferInsert;
+export type TrainingCoursesSelect = typeof trainingCourses.$inferSelect;
+export type TrainingCoursesInsert = typeof trainingCourses.$inferInsert;
+export type TrainingEnrollmentsSelect = typeof trainingEnrollments.$inferSelect;
+export type TrainingEnrollmentsInsert = typeof trainingEnrollments.$inferInsert;
+export type BiReportDefinitionsSelect = typeof biReportDefinitions.$inferSelect;
+export type BiReportDefinitionsInsert = typeof biReportDefinitions.$inferInsert;
+export type ObservabilityAlertsSelect = typeof observabilityAlerts.$inferSelect;
+export type ObservabilityAlertsInsert = typeof observabilityAlerts.$inferInsert;
+export type EncryptedFieldsSelect = typeof encryptedFields.$inferSelect;
+export type EncryptedFieldsInsert = typeof encryptedFields.$inferInsert;
+export type DataConsentRecordsSelect = typeof dataConsentRecords.$inferSelect;
+export type DataConsentRecordsInsert = typeof dataConsentRecords.$inferInsert;
+export type RealtimeTxAlertsSelect = typeof realtime_tx_alerts.$inferSelect;
+export type RealtimeTxAlertsInsert = typeof realtime_tx_alerts.$inferInsert;
+export type NotificationChannelsSelect = typeof notification_channels.$inferSelect;
+export type NotificationChannelsInsert = typeof notification_channels.$inferInsert;
+export type NotificationLogsSelect = typeof notification_logs.$inferSelect;
+export type NotificationLogsInsert = typeof notification_logs.$inferInsert;
+export type CustomerJourneyEventsSelect = typeof customer_journey_events.$inferSelect;
+export type CustomerJourneyEventsInsert = typeof customer_journey_events.$inferInsert;
+export type GlAccountsSelect = typeof gl_accounts.$inferSelect;
+export type GlAccountsInsert = typeof gl_accounts.$inferInsert;
+export type GlJournalEntriesSelect = typeof gl_journal_entries.$inferSelect;
+export type GlJournalEntriesInsert = typeof gl_journal_entries.$inferInsert;
+export type SlaDefinitionsSelect = typeof sla_definitions.$inferSelect;
+export type SlaDefinitionsInsert = typeof sla_definitions.$inferInsert;
+export type SlaBreachesSelect = typeof sla_breaches.$inferSelect;
+export type SlaBreachesInsert = typeof sla_breaches.$inferInsert;
+export type DataExportJobsSelect = typeof data_export_jobs.$inferSelect;
+export type DataExportJobsInsert = typeof data_export_jobs.$inferInsert;
+export type PlatformHealthChecksSelect = typeof platform_health_checks.$inferSelect;
+export type PlatformHealthChecksInsert = typeof platform_health_checks.$inferInsert;
+export type PlatformIncidentsSelect = typeof platform_incidents.$inferSelect;
+export type PlatformIncidentsInsert = typeof platform_incidents.$inferInsert;
+export type CommissionTiersSelect = typeof commissionTiers.$inferSelect;
+export type CommissionTiersInsert = typeof commissionTiers.$inferInsert;
+export type CommissionSplitsSelect = typeof commissionSplits.$inferSelect;
+export type CommissionSplitsInsert = typeof commissionSplits.$inferInsert;
+export type DisputeEvidenceSelect = typeof disputeEvidence.$inferSelect;
+export type DisputeEvidenceInsert = typeof disputeEvidence.$inferInsert;
+export type CommissionAuditTrailSelect = typeof commissionAuditTrail.$inferSelect;
+export type CommissionAuditTrailInsert = typeof commissionAuditTrail.$inferInsert;
+export type LoadTestRunsSelect = typeof loadTestRuns.$inferSelect;
+export type LoadTestRunsInsert = typeof loadTestRuns.$inferInsert;
+export type PlatformBillingLedgerSelect = typeof platformBillingLedger.$inferSelect;
+export type PlatformBillingLedgerInsert = typeof platformBillingLedger.$inferInsert;
+export type BillingRevenuePeriodsSelect = typeof billingRevenuePeriods.$inferSelect;
+export type BillingRevenuePeriodsInsert = typeof billingRevenuePeriods.$inferInsert;
+export type BillingReconciliationReportsSelect = typeof billingReconciliationReports.$inferSelect;
+export type BillingReconciliationReportsInsert = typeof billingReconciliationReports.$inferInsert;
+export type BillingRoleAssignmentsSelect = typeof billingRoleAssignments.$inferSelect;
+export type BillingRoleAssignmentsInsert = typeof billingRoleAssignments.$inferInsert;
+export type BillingAuditLogSelect = typeof billingAuditLog.$inferSelect;
+export type BillingAuditLogInsert = typeof billingAuditLog.$inferInsert;
+export type TenantBillingConfigSelect = typeof tenantBillingConfig.$inferSelect;
+export type TenantBillingConfigInsert = typeof tenantBillingConfig.$inferInsert;
+export type BillingProvisioningHistorySelect = typeof billingProvisioningHistory.$inferSelect;
+export type BillingProvisioningHistoryInsert = typeof billingProvisioningHistory.$inferInsert;
+export type FaceEnrollmentsSelect = typeof faceEnrollments.$inferSelect;
+export type FaceEnrollmentsInsert = typeof faceEnrollments.$inferInsert;
+export type BiometricAuditEventsSelect = typeof biometricAuditEvents.$inferSelect;
+export type BiometricAuditEventsInsert = typeof biometricAuditEvents.$inferInsert;
+export type ReceiptTemplatesSelect = typeof receiptTemplates.$inferSelect;
+export type ReceiptTemplatesInsert = typeof receiptTemplates.$inferInsert;
+export type GuideFeedbackSelect = typeof guideFeedback.$inferSelect;
+export type GuideFeedbackInsert = typeof guideFeedback.$inferInsert;
+export type EcommerceCategoriesSelect = typeof ecommerceCategories.$inferSelect;
+export type EcommerceCategoriesInsert = typeof ecommerceCategories.$inferInsert;
+export type EcommerceProductsSelect = typeof ecommerceProducts.$inferSelect;
+export type EcommerceProductsInsert = typeof ecommerceProducts.$inferInsert;
+export type EcommerceInventorySelect = typeof ecommerceInventory.$inferSelect;
+export type EcommerceInventoryInsert = typeof ecommerceInventory.$inferInsert;
+export type EcommerceInventoryReservationsSelect = typeof ecommerceInventoryReservations.$inferSelect;
+export type EcommerceInventoryReservationsInsert = typeof ecommerceInventoryReservations.$inferInsert;
+export type EcommerceOrdersSelect = typeof ecommerceOrders.$inferSelect;
+export type EcommerceOrdersInsert = typeof ecommerceOrders.$inferInsert;
+export type EcommerceOrderItemsSelect = typeof ecommerceOrderItems.$inferSelect;
+export type EcommerceOrderItemsInsert = typeof ecommerceOrderItems.$inferInsert;
+export type EcommerceCartsSelect = typeof ecommerceCarts.$inferSelect;
+export type EcommerceCartsInsert = typeof ecommerceCarts.$inferInsert;
+export type EcommerceCartItemsSelect = typeof ecommerceCartItems.$inferSelect;
+export type EcommerceCartItemsInsert = typeof ecommerceCartItems.$inferInsert;
+export type EcommerceInteractionsSelect = typeof ecommerceInteractions.$inferSelect;
+export type EcommerceInteractionsInsert = typeof ecommerceInteractions.$inferInsert;
+export type AgentStoresSelect = typeof agentStores.$inferSelect;
+export type AgentStoresInsert = typeof agentStores.$inferInsert;
+export type DeliveryZonesSelect = typeof deliveryZones.$inferSelect;
+export type DeliveryZonesInsert = typeof deliveryZones.$inferInsert;
+export type ProductReviewsSelect = typeof productReviews.$inferSelect;
+export type ProductReviewsInsert = typeof productReviews.$inferInsert;
+export type StoreReviewsSelect = typeof storeReviews.$inferSelect;
+export type StoreReviewsInsert = typeof storeReviews.$inferInsert;
+export type PaymentSplitsSelect = typeof paymentSplits.$inferSelect;
+export type PaymentSplitsInsert = typeof paymentSplits.$inferInsert;
+export type DeliveryTrackingSelect = typeof deliveryTracking.$inferSelect;
+export type DeliveryTrackingInsert = typeof deliveryTracking.$inferInsert;
+export type AmlScreeningsSelect = typeof amlScreenings.$inferSelect;
+export type AmlScreeningsInsert = typeof amlScreenings.$inferInsert;
+export type AmlWatchlistEntriesSelect = typeof amlWatchlistEntries.$inferSelect;
+export type AmlWatchlistEntriesInsert = typeof amlWatchlistEntries.$inferInsert;
+export type IdempotencyKeysSelect = typeof idempotencyKeys.$inferSelect;
+export type IdempotencyKeysInsert = typeof idempotencyKeys.$inferInsert;

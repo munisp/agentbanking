@@ -47,14 +47,14 @@ const buildEndpoint = (rpc: string): string => {
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message:
-        "Heartbeat service URL is not configured (BUILT_IN_FORGE_API_URL).",
+        "Heartbeat service URL is not configured (HEARTBEAT_API_URL).",
     });
   }
   if (!ENV.forgeApiKey) {
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message:
-        "Heartbeat service API key is not configured (BUILT_IN_FORGE_API_KEY).",
+        "Heartbeat service API key is not configured (HEARTBEAT_API_KEY).",
     });
   }
   const baseUrl = ENV.forgeApiUrl;
@@ -77,7 +77,7 @@ const callForge = async <T>(
   // userSession is the decoded `app_session_id` cookie value (NOT the raw
   // Cookie header). Empty string falls back to the project owner identity.
   if (userSession) {
-    headers["x-manus-user-session"] = userSession;
+    headers["x-user-session"] = userSession;
   }
 
   let response: Response;
@@ -198,7 +198,7 @@ export async function deleteHeartbeatJob(
  *
  * `actorUserId` in the response echoes whose cron list you got back. End-users
  * cannot list other users' crons via this SDK; cross-user inspection is
- * owner-only via the sandbox CLI (`manus-heartbeat list --user-id <uid>`).
+ * owner-only via the sandbox CLI (`heartbeat list --user-id <uid>`).
  */
 export async function listHeartbeatJobs(
   userSession: string,

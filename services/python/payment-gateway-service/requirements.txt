@@ -26,7 +26,7 @@ paypalrestsdk==1.13.1
 
 # Utilities
 python-dateutil==2.8.2
-pytz==2023.3
+pytz==2026.2
 
 # Logging and monitoring
 python-json-logger==4.1.0

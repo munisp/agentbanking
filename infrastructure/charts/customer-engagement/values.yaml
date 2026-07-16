@@ -1,0 +1,62 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-customer-engagement
+  pullPolicy: IfNotPresent
+  tag: "0.0.2"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9371
+    - port: 9372
+    - port: 9373
+    - port: 9374
+    - port: 9375
+    - port: 9376
+    - port: 9377
+    - port: 9378
+    - port: 9379
+    - port: 9380
+    - port: 9381
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1536Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: customer-engagement
+  appPort: 9373
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9371"
+  PORT_BASE: "9371"
+  SERVICE_GROUP: customer-engagement
+  SERVICES: "coalition-loyalty,customer-service,gamification,knowledge-base,loyalty-service,promotion-service,rewards-service,shareable-links,support-comms-service,support-crm,support-service"

@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Environment variables
+.env
+*.env
+
+# Flask instance folder (for Flask application runtime files)
+instance/
+
+# Flask logs
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env.bak/
+
+# pip files
+pip-log.txt
+pip-delete-this-directory.txt
+
+# pytest
+.cache/
+*.cover
+.coverage
+.tox/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# PyCharm files
+.idea/
+
+# VS Code files
+.vscode/
+
+# macOS files
+.DS_Store
+
+# System-specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Docker-related
+docker-compose.override.yml
+
+# SQLite database files
+*.sqlite3
+*.db
+
+# Node.js (if used for frontend within the same repo)
+node_modules/

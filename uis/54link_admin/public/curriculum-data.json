@@ -1,0 +1,1115 @@
+{
+  "metadata": {
+    "title": "Nigerian Banking Platform - Infrastructure & DevOps Curriculum",
+    "version": "1.0",
+    "lastUpdated": "November 4, 2025",
+    "platformVersion": "V7.0"
+  },
+  "overview": {
+    "title": "Welcome to the Infrastructure Training Portal",
+    "content": "# Nigerian Banking Platform - Infrastructure & DevOps Training Package\n\n## Overview\n\nWelcome to the comprehensive Infrastructure and DevOps training package for the Nigerian Banking Platform. This package contains everything a new engineer needs to understand, operate, and contribute to our cloud-native microservices platform.\n\n## Package Contents\n\nThis training package includes the following documents:\n\n### 1. Infrastructure Analysis (`infrastructure_analysis.md`)\n\nA deep technical analysis of all infrastructure components deployed in the platform, including:\n\n- **API Gateway**: Apache APISIX with 33 service configurations\n- **Microservices Framework**: Dapr with state management, pub/sub, and service invocation\n- **Workflow Orchestration**: Temporal for durable execution\n- **Authentication**: Keycloak for OAuth2/OIDC\n- **Authorization**: Permify for fine-grained access control\n- **Container Orchestration**: Kubernetes with 86 deployments\n- **Containerization**: Docker with 52 Dockerfiles\n- **Data Layer**: PostgreSQL, Redis, TigerBeetle, FalkorDB, Kafka\n- **AI/ML Infrastructure**: GPU support with CUDA/ROCm\n\nThis document provides detailed configuration examples, operational metrics, and infrastructure topology diagrams.\n\n### 2. External Training Resources (`external_training_resources.md`)\n\nA curated collection of external learning materials for each technology in our stack:\n\n- Official documentation links\n- Video tutorials and courses (YouTube, Udemy, Coursera)\n- Hands-on labs and interactive tutorials\n- Community forums and support channels\n- Recommended certification paths\n\nThe document includes a structured 4-month learning path for new engineers.\n\n### 3. Infrastructure Curriculum (`infrastructure_curriculum.md`)\n\nThe primary onboarding curriculum organized into modules:\n\n- **Module 1**: Containerization with Docker\n- **Module 2**: Container Orchestration with Kubernetes\n- **Module 3**: API Gateway with Apache APISIX\n- **Module 4**: Microservices Framework with Dapr\n- **Module 5**: Workflow Orchestration with Temporal\n- **Module 6**: Authentication with Keycloak\n- **Module 7**: Monitoring with Prometheus & Grafana\n- **Module 8**: Data Layer Technologies\n\nEach module includes:\n- Internal platform analysis\n- Configuration examples\n- Day-to-day operational procedures\n- External learning resources\n- Hands-on lab exercises\n\n## Recommended Learning Sequence\n\n### Month 1: Foundations\n- Docker basics and containerization\n- Kubernetes fundamentals\n- Python and FastAPI\n- PostgreSQL database basics\n\n### Month 2: Microservices Infrastructure\n- Apache APISIX API Gateway\n- Dapr microservices framework\n- Redis caching and state management\n- Apache Kafka event streaming\n\n### Month 3: Advanced Topics\n- Temporal workflow orchestration\n- Keycloak authentication\n- Prometheus & Grafana monitoring\n- Platform integration patterns\n\n### Month 4: Production Operations\n- Monitoring and alerting\n- Troubleshooting and debugging\n- Performance optimization\n- Disaster recovery procedures\n\n## Platform Statistics\n\nThe Nigerian Banking Platform is a production-ready, enterprise-grade system with:\n\n- **216 Backend Services**: 72 core banking, 72 AI/ML, 72 specialized services\n- **100% Test Coverage**: All services tested at 80%+ coverage\n- **33 APISIX Routes**: Centralized API management\n- **33 Dapr Configurations**: State management, pub/sub, service invocation\n- **33 Temporal Workflows**: Durable business process orchestration\n- **33 Keycloak Clients**: OAuth2/OIDC authentication\n- **86 Kubernetes Deployments**: Container orchestration\n- **52 Dockerfiles**: Containerized services\n- **129 Database Models**: PostgreSQL schema\n\n## Infrastructure Topology\n\n```\nExternal Traffic\n       ↓\nApache APISIX Gateway\n       ↓\nKubernetes Cluster (Banking Namespace)\n       ↓\n┌──────────────────────────────────────┐\n│  Microservices (216 services)        │\n│  Each with Dapr sidecar              │\n└──────────────────────────────────────┘\n       ↓\n┌──────────────────────────────────────┐\n│  Infrastructure Services             │\n│  • Keycloak (Auth)                   │\n│  • Permify (Authz)                   │\n│  • Temporal (Workflows)              │\n│  • Prometheus + Grafana (Monitoring) │\n└──────────────────────────────────────┘\n       ↓\n┌──────────────────────────────────────┐\n│  Data Layer                          │\n│  • PostgreSQL (Relational)           │\n│  • Redis (Cache/State)               │\n│  • TigerBeetle (Ledger)              │\n│  • FalkorDB (Graph)                  │\n│  • Kafka (Event Streaming)           │\n└──────────────────────────────────────┘\n```\n\n## Hands-On Labs\n\nThe curriculum includes practical exercises to reinforce learning:\n\n1. **Deploy a New Microservice**: Create, containerize, and deploy a FastAPI service\n2. **Expose Service via APISIX**: Configure routing, authentication, and rate limiting\n3. **Integrate with Dapr**: Use state management and pub/sub messaging\n4. **Create a Grafana Dashboard**: Instrument and visualize service metrics\n\n## Getting Started\n\n1. **Read the Infrastructure Curriculum** (`infrastructure_curriculum.md`) first\n2. **Follow the recommended learning sequence** for your first 4 months\n3. **Complete the hands-on labs** to gain practical experience\n4. **Refer to External Training Resources** for deep dives into specific technologies\n5. **Use the Infrastructure Analysis** as a reference for platform-specific details\n\n## Support and Mentorship\n\n- **Internal Slack**: Join `#devops` and `#backend` channels\n- **Mentorship Program**: You will be assigned a senior engineer as your mentor\n- **Documentation**: Explore our internal Confluence space for additional resources\n- **Office Hours**: Weekly DevOps office hours every Thursday at 3 PM\n\n## Certification Recommendations\n\nConsider pursuing these certifications to validate your skills:\n\n- **Certified Kubernetes Administrator (CKA)**\n- **Certified Kubernetes Application Developer (CKAD)**\n- **Docker Certified Associate (DCA)**\n- **AWS Certified DevOps Engineer** (if applicable)\n\n## Contributing to the Platform\n\nOnce you complete your onboarding, you'll be ready to:\n\n- Deploy and manage services in production\n- Troubleshoot infrastructure issues\n- Optimize platform performance\n- Contribute to infrastructure improvements\n- Mentor future new hires\n\n## Document Versions\n\n- **Infrastructure Analysis**: v1.0 (November 4, 2025)\n- **External Training Resources**: v1.0 (November 4, 2025)\n- **Infrastructure Curriculum**: v1.0 (November 4, 2025)\n\n## Contact\n\nFor questions or feedback about this training package:\n\n- **Platform Engineering Team**: platform-engineering@nigerianbanking.com\n- **Slack**: #platform-engineering\n\n---\n\n**Welcome to the team! We're excited to have you on board.**\n\n**Maintained by**: Platform Engineering Team  \n**Last Updated**: November 4, 2025  \n**Platform Version**: V7.0\n",
+    "stats": {
+      "totalServices": 216,
+      "testCoverage": "100%",
+      "apisixRoutes": 33,
+      "daprConfigs": 33,
+      "temporalWorkflows": 33,
+      "keycloakClients": 33,
+      "k8sDeployments": 86,
+      "dockerfiles": 52,
+      "databaseModels": 129
+    }
+  },
+  "modules": [
+    {
+      "id": "docker",
+      "title": "Module 1: Containerization with Docker",
+      "icon": "Container",
+      "description": "Learn Docker containerization fundamentals and best practices",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "kubernetes",
+      "title": "Module 2: Container Orchestration with Kubernetes",
+      "icon": "Cloud",
+      "description": "Master Kubernetes for container orchestration",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "apisix",
+      "title": "Module 3: API Gateway with Apache APISIX",
+      "icon": "Network",
+      "description": "Configure and manage API Gateway with APISIX",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "dapr",
+      "title": "Module 4: Microservices Framework with Dapr",
+      "icon": "Grid",
+      "description": "Build distributed applications with Dapr",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "temporal",
+      "title": "Module 5: Workflow Orchestration with Temporal",
+      "icon": "Workflow",
+      "description": "Orchestrate long-running workflows with Temporal",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "keycloak",
+      "title": "Module 6: Authentication with Keycloak",
+      "icon": "Lock",
+      "description": "Implement OAuth2/OIDC authentication",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "monitoring",
+      "title": "Module 7: Monitoring with Prometheus & Grafana",
+      "icon": "Activity",
+      "description": "Set up monitoring and observability",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    },
+    {
+      "id": "databases",
+      "title": "Module 8: Data Layer Technologies",
+      "icon": "Database",
+      "description": "Work with PostgreSQL, Redis, Kafka, and more",
+      "duration": "1 week",
+      "content": "",
+      "externalResources": []
+    }
+  ],
+  "infrastructureAnalysis": {
+    "title": "Infrastructure Analysis",
+    "content": "# Nigerian Banking Platform - Infrastructure Stack Analysis\n\n## Executive Summary\n\nThe Nigerian Banking Platform employs a **modern cloud-native microservices architecture** with comprehensive infrastructure components designed for scalability, resilience, and high performance. The platform consists of **216 backend services** with full infrastructure integration across API gateway, service mesh, workflow orchestration, authentication, authorization, and container orchestration layers.\n\n---\n\n## Infrastructure Component Inventory\n\n### 1. API Gateway - Apache APISIX\n\n**Purpose**: Centralized API management, routing, rate limiting, authentication, and traffic control\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Route Files**: 66 files (JSON + YAML per service)\n- **Key Features**:\n  - Round-robin load balancing\n  - Rate limiting (500 requests/60s per service)\n  - JWT authentication\n  - CORS configuration\n  - Prometheus metrics integration\n  - Request/response rewriting\n\n**Example Configuration** (`infrastructure/integration/apisix_routes/account-management-service/route.yaml`):\n```yaml\nuri: /api/v1/account-management-service/*\nupstream:\n  type: roundrobin\n  nodes:\n    account-management-service:8001: 1\nplugins:\n  limit-count:\n    count: 500\n    time_window: 60\n  jwt-auth:\n    key: banking-platform-key\n  prometheus:\n    prefer_name: true\n```\n\n**Day-to-Day Operations**:\n- Monitor rate limit violations\n- Update routing rules for new services\n- Manage API versioning\n- Configure SSL/TLS certificates\n- Analyze traffic patterns via Prometheus\n\n---\n\n### 2. Microservices Framework - Dapr (Distributed Application Runtime)\n\n**Purpose**: Service mesh providing state management, pub/sub messaging, service invocation, and distributed tracing\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Component Files**: 99 files (3 per service: annotations, statestore, pubsub)\n- **Key Components**:\n  - **State Store**: Redis-based distributed state management\n  - **Pub/Sub**: Kafka-based event streaming\n  - **Service Invocation**: mTLS-secured inter-service communication\n\n**Example Configurations**:\n\n**State Store** (`infrastructure/integration/dapr_configs/account-management-service/statestore-component.yaml`):\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-statestore\n  namespace: banking\nspec:\n  type: state.redis\n  metadata:\n  - name: redisHost\n    value: redis:6379\n  - name: actorStateStore\n    value: 'true'\n```\n\n**Pub/Sub** (`infrastructure/integration/dapr_configs/account-management-service/pubsub-component.yaml`):\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-pubsub\n  namespace: banking\nspec:\n  type: pubsub.kafka\n  metadata:\n  - name: brokers\n    value: kafka:9092\n  - name: consumerGroup\n    value: account-management-service\n```\n\n**Day-to-Day Operations**:\n- Monitor Dapr sidecar health\n- Manage state store backups\n- Configure pub/sub topics\n- Troubleshoot service invocation issues\n- Review distributed tracing data\n\n---\n\n### 3. Workflow Orchestration - Temporal\n\n**Purpose**: Durable workflow execution for long-running business processes, saga patterns, and distributed transactions\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Workflow Files**: 99 files (workflow.py, worker.py, temporal_config.json per service)\n- **Key Features**:\n  - Durable execution with automatic retries\n  - Saga pattern for distributed transactions\n  - Workflow versioning\n  - Activity timeouts and compensation\n\n**Example Configuration** (`infrastructure/integration/temporal_workflows/account-management-service/temporal_config.json`):\n```json\n{\n  \"service\": \"account-management-service\",\n  \"task_queue\": \"account-management-service-tasks\",\n  \"namespace\": \"banking\",\n  \"temporal_address\": \"temporal:7233\"\n}\n```\n\n**Common Workflow Patterns**:\n- **Account Opening**: Multi-step KYC verification, credit check, account creation\n- **Loan Processing**: Application → Approval → Disbursement → Repayment\n- **Payment Processing**: Validation → Ledger update → Notification → Reconciliation\n\n**Day-to-Day Operations**:\n- Monitor workflow execution status\n- Handle failed workflows and retries\n- Update workflow definitions\n- Manage task queues\n- Review workflow history and audit logs\n\n---\n\n### 4. Authentication - Keycloak\n\n**Purpose**: Identity and Access Management (IAM), Single Sign-On (SSO), OAuth2/OIDC provider\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Client Files**: 66 files (client.json, keycloak_config.py per service)\n- **Key Features**:\n  - OAuth2/OIDC authentication\n  - Service account authentication\n  - Role-based access control (RBAC)\n  - Token lifecycle management\n  - Multi-realm support\n\n**Example Configuration** (`infrastructure/integration/keycloak_configs/account-management-service/client.json`):\n```json\n{\n  \"clientId\": \"account-management-service\",\n  \"enabled\": true,\n  \"clientAuthenticatorType\": \"client-secret\",\n  \"protocol\": \"openid-connect\",\n  \"serviceAccountsEnabled\": true,\n  \"authorizationServicesEnabled\": true,\n  \"attributes\": {\n    \"access.token.lifespan\": \"3600\",\n    \"client.session.idle.timeout\": \"1800\"\n  }\n}\n```\n\n**Day-to-Day Operations**:\n- Manage user accounts and roles\n- Configure client applications\n- Monitor authentication failures\n- Rotate client secrets\n- Configure multi-factor authentication (MFA)\n\n---\n\n### 5. Authorization - Permify\n\n**Purpose**: Fine-grained authorization and policy management using relationship-based access control (ReBAC)\n\n**Configuration Coverage**:\n- **Policy Files**: Located in `infrastructure/integration/permify_policies/`\n- **Key Features**:\n  - Relationship-based access control\n  - Hierarchical permissions\n  - Dynamic policy evaluation\n  - Audit logging\n\n**Authorization Patterns**:\n- **Account Access**: Users can only access their own accounts\n- **Transaction Approval**: Multi-level approval workflows\n- **Admin Operations**: Role-based administrative access\n- **Data Privacy**: Field-level access control\n\n**Day-to-Day Operations**:\n- Define and update authorization policies\n- Monitor policy violations\n- Audit access patterns\n- Manage permission hierarchies\n\n---\n\n### 6. Container Orchestration - Kubernetes\n\n**Purpose**: Container orchestration, auto-scaling, self-healing, and declarative deployment\n\n**Configuration Coverage**:\n- **Deployment Files**: 86 deployment.yaml files\n- **Key Resources**:\n  - Deployments with replica sets\n  - Services (ClusterIP, LoadBalancer)\n  - ConfigMaps and Secrets\n  - HorizontalPodAutoscalers (HPA)\n  - PersistentVolumeClaims (PVC)\n\n**Example Deployment** (`backend/services/account-management-service/k8s/deployment.yaml`):\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: account-management-service\n  namespace: banking\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n      - name: account-management-service\n        image: account-management-service:latest\n        ports:\n        - containerPort: 8000\n        resources:\n          requests:\n            memory: \"256Mi\"\n            cpu: \"250m\"\n          limits:\n            memory: \"512Mi\"\n            cpu: \"500m\"\n        livenessProbe:\n          httpGet:\n            path: /health\n            port: 8000\n        readinessProbe:\n          httpGet:\n            path: /ready\n            port: 8000\n```\n\n**Day-to-Day Operations**:\n- Deploy new service versions\n- Scale deployments up/down\n- Monitor pod health and resource usage\n- Troubleshoot pod failures\n- Manage secrets and config maps\n- Review HPA metrics and scaling events\n\n---\n\n### 7. Containerization - Docker\n\n**Purpose**: Application containerization for consistent deployment across environments\n\n**Configuration Coverage**:\n- **Dockerfiles**: 52 Dockerfile configurations\n- **Multi-Stage Builds**: Optimized image sizes\n- **Base Images**: Python 3.11, Node.js 22, custom AI/ML images\n\n**Example Dockerfile Pattern**:\n```dockerfile\nFROM python:3.11-slim\n\nWORKDIR /app\n\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY . .\n\nEXPOSE 8000\n\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n**Day-to-Day Operations**:\n- Build and tag Docker images\n- Push images to container registry\n- Scan images for vulnerabilities\n- Optimize image sizes\n- Manage image versions and tags\n\n---\n\n### 8. Database Infrastructure\n\n#### 8.1 PostgreSQL\n**Purpose**: Primary relational database for transactional data\n\n**Features**:\n- **Models**: 129 database models\n- **Replication**: Master-slave replication\n- **Backup**: Automated daily backups\n- **Connection Pooling**: PgBouncer\n\n**Day-to-Day Operations**:\n- Monitor query performance\n- Manage database migrations\n- Perform backups and restores\n- Optimize slow queries\n- Monitor replication lag\n\n#### 8.2 Redis\n**Purpose**: Caching, session storage, and Dapr state store\n\n**Features**:\n- **Cluster**: 6-node Redis cluster\n- **Persistence**: RDB + AOF\n- **Use Cases**: Session cache, rate limiting, distributed locks\n\n**Day-to-Day Operations**:\n- Monitor cache hit rates\n- Manage memory usage\n- Configure eviction policies\n- Monitor cluster health\n\n#### 8.3 TigerBeetle\n**Purpose**: High-performance distributed ledger for financial transactions\n\n**Features**:\n- **Performance**: Millions of TPS\n- **Consistency**: ACID guarantees\n- **Audit**: Complete transaction history\n\n**Day-to-Day Operations**:\n- Monitor ledger performance\n- Verify transaction integrity\n- Manage ledger backups\n- Review audit logs\n\n#### 8.4 FalkorDB\n**Purpose**: Graph database for relationship analytics\n\n**Features**:\n- **Use Cases**: Fraud detection, customer relationship analysis\n- **Query Language**: Cypher\n- **Integration**: Connected to Banking LLM\n\n**Day-to-Day Operations**:\n- Optimize graph queries\n- Manage graph indexes\n- Monitor query performance\n- Update graph schemas\n\n#### 8.5 Apache Kafka\n**Purpose**: Event streaming and message broker\n\n**Features**:\n- **Brokers**: 5 Kafka brokers\n- **Topics**: Service-specific topics\n- **Retention**: Configurable retention policies\n\n**Day-to-Day Operations**:\n- Monitor topic lag\n- Manage consumer groups\n- Configure topic partitions\n- Monitor broker health\n\n---\n\n### 9. AI/ML Infrastructure\n\n#### 9.1 GPU Support\n**Technologies**: NVIDIA CUDA, AMD ROCm\n\n**Features**:\n- **GPU Nodes**: 2 GPU nodes with NVIDIA Tesla T4\n- **Device Plugin**: NVIDIA Kubernetes device plugin\n- **Use Cases**: LLM inference, fraud detection models\n\n**Day-to-Day Operations**:\n- Monitor GPU utilization\n- Manage GPU node pools\n- Optimize model inference\n- Handle GPU memory issues\n\n#### 9.2 Model Management\n**Models Deployed**:\n- Banking LLM (GPT-2 based)\n- Fraud detection models\n- Credit scoring models\n- Graph neural networks\n\n**Day-to-Day Operations**:\n- Deploy new model versions\n- Monitor model performance\n- Manage model artifacts\n- A/B test model versions\n\n---\n\n## Infrastructure Topology\n\n```\n┌─────────────────────────────────────────────────────────────────┐\n│                        External Traffic                          │\n└────────────────────────────┬────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                     Apache APISIX Gateway                        │\n│  • Rate Limiting  • JWT Auth  • Routing  • Metrics              │\n└────────────────────────────┬────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                    Kubernetes Cluster (Banking Namespace)        │\n│                                                                   │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │  Microservices (216 services)                             │  │\n│  │  • Core Banking (72)  • AI/ML (72)  • Specialized (72)   │  │\n│  │                                                            │  │\n│  │  Each service has:                                         │  │\n│  │  ├─ Main Container (FastAPI/Python)                       │  │\n│  │  └─ Dapr Sidecar (state, pubsub, invocation)             │  │\n│  └──────────────────────────────────────────────────────────┘  │\n│                                                                   │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │  Infrastructure Services                                   │  │\n│  │  ├─ Keycloak (Authentication)                             │  │\n│  │  ├─ Permify (Authorization)                               │  │\n│  │  ├─ Temporal (Workflow Orchestration)                     │  │\n│  │  └─ Prometheus + Grafana (Monitoring)                     │  │\n│  └──────────────────────────────────────────────────────────┘  │\n└───────────────────────────────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                      Data Layer                                  │\n│  ┌──────────────┬──────────────┬──────────────┬──────────────┐ │\n│  │ PostgreSQL   │ Redis        │ TigerBeetle  │ FalkorDB     │ │\n│  │ (Relational) │ (Cache/State)│ (Ledger)     │ (Graph)      │ │\n│  └──────────────┴──────────────┴──────────────┴──────────────┘ │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │ Apache Kafka (Event Streaming)                            │  │\n│  └──────────────────────────────────────────────────────────┘  │\n└─────────────────────────────────────────────────────────────────┘\n```\n\n---\n\n## Infrastructure Categories\n\n### Category 1: Entry Layer\n- **Apache APISIX**: API Gateway, traffic management\n\n### Category 2: Orchestration Layer\n- **Kubernetes**: Container orchestration\n- **Docker**: Containerization\n\n### Category 3: Service Mesh Layer\n- **Dapr**: State management, pub/sub, service invocation\n\n### Category 4: Security Layer\n- **Keycloak**: Authentication (OAuth2/OIDC)\n- **Permify**: Authorization (ReBAC)\n\n### Category 5: Workflow Layer\n- **Temporal**: Durable workflow execution\n\n### Category 6: Data Layer\n- **PostgreSQL**: Relational data\n- **Redis**: Caching and state\n- **TigerBeetle**: Financial ledger\n- **FalkorDB**: Graph analytics\n- **Kafka**: Event streaming\n\n### Category 7: Compute Layer\n- **GPU Infrastructure**: CUDA/ROCm for AI/ML workloads\n\n---\n\n## Critical Operational Metrics\n\n### 1. API Gateway Metrics\n- Request rate per service\n- Error rate (4xx, 5xx)\n- Rate limit violations\n- Average response time\n\n### 2. Service Mesh Metrics\n- Dapr sidecar health\n- State store latency\n- Pub/sub message lag\n- Service invocation failures\n\n### 3. Workflow Metrics\n- Active workflows\n- Failed workflows\n- Workflow duration\n- Task queue depth\n\n### 4. Authentication Metrics\n- Login success/failure rate\n- Token expiration events\n- Active sessions\n- MFA adoption rate\n\n### 5. Database Metrics\n- Query latency\n- Connection pool utilization\n- Replication lag\n- Cache hit rate\n\n### 6. Kubernetes Metrics\n- Pod restarts\n- CPU/Memory utilization\n- HPA scaling events\n- Node health\n\n---\n\n## Next Steps\n\nThis analysis will be used to create a comprehensive training curriculum covering:\n\n1. **Foundational Knowledge**: Prerequisites for each technology\n2. **Hands-On Labs**: Practical exercises for each component\n3. **Troubleshooting Guides**: Common issues and solutions\n4. **External Resources**: Curated tutorials, courses, and documentation\n5. **Day-to-Day Runbooks**: Operational procedures for each component\n6. **Integration Patterns**: How components work together\n7. **Monitoring and Alerting**: Setting up observability\n8. **Disaster Recovery**: Backup and restore procedures\n\n---\n\n**Document Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Platform Version**: V7.0\n",
+    "sections": [
+      {
+        "title": "Executive Summary",
+        "content": "\nThe Nigerian Banking Platform employs a **modern cloud-native microservices architecture** with comprehensive infrastructure components designed for scalability, resilience, and high performance. The platform consists of **216 backend services** with full infrastructure integration across API gateway, service mesh, workflow orchestration, authentication, authorization, and container orchestration layers.\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Infrastructure Component Inventory",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "1. API Gateway - Apache APISIX",
+        "content": "\n**Purpose**: Centralized API management, routing, rate limiting, authentication, and traffic control\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Route Files**: 66 files (JSON + YAML per service)\n- **Key Features**:\n  - Round-robin load balancing\n  - Rate limiting (500 requests/60s per service)\n  - JWT authentication\n  - CORS configuration\n  - Prometheus metrics integration\n  - Request/response rewriting\n\n**Example Configuration** (`infrastructure/integration/apisix_routes/account-management-service/route.yaml`):\n```yaml\nuri: /api/v1/account-management-service/*\nupstream:\n  type: roundrobin\n  nodes:\n    account-management-service:8001: 1\nplugins:\n  limit-count:\n    count: 500\n    time_window: 60\n  jwt-auth:\n    key: banking-platform-key\n  prometheus:\n    prefer_name: true\n```\n\n**Day-to-Day Operations**:\n- Monitor rate limit violations\n- Update routing rules for new services\n- Manage API versioning\n- Configure SSL/TLS certificates\n- Analyze traffic patterns via Prometheus\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "2. Microservices Framework - Dapr (Distributed Application Runtime)",
+        "content": "\n**Purpose**: Service mesh providing state management, pub/sub messaging, service invocation, and distributed tracing\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Component Files**: 99 files (3 per service: annotations, statestore, pubsub)\n- **Key Components**:\n  - **State Store**: Redis-based distributed state management\n  - **Pub/Sub**: Kafka-based event streaming\n  - **Service Invocation**: mTLS-secured inter-service communication\n\n**Example Configurations**:\n\n**State Store** (`infrastructure/integration/dapr_configs/account-management-service/statestore-component.yaml`):\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-statestore\n  namespace: banking\nspec:\n  type: state.redis\n  metadata:\n  - name: redisHost\n    value: redis:6379\n  - name: actorStateStore\n    value: 'true'\n```\n\n**Pub/Sub** (`infrastructure/integration/dapr_configs/account-management-service/pubsub-component.yaml`):\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-pubsub\n  namespace: banking\nspec:\n  type: pubsub.kafka\n  metadata:\n  - name: brokers\n    value: kafka:9092\n  - name: consumerGroup\n    value: account-management-service\n```\n\n**Day-to-Day Operations**:\n- Monitor Dapr sidecar health\n- Manage state store backups\n- Configure pub/sub topics\n- Troubleshoot service invocation issues\n- Review distributed tracing data\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "3. Workflow Orchestration - Temporal",
+        "content": "\n**Purpose**: Durable workflow execution for long-running business processes, saga patterns, and distributed transactions\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Workflow Files**: 99 files (workflow.py, worker.py, temporal_config.json per service)\n- **Key Features**:\n  - Durable execution with automatic retries\n  - Saga pattern for distributed transactions\n  - Workflow versioning\n  - Activity timeouts and compensation\n\n**Example Configuration** (`infrastructure/integration/temporal_workflows/account-management-service/temporal_config.json`):\n```json\n{\n  \"service\": \"account-management-service\",\n  \"task_queue\": \"account-management-service-tasks\",\n  \"namespace\": \"banking\",\n  \"temporal_address\": \"temporal:7233\"\n}\n```\n\n**Common Workflow Patterns**:\n- **Account Opening**: Multi-step KYC verification, credit check, account creation\n- **Loan Processing**: Application → Approval → Disbursement → Repayment\n- **Payment Processing**: Validation → Ledger update → Notification → Reconciliation\n\n**Day-to-Day Operations**:\n- Monitor workflow execution status\n- Handle failed workflows and retries\n- Update workflow definitions\n- Manage task queues\n- Review workflow history and audit logs\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "4. Authentication - Keycloak",
+        "content": "\n**Purpose**: Identity and Access Management (IAM), Single Sign-On (SSO), OAuth2/OIDC provider\n\n**Configuration Coverage**:\n- **Services Configured**: 33 services\n- **Client Files**: 66 files (client.json, keycloak_config.py per service)\n- **Key Features**:\n  - OAuth2/OIDC authentication\n  - Service account authentication\n  - Role-based access control (RBAC)\n  - Token lifecycle management\n  - Multi-realm support\n\n**Example Configuration** (`infrastructure/integration/keycloak_configs/account-management-service/client.json`):\n```json\n{\n  \"clientId\": \"account-management-service\",\n  \"enabled\": true,\n  \"clientAuthenticatorType\": \"client-secret\",\n  \"protocol\": \"openid-connect\",\n  \"serviceAccountsEnabled\": true,\n  \"authorizationServicesEnabled\": true,\n  \"attributes\": {\n    \"access.token.lifespan\": \"3600\",\n    \"client.session.idle.timeout\": \"1800\"\n  }\n}\n```\n\n**Day-to-Day Operations**:\n- Manage user accounts and roles\n- Configure client applications\n- Monitor authentication failures\n- Rotate client secrets\n- Configure multi-factor authentication (MFA)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "5. Authorization - Permify",
+        "content": "\n**Purpose**: Fine-grained authorization and policy management using relationship-based access control (ReBAC)\n\n**Configuration Coverage**:\n- **Policy Files**: Located in `infrastructure/integration/permify_policies/`\n- **Key Features**:\n  - Relationship-based access control\n  - Hierarchical permissions\n  - Dynamic policy evaluation\n  - Audit logging\n\n**Authorization Patterns**:\n- **Account Access**: Users can only access their own accounts\n- **Transaction Approval**: Multi-level approval workflows\n- **Admin Operations**: Role-based administrative access\n- **Data Privacy**: Field-level access control\n\n**Day-to-Day Operations**:\n- Define and update authorization policies\n- Monitor policy violations\n- Audit access patterns\n- Manage permission hierarchies\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "6. Container Orchestration - Kubernetes",
+        "content": "\n**Purpose**: Container orchestration, auto-scaling, self-healing, and declarative deployment\n\n**Configuration Coverage**:\n- **Deployment Files**: 86 deployment.yaml files\n- **Key Resources**:\n  - Deployments with replica sets\n  - Services (ClusterIP, LoadBalancer)\n  - ConfigMaps and Secrets\n  - HorizontalPodAutoscalers (HPA)\n  - PersistentVolumeClaims (PVC)\n\n**Example Deployment** (`backend/services/account-management-service/k8s/deployment.yaml`):\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: account-management-service\n  namespace: banking\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n      - name: account-management-service\n        image: account-management-service:latest\n        ports:\n        - containerPort: 8000\n        resources:\n          requests:\n            memory: \"256Mi\"\n            cpu: \"250m\"\n          limits:\n            memory: \"512Mi\"\n            cpu: \"500m\"\n        livenessProbe:\n          httpGet:\n            path: /health\n            port: 8000\n        readinessProbe:\n          httpGet:\n            path: /ready\n            port: 8000\n```\n\n**Day-to-Day Operations**:\n- Deploy new service versions\n- Scale deployments up/down\n- Monitor pod health and resource usage\n- Troubleshoot pod failures\n- Manage secrets and config maps\n- Review HPA metrics and scaling events\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "7. Containerization - Docker",
+        "content": "\n**Purpose**: Application containerization for consistent deployment across environments\n\n**Configuration Coverage**:\n- **Dockerfiles**: 52 Dockerfile configurations\n- **Multi-Stage Builds**: Optimized image sizes\n- **Base Images**: Python 3.11, Node.js 22, custom AI/ML images\n\n**Example Dockerfile Pattern**:\n```dockerfile\nFROM python:3.11-slim\n\nWORKDIR /app\n\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY . .\n\nEXPOSE 8000\n\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n**Day-to-Day Operations**:\n- Build and tag Docker images\n- Push images to container registry\n- Scan images for vulnerabilities\n- Optimize image sizes\n- Manage image versions and tags\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "8. Database Infrastructure",
+        "content": "\n#### 8.1 PostgreSQL\n**Purpose**: Primary relational database for transactional data\n\n**Features**:\n- **Models**: 129 database models\n- **Replication**: Master-slave replication\n- **Backup**: Automated daily backups\n- **Connection Pooling**: PgBouncer\n\n**Day-to-Day Operations**:\n- Monitor query performance\n- Manage database migrations\n- Perform backups and restores\n- Optimize slow queries\n- Monitor replication lag\n\n#### 8.2 Redis\n**Purpose**: Caching, session storage, and Dapr state store\n\n**Features**:\n- **Cluster**: 6-node Redis cluster\n- **Persistence**: RDB + AOF\n- **Use Cases**: Session cache, rate limiting, distributed locks\n\n**Day-to-Day Operations**:\n- Monitor cache hit rates\n- Manage memory usage\n- Configure eviction policies\n- Monitor cluster health\n\n#### 8.3 TigerBeetle\n**Purpose**: High-performance distributed ledger for financial transactions\n\n**Features**:\n- **Performance**: Millions of TPS\n- **Consistency**: ACID guarantees\n- **Audit**: Complete transaction history\n\n**Day-to-Day Operations**:\n- Monitor ledger performance\n- Verify transaction integrity\n- Manage ledger backups\n- Review audit logs\n\n#### 8.4 FalkorDB\n**Purpose**: Graph database for relationship analytics\n\n**Features**:\n- **Use Cases**: Fraud detection, customer relationship analysis\n- **Query Language**: Cypher\n- **Integration**: Connected to Banking LLM\n\n**Day-to-Day Operations**:\n- Optimize graph queries\n- Manage graph indexes\n- Monitor query performance\n- Update graph schemas\n\n#### 8.5 Apache Kafka\n**Purpose**: Event streaming and message broker\n\n**Features**:\n- **Brokers**: 5 Kafka brokers\n- **Topics**: Service-specific topics\n- **Retention**: Configurable retention policies\n\n**Day-to-Day Operations**:\n- Monitor topic lag\n- Manage consumer groups\n- Configure topic partitions\n- Monitor broker health\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "9. AI/ML Infrastructure",
+        "content": "\n#### 9.1 GPU Support\n**Technologies**: NVIDIA CUDA, AMD ROCm\n\n**Features**:\n- **GPU Nodes**: 2 GPU nodes with NVIDIA Tesla T4\n- **Device Plugin**: NVIDIA Kubernetes device plugin\n- **Use Cases**: LLM inference, fraud detection models\n\n**Day-to-Day Operations**:\n- Monitor GPU utilization\n- Manage GPU node pools\n- Optimize model inference\n- Handle GPU memory issues\n\n#### 9.2 Model Management\n**Models Deployed**:\n- Banking LLM (GPT-2 based)\n- Fraud detection models\n- Credit scoring models\n- Graph neural networks\n\n**Day-to-Day Operations**:\n- Deploy new model versions\n- Monitor model performance\n- Manage model artifacts\n- A/B test model versions\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Infrastructure Topology",
+        "content": "\n```\n┌─────────────────────────────────────────────────────────────────┐\n│                        External Traffic                          │\n└────────────────────────────┬────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                     Apache APISIX Gateway                        │\n│  • Rate Limiting  • JWT Auth  • Routing  • Metrics              │\n└────────────────────────────┬────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                    Kubernetes Cluster (Banking Namespace)        │\n│                                                                   │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │  Microservices (216 services)                             │  │\n│  │  • Core Banking (72)  • AI/ML (72)  • Specialized (72)   │  │\n│  │                                                            │  │\n│  │  Each service has:                                         │  │\n│  │  ├─ Main Container (FastAPI/Python)                       │  │\n│  │  └─ Dapr Sidecar (state, pubsub, invocation)             │  │\n│  └──────────────────────────────────────────────────────────┘  │\n│                                                                   │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │  Infrastructure Services                                   │  │\n│  │  ├─ Keycloak (Authentication)                             │  │\n│  │  ├─ Permify (Authorization)                               │  │\n│  │  ├─ Temporal (Workflow Orchestration)                     │  │\n│  │  └─ Prometheus + Grafana (Monitoring)                     │  │\n│  └──────────────────────────────────────────────────────────┘  │\n└───────────────────────────────────────────────────────────────┘\n                             │\n                             ▼\n┌─────────────────────────────────────────────────────────────────┐\n│                      Data Layer                                  │\n│  ┌──────────────┬──────────────┬──────────────┬──────────────┐ │\n│  │ PostgreSQL   │ Redis        │ TigerBeetle  │ FalkorDB     │ │\n│  │ (Relational) │ (Cache/State)│ (Ledger)     │ (Graph)      │ │\n│  └──────────────┴──────────────┴──────────────┴──────────────┘ │\n│  ┌──────────────────────────────────────────────────────────┐  │\n│  │ Apache Kafka (Event Streaming)                            │  │\n│  └──────────────────────────────────────────────────────────┘  │\n└─────────────────────────────────────────────────────────────────┘\n```\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Infrastructure Categories",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Category 1: Entry Layer",
+        "content": "- **Apache APISIX**: API Gateway, traffic management\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 2: Orchestration Layer",
+        "content": "- **Kubernetes**: Container orchestration\n- **Docker**: Containerization\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 3: Service Mesh Layer",
+        "content": "- **Dapr**: State management, pub/sub, service invocation\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 4: Security Layer",
+        "content": "- **Keycloak**: Authentication (OAuth2/OIDC)\n- **Permify**: Authorization (ReBAC)\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 5: Workflow Layer",
+        "content": "- **Temporal**: Durable workflow execution\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 6: Data Layer",
+        "content": "- **PostgreSQL**: Relational data\n- **Redis**: Caching and state\n- **TigerBeetle**: Financial ledger\n- **FalkorDB**: Graph analytics\n- **Kafka**: Event streaming\n\n",
+        "level": 3
+      },
+      {
+        "title": "Category 7: Compute Layer",
+        "content": "- **GPU Infrastructure**: CUDA/ROCm for AI/ML workloads\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Critical Operational Metrics",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "1. API Gateway Metrics",
+        "content": "- Request rate per service\n- Error rate (4xx, 5xx)\n- Rate limit violations\n- Average response time\n\n",
+        "level": 3
+      },
+      {
+        "title": "2. Service Mesh Metrics",
+        "content": "- Dapr sidecar health\n- State store latency\n- Pub/sub message lag\n- Service invocation failures\n\n",
+        "level": 3
+      },
+      {
+        "title": "3. Workflow Metrics",
+        "content": "- Active workflows\n- Failed workflows\n- Workflow duration\n- Task queue depth\n\n",
+        "level": 3
+      },
+      {
+        "title": "4. Authentication Metrics",
+        "content": "- Login success/failure rate\n- Token expiration events\n- Active sessions\n- MFA adoption rate\n\n",
+        "level": 3
+      },
+      {
+        "title": "5. Database Metrics",
+        "content": "- Query latency\n- Connection pool utilization\n- Replication lag\n- Cache hit rate\n\n",
+        "level": 3
+      },
+      {
+        "title": "6. Kubernetes Metrics",
+        "content": "- Pod restarts\n- CPU/Memory utilization\n- HPA scaling events\n- Node health\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Next Steps",
+        "content": "\nThis analysis will be used to create a comprehensive training curriculum covering:\n\n1. **Foundational Knowledge**: Prerequisites for each technology\n2. **Hands-On Labs**: Practical exercises for each component\n3. **Troubleshooting Guides**: Common issues and solutions\n4. **External Resources**: Curated tutorials, courses, and documentation\n5. **Day-to-Day Runbooks**: Operational procedures for each component\n6. **Integration Patterns**: How components work together\n7. **Monitoring and Alerting**: Setting up observability\n8. **Disaster Recovery**: Backup and restore procedures\n\n---\n\n**Document Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Platform Version**: V7.0\n\n",
+        "level": 2
+      }
+    ]
+  },
+  "curriculumContent": {
+    "title": "Complete Curriculum",
+    "content": "# Nigerian Banking Platform: Infrastructure & DevOps Curriculum\n\n## A Comprehensive Onboarding Guide for New Engineers\n\n**Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Author**: Manus AI\n\n---\n\n## Introduction\n\nWelcome to the Nigerian Banking Platform engineering team. This document serves as your comprehensive onboarding curriculum for understanding, operating, and contributing to the platform's robust infrastructure. The platform is built on a modern, cloud-native microservices architecture, designed for high scalability, resilience, and performance. It comprises 216 backend services, each integrated into a sophisticated ecosystem of infrastructure components.\n\nThis curriculum is structured into modules, each focusing on a core technology within our stack. You will find both internal, platform-specific analysis and curated external resources to guide your learning. The goal is to equip you with the knowledge and practical skills needed to become a proficient contributor to our platform.\n\n### Recommended Learning Path\n\nWe recommend the following sequence to structure your learning over the first few months:\n\n| Month   | Focus                        | Key Technologies                                    |\n| :------ | :--------------------------- | :-------------------------------------------------- |\n| **One**   | **Foundations**              | Docker, Kubernetes, Python/FastAPI, PostgreSQL      |\n| **Two**   | **Microservices Infrastructure** | Apache APISIX, Dapr, Redis, Apache Kafka            |\n| **Three** | **Advanced Topics**            | Temporal, Keycloak, Prometheus & Grafana            |\n| **Four**  | **Production Operations**      | Monitoring, Troubleshooting, Performance, DR        |\n\n---\n\n## Module 1: Containerization with Docker\n\n### Internal Analysis: Docker at the Nigerian Banking Platform\n\nDocker is the foundation of our deployment strategy, ensuring that every service runs in a consistent, isolated environment from development to production. We maintain **52 distinct Dockerfiles** across the codebase, primarily for our Python/FastAPI backend services and their frontend counterparts.\n\nOur Dockerfiles are optimized for production using multi-stage builds to create lean final images. The standard base image is `python:3.11-slim`, which provides a minimal environment with the necessary Python runtime. This practice significantly reduces the attack surface and improves image pull times.\n\n**Example Dockerfile Pattern**:\n\n```dockerfile\n# Stage 1: Build stage\nFROM python:3.11-slim as builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\n# Stage 2: Final stage\nFROM python:3.11-slim\nWORKDIR /app\nCOPY --from=builder /app /app\nCOPY . .\nEXPOSE 8000\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n**Day-to-Day Operations**:\n- Building and tagging images for new service versions.\n- Pushing images to our internal container registry.\n- Scanning images for vulnerabilities using integrated security tools.\n- Optimizing Dockerfiles to reduce image size and build time.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Docker 101 Tutorial](https://www.docker.com/101-tutorial/)\n*   **Video Course**: [Docker Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=pTFZFxd4hOI)\n*   **Interactive Tutorial**: [Docker Curriculum](https://docker-curriculum.com/)\n*   **Full Course**: [Complete Docker Course - From BEGINNER to PRO! (YouTube)](https://www.youtube.com/watch?v=RqTEHSBrYFw)\n\n---\n\n## Module 2: Container Orchestration with Kubernetes\n\n### Internal Analysis: Kubernetes at the Nigerian Banking Platform\n\nKubernetes is the orchestrator for our entire microservices ecosystem. We manage **86 distinct `deployment.yaml` files**, each defining how a service should be deployed, scaled, and managed within our cluster. All services run within the `banking` namespace to ensure logical separation.\n\nOur Kubernetes deployments are configured for high availability and resilience. Key features of our setup include:\n\n*   **Replica Sets**: Most services run with a minimum of 2 replicas.\n*   **Health Checks**: Liveness and readiness probes are mandatory for all services to enable self-healing.\n*   **Resource Management**: CPU and memory requests and limits are defined to ensure resource fairness and prevent noisy neighbors.\n*   **Auto-scaling**: HorizontalPodAutoscalers (HPAs) are configured for critical services to automatically scale based on CPU and memory usage.\n\n**Example Kubernetes Deployment** (`backend/services/account-management-service/k8s/deployment.yaml`):\n\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: account-management-service\n  namespace: banking\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n      - name: account-management-service\n        image: account-management-service:latest\n        ports:\n        - containerPort: 8000\n        resources:\n          requests:\n            memory: \"256Mi\"\n            cpu: \"250m\"\n          limits:\n            memory: \"512Mi\"\n            cpu: \"500m\"\n        livenessProbe:\n          httpGet:\n            path: /health\n            port: 8000\n        readinessProbe:\n          httpGet:\n            path: /ready\n            port: 8000\n```\n\n**Day-to-Day Operations**:\n- Deploying new service versions using our CI/CD pipeline.\n- Monitoring pod health and resource utilization via Grafana.\n- Troubleshooting deployment issues and analyzing pod logs.\n- Managing ConfigMaps and Secrets for service configuration.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Learn Kubernetes Basics](https://kubernetes.io/docs/tutorials/kubernetes-basics/)\n*   **Video Course**: [Kubernetes Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=X48VuDVv0do)\n*   **Free Course**: [Introduction to Kubernetes (edX)](https://kubernetes.io/training/)\n*   **GitHub Learning Path**: [Kubernetes Learning Path](https://github.com/NotHarshhaa/kubernetes-learning-path)\n\n---\n\n## Module 3: API Gateway with Apache APISIX\n\n### Internal Analysis: APISIX at the Nigerian Banking Platform\n\nApache APISIX serves as the single entry point for all external traffic to our platform. It provides centralized API management, routing, security, and monitoring. We have **33 services** configured with APISIX, each having both JSON and YAML route definitions.\n\nOur APISIX configuration enforces several key policies:\n\n*   **JWT Authentication**: All incoming requests must have a valid JWT token issued by Keycloak.\n*   **Rate Limiting**: A default rate limit of 500 requests per 60 seconds is applied to each service to prevent abuse.\n*   **Load Balancing**: APISIX uses a round-robin strategy to distribute traffic across service replicas.\n*   **Monitoring**: The Prometheus plugin is enabled to export detailed metrics to our monitoring stack.\n\n**Example APISIX Route** (`infrastructure/integration/apisix_routes/account-management-service/route.yaml`):\n\n```yaml\nuri: /api/v1/account-management-service/*\nplugins:\n  jwt-auth:\n    key: banking-platform-key\n  limit-count:\n    count: 500\n    time_window: 60\n  prometheus:\n    prefer_name: true\nupstream:\n  type: roundrobin\n  nodes:\n    account-management-service:8001: 1\n```\n\n**Day-to-Day Operations**:\n- Adding or updating routes for new or modified services.\n- Monitoring API traffic and error rates in Grafana.\n- Adjusting rate limits based on service requirements.\n- Managing SSL certificates for custom domains.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Getting Started Guide](https://apisix.apache.org/docs/apisix/getting-started/README/)\n*   **Video Tutorial**: [Getting Started with Apache APISIX (YouTube)](https://www.youtube.com/watch?v=dUOjJkb61so)\n*   **Hands-On Lab**: [APISIX Workshop](https://boburmirzo.github.io/apisix-workshop/)\n*   **Tutorial Playlist**: [Apache APISIX Tutorials](https://www.youtube.com/playlist?list=PLAoKZlos1szkUjDjkWlBbUixaJC9BoqDk)\n\n---\n\n## Module 4: Microservices Framework with Dapr\n\n### Internal Analysis: Dapr at the Nigerian Banking Platform\n\nDapr (Distributed Application Runtime) is the connective tissue of our microservices architecture. It provides a consistent set of building blocks for state management, pub/sub messaging, and service invocation. We have **33 services** fully integrated with Dapr, each with its own set of component configurations.\n\nKey Dapr components in our platform:\n\n*   **State Store**: We use a shared Redis cluster as our state store, enabling services to persist state durably.\n*   **Pub/Sub**: Apache Kafka is our pub/sub message broker, facilitating asynchronous, event-driven communication between services.\n*   **Service Invocation**: Dapr provides secure and reliable service-to-service communication with automatic mTLS and retries.\n\n**Example Dapr Component** (`infrastructure/integration/dapr_configs/account-management-service/statestore-component.yaml`):\n\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-statestore\n  namespace: banking\nspec:\n  type: state.redis\n  metadata:\n  - name: redisHost\n    value: redis:6379\n  - name: actorStateStore\n    value: 'true'\n```\n\n**Day-to-Day Operations**:\n- Configuring new pub/sub topics for inter-service communication.\n- Monitoring the health of Dapr sidecars.\n- Using the Dapr dashboard to inspect state and troubleshoot issues.\n- Reviewing distributed traces to understand request flows.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Dapr Getting Started](https://docs.dapr.io/getting-started/)\n*   **Video Tutorial**: [Introduction to Dapr (YouTube)](https://www.youtube.com/watch?v=EASb_r6vEoM)\n*   **Hands-On Course**: [Microservices Communication using Dapr (Microsoft Learn)](https://learn.microsoft.com/en-us/azure/container-apps/microservices-dapr-service-invoke)\n*   **Workshop**: [Hands-on Dapr 101 Workshop](https://www.diagrid.io/events/hands-on-dapr-101-university-workshop-aug-2025)\n\n---\n\n## Module 5: Workflow Orchestration with Temporal\n\n### Internal Analysis: Temporal at the Nigerian Banking Platform\n\nTemporal is our engine for orchestrating long-running, durable business processes. It allows us to write complex workflows as simple code, with the platform handling failures, retries, and state management. We have **33 services** with Temporal workflow definitions, covering critical processes like account opening, loan applications, and payment processing.\n\nOur workflows are written in Python and follow a standard pattern of a workflow definition and one or more activity definitions. This separation allows us to manage the orchestration logic (workflow) independently from the business logic implementation (activities).\n\n**Common Workflow Patterns**:\n- **Account Opening**: A multi-step process involving KYC, credit checks, and account provisioning.\n- **Saga Pattern**: Used for distributed transactions that span multiple services, with built-in compensation logic.\n\n**Example Temporal Configuration** (`infrastructure/integration/temporal_workflows/account-management-service/temporal_config.json`):\n\n```json\n{\n  \"service\": \"account-management-service\",\n  \"task_queue\": \"account-management-service-tasks\",\n  \"namespace\": \"banking\",\n  \"temporal_address\": \"temporal:7233\"\n}\n```\n\n**Day-to-Day Operations**:\n- Monitoring the status of active and failed workflows via the Temporal Web UI.\n- Developing and deploying new workflow versions.\n- Analyzing workflow history to debug issues and understand business processes.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Temporal Getting Started](https://learn.temporal.io/getting_started/)\n*   **Video Tutorial**: [Temporal Introduction and Demo (YouTube)](https://www.youtube.com/watch?v=23rX78xqYUg)\n*   **Free Courses**: [Learn Temporal (Official Portal)](https://learn.temporal.io/)\n*   **Article**: [Getting Started With Temporal.io (Medium)](https://medium.com/@hanhuss035/getting-started-with-temporal-io-24a9f145257c)\n\n---\n\n## Module 6: Authentication with Keycloak\n\n### Internal Analysis: Keycloak at the Nigerian Banking Platform\n\nKeycloak is our centralized Identity and Access Management (IAM) solution. It provides authentication for all users and services, implementing the OAuth 2.0 and OpenID Connect (OIDC) standards. We have **33 services** configured as clients in Keycloak, each with its own client ID and secret.\n\nKeycloak is responsible for:\n- Issuing JWT tokens to authenticated users and services.\n- Managing user identities, roles, and permissions.\n- Providing Single Sign-On (SSO) capabilities across our applications.\n\n**Example Keycloak Client Configuration** (`infrastructure/integration/keycloak_configs/account-management-service/client.json`):\n\n```json\n{\n  \"clientId\": \"account-management-service\",\n  \"enabled\": true,\n  \"clientAuthenticatorType\": \"client-secret\",\n  \"protocol\": \"openid-connect\",\n  \"serviceAccountsEnabled\": true\n}\n```\n\n**Day-to-Day Operations**:\n- Managing user accounts, roles, and groups.\n- Configuring new clients for new services or applications.\n- Monitoring authentication logs for suspicious activity.\n- Rotating client secrets as part of our security policy.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Keycloak Guides](https://www.keycloak.org/guides)\n*   **Video Tutorial**: [Getting Started With Keycloak (YouTube)](https://www.youtube.com/watch?v=fvxQ8bW0vO8)\n*   **Tutorial**: [Keycloak Tutorial for Beginners (Master the Boss)](https://www.mastertheboss.com/keycloak/introduction-to-keycloak/)\n*   **OAuth 2.0 Guide**: [How to Architect OAuth 2.0 with Keycloak (Red Hat)](https://www.redhat.com/en/blog/oauth-20-authentication-keycloak)\n\n---\n\n## Module 7: Monitoring with Prometheus & Grafana\n\n### Internal Analysis: Monitoring at the Nigerian Banking Platform\n\nOur monitoring stack is built on Prometheus for metrics collection and Grafana for visualization. This combination provides deep visibility into the health and performance of our entire platform.\n\n*   **Prometheus**: Scrapes metrics from all services, Kubernetes components, and infrastructure services like APISIX and Dapr. We use PromQL (Prometheus Query Language) to query this data and configure alerts.\n*   **Grafana**: Provides a unified view of our platform's health through a series of dashboards. We have dashboards for API traffic, service health, Kubernetes cluster status, and database performance.\n\n**Day-to-Day Operations**:\n- Creating or updating Grafana dashboards to visualize new metrics.\n- Writing and tuning PromQL queries for alerting and analysis.\n- Investigating alerts to identify and resolve issues.\n- Analyzing performance trends to inform capacity planning.\n\n### External Learning Resources\n\n*   **Official Documentation**: [Get started with Grafana and Prometheus](https://grafana.com/docs/grafana/latest/getting-started/get-started-grafana-prometheus/)\n*   **Video Course**: [Prometheus FULL Course (YouTube)](https://www.youtube.com/watch?v=zZcxdWJ_tRc)\n*   **Tutorial**: [Introduction to Monitoring with Prometheus & Grafana (Medium)](https://medium.com/@dineshmurali/introduction-to-monitoring-with-prometheus-grafana-ea338d93b2d9)\n*   **Hands-On Course**: [Prometheus: The Complete Hands-On for Monitoring & Alerting (Udemy)](https://www.udemy.com/course/prometheus-course/)\n\n---\n\n## Module 8: Data Layer Technologies\n\n### Internal Analysis: Our Data Layer\n\nOur platform utilizes a polyglot persistence strategy, using different databases for different purposes.\n\n| Database        | Purpose                               | Key Features                                |\n| :-------------- | :------------------------------------ | :------------------------------------------ |\n| **PostgreSQL**  | Primary relational database           | 129 models, master-slave replication, PgBouncer |\n| **Redis**         | Caching, session storage, Dapr state  | 6-node cluster, RDB + AOF persistence       |\n| **TigerBeetle**   | High-performance financial ledger     | ACID guarantees, millions of TPS            |\n| **FalkorDB**      | Graph database for analytics          | Cypher query language, LLM integration      |\n| **Apache Kafka**  | Event streaming and message broker    | 5 brokers, service-specific topics          |\n\n### External Learning Resources\n\n*   **PostgreSQL**: [PostgreSQL Tutorial (Official)](https://www.postgresql.org/docs/current/tutorial.html)\n*   **Redis**: [Redis University](https://university.redis.io/)\n*   **Apache Kafka**: [Intro to Apache Kafka (Confluent)](https://developer.confluent.io/what-is-apache-kafka/)\n\n---\n\n## Hands-On Labs\n\nTo solidify your understanding, you are expected to complete the following hands-on exercises within your first month.\n\n1.  **Deploy a New Microservice**:\n    *   Create a simple \"Hello World\" FastAPI service.\n    *   Write a Dockerfile and build a container image.\n    *   Write a Kubernetes `deployment.yaml` and `service.yaml`.\n    *   Deploy the service to the staging Kubernetes cluster.\n\n2.  **Expose the Service via APISIX**:\n    *   Create an APISIX route configuration for your new service.\n    *   Add a JWT authentication plugin to the route.\n    *   Test that you can access your service through the API gateway.\n\n3.  **Integrate with Dapr**:\n    *   Add Dapr annotations to your Kubernetes deployment.\n    *   Use the Dapr state management API to save and retrieve data.\n    *   Publish a message to a Kafka topic and subscribe to it from another service.\n\n4.  **Create a Grafana Dashboard**:\n    *   Instrument your service with custom Prometheus metrics.\n    *   Create a new dashboard in Grafana.\n    *   Add panels to visualize request rate, latency, and error rate for your service.\n\n## Conclusion\n\nThis curriculum provides the foundational knowledge required to operate and contribute to the Nigerian Banking Platform. We encourage you to be curious, ask questions, and engage with your fellow engineers. Welcome to the team!\n\n### Getting Help\n\n*   **Internal Slack**: Join the `#devops` and `#backend` channels for questions and discussions.\n*   **Mentorship**: You will be assigned a mentor to guide you through your onboarding process.\n*   **Documentation**: Explore the extensive documentation in our internal Confluence space.\n\n---\n\n### References\n\n*   [1] Apache APISIX Documentation. (2025). Retrieved from https://apisix.apache.org/\n*   [2] Dapr Documentation. (2025). Retrieved from https://dapr.io/\n*   [3] Temporal Documentation. (2025). Retrieved from https://temporal.io/\n*   [4] Keycloak Documentation. (2025). Retrieved from https://www.keycloak.org/\n*   [5] Kubernetes Documentation. (2025). Retrieved from https://kubernetes.io/\n*   [6] Docker Documentation. (2025). Retrieved from https://www.docker.com/\n*   [7] PostgreSQL Documentation. (2025). Retrieved from https://www.postgresql.org/\n*   [8] Redis Documentation. (2025). Retrieved from https://redis.io/\n*   [9] Apache Kafka Documentation. (2025). Retrieved from https://kafka.apache.org/\n*   [10] Prometheus Documentation. (2025). Retrieved from https://prometheus.io/\n*   [11] Grafana Documentation. (2025). Retrieved from https://grafana.com/\n",
+    "sections": [
+      {
+        "title": "A Comprehensive Onboarding Guide for New Engineers",
+        "content": "\n**Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Author**: Manus AI\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Introduction",
+        "content": "\nWelcome to the Nigerian Banking Platform engineering team. This document serves as your comprehensive onboarding curriculum for understanding, operating, and contributing to the platform's robust infrastructure. The platform is built on a modern, cloud-native microservices architecture, designed for high scalability, resilience, and performance. It comprises 216 backend services, each integrated into a sophisticated ecosystem of infrastructure components.\n\nThis curriculum is structured into modules, each focusing on a core technology within our stack. You will find both internal, platform-specific analysis and curated external resources to guide your learning. The goal is to equip you with the knowledge and practical skills needed to become a proficient contributor to our platform.\n\n",
+        "level": 2
+      },
+      {
+        "title": "Recommended Learning Path",
+        "content": "\nWe recommend the following sequence to structure your learning over the first few months:\n\n| Month   | Focus                        | Key Technologies                                    |\n| :------ | :--------------------------- | :-------------------------------------------------- |\n| **One**   | **Foundations**              | Docker, Kubernetes, Python/FastAPI, PostgreSQL      |\n| **Two**   | **Microservices Infrastructure** | Apache APISIX, Dapr, Redis, Apache Kafka            |\n| **Three** | **Advanced Topics**            | Temporal, Keycloak, Prometheus & Grafana            |\n| **Four**  | **Production Operations**      | Monitoring, Troubleshooting, Performance, DR        |\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 1: Containerization with Docker",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Docker at the Nigerian Banking Platform",
+        "content": "\nDocker is the foundation of our deployment strategy, ensuring that every service runs in a consistent, isolated environment from development to production. We maintain **52 distinct Dockerfiles** across the codebase, primarily for our Python/FastAPI backend services and their frontend counterparts.\n\nOur Dockerfiles are optimized for production using multi-stage builds to create lean final images. The standard base image is `python:3.11-slim`, which provides a minimal environment with the necessary Python runtime. This practice significantly reduces the attack surface and improves image pull times.\n\n**Example Dockerfile Pattern**:\n\n```dockerfile\n# Stage 1: Build stage\nFROM python:3.11-slim as builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\n# Stage 2: Final stage\nFROM python:3.11-slim\nWORKDIR /app\nCOPY --from=builder /app /app\nCOPY . .\nEXPOSE 8000\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n**Day-to-Day Operations**:\n- Building and tagging images for new service versions.\n- Pushing images to our internal container registry.\n- Scanning images for vulnerabilities using integrated security tools.\n- Optimizing Dockerfiles to reduce image size and build time.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Docker 101 Tutorial](https://www.docker.com/101-tutorial/)\n*   **Video Course**: [Docker Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=pTFZFxd4hOI)\n*   **Interactive Tutorial**: [Docker Curriculum](https://docker-curriculum.com/)\n*   **Full Course**: [Complete Docker Course - From BEGINNER to PRO! (YouTube)](https://www.youtube.com/watch?v=RqTEHSBrYFw)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 2: Container Orchestration with Kubernetes",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Kubernetes at the Nigerian Banking Platform",
+        "content": "\nKubernetes is the orchestrator for our entire microservices ecosystem. We manage **86 distinct `deployment.yaml` files**, each defining how a service should be deployed, scaled, and managed within our cluster. All services run within the `banking` namespace to ensure logical separation.\n\nOur Kubernetes deployments are configured for high availability and resilience. Key features of our setup include:\n\n*   **Replica Sets**: Most services run with a minimum of 2 replicas.\n*   **Health Checks**: Liveness and readiness probes are mandatory for all services to enable self-healing.\n*   **Resource Management**: CPU and memory requests and limits are defined to ensure resource fairness and prevent noisy neighbors.\n*   **Auto-scaling**: HorizontalPodAutoscalers (HPAs) are configured for critical services to automatically scale based on CPU and memory usage.\n\n**Example Kubernetes Deployment** (`backend/services/account-management-service/k8s/deployment.yaml`):\n\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: account-management-service\n  namespace: banking\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n      - name: account-management-service\n        image: account-management-service:latest\n        ports:\n        - containerPort: 8000\n        resources:\n          requests:\n            memory: \"256Mi\"\n            cpu: \"250m\"\n          limits:\n            memory: \"512Mi\"\n            cpu: \"500m\"\n        livenessProbe:\n          httpGet:\n            path: /health\n            port: 8000\n        readinessProbe:\n          httpGet:\n            path: /ready\n            port: 8000\n```\n\n**Day-to-Day Operations**:\n- Deploying new service versions using our CI/CD pipeline.\n- Monitoring pod health and resource utilization via Grafana.\n- Troubleshooting deployment issues and analyzing pod logs.\n- Managing ConfigMaps and Secrets for service configuration.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Learn Kubernetes Basics](https://kubernetes.io/docs/tutorials/kubernetes-basics/)\n*   **Video Course**: [Kubernetes Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=X48VuDVv0do)\n*   **Free Course**: [Introduction to Kubernetes (edX)](https://kubernetes.io/training/)\n*   **GitHub Learning Path**: [Kubernetes Learning Path](https://github.com/NotHarshhaa/kubernetes-learning-path)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 3: API Gateway with Apache APISIX",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: APISIX at the Nigerian Banking Platform",
+        "content": "\nApache APISIX serves as the single entry point for all external traffic to our platform. It provides centralized API management, routing, security, and monitoring. We have **33 services** configured with APISIX, each having both JSON and YAML route definitions.\n\nOur APISIX configuration enforces several key policies:\n\n*   **JWT Authentication**: All incoming requests must have a valid JWT token issued by Keycloak.\n*   **Rate Limiting**: A default rate limit of 500 requests per 60 seconds is applied to each service to prevent abuse.\n*   **Load Balancing**: APISIX uses a round-robin strategy to distribute traffic across service replicas.\n*   **Monitoring**: The Prometheus plugin is enabled to export detailed metrics to our monitoring stack.\n\n**Example APISIX Route** (`infrastructure/integration/apisix_routes/account-management-service/route.yaml`):\n\n```yaml\nuri: /api/v1/account-management-service/*\nplugins:\n  jwt-auth:\n    key: banking-platform-key\n  limit-count:\n    count: 500\n    time_window: 60\n  prometheus:\n    prefer_name: true\nupstream:\n  type: roundrobin\n  nodes:\n    account-management-service:8001: 1\n```\n\n**Day-to-Day Operations**:\n- Adding or updating routes for new or modified services.\n- Monitoring API traffic and error rates in Grafana.\n- Adjusting rate limits based on service requirements.\n- Managing SSL certificates for custom domains.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Getting Started Guide](https://apisix.apache.org/docs/apisix/getting-started/README/)\n*   **Video Tutorial**: [Getting Started with Apache APISIX (YouTube)](https://www.youtube.com/watch?v=dUOjJkb61so)\n*   **Hands-On Lab**: [APISIX Workshop](https://boburmirzo.github.io/apisix-workshop/)\n*   **Tutorial Playlist**: [Apache APISIX Tutorials](https://www.youtube.com/playlist?list=PLAoKZlos1szkUjDjkWlBbUixaJC9BoqDk)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 4: Microservices Framework with Dapr",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Dapr at the Nigerian Banking Platform",
+        "content": "\nDapr (Distributed Application Runtime) is the connective tissue of our microservices architecture. It provides a consistent set of building blocks for state management, pub/sub messaging, and service invocation. We have **33 services** fully integrated with Dapr, each with its own set of component configurations.\n\nKey Dapr components in our platform:\n\n*   **State Store**: We use a shared Redis cluster as our state store, enabling services to persist state durably.\n*   **Pub/Sub**: Apache Kafka is our pub/sub message broker, facilitating asynchronous, event-driven communication between services.\n*   **Service Invocation**: Dapr provides secure and reliable service-to-service communication with automatic mTLS and retries.\n\n**Example Dapr Component** (`infrastructure/integration/dapr_configs/account-management-service/statestore-component.yaml`):\n\n```yaml\napiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: account-management-service-statestore\n  namespace: banking\nspec:\n  type: state.redis\n  metadata:\n  - name: redisHost\n    value: redis:6379\n  - name: actorStateStore\n    value: 'true'\n```\n\n**Day-to-Day Operations**:\n- Configuring new pub/sub topics for inter-service communication.\n- Monitoring the health of Dapr sidecars.\n- Using the Dapr dashboard to inspect state and troubleshoot issues.\n- Reviewing distributed traces to understand request flows.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Dapr Getting Started](https://docs.dapr.io/getting-started/)\n*   **Video Tutorial**: [Introduction to Dapr (YouTube)](https://www.youtube.com/watch?v=EASb_r6vEoM)\n*   **Hands-On Course**: [Microservices Communication using Dapr (Microsoft Learn)](https://learn.microsoft.com/en-us/azure/container-apps/microservices-dapr-service-invoke)\n*   **Workshop**: [Hands-on Dapr 101 Workshop](https://www.diagrid.io/events/hands-on-dapr-101-university-workshop-aug-2025)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 5: Workflow Orchestration with Temporal",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Temporal at the Nigerian Banking Platform",
+        "content": "\nTemporal is our engine for orchestrating long-running, durable business processes. It allows us to write complex workflows as simple code, with the platform handling failures, retries, and state management. We have **33 services** with Temporal workflow definitions, covering critical processes like account opening, loan applications, and payment processing.\n\nOur workflows are written in Python and follow a standard pattern of a workflow definition and one or more activity definitions. This separation allows us to manage the orchestration logic (workflow) independently from the business logic implementation (activities).\n\n**Common Workflow Patterns**:\n- **Account Opening**: A multi-step process involving KYC, credit checks, and account provisioning.\n- **Saga Pattern**: Used for distributed transactions that span multiple services, with built-in compensation logic.\n\n**Example Temporal Configuration** (`infrastructure/integration/temporal_workflows/account-management-service/temporal_config.json`):\n\n```json\n{\n  \"service\": \"account-management-service\",\n  \"task_queue\": \"account-management-service-tasks\",\n  \"namespace\": \"banking\",\n  \"temporal_address\": \"temporal:7233\"\n}\n```\n\n**Day-to-Day Operations**:\n- Monitoring the status of active and failed workflows via the Temporal Web UI.\n- Developing and deploying new workflow versions.\n- Analyzing workflow history to debug issues and understand business processes.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Temporal Getting Started](https://learn.temporal.io/getting_started/)\n*   **Video Tutorial**: [Temporal Introduction and Demo (YouTube)](https://www.youtube.com/watch?v=23rX78xqYUg)\n*   **Free Courses**: [Learn Temporal (Official Portal)](https://learn.temporal.io/)\n*   **Article**: [Getting Started With Temporal.io (Medium)](https://medium.com/@hanhuss035/getting-started-with-temporal-io-24a9f145257c)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 6: Authentication with Keycloak",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Keycloak at the Nigerian Banking Platform",
+        "content": "\nKeycloak is our centralized Identity and Access Management (IAM) solution. It provides authentication for all users and services, implementing the OAuth 2.0 and OpenID Connect (OIDC) standards. We have **33 services** configured as clients in Keycloak, each with its own client ID and secret.\n\nKeycloak is responsible for:\n- Issuing JWT tokens to authenticated users and services.\n- Managing user identities, roles, and permissions.\n- Providing Single Sign-On (SSO) capabilities across our applications.\n\n**Example Keycloak Client Configuration** (`infrastructure/integration/keycloak_configs/account-management-service/client.json`):\n\n```json\n{\n  \"clientId\": \"account-management-service\",\n  \"enabled\": true,\n  \"clientAuthenticatorType\": \"client-secret\",\n  \"protocol\": \"openid-connect\",\n  \"serviceAccountsEnabled\": true\n}\n```\n\n**Day-to-Day Operations**:\n- Managing user accounts, roles, and groups.\n- Configuring new clients for new services or applications.\n- Monitoring authentication logs for suspicious activity.\n- Rotating client secrets as part of our security policy.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Keycloak Guides](https://www.keycloak.org/guides)\n*   **Video Tutorial**: [Getting Started With Keycloak (YouTube)](https://www.youtube.com/watch?v=fvxQ8bW0vO8)\n*   **Tutorial**: [Keycloak Tutorial for Beginners (Master the Boss)](https://www.mastertheboss.com/keycloak/introduction-to-keycloak/)\n*   **OAuth 2.0 Guide**: [How to Architect OAuth 2.0 with Keycloak (Red Hat)](https://www.redhat.com/en/blog/oauth-20-authentication-keycloak)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 7: Monitoring with Prometheus & Grafana",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Monitoring at the Nigerian Banking Platform",
+        "content": "\nOur monitoring stack is built on Prometheus for metrics collection and Grafana for visualization. This combination provides deep visibility into the health and performance of our entire platform.\n\n*   **Prometheus**: Scrapes metrics from all services, Kubernetes components, and infrastructure services like APISIX and Dapr. We use PromQL (Prometheus Query Language) to query this data and configure alerts.\n*   **Grafana**: Provides a unified view of our platform's health through a series of dashboards. We have dashboards for API traffic, service health, Kubernetes cluster status, and database performance.\n\n**Day-to-Day Operations**:\n- Creating or updating Grafana dashboards to visualize new metrics.\n- Writing and tuning PromQL queries for alerting and analysis.\n- Investigating alerts to identify and resolve issues.\n- Analyzing performance trends to inform capacity planning.\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **Official Documentation**: [Get started with Grafana and Prometheus](https://grafana.com/docs/grafana/latest/getting-started/get-started-grafana-prometheus/)\n*   **Video Course**: [Prometheus FULL Course (YouTube)](https://www.youtube.com/watch?v=zZcxdWJ_tRc)\n*   **Tutorial**: [Introduction to Monitoring with Prometheus & Grafana (Medium)](https://medium.com/@dineshmurali/introduction-to-monitoring-with-prometheus-grafana-ea338d93b2d9)\n*   **Hands-On Course**: [Prometheus: The Complete Hands-On for Monitoring & Alerting (Udemy)](https://www.udemy.com/course/prometheus-course/)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Module 8: Data Layer Technologies",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Internal Analysis: Our Data Layer",
+        "content": "\nOur platform utilizes a polyglot persistence strategy, using different databases for different purposes.\n\n| Database        | Purpose                               | Key Features                                |\n| :-------------- | :------------------------------------ | :------------------------------------------ |\n| **PostgreSQL**  | Primary relational database           | 129 models, master-slave replication, PgBouncer |\n| **Redis**         | Caching, session storage, Dapr state  | 6-node cluster, RDB + AOF persistence       |\n| **TigerBeetle**   | High-performance financial ledger     | ACID guarantees, millions of TPS            |\n| **FalkorDB**      | Graph database for analytics          | Cypher query language, LLM integration      |\n| **Apache Kafka**  | Event streaming and message broker    | 5 brokers, service-specific topics          |\n\n",
+        "level": 3
+      },
+      {
+        "title": "External Learning Resources",
+        "content": "\n*   **PostgreSQL**: [PostgreSQL Tutorial (Official)](https://www.postgresql.org/docs/current/tutorial.html)\n*   **Redis**: [Redis University](https://university.redis.io/)\n*   **Apache Kafka**: [Intro to Apache Kafka (Confluent)](https://developer.confluent.io/what-is-apache-kafka/)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Hands-On Labs",
+        "content": "\nTo solidify your understanding, you are expected to complete the following hands-on exercises within your first month.\n\n1.  **Deploy a New Microservice**:\n    *   Create a simple \"Hello World\" FastAPI service.\n    *   Write a Dockerfile and build a container image.\n    *   Write a Kubernetes `deployment.yaml` and `service.yaml`.\n    *   Deploy the service to the staging Kubernetes cluster.\n\n2.  **Expose the Service via APISIX**:\n    *   Create an APISIX route configuration for your new service.\n    *   Add a JWT authentication plugin to the route.\n    *   Test that you can access your service through the API gateway.\n\n3.  **Integrate with Dapr**:\n    *   Add Dapr annotations to your Kubernetes deployment.\n    *   Use the Dapr state management API to save and retrieve data.\n    *   Publish a message to a Kafka topic and subscribe to it from another service.\n\n4.  **Create a Grafana Dashboard**:\n    *   Instrument your service with custom Prometheus metrics.\n    *   Create a new dashboard in Grafana.\n    *   Add panels to visualize request rate, latency, and error rate for your service.\n\n",
+        "level": 2
+      },
+      {
+        "title": "Conclusion",
+        "content": "\nThis curriculum provides the foundational knowledge required to operate and contribute to the Nigerian Banking Platform. We encourage you to be curious, ask questions, and engage with your fellow engineers. Welcome to the team!\n\n",
+        "level": 2
+      },
+      {
+        "title": "Getting Help",
+        "content": "\n*   **Internal Slack**: Join the `#devops` and `#backend` channels for questions and discussions.\n*   **Mentorship**: You will be assigned a mentor to guide you through your onboarding process.\n*   **Documentation**: Explore the extensive documentation in our internal Confluence space.\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "References",
+        "content": "\n*   [1] Apache APISIX Documentation. (2025). Retrieved from https://apisix.apache.org/\n*   [2] Dapr Documentation. (2025). Retrieved from https://dapr.io/\n*   [3] Temporal Documentation. (2025). Retrieved from https://temporal.io/\n*   [4] Keycloak Documentation. (2025). Retrieved from https://www.keycloak.org/\n*   [5] Kubernetes Documentation. (2025). Retrieved from https://kubernetes.io/\n*   [6] Docker Documentation. (2025). Retrieved from https://www.docker.com/\n*   [7] PostgreSQL Documentation. (2025). Retrieved from https://www.postgresql.org/\n*   [8] Redis Documentation. (2025). Retrieved from https://redis.io/\n*   [9] Apache Kafka Documentation. (2025). Retrieved from https://kafka.apache.org/\n*   [10] Prometheus Documentation. (2025). Retrieved from https://prometheus.io/\n*   [11] Grafana Documentation. (2025). Retrieved from https://grafana.com/\n\n",
+        "level": 3
+      }
+    ]
+  },
+  "externalResources": {
+    "title": "External Training Resources",
+    "content": "# Nigerian Banking Platform - External Training Resources\n\n## Comprehensive Learning Curriculum for Infrastructure & DevOps Engineers\n\nThis document provides curated external learning resources for all infrastructure components used in the Nigerian Banking Platform. Each section includes official documentation, video tutorials, hands-on courses, and community resources.\n\n---\n\n## Table of Contents\n\n1. [Apache APISIX (API Gateway)](#1-apache-apisix-api-gateway)\n2. [Dapr (Microservices Framework)](#2-dapr-microservices-framework)\n3. [Temporal (Workflow Orchestration)](#3-temporal-workflow-orchestration)\n4. [Keycloak (Authentication)](#4-keycloak-authentication)\n5. [Kubernetes (Container Orchestration)](#5-kubernetes-container-orchestration)\n6. [Docker (Containerization)](#6-docker-containerization)\n7. [PostgreSQL (Relational Database)](#7-postgresql-relational-database)\n8. [Redis (Caching & State Store)](#8-redis-caching--state-store)\n9. [Apache Kafka (Event Streaming)](#9-apache-kafka-event-streaming)\n10. [Prometheus & Grafana (Monitoring)](#10-prometheus--grafana-monitoring)\n11. [Python & FastAPI (Backend Development)](#11-python--fastapi-backend-development)\n12. [DevOps Best Practices](#12-devops-best-practices)\n\n---\n\n## 1. Apache APISIX (API Gateway)\n\n### Official Documentation\n- **Official Website**: https://apisix.apache.org/\n- **Getting Started Guide**: https://apisix.apache.org/docs/apisix/getting-started/README/\n- **API Reference**: https://apisix.apache.org/docs/apisix/admin-api/\n\n### Video Tutorials\n- **Getting Started with Apache APISIX** (YouTube)\n  - URL: https://www.youtube.com/watch?v=dUOjJkb61so\n  - Duration: ~20 minutes\n  - Level: Beginner\n  - Topics: Installation, basic routing, plugins\n\n- **Apache APISIX Tutorials Playlist**\n  - URL: https://www.youtube.com/playlist?list=PLAoKZlos1szkUjDjkWlBbUixaJC9BoqDk\n  - Level: Beginner to Advanced\n  - Topics: Authentication, rate limiting, Keycloak integration\n\n### Hands-On Labs\n- **APISIX Workshop** (GitHub Pages)\n  - URL: https://boburmirzo.github.io/apisix-workshop/\n  - Format: Interactive hands-on lab\n  - Topics: Authentication plugins, routing, load balancing\n\n### Articles & Guides\n- **Getting Started with Apache APISIX** (Medium)\n  - URL: https://medium.com/@bumurzaqov2/getting-started-with-apache-apisix-76d0da76509a\n  - Topics: Quick start, Docker setup, basic concepts\n\n- **Secure APIs with Apache APISIX**\n  - URL: https://dev.to/apisix/secure-spring-boot-rest-api-with-apache-apisix-api-gateway-1nmg\n  - Topics: JWT authentication, rate limiting, CORS\n\n### Learning Path\n1. **Week 1**: Installation and basic routing\n2. **Week 2**: Authentication plugins (JWT, Keycloak)\n3. **Week 3**: Rate limiting and traffic control\n4. **Week 4**: Monitoring with Prometheus\n\n---\n\n## 2. Dapr (Microservices Framework)\n\n### Official Documentation\n- **Official Website**: https://dapr.io/\n- **Getting Started**: https://docs.dapr.io/getting-started/\n- **Tutorials**: https://docs.dapr.io/getting-started/tutorials/\n\n### Video Tutorials\n- **Introduction to Dapr** (YouTube)\n  - URL: https://www.youtube.com/watch?v=EASb_r6vEoM\n  - Duration: 10 minutes\n  - Level: Beginner\n  - Topics: Sidecar architecture, building blocks\n\n- **Introduction to Dapr** (Microsoft Learn)\n  - URL: https://learn.microsoft.com/en-us/shows/open-at-microsoft/introduction-to-dapr\n  - Level: Beginner\n  - Topics: Installation, initialization, building blocks\n\n### Hands-On Courses\n- **Microservices Communication using Dapr** (Microsoft Learn)\n  - URL: https://learn.microsoft.com/en-us/azure/container-apps/microservices-dapr-service-invoke\n  - Format: Interactive tutorial\n  - Topics: Service invocation, auto-mTLS, retries\n\n- **Hands-on Dapr 101 Workshop**\n  - URL: https://www.diagrid.io/events/hands-on-dapr-101-university-workshop-aug-2025\n  - Level: Beginner\n  - Topics: Distributed applications, state management, pub/sub\n\n### Articles & Guides\n- **Simplifying Distributed Systems with Dapr** (Medium)\n  - URL: https://medium.com/@gmurghai/simplifying-distributed-systems-with-dapr-a-beginners-guide-23e654526128\n  - Topics: Architecture, components, local setup\n\n- **Build Distributed Systems with Dapr**\n  - URL: https://iamachs.com/blog/dapr/part-2-getting-started-with-core-concepts/\n  - Topics: Service invocation, state management, real examples\n\n- **Simplifying .NET Microservices with Dapr**\n  - URL: https://medium.com/@mikhail.petrusheuski/simplifying-net-microservices-with-dapr-a-hands-on-guide-16a26ebae70f\n  - Topics: Code examples, practical implementation\n\n### Learning Path\n1. **Week 1**: Dapr concepts and sidecar architecture\n2. **Week 2**: State management with Redis\n3. **Week 3**: Pub/Sub with Kafka\n4. **Week 4**: Service invocation and distributed tracing\n\n---\n\n## 3. Temporal (Workflow Orchestration)\n\n### Official Documentation\n- **Official Website**: https://temporal.io/\n- **Getting Started**: https://learn.temporal.io/getting_started/\n- **Documentation**: https://docs.temporal.io/\n\n### Video Tutorials\n- **Temporal Introduction and Demo** (YouTube)\n  - URL: https://www.youtube.com/watch?v=23rX78xqYUg\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Workflows, activities, Java examples\n\n- **Getting to Know Temporal** (YouTube)\n  - URL: https://www.youtube.com/watch?v=wIpz4ioK0gI\n  - Duration: 20 minutes\n  - Level: Beginner\n  - Topics: Problem solving, developer experience\n\n### Free Courses\n- **Learn Temporal** (Official Learning Portal)\n  - URL: https://learn.temporal.io/\n  - Format: Interactive courses\n  - Topics: Workflows, activities, building blocks\n\n- **Temporal Courses** (Official)\n  - URL: https://learn.temporal.io/courses/\n  - Level: Beginner to Advanced\n  - Topics: Workflows, activities, versioning\n\n### Articles & Guides\n- **Getting Started With Temporal.io** (Medium)\n  - URL: https://medium.com/@hanhuss035/getting-started-with-temporal-io-24a9f145257c\n  - Topics: Workflows, business logic, coordinated steps\n\n- **Temporal: Revolutionizing Workflow Orchestration** (Medium)\n  - URL: https://medium.com/@surajsub_68985/temporal-revolutionizing-workflow-orchestration-in-microservices-architectures-f8265afa4dc0\n  - Topics: Workflow engine, execution, monitoring\n\n- **Discover Temporal's Newest Tutorials** (Official Blog)\n  - URL: https://temporal.io/blog/discover-temporals-newest-tutorials\n  - Topics: E-commerce applications, Next.js integration\n\n### Learning Path\n1. **Week 1**: Temporal concepts and architecture\n2. **Week 2**: Creating workflows and activities\n3. **Week 3**: Saga patterns and compensation\n4. **Week 4**: Workflow versioning and production deployment\n\n---\n\n## 4. Keycloak (Authentication)\n\n### Official Documentation\n- **Official Website**: https://www.keycloak.org/\n- **Guides**: https://www.keycloak.org/guides\n- **Documentation**: https://www.keycloak.org/documentation\n\n### Video Tutorials\n- **Getting Started With Keycloak** (YouTube)\n  - URL: https://www.youtube.com/watch?v=fvxQ8bW0vO8\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Realms, users, access tokens\n\n### Tutorials & Guides\n- **Keycloak Tutorial for Beginners** (Master the Boss)\n  - URL: https://www.mastertheboss.com/keycloak/introduction-to-keycloak/\n  - Level: Beginner\n  - Topics: Setup, configuration, authentication\n\n- **Getting Started with Keycloak** (Dev.to)\n  - URL: https://dev.to/haithamoumer/getting-started-with-keycloak-understanding-the-basics-55bf\n  - Topics: Architecture, components, Docker installation\n\n- **Keycloak Tutorial** (Pretius)\n  - URL: https://pretius.com/blog/keycloak-tutorial\n  - Topics: Advanced features, Angular app configuration\n\n- **Getting Started Using Keycloak** (Medium)\n  - URL: https://medium.com/@hilalyazbek/getting-started-using-keycloak-a23fafd280a1\n  - Topics: Docker setup, realms, users\n\n### OAuth2/OIDC Resources\n- **Securing Applications with OpenID Connect**\n  - URL: https://www.keycloak.org/securing-apps/oidc-layers\n  - Topics: OIDC endpoints, authentication flow\n\n- **Keycloak and Spring Boot OAuth 2.0** (Medium)\n  - URL: https://medium.com/@nsalexamy/keycloak-and-spring-boot-oauth-2-0-and-openid-connect-oidc-authentication-304e7b511d02\n  - Topics: OAuth2, OIDC, Spring Boot integration\n\n- **How to Architect OAuth 2.0 with Keycloak** (Red Hat)\n  - URL: https://www.redhat.com/en/blog/oauth-20-authentication-keycloak\n  - Topics: OAuth2 flow, architecture\n\n### Learning Path\n1. **Week 1**: Keycloak basics, realms, and users\n2. **Week 2**: OAuth2/OIDC concepts\n3. **Week 3**: Client configuration and service accounts\n4. **Week 4**: Role-based access control (RBAC)\n\n---\n\n## 5. Kubernetes (Container Orchestration)\n\n### Official Documentation\n- **Official Website**: https://kubernetes.io/\n- **Learn Kubernetes Basics**: https://kubernetes.io/docs/tutorials/kubernetes-basics/\n- **Tutorials**: https://kubernetes.io/docs/tutorials/\n\n### Video Courses\n- **Kubernetes Tutorial for Beginners [FULL COURSE in 4 Hours]** (YouTube)\n  - URL: https://www.youtube.com/watch?v=X48VuDVv0do\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Pods, deployments, services, ingress\n\n- **Complete Kubernetes Course - From BEGINNER to PRO** (YouTube)\n  - URL: https://www.youtube.com/watch?v=2T86xAtR6Fo\n  - Duration: 6 hours\n  - Level: Beginner to Advanced\n  - Topics: Deployment, operations, production\n\n### Free Courses\n- **Introduction to Kubernetes** (edX)\n  - URL: https://kubernetes.io/training/\n  - Provider: Linux Foundation\n  - Level: Beginner\n  - Topics: Container management, deployment\n\n### Tutorials & Guides\n- **Kubernetes Tutorial for Beginners** (Spacelift)\n  - URL: https://spacelift.io/blog/kubernetes-tutorial\n  - Topics: Basic concepts, getting started\n\n- **Kubernetes Tutorial** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/kubernetes-tutorial/\n  - Topics: Deployment, management, scaling\n\n- **Learn Kubernetes – Full Handbook** (freeCodeCamp)\n  - URL: https://www.freecodecamp.org/news/learn-kubernetes-handbook-devs-startups-businesses/\n  - Topics: Comprehensive guide for developers\n\n### GitHub Resources\n- **Kubernetes Learning Path** (GitHub)\n  - URL: https://github.com/NotHarshhaa/kubernetes-learning-path\n  - Topics: Beginner to advanced, security, upgrades\n\n### Learning Path\n1. **Week 1**: Kubernetes architecture and concepts\n2. **Week 2**: Pods, deployments, and services\n3. **Week 3**: ConfigMaps, secrets, and volumes\n4. **Week 4**: Monitoring, logging, and troubleshooting\n\n---\n\n## 6. Docker (Containerization)\n\n### Official Documentation\n- **Official Website**: https://www.docker.com/\n- **Docker 101 Tutorial**: https://www.docker.com/101-tutorial/\n- **Official Training**: https://www.docker.com/trainings/\n\n### Video Courses\n- **Docker Tutorial for Beginners** (YouTube - Beau Carnes)\n  - URL: https://www.youtube.com/watch?v=b0HMimUb4f0\n  - Duration: 2 hours\n  - Level: Beginner\n  - Topics: Images, containers, volumes, networks\n\n- **Docker Tutorial for Beginners** (YouTube - Programming with Mosh)\n  - URL: https://www.youtube.com/watch?v=pTFZFxd4hOI\n  - Duration: 1 hour\n  - Level: Beginner\n  - Topics: Essentials for DevOps engineers\n\n- **Complete Docker Course - From BEGINNER to PRO** (YouTube)\n  - URL: https://www.youtube.com/watch?v=RqTEHSBrYFw\n  - Duration: 3 hours\n  - Level: Beginner to Advanced\n  - Topics: Theory and practice\n\n### Interactive Tutorials\n- **Docker Curriculum**\n  - URL: https://docker-curriculum.com/\n  - Format: Hands-on tutorial\n  - Topics: Docker landscape, practical examples\n\n### Official Guides\n- **Part 1: Containerize an Application**\n  - URL: https://docs.docker.com/get-started/workshop/02_our_app/\n  - Topics: Dockerfile, building images, running containers\n\n### Articles & Guides\n- **Docker Tutorial** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/docker-tutorial/\n  - Topics: Developing, packaging, deploying\n\n- **How to Learn Docker from Scratch** (DataCamp)\n  - URL: https://www.datacamp.com/blog/learn-docker\n  - Topics: Step-by-step learning plan\n\n### Learning Path\n1. **Week 1**: Docker basics, images, and containers\n2. **Week 2**: Dockerfile best practices\n3. **Week 3**: Docker Compose for multi-container apps\n4. **Week 4**: Docker networking and volumes\n\n---\n\n## 7. PostgreSQL (Relational Database)\n\n### Official Documentation\n- **Official Website**: https://www.postgresql.org/\n- **Official Tutorial**: https://www.postgresql.org/docs/current/tutorial.html\n- **Online Resources**: https://www.postgresql.org/docs/online-resources/\n\n### Video Courses\n- **PostgreSQL Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=SpfIwlAYaKk\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Installation, queries, table management\n\n- **Learn PostgreSQL Tutorial - Full Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=qw--VYLpxG4\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Database management, queries\n\n### Interactive Tutorials\n- **PostgreSQL Tutorial** (W3Schools)\n  - URL: https://www.w3schools.com/postgresql/\n  - Format: Interactive\n  - Topics: Step-by-step database creation\n\n- **PostgreSQL Tutorial** (Neon)\n  - URL: https://neon.com/postgresql/tutorial\n  - Topics: Installation, basic/advanced queries\n\n### Courses\n- **PostgreSQL for Everybody** (University of Michigan)\n  - URL: https://online.umich.edu/series/postgresql-for-everybody/\n  - Format: 4-course series\n  - Topics: Database design, architecture\n\n- **Best PostgreSQL Courses** (Coursera)\n  - URL: https://www.coursera.org/courses?query=postgresql\n  - Level: Various\n  - Topics: Database administration, development\n\n### Professional Training\n- **PostgreSQL Administration** (Learning Tree)\n  - URL: https://www.learningtree.com/courses/postgresql-administration-hands-on-training/\n  - Duration: 3 days\n  - Topics: Install, configure, manage, optimize\n\n- **Training Courses** (Postgres Professional)\n  - URL: https://postgrespro.com/community/courses\n  - Duration: 2 days\n  - Topics: Architecture, installation, DBA tasks\n\n### Learning Path\n1. **Week 1**: SQL basics and PostgreSQL installation\n2. **Week 2**: Table design and relationships\n3. **Week 3**: Indexing and query optimization\n4. **Week 4**: Backup, restore, and replication\n\n---\n\n## 8. Redis (Caching & State Store)\n\n### Official Documentation\n- **Official Website**: https://redis.io/\n- **Getting Started**: https://redis.io/learn/howtos/quick-start\n- **Redis University**: https://university.redis.io/\n\n### Video Tutorials\n- **Redis Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=8sHCdz_tOjk\n  - Duration: 15 minutes\n  - Level: Beginner\n  - Topics: In-memory data store, key-value structures\n\n- **Redis Crash Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=jgpVdJB2sKQ\n  - Duration: 1 hour\n  - Level: Beginner\n  - Topics: Installation, commands, use cases\n\n### Official Resources\n- **Chapter 1: Getting to Know Redis** (Redis eBook)\n  - URL: https://redis.io/ebook/part-1-getting-started/chapter-1-getting-to-know-redis/\n  - Topics: In-memory database, data model\n\n- **Redis University** (Free Courses)\n  - URL: https://university.redis.io/\n  - Level: Beginner to Advanced\n  - Topics: Foundational skills, advanced use cases\n\n### Tutorials & Guides\n- **Redis Tutorial** (TutorialsPoint)\n  - URL: https://www.tutorialspoint.com/redis/index.htm\n  - Topics: Scalable, performance-oriented systems\n\n- **Redis Basics for New Developers** (Daily.dev)\n  - URL: https://daily.dev/blog/redis-basics-for-new-developers\n  - Topics: Setup, core concepts, data structures\n\n- **Redis Introduction** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/system-design/introduction-to-redis-server/\n  - Topics: Caching, real-time analytics, messaging\n\n### Practical Tutorials\n- **Caching with Redis and Express** (Redis.io)\n  - URL: https://redis.io/learn/develop/node/nodecrashcourse/caching\n  - Topics: API caching, middleware\n\n### Courses\n- **Top 5 Courses to Learn Redis** (Medium)\n  - URL: https://medium.com/javarevisited/top-5-courses-to-learn-redis-for-beginners-best-of-lot-720b8b381fc8\n  - Topics: Curated course list\n\n### Learning Path\n1. **Week 1**: Redis basics and data structures\n2. **Week 2**: Caching strategies\n3. **Week 3**: Redis cluster and replication\n4. **Week 4**: Redis as Dapr state store\n\n---\n\n## 9. Apache Kafka (Event Streaming)\n\n### Official Documentation\n- **Official Website**: https://kafka.apache.org/\n- **Quickstart**: https://kafka.apache.org/quickstart\n- **Documentation**: https://kafka.apache.org/documentation/\n\n### Video Courses\n- **Kafka Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=QkdkLdMBuL0\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: What is Kafka, use cases, Kafka vs RabbitMQ\n\n### Official Courses\n- **Intro to Apache Kafka** (Confluent Developer)\n  - URL: https://developer.confluent.io/what-is-apache-kafka/\n  - Level: Beginner\n  - Topics: Key concepts, getting started\n\n- **Introduction to Designing Events** (Confluent)\n  - URL: https://developer.confluent.io/courses/event-design/intro/\n  - Topics: Event design, event streams\n\n- **Learn Apache Kafka & Flink** (Confluent)\n  - URL: https://developer.confluent.io/courses/\n  - Topics: Event streaming applications\n\n### Tutorials & Guides\n- **Apache Kafka Tutorial** (TutorialsPoint)\n  - URL: https://www.tutorialspoint.com/apache_kafka/index.htm\n  - Topics: Real-time data pipelines, processing\n\n- **Apache Kafka Tutorial — For Beginners** (Medium)\n  - URL: https://medium.com/@patelharshali136/apache-kafka-tutorial-kafka-for-beginners-a58140cef84f\n  - Topics: History, architecture, components\n\n### Professional Training\n- **Developing Event-Driven Applications** (Red Hat)\n  - URL: https://www.redhat.com/en/services/training/ad482-developing-event-driven-applications-apache-kafka-and-red-hat-amq-streams\n  - Topics: Kafka, AMQ Streams, event-driven design\n\n### Courses\n- **Apache Kafka Series - Kafka Streams** (Udemy)\n  - URL: https://www.udemy.com/course/kafka-streams/\n  - Topics: Data processing with Kafka Streams\n\n### Learning Path\n1. **Week 1**: Kafka concepts and architecture\n2. **Week 2**: Producers and consumers\n3. **Week 3**: Topics, partitions, and replication\n4. **Week 4**: Kafka with Dapr pub/sub\n\n---\n\n## 10. Prometheus & Grafana (Monitoring)\n\n### Official Documentation\n- **Prometheus**: https://prometheus.io/\n- **Grafana**: https://grafana.com/\n- **Get Started with Grafana and Prometheus**: https://grafana.com/docs/grafana/latest/getting-started/get-started-grafana-prometheus/\n\n### Video Tutorials\n- **Monitoring Made EASY with Grafana and Prometheus** (YouTube)\n  - URL: https://www.youtube.com/watch?v=pGSkPutCKtQ\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Setup, dashboard creation\n\n- **Prometheus FULL Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=zZcxdWJ_tRc\n  - Duration: 2 hours\n  - Level: Beginner to Advanced\n  - Topics: Docker/K8s, PromQL, Grafana\n\n- **Grafana Setup & Simple Dashboard** (YouTube)\n  - URL: https://www.youtube.com/watch?v=EGgtJUjky8w\n  - Duration: 20 minutes\n  - Topics: Charts, gauges, tables\n\n### Tutorials & Guides\n- **Introduction to Monitoring with Prometheus & Grafana** (Medium)\n  - URL: https://medium.com/@dineshmurali/introduction-to-monitoring-with-prometheus-grafana-ea338d93b2d9\n  - Topics: Why monitoring, setup for Node.js\n\n- **How to Explore Prometheus and Grafana** (Grafana)\n  - URL: https://grafana.com/go/explore-prometheus-with-easy-hello-world-projects/\n  - Topics: Node Exporter, Express middleware, GitHub exporter\n\n- **What is Prometheus and Grafana?** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/what-is-prometheus-and-grafana/\n  - Topics: Connection, data sources\n\n### Official Courses\n- **Monitoring Systems with Prometheus** (Linux Foundation)\n  - URL: https://training.linuxfoundation.org/training/monitoring-systems-and-services-with-prometheus-lfs241/\n  - Topics: Real-world monitoring, Kubernetes\n\n- **Prometheus and Kubernetes** (PromLabs)\n  - URL: https://training.promlabs.com/training/prometheus-and-kubernetes/\n  - Topics: Setup on K8s, cluster monitoring\n\n### Courses\n- **Prometheus: Complete Hands-On** (Udemy)\n  - URL: https://www.udemy.com/course/prometheus-course/\n  - Topics: A to Z, monitoring, alerting\n\n- **Top 6 Courses to Learn Prometheus** (Medium)\n  - URL: https://medium.com/javarevisited/top-6-courses-to-learn-prometheus-in-2025-9d8155000d68\n  - Topics: Curated course list\n\n### Official Tutorials\n- **Grafana Tutorials** (Grafana Labs)\n  - URL: https://grafana.com/tutorials/\n  - Topics: Metrics, logs, traces, dashboards\n\n- **Build Your First Dashboard** (Grafana)\n  - URL: https://grafana.com/docs/grafana/latest/getting-started/build-first-dashboard/\n  - Topics: Step-by-step dashboard creation\n\n### Learning Path\n1. **Week 1**: Prometheus basics and metrics collection\n2. **Week 2**: PromQL query language\n3. **Week 3**: Grafana dashboard creation\n4. **Week 4**: Alerting and notification\n\n---\n\n## 11. Python & FastAPI (Backend Development)\n\n### Python Resources\n- **Official Python Tutorial**: https://docs.python.org/3/tutorial/\n- **Python for Everybody** (Coursera): https://www.coursera.org/specializations/python\n- **Real Python**: https://realpython.com/\n\n### FastAPI Resources\n- **Official Documentation**: https://fastapi.tiangolo.com/\n- **FastAPI Tutorial** (Official): https://fastapi.tiangolo.com/tutorial/\n- **FastAPI - Full Course** (YouTube): https://www.youtube.com/watch?v=7t2alSnE2-I\n\n### Learning Path\n1. **Week 1-2**: Python fundamentals\n2. **Week 3**: FastAPI basics and routing\n3. **Week 4**: Database integration with SQLAlchemy\n4. **Week 5**: Authentication and authorization\n5. **Week 6**: Testing with pytest\n\n---\n\n## 12. DevOps Best Practices\n\n### General DevOps\n- **DevOps Roadmap**: https://roadmap.sh/devops\n- **The Phoenix Project** (Book): Essential DevOps reading\n- **Site Reliability Engineering** (Google): https://sre.google/books/\n\n### CI/CD\n- **GitHub Actions Documentation**: https://docs.github.com/en/actions\n- **GitLab CI/CD**: https://docs.gitlab.com/ee/ci/\n- **Jenkins Tutorial**: https://www.jenkins.io/doc/tutorials/\n\n### Infrastructure as Code\n- **Terraform Tutorial**: https://learn.hashicorp.com/terraform\n- **Ansible Documentation**: https://docs.ansible.com/\n\n### Security\n- **OWASP Top 10**: https://owasp.org/www-project-top-ten/\n- **DevSecOps Best Practices**: https://www.devsecops.org/\n\n---\n\n## Recommended Learning Sequence for New Engineers\n\n### Month 1: Foundations\n- **Week 1**: Docker basics\n- **Week 2**: Kubernetes fundamentals\n- **Week 3**: Python and FastAPI\n- **Week 4**: PostgreSQL basics\n\n### Month 2: Microservices Infrastructure\n- **Week 1**: Apache APISIX\n- **Week 2**: Dapr framework\n- **Week 3**: Redis and caching\n- **Week 4**: Apache Kafka\n\n### Month 3: Advanced Topics\n- **Week 1**: Temporal workflows\n- **Week 2**: Keycloak authentication\n- **Week 3**: Prometheus & Grafana\n- **Week 4**: Platform integration and testing\n\n### Month 4: Production Operations\n- **Week 1**: Monitoring and alerting\n- **Week 2**: Troubleshooting and debugging\n- **Week 3**: Performance optimization\n- **Week 4**: Disaster recovery and backups\n\n---\n\n## Additional Resources\n\n### Community Forums\n- **Stack Overflow**: https://stackoverflow.com/\n- **Reddit r/devops**: https://www.reddit.com/r/devops/\n- **Reddit r/kubernetes**: https://www.reddit.com/r/kubernetes/\n- **CNCF Slack**: https://slack.cncf.io/\n\n### Newsletters\n- **DevOps Weekly**: https://www.devopsweekly.com/\n- **Kubernetes Weekly**: https://kubeweekly.io/\n- **SRE Weekly**: https://sreweekly.com/\n\n### Podcasts\n- **DevOps Cafe**: http://devopscafe.org/\n- **Kubernetes Podcast**: https://kubernetespodcast.com/\n- **The Cloudcast**: https://www.thecloudcast.net/\n\n### Certification Paths\n- **Certified Kubernetes Administrator (CKA)**\n- **Certified Kubernetes Application Developer (CKAD)**\n- **Docker Certified Associate (DCA)**\n- **AWS Certified DevOps Engineer**\n\n---\n\n## Platform-Specific Learning Labs\n\n### Hands-On Exercises\n\n1. **Deploy a Service to Kubernetes**\n   - Create a Dockerfile\n   - Build and push image\n   - Write Kubernetes manifests\n   - Deploy and expose service\n\n2. **Configure APISIX Route**\n   - Create route configuration\n   - Add authentication plugin\n   - Configure rate limiting\n   - Test with curl\n\n3. **Create a Temporal Workflow**\n   - Define workflow and activities\n   - Implement saga pattern\n   - Test workflow execution\n   - Handle failures and retries\n\n4. **Set Up Dapr Components**\n   - Configure state store\n   - Configure pub/sub\n   - Test service invocation\n   - Monitor with Dapr dashboard\n\n5. **Build a Monitoring Dashboard**\n   - Configure Prometheus scraping\n   - Write PromQL queries\n   - Create Grafana dashboard\n   - Set up alerts\n\n---\n\n## Conclusion\n\nThis curriculum provides a comprehensive learning path for new engineers joining the Nigerian Banking Platform. The resources are curated to cover both theoretical knowledge and practical hands-on experience. Engineers should follow the recommended learning sequence and complete hands-on labs to gain proficiency in the platform's infrastructure stack.\n\n**Estimated Time to Proficiency**: 3-4 months of dedicated learning and practice\n\n**Support**: Join the platform's internal Slack channels for questions and mentorship from senior engineers.\n\n---\n\n**Document Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Maintained By**: Platform Engineering Team\n",
+    "sections": [
+      {
+        "title": "Comprehensive Learning Curriculum for Infrastructure & DevOps Engineers",
+        "content": "\nThis document provides curated external learning resources for all infrastructure components used in the Nigerian Banking Platform. Each section includes official documentation, video tutorials, hands-on courses, and community resources.\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Table of Contents",
+        "content": "\n1. [Apache APISIX (API Gateway)](#1-apache-apisix-api-gateway)\n2. [Dapr (Microservices Framework)](#2-dapr-microservices-framework)\n3. [Temporal (Workflow Orchestration)](#3-temporal-workflow-orchestration)\n4. [Keycloak (Authentication)](#4-keycloak-authentication)\n5. [Kubernetes (Container Orchestration)](#5-kubernetes-container-orchestration)\n6. [Docker (Containerization)](#6-docker-containerization)\n7. [PostgreSQL (Relational Database)](#7-postgresql-relational-database)\n8. [Redis (Caching & State Store)](#8-redis-caching--state-store)\n9. [Apache Kafka (Event Streaming)](#9-apache-kafka-event-streaming)\n10. [Prometheus & Grafana (Monitoring)](#10-prometheus--grafana-monitoring)\n11. [Python & FastAPI (Backend Development)](#11-python--fastapi-backend-development)\n12. [DevOps Best Practices](#12-devops-best-practices)\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "1. Apache APISIX (API Gateway)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://apisix.apache.org/\n- **Getting Started Guide**: https://apisix.apache.org/docs/apisix/getting-started/README/\n- **API Reference**: https://apisix.apache.org/docs/apisix/admin-api/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Getting Started with Apache APISIX** (YouTube)\n  - URL: https://www.youtube.com/watch?v=dUOjJkb61so\n  - Duration: ~20 minutes\n  - Level: Beginner\n  - Topics: Installation, basic routing, plugins\n\n- **Apache APISIX Tutorials Playlist**\n  - URL: https://www.youtube.com/playlist?list=PLAoKZlos1szkUjDjkWlBbUixaJC9BoqDk\n  - Level: Beginner to Advanced\n  - Topics: Authentication, rate limiting, Keycloak integration\n\n",
+        "level": 3
+      },
+      {
+        "title": "Hands-On Labs",
+        "content": "- **APISIX Workshop** (GitHub Pages)\n  - URL: https://boburmirzo.github.io/apisix-workshop/\n  - Format: Interactive hands-on lab\n  - Topics: Authentication plugins, routing, load balancing\n\n",
+        "level": 3
+      },
+      {
+        "title": "Articles & Guides",
+        "content": "- **Getting Started with Apache APISIX** (Medium)\n  - URL: https://medium.com/@bumurzaqov2/getting-started-with-apache-apisix-76d0da76509a\n  - Topics: Quick start, Docker setup, basic concepts\n\n- **Secure APIs with Apache APISIX**\n  - URL: https://dev.to/apisix/secure-spring-boot-rest-api-with-apache-apisix-api-gateway-1nmg\n  - Topics: JWT authentication, rate limiting, CORS\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Installation and basic routing\n2. **Week 2**: Authentication plugins (JWT, Keycloak)\n3. **Week 3**: Rate limiting and traffic control\n4. **Week 4**: Monitoring with Prometheus\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "2. Dapr (Microservices Framework)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://dapr.io/\n- **Getting Started**: https://docs.dapr.io/getting-started/\n- **Tutorials**: https://docs.dapr.io/getting-started/tutorials/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Introduction to Dapr** (YouTube)\n  - URL: https://www.youtube.com/watch?v=EASb_r6vEoM\n  - Duration: 10 minutes\n  - Level: Beginner\n  - Topics: Sidecar architecture, building blocks\n\n- **Introduction to Dapr** (Microsoft Learn)\n  - URL: https://learn.microsoft.com/en-us/shows/open-at-microsoft/introduction-to-dapr\n  - Level: Beginner\n  - Topics: Installation, initialization, building blocks\n\n",
+        "level": 3
+      },
+      {
+        "title": "Hands-On Courses",
+        "content": "- **Microservices Communication using Dapr** (Microsoft Learn)\n  - URL: https://learn.microsoft.com/en-us/azure/container-apps/microservices-dapr-service-invoke\n  - Format: Interactive tutorial\n  - Topics: Service invocation, auto-mTLS, retries\n\n- **Hands-on Dapr 101 Workshop**\n  - URL: https://www.diagrid.io/events/hands-on-dapr-101-university-workshop-aug-2025\n  - Level: Beginner\n  - Topics: Distributed applications, state management, pub/sub\n\n",
+        "level": 3
+      },
+      {
+        "title": "Articles & Guides",
+        "content": "- **Simplifying Distributed Systems with Dapr** (Medium)\n  - URL: https://medium.com/@gmurghai/simplifying-distributed-systems-with-dapr-a-beginners-guide-23e654526128\n  - Topics: Architecture, components, local setup\n\n- **Build Distributed Systems with Dapr**\n  - URL: https://iamachs.com/blog/dapr/part-2-getting-started-with-core-concepts/\n  - Topics: Service invocation, state management, real examples\n\n- **Simplifying .NET Microservices with Dapr**\n  - URL: https://medium.com/@mikhail.petrusheuski/simplifying-net-microservices-with-dapr-a-hands-on-guide-16a26ebae70f\n  - Topics: Code examples, practical implementation\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Dapr concepts and sidecar architecture\n2. **Week 2**: State management with Redis\n3. **Week 3**: Pub/Sub with Kafka\n4. **Week 4**: Service invocation and distributed tracing\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "3. Temporal (Workflow Orchestration)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://temporal.io/\n- **Getting Started**: https://learn.temporal.io/getting_started/\n- **Documentation**: https://docs.temporal.io/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Temporal Introduction and Demo** (YouTube)\n  - URL: https://www.youtube.com/watch?v=23rX78xqYUg\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Workflows, activities, Java examples\n\n- **Getting to Know Temporal** (YouTube)\n  - URL: https://www.youtube.com/watch?v=wIpz4ioK0gI\n  - Duration: 20 minutes\n  - Level: Beginner\n  - Topics: Problem solving, developer experience\n\n",
+        "level": 3
+      },
+      {
+        "title": "Free Courses",
+        "content": "- **Learn Temporal** (Official Learning Portal)\n  - URL: https://learn.temporal.io/\n  - Format: Interactive courses\n  - Topics: Workflows, activities, building blocks\n\n- **Temporal Courses** (Official)\n  - URL: https://learn.temporal.io/courses/\n  - Level: Beginner to Advanced\n  - Topics: Workflows, activities, versioning\n\n",
+        "level": 3
+      },
+      {
+        "title": "Articles & Guides",
+        "content": "- **Getting Started With Temporal.io** (Medium)\n  - URL: https://medium.com/@hanhuss035/getting-started-with-temporal-io-24a9f145257c\n  - Topics: Workflows, business logic, coordinated steps\n\n- **Temporal: Revolutionizing Workflow Orchestration** (Medium)\n  - URL: https://medium.com/@surajsub_68985/temporal-revolutionizing-workflow-orchestration-in-microservices-architectures-f8265afa4dc0\n  - Topics: Workflow engine, execution, monitoring\n\n- **Discover Temporal's Newest Tutorials** (Official Blog)\n  - URL: https://temporal.io/blog/discover-temporals-newest-tutorials\n  - Topics: E-commerce applications, Next.js integration\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Temporal concepts and architecture\n2. **Week 2**: Creating workflows and activities\n3. **Week 3**: Saga patterns and compensation\n4. **Week 4**: Workflow versioning and production deployment\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "4. Keycloak (Authentication)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://www.keycloak.org/\n- **Guides**: https://www.keycloak.org/guides\n- **Documentation**: https://www.keycloak.org/documentation\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Getting Started With Keycloak** (YouTube)\n  - URL: https://www.youtube.com/watch?v=fvxQ8bW0vO8\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Realms, users, access tokens\n\n",
+        "level": 3
+      },
+      {
+        "title": "Tutorials & Guides",
+        "content": "- **Keycloak Tutorial for Beginners** (Master the Boss)\n  - URL: https://www.mastertheboss.com/keycloak/introduction-to-keycloak/\n  - Level: Beginner\n  - Topics: Setup, configuration, authentication\n\n- **Getting Started with Keycloak** (Dev.to)\n  - URL: https://dev.to/haithamoumer/getting-started-with-keycloak-understanding-the-basics-55bf\n  - Topics: Architecture, components, Docker installation\n\n- **Keycloak Tutorial** (Pretius)\n  - URL: https://pretius.com/blog/keycloak-tutorial\n  - Topics: Advanced features, Angular app configuration\n\n- **Getting Started Using Keycloak** (Medium)\n  - URL: https://medium.com/@hilalyazbek/getting-started-using-keycloak-a23fafd280a1\n  - Topics: Docker setup, realms, users\n\n",
+        "level": 3
+      },
+      {
+        "title": "OAuth2/OIDC Resources",
+        "content": "- **Securing Applications with OpenID Connect**\n  - URL: https://www.keycloak.org/securing-apps/oidc-layers\n  - Topics: OIDC endpoints, authentication flow\n\n- **Keycloak and Spring Boot OAuth 2.0** (Medium)\n  - URL: https://medium.com/@nsalexamy/keycloak-and-spring-boot-oauth-2-0-and-openid-connect-oidc-authentication-304e7b511d02\n  - Topics: OAuth2, OIDC, Spring Boot integration\n\n- **How to Architect OAuth 2.0 with Keycloak** (Red Hat)\n  - URL: https://www.redhat.com/en/blog/oauth-20-authentication-keycloak\n  - Topics: OAuth2 flow, architecture\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Keycloak basics, realms, and users\n2. **Week 2**: OAuth2/OIDC concepts\n3. **Week 3**: Client configuration and service accounts\n4. **Week 4**: Role-based access control (RBAC)\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "5. Kubernetes (Container Orchestration)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://kubernetes.io/\n- **Learn Kubernetes Basics**: https://kubernetes.io/docs/tutorials/kubernetes-basics/\n- **Tutorials**: https://kubernetes.io/docs/tutorials/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Courses",
+        "content": "- **Kubernetes Tutorial for Beginners [FULL COURSE in 4 Hours]** (YouTube)\n  - URL: https://www.youtube.com/watch?v=X48VuDVv0do\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Pods, deployments, services, ingress\n\n- **Complete Kubernetes Course - From BEGINNER to PRO** (YouTube)\n  - URL: https://www.youtube.com/watch?v=2T86xAtR6Fo\n  - Duration: 6 hours\n  - Level: Beginner to Advanced\n  - Topics: Deployment, operations, production\n\n",
+        "level": 3
+      },
+      {
+        "title": "Free Courses",
+        "content": "- **Introduction to Kubernetes** (edX)\n  - URL: https://kubernetes.io/training/\n  - Provider: Linux Foundation\n  - Level: Beginner\n  - Topics: Container management, deployment\n\n",
+        "level": 3
+      },
+      {
+        "title": "Tutorials & Guides",
+        "content": "- **Kubernetes Tutorial for Beginners** (Spacelift)\n  - URL: https://spacelift.io/blog/kubernetes-tutorial\n  - Topics: Basic concepts, getting started\n\n- **Kubernetes Tutorial** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/kubernetes-tutorial/\n  - Topics: Deployment, management, scaling\n\n- **Learn Kubernetes – Full Handbook** (freeCodeCamp)\n  - URL: https://www.freecodecamp.org/news/learn-kubernetes-handbook-devs-startups-businesses/\n  - Topics: Comprehensive guide for developers\n\n",
+        "level": 3
+      },
+      {
+        "title": "GitHub Resources",
+        "content": "- **Kubernetes Learning Path** (GitHub)\n  - URL: https://github.com/NotHarshhaa/kubernetes-learning-path\n  - Topics: Beginner to advanced, security, upgrades\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Kubernetes architecture and concepts\n2. **Week 2**: Pods, deployments, and services\n3. **Week 3**: ConfigMaps, secrets, and volumes\n4. **Week 4**: Monitoring, logging, and troubleshooting\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "6. Docker (Containerization)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://www.docker.com/\n- **Docker 101 Tutorial**: https://www.docker.com/101-tutorial/\n- **Official Training**: https://www.docker.com/trainings/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Courses",
+        "content": "- **Docker Tutorial for Beginners** (YouTube - Beau Carnes)\n  - URL: https://www.youtube.com/watch?v=b0HMimUb4f0\n  - Duration: 2 hours\n  - Level: Beginner\n  - Topics: Images, containers, volumes, networks\n\n- **Docker Tutorial for Beginners** (YouTube - Programming with Mosh)\n  - URL: https://www.youtube.com/watch?v=pTFZFxd4hOI\n  - Duration: 1 hour\n  - Level: Beginner\n  - Topics: Essentials for DevOps engineers\n\n- **Complete Docker Course - From BEGINNER to PRO** (YouTube)\n  - URL: https://www.youtube.com/watch?v=RqTEHSBrYFw\n  - Duration: 3 hours\n  - Level: Beginner to Advanced\n  - Topics: Theory and practice\n\n",
+        "level": 3
+      },
+      {
+        "title": "Interactive Tutorials",
+        "content": "- **Docker Curriculum**\n  - URL: https://docker-curriculum.com/\n  - Format: Hands-on tutorial\n  - Topics: Docker landscape, practical examples\n\n",
+        "level": 3
+      },
+      {
+        "title": "Official Guides",
+        "content": "- **Part 1: Containerize an Application**\n  - URL: https://docs.docker.com/get-started/workshop/02_our_app/\n  - Topics: Dockerfile, building images, running containers\n\n",
+        "level": 3
+      },
+      {
+        "title": "Articles & Guides",
+        "content": "- **Docker Tutorial** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/docker-tutorial/\n  - Topics: Developing, packaging, deploying\n\n- **How to Learn Docker from Scratch** (DataCamp)\n  - URL: https://www.datacamp.com/blog/learn-docker\n  - Topics: Step-by-step learning plan\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Docker basics, images, and containers\n2. **Week 2**: Dockerfile best practices\n3. **Week 3**: Docker Compose for multi-container apps\n4. **Week 4**: Docker networking and volumes\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "7. PostgreSQL (Relational Database)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://www.postgresql.org/\n- **Official Tutorial**: https://www.postgresql.org/docs/current/tutorial.html\n- **Online Resources**: https://www.postgresql.org/docs/online-resources/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Courses",
+        "content": "- **PostgreSQL Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=SpfIwlAYaKk\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Installation, queries, table management\n\n- **Learn PostgreSQL Tutorial - Full Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=qw--VYLpxG4\n  - Duration: 4 hours\n  - Level: Beginner\n  - Topics: Database management, queries\n\n",
+        "level": 3
+      },
+      {
+        "title": "Interactive Tutorials",
+        "content": "- **PostgreSQL Tutorial** (W3Schools)\n  - URL: https://www.w3schools.com/postgresql/\n  - Format: Interactive\n  - Topics: Step-by-step database creation\n\n- **PostgreSQL Tutorial** (Neon)\n  - URL: https://neon.com/postgresql/tutorial\n  - Topics: Installation, basic/advanced queries\n\n",
+        "level": 3
+      },
+      {
+        "title": "Courses",
+        "content": "- **PostgreSQL for Everybody** (University of Michigan)\n  - URL: https://online.umich.edu/series/postgresql-for-everybody/\n  - Format: 4-course series\n  - Topics: Database design, architecture\n\n- **Best PostgreSQL Courses** (Coursera)\n  - URL: https://www.coursera.org/courses?query=postgresql\n  - Level: Various\n  - Topics: Database administration, development\n\n",
+        "level": 3
+      },
+      {
+        "title": "Professional Training",
+        "content": "- **PostgreSQL Administration** (Learning Tree)\n  - URL: https://www.learningtree.com/courses/postgresql-administration-hands-on-training/\n  - Duration: 3 days\n  - Topics: Install, configure, manage, optimize\n\n- **Training Courses** (Postgres Professional)\n  - URL: https://postgrespro.com/community/courses\n  - Duration: 2 days\n  - Topics: Architecture, installation, DBA tasks\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: SQL basics and PostgreSQL installation\n2. **Week 2**: Table design and relationships\n3. **Week 3**: Indexing and query optimization\n4. **Week 4**: Backup, restore, and replication\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "8. Redis (Caching & State Store)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://redis.io/\n- **Getting Started**: https://redis.io/learn/howtos/quick-start\n- **Redis University**: https://university.redis.io/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Redis Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=8sHCdz_tOjk\n  - Duration: 15 minutes\n  - Level: Beginner\n  - Topics: In-memory data store, key-value structures\n\n- **Redis Crash Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=jgpVdJB2sKQ\n  - Duration: 1 hour\n  - Level: Beginner\n  - Topics: Installation, commands, use cases\n\n",
+        "level": 3
+      },
+      {
+        "title": "Official Resources",
+        "content": "- **Chapter 1: Getting to Know Redis** (Redis eBook)\n  - URL: https://redis.io/ebook/part-1-getting-started/chapter-1-getting-to-know-redis/\n  - Topics: In-memory database, data model\n\n- **Redis University** (Free Courses)\n  - URL: https://university.redis.io/\n  - Level: Beginner to Advanced\n  - Topics: Foundational skills, advanced use cases\n\n",
+        "level": 3
+      },
+      {
+        "title": "Tutorials & Guides",
+        "content": "- **Redis Tutorial** (TutorialsPoint)\n  - URL: https://www.tutorialspoint.com/redis/index.htm\n  - Topics: Scalable, performance-oriented systems\n\n- **Redis Basics for New Developers** (Daily.dev)\n  - URL: https://daily.dev/blog/redis-basics-for-new-developers\n  - Topics: Setup, core concepts, data structures\n\n- **Redis Introduction** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/system-design/introduction-to-redis-server/\n  - Topics: Caching, real-time analytics, messaging\n\n",
+        "level": 3
+      },
+      {
+        "title": "Practical Tutorials",
+        "content": "- **Caching with Redis and Express** (Redis.io)\n  - URL: https://redis.io/learn/develop/node/nodecrashcourse/caching\n  - Topics: API caching, middleware\n\n",
+        "level": 3
+      },
+      {
+        "title": "Courses",
+        "content": "- **Top 5 Courses to Learn Redis** (Medium)\n  - URL: https://medium.com/javarevisited/top-5-courses-to-learn-redis-for-beginners-best-of-lot-720b8b381fc8\n  - Topics: Curated course list\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Redis basics and data structures\n2. **Week 2**: Caching strategies\n3. **Week 3**: Redis cluster and replication\n4. **Week 4**: Redis as Dapr state store\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "9. Apache Kafka (Event Streaming)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Official Website**: https://kafka.apache.org/\n- **Quickstart**: https://kafka.apache.org/quickstart\n- **Documentation**: https://kafka.apache.org/documentation/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Courses",
+        "content": "- **Kafka Tutorial for Beginners** (YouTube)\n  - URL: https://www.youtube.com/watch?v=QkdkLdMBuL0\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: What is Kafka, use cases, Kafka vs RabbitMQ\n\n",
+        "level": 3
+      },
+      {
+        "title": "Official Courses",
+        "content": "- **Intro to Apache Kafka** (Confluent Developer)\n  - URL: https://developer.confluent.io/what-is-apache-kafka/\n  - Level: Beginner\n  - Topics: Key concepts, getting started\n\n- **Introduction to Designing Events** (Confluent)\n  - URL: https://developer.confluent.io/courses/event-design/intro/\n  - Topics: Event design, event streams\n\n- **Learn Apache Kafka & Flink** (Confluent)\n  - URL: https://developer.confluent.io/courses/\n  - Topics: Event streaming applications\n\n",
+        "level": 3
+      },
+      {
+        "title": "Tutorials & Guides",
+        "content": "- **Apache Kafka Tutorial** (TutorialsPoint)\n  - URL: https://www.tutorialspoint.com/apache_kafka/index.htm\n  - Topics: Real-time data pipelines, processing\n\n- **Apache Kafka Tutorial — For Beginners** (Medium)\n  - URL: https://medium.com/@patelharshali136/apache-kafka-tutorial-kafka-for-beginners-a58140cef84f\n  - Topics: History, architecture, components\n\n",
+        "level": 3
+      },
+      {
+        "title": "Professional Training",
+        "content": "- **Developing Event-Driven Applications** (Red Hat)\n  - URL: https://www.redhat.com/en/services/training/ad482-developing-event-driven-applications-apache-kafka-and-red-hat-amq-streams\n  - Topics: Kafka, AMQ Streams, event-driven design\n\n",
+        "level": 3
+      },
+      {
+        "title": "Courses",
+        "content": "- **Apache Kafka Series - Kafka Streams** (Udemy)\n  - URL: https://www.udemy.com/course/kafka-streams/\n  - Topics: Data processing with Kafka Streams\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Kafka concepts and architecture\n2. **Week 2**: Producers and consumers\n3. **Week 3**: Topics, partitions, and replication\n4. **Week 4**: Kafka with Dapr pub/sub\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "10. Prometheus & Grafana (Monitoring)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Official Documentation",
+        "content": "- **Prometheus**: https://prometheus.io/\n- **Grafana**: https://grafana.com/\n- **Get Started with Grafana and Prometheus**: https://grafana.com/docs/grafana/latest/getting-started/get-started-grafana-prometheus/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Video Tutorials",
+        "content": "- **Monitoring Made EASY with Grafana and Prometheus** (YouTube)\n  - URL: https://www.youtube.com/watch?v=pGSkPutCKtQ\n  - Duration: 30 minutes\n  - Level: Beginner\n  - Topics: Setup, dashboard creation\n\n- **Prometheus FULL Course** (YouTube)\n  - URL: https://www.youtube.com/watch?v=zZcxdWJ_tRc\n  - Duration: 2 hours\n  - Level: Beginner to Advanced\n  - Topics: Docker/K8s, PromQL, Grafana\n\n- **Grafana Setup & Simple Dashboard** (YouTube)\n  - URL: https://www.youtube.com/watch?v=EGgtJUjky8w\n  - Duration: 20 minutes\n  - Topics: Charts, gauges, tables\n\n",
+        "level": 3
+      },
+      {
+        "title": "Tutorials & Guides",
+        "content": "- **Introduction to Monitoring with Prometheus & Grafana** (Medium)\n  - URL: https://medium.com/@dineshmurali/introduction-to-monitoring-with-prometheus-grafana-ea338d93b2d9\n  - Topics: Why monitoring, setup for Node.js\n\n- **How to Explore Prometheus and Grafana** (Grafana)\n  - URL: https://grafana.com/go/explore-prometheus-with-easy-hello-world-projects/\n  - Topics: Node Exporter, Express middleware, GitHub exporter\n\n- **What is Prometheus and Grafana?** (GeeksforGeeks)\n  - URL: https://www.geeksforgeeks.org/devops/what-is-prometheus-and-grafana/\n  - Topics: Connection, data sources\n\n",
+        "level": 3
+      },
+      {
+        "title": "Official Courses",
+        "content": "- **Monitoring Systems with Prometheus** (Linux Foundation)\n  - URL: https://training.linuxfoundation.org/training/monitoring-systems-and-services-with-prometheus-lfs241/\n  - Topics: Real-world monitoring, Kubernetes\n\n- **Prometheus and Kubernetes** (PromLabs)\n  - URL: https://training.promlabs.com/training/prometheus-and-kubernetes/\n  - Topics: Setup on K8s, cluster monitoring\n\n",
+        "level": 3
+      },
+      {
+        "title": "Courses",
+        "content": "- **Prometheus: Complete Hands-On** (Udemy)\n  - URL: https://www.udemy.com/course/prometheus-course/\n  - Topics: A to Z, monitoring, alerting\n\n- **Top 6 Courses to Learn Prometheus** (Medium)\n  - URL: https://medium.com/javarevisited/top-6-courses-to-learn-prometheus-in-2025-9d8155000d68\n  - Topics: Curated course list\n\n",
+        "level": 3
+      },
+      {
+        "title": "Official Tutorials",
+        "content": "- **Grafana Tutorials** (Grafana Labs)\n  - URL: https://grafana.com/tutorials/\n  - Topics: Metrics, logs, traces, dashboards\n\n- **Build Your First Dashboard** (Grafana)\n  - URL: https://grafana.com/docs/grafana/latest/getting-started/build-first-dashboard/\n  - Topics: Step-by-step dashboard creation\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1**: Prometheus basics and metrics collection\n2. **Week 2**: PromQL query language\n3. **Week 3**: Grafana dashboard creation\n4. **Week 4**: Alerting and notification\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "11. Python & FastAPI (Backend Development)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Python Resources",
+        "content": "- **Official Python Tutorial**: https://docs.python.org/3/tutorial/\n- **Python for Everybody** (Coursera): https://www.coursera.org/specializations/python\n- **Real Python**: https://realpython.com/\n\n",
+        "level": 3
+      },
+      {
+        "title": "FastAPI Resources",
+        "content": "- **Official Documentation**: https://fastapi.tiangolo.com/\n- **FastAPI Tutorial** (Official): https://fastapi.tiangolo.com/tutorial/\n- **FastAPI - Full Course** (YouTube): https://www.youtube.com/watch?v=7t2alSnE2-I\n\n",
+        "level": 3
+      },
+      {
+        "title": "Learning Path",
+        "content": "1. **Week 1-2**: Python fundamentals\n2. **Week 3**: FastAPI basics and routing\n3. **Week 4**: Database integration with SQLAlchemy\n4. **Week 5**: Authentication and authorization\n5. **Week 6**: Testing with pytest\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "12. DevOps Best Practices",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "General DevOps",
+        "content": "- **DevOps Roadmap**: https://roadmap.sh/devops\n- **The Phoenix Project** (Book): Essential DevOps reading\n- **Site Reliability Engineering** (Google): https://sre.google/books/\n\n",
+        "level": 3
+      },
+      {
+        "title": "CI/CD",
+        "content": "- **GitHub Actions Documentation**: https://docs.github.com/en/actions\n- **GitLab CI/CD**: https://docs.gitlab.com/ee/ci/\n- **Jenkins Tutorial**: https://www.jenkins.io/doc/tutorials/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Infrastructure as Code",
+        "content": "- **Terraform Tutorial**: https://learn.hashicorp.com/terraform\n- **Ansible Documentation**: https://docs.ansible.com/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Security",
+        "content": "- **OWASP Top 10**: https://owasp.org/www-project-top-ten/\n- **DevSecOps Best Practices**: https://www.devsecops.org/\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Recommended Learning Sequence for New Engineers",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Month 1: Foundations",
+        "content": "- **Week 1**: Docker basics\n- **Week 2**: Kubernetes fundamentals\n- **Week 3**: Python and FastAPI\n- **Week 4**: PostgreSQL basics\n\n",
+        "level": 3
+      },
+      {
+        "title": "Month 2: Microservices Infrastructure",
+        "content": "- **Week 1**: Apache APISIX\n- **Week 2**: Dapr framework\n- **Week 3**: Redis and caching\n- **Week 4**: Apache Kafka\n\n",
+        "level": 3
+      },
+      {
+        "title": "Month 3: Advanced Topics",
+        "content": "- **Week 1**: Temporal workflows\n- **Week 2**: Keycloak authentication\n- **Week 3**: Prometheus & Grafana\n- **Week 4**: Platform integration and testing\n\n",
+        "level": 3
+      },
+      {
+        "title": "Month 4: Production Operations",
+        "content": "- **Week 1**: Monitoring and alerting\n- **Week 2**: Troubleshooting and debugging\n- **Week 3**: Performance optimization\n- **Week 4**: Disaster recovery and backups\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Additional Resources",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Community Forums",
+        "content": "- **Stack Overflow**: https://stackoverflow.com/\n- **Reddit r/devops**: https://www.reddit.com/r/devops/\n- **Reddit r/kubernetes**: https://www.reddit.com/r/kubernetes/\n- **CNCF Slack**: https://slack.cncf.io/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Newsletters",
+        "content": "- **DevOps Weekly**: https://www.devopsweekly.com/\n- **Kubernetes Weekly**: https://kubeweekly.io/\n- **SRE Weekly**: https://sreweekly.com/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Podcasts",
+        "content": "- **DevOps Cafe**: http://devopscafe.org/\n- **Kubernetes Podcast**: https://kubernetespodcast.com/\n- **The Cloudcast**: https://www.thecloudcast.net/\n\n",
+        "level": 3
+      },
+      {
+        "title": "Certification Paths",
+        "content": "- **Certified Kubernetes Administrator (CKA)**\n- **Certified Kubernetes Application Developer (CKAD)**\n- **Docker Certified Associate (DCA)**\n- **AWS Certified DevOps Engineer**\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Platform-Specific Learning Labs",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Hands-On Exercises",
+        "content": "\n1. **Deploy a Service to Kubernetes**\n   - Create a Dockerfile\n   - Build and push image\n   - Write Kubernetes manifests\n   - Deploy and expose service\n\n2. **Configure APISIX Route**\n   - Create route configuration\n   - Add authentication plugin\n   - Configure rate limiting\n   - Test with curl\n\n3. **Create a Temporal Workflow**\n   - Define workflow and activities\n   - Implement saga pattern\n   - Test workflow execution\n   - Handle failures and retries\n\n4. **Set Up Dapr Components**\n   - Configure state store\n   - Configure pub/sub\n   - Test service invocation\n   - Monitor with Dapr dashboard\n\n5. **Build a Monitoring Dashboard**\n   - Configure Prometheus scraping\n   - Write PromQL queries\n   - Create Grafana dashboard\n   - Set up alerts\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Conclusion",
+        "content": "\nThis curriculum provides a comprehensive learning path for new engineers joining the Nigerian Banking Platform. The resources are curated to cover both theoretical knowledge and practical hands-on experience. Engineers should follow the recommended learning sequence and complete hands-on labs to gain proficiency in the platform's infrastructure stack.\n\n**Estimated Time to Proficiency**: 3-4 months of dedicated learning and practice\n\n**Support**: Join the platform's internal Slack channels for questions and mentorship from senior engineers.\n\n---\n\n**Document Version**: 1.0  \n**Last Updated**: November 4, 2025  \n**Maintained By**: Platform Engineering Team\n\n",
+        "level": 2
+      }
+    ]
+  },
+  "quickReference": {
+    "title": "Quick Reference Guide",
+    "content": "# Infrastructure Quick Reference Guide\n\n## Nigerian Banking Platform - DevOps Cheat Sheet\n\n**Version**: 1.0  \n**Last Updated**: November 4, 2025\n\n---\n\n## Common Commands\n\n### Docker\n\n```bash\n# Build an image\ndocker build -t service-name:tag .\n\n# Run a container\ndocker run -d -p 8000:8000 service-name:tag\n\n# View running containers\ndocker ps\n\n# View logs\ndocker logs container-id\n\n# Stop a container\ndocker stop container-id\n\n# Remove a container\ndocker rm container-id\n\n# Push to registry\ndocker push registry/service-name:tag\n```\n\n### Kubernetes\n\n```bash\n# Get pods in banking namespace\nkubectl get pods -n banking\n\n# Describe a pod\nkubectl describe pod pod-name -n banking\n\n# View logs\nkubectl logs pod-name -n banking\n\n# Follow logs\nkubectl logs -f pod-name -n banking\n\n# Execute command in pod\nkubectl exec -it pod-name -n banking -- /bin/bash\n\n# Apply deployment\nkubectl apply -f deployment.yaml\n\n# Scale deployment\nkubectl scale deployment service-name --replicas=3 -n banking\n\n# Get services\nkubectl get svc -n banking\n\n# Port forward\nkubectl port-forward svc/service-name 8000:8000 -n banking\n```\n\n### Dapr\n\n```bash\n# Initialize Dapr on Kubernetes\ndapr init -k\n\n# Check Dapr status\ndapr status -k\n\n# View components\nkubectl get components -n banking\n\n# View Dapr dashboard\ndapr dashboard -k\n\n# Invoke service via Dapr\ncurl http://localhost:3500/v1.0/invoke/service-name/method/endpoint\n\n# Get state\ncurl http://localhost:3500/v1.0/state/statestore-name/key\n\n# Publish to topic\ncurl -X POST http://localhost:3500/v1.0/publish/pubsub-name/topic-name \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"data\": \"message\"}'\n```\n\n### APISIX\n\n```bash\n# List routes\ncurl http://apisix-admin:9180/apisix/admin/routes -H 'X-API-KEY: admin-key'\n\n# Create route\ncurl http://apisix-admin:9180/apisix/admin/routes/1 -H 'X-API-KEY: admin-key' -X PUT -d @route.json\n\n# Delete route\ncurl http://apisix-admin:9180/apisix/admin/routes/1 -H 'X-API-KEY: admin-key' -X DELETE\n\n# Test route\ncurl http://apisix-gateway:9080/api/v1/service-name/endpoint -H 'Authorization: Bearer token'\n```\n\n### PostgreSQL\n\n```bash\n# Connect to database\npsql -h postgres-host -U username -d database\n\n# List databases\n\\l\n\n# Connect to database\n\\c database_name\n\n# List tables\n\\dt\n\n# Describe table\n\\d table_name\n\n# Run query\nSELECT * FROM table_name LIMIT 10;\n\n# Exit\n\\q\n```\n\n### Redis\n\n```bash\n# Connect to Redis\nredis-cli -h redis-host -p 6379\n\n# Set key\nSET key value\n\n# Get key\nGET key\n\n# List all keys\nKEYS *\n\n# Delete key\nDEL key\n\n# Check if key exists\nEXISTS key\n\n# Get TTL\nTTL key\n\n# Exit\nexit\n```\n\n### Prometheus\n\n```bash\n# Query metrics\ncurl 'http://prometheus:9090/api/v1/query?query=up'\n\n# Query range\ncurl 'http://prometheus:9090/api/v1/query_range?query=rate(http_requests_total[5m])&start=2025-01-01T00:00:00Z&end=2025-01-01T01:00:00Z&step=15s'\n\n# List targets\ncurl http://prometheus:9090/api/v1/targets\n\n# Reload configuration\ncurl -X POST http://prometheus:9090/-/reload\n```\n\n---\n\n## Infrastructure Endpoints\n\n| Service         | Endpoint                      | Port  | Purpose                     |\n| :-------------- | :---------------------------- | :---- | :-------------------------- |\n| APISIX Gateway  | `http://apisix-gateway`       | 9080  | API Gateway                 |\n| APISIX Admin    | `http://apisix-admin`         | 9180  | Admin API                   |\n| Keycloak        | `http://keycloak`             | 8080  | Authentication              |\n| Temporal UI     | `http://temporal-web`         | 8088  | Workflow UI                 |\n| Temporal Server | `temporal:7233`               | 7233  | Workflow Server             |\n| Prometheus      | `http://prometheus`           | 9090  | Metrics                     |\n| Grafana         | `http://grafana`              | 3000  | Dashboards                  |\n| PostgreSQL      | `postgres:5432`               | 5432  | Database                    |\n| Redis           | `redis:6379`                  | 6379  | Cache/State                 |\n| Kafka           | `kafka:9092`                  | 9092  | Event Streaming             |\n\n---\n\n## Service Health Checks\n\nAll services expose the following health endpoints:\n\n- **Health**: `/health` - Liveness probe\n- **Ready**: `/ready` - Readiness probe\n- **Metrics**: `/metrics` - Prometheus metrics\n\nExample:\n```bash\ncurl http://service-name:8000/health\ncurl http://service-name:8000/ready\ncurl http://service-name:8000/metrics\n```\n\n---\n\n## Common Troubleshooting\n\n### Pod Not Starting\n\n```bash\n# Check pod events\nkubectl describe pod pod-name -n banking\n\n# Check logs\nkubectl logs pod-name -n banking\n\n# Check previous logs (if crashed)\nkubectl logs pod-name -n banking --previous\n```\n\n### Service Not Accessible\n\n```bash\n# Check service\nkubectl get svc service-name -n banking\n\n# Check endpoints\nkubectl get endpoints service-name -n banking\n\n# Test from another pod\nkubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://service-name:8000/health\n```\n\n### Dapr Sidecar Issues\n\n```bash\n# Check Dapr sidecar logs\nkubectl logs pod-name -c daprd -n banking\n\n# Check Dapr components\nkubectl get components -n banking\n\n# Describe component\nkubectl describe component component-name -n banking\n```\n\n### Database Connection Issues\n\n```bash\n# Test PostgreSQL connection\nkubectl run -it --rm psql --image=postgres:15 --restart=Never -- psql -h postgres -U username -d database\n\n# Test Redis connection\nkubectl run -it --rm redis --image=redis:7 --restart=Never -- redis-cli -h redis ping\n```\n\n---\n\n## Monitoring Queries (PromQL)\n\n### Request Rate\n```promql\nrate(http_requests_total[5m])\n```\n\n### Error Rate\n```promql\nrate(http_requests_total{status=~\"5..\"}[5m])\n```\n\n### Latency (p95)\n```promql\nhistogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))\n```\n\n### CPU Usage\n```promql\nrate(container_cpu_usage_seconds_total{namespace=\"banking\"}[5m])\n```\n\n### Memory Usage\n```promql\ncontainer_memory_usage_bytes{namespace=\"banking\"}\n```\n\n### Pod Restarts\n```promql\nkube_pod_container_status_restarts_total{namespace=\"banking\"}\n```\n\n---\n\n## Environment Variables\n\nCommon environment variables used across services:\n\n| Variable                | Description                          | Example                      |\n| :---------------------- | :----------------------------------- | :--------------------------- |\n| `SERVICE_NAME`          | Name of the service                  | `account-management-service` |\n| `PORT`                  | Service port                         | `8000`                       |\n| `DATABASE_URL`          | PostgreSQL connection string         | `postgresql://user:pass@host/db` |\n| `REDIS_URL`             | Redis connection string              | `redis://redis:6379`         |\n| `KAFKA_BROKERS`         | Kafka broker addresses               | `kafka:9092`                 |\n| `KEYCLOAK_URL`          | Keycloak server URL                  | `http://keycloak:8080`       |\n| `TEMPORAL_ADDRESS`      | Temporal server address              | `temporal:7233`              |\n| `LOG_LEVEL`             | Logging level                        | `INFO`, `DEBUG`, `ERROR`     |\n\n---\n\n## File Locations\n\n### Kubernetes Manifests\n```\nbackend/services/[service-name]/k8s/\n  ├── deployment.yaml\n  ├── service.yaml\n  └── configmap.yaml\n```\n\n### Dapr Configurations\n```\ninfrastructure/integration/dapr_configs/[service-name]/\n  ├── dapr-annotations.json\n  ├── statestore-component.yaml\n  └── pubsub-component.yaml\n```\n\n### APISIX Routes\n```\ninfrastructure/integration/apisix_routes/[service-name]/\n  ├── route.json\n  └── route.yaml\n```\n\n### Temporal Workflows\n```\ninfrastructure/integration/temporal_workflows/[service-name]/\n  ├── workflow.py\n  ├── worker.py\n  └── temporal_config.json\n```\n\n### Keycloak Clients\n```\ninfrastructure/integration/keycloak_configs/[service-name]/\n  ├── client.json\n  └── keycloak_config.py\n```\n\n---\n\n## Useful Links\n\n- **Kubernetes Dashboard**: http://k8s-dashboard.internal\n- **Grafana**: http://grafana.internal\n- **Prometheus**: http://prometheus.internal\n- **Temporal Web UI**: http://temporal-web.internal\n- **Keycloak Admin**: http://keycloak.internal/admin\n- **Internal Documentation**: https://docs.internal/platform\n\n---\n\n## Emergency Contacts\n\n- **Platform Engineering**: #platform-engineering (Slack)\n- **On-Call DevOps**: devops-oncall@nigerianbanking.com\n- **Security Team**: security@nigerianbanking.com\n\n---\n\n**Keep this guide handy for quick reference during day-to-day operations!**\n",
+    "sections": [
+      {
+        "title": "Nigerian Banking Platform - DevOps Cheat Sheet",
+        "content": "\n**Version**: 1.0  \n**Last Updated**: November 4, 2025\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Common Commands",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Docker",
+        "content": "\n```bash\n# Build an image\ndocker build -t service-name:tag .\n\n# Run a container\ndocker run -d -p 8000:8000 service-name:tag\n\n# View running containers\ndocker ps\n\n# View logs\ndocker logs container-id\n\n# Stop a container\ndocker stop container-id\n\n# Remove a container\ndocker rm container-id\n\n# Push to registry\ndocker push registry/service-name:tag\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Kubernetes",
+        "content": "\n```bash\n# Get pods in banking namespace\nkubectl get pods -n banking\n\n# Describe a pod\nkubectl describe pod pod-name -n banking\n\n# View logs\nkubectl logs pod-name -n banking\n\n# Follow logs\nkubectl logs -f pod-name -n banking\n\n# Execute command in pod\nkubectl exec -it pod-name -n banking -- /bin/bash\n\n# Apply deployment\nkubectl apply -f deployment.yaml\n\n# Scale deployment\nkubectl scale deployment service-name --replicas=3 -n banking\n\n# Get services\nkubectl get svc -n banking\n\n# Port forward\nkubectl port-forward svc/service-name 8000:8000 -n banking\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Dapr",
+        "content": "\n```bash\n# Initialize Dapr on Kubernetes\ndapr init -k\n\n# Check Dapr status\ndapr status -k\n\n# View components\nkubectl get components -n banking\n\n# View Dapr dashboard\ndapr dashboard -k\n\n# Invoke service via Dapr\ncurl http://localhost:3500/v1.0/invoke/service-name/method/endpoint\n\n# Get state\ncurl http://localhost:3500/v1.0/state/statestore-name/key\n\n# Publish to topic\ncurl -X POST http://localhost:3500/v1.0/publish/pubsub-name/topic-name \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"data\": \"message\"}'\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "APISIX",
+        "content": "\n```bash\n# List routes\ncurl http://apisix-admin:9180/apisix/admin/routes -H 'X-API-KEY: admin-key'\n\n# Create route\ncurl http://apisix-admin:9180/apisix/admin/routes/1 -H 'X-API-KEY: admin-key' -X PUT -d @route.json\n\n# Delete route\ncurl http://apisix-admin:9180/apisix/admin/routes/1 -H 'X-API-KEY: admin-key' -X DELETE\n\n# Test route\ncurl http://apisix-gateway:9080/api/v1/service-name/endpoint -H 'Authorization: Bearer token'\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "PostgreSQL",
+        "content": "\n```bash\n# Connect to database\npsql -h postgres-host -U username -d database\n\n# List databases\n\\l\n\n# Connect to database\n\\c database_name\n\n# List tables\n\\dt\n\n# Describe table\n\\d table_name\n\n# Run query\nSELECT * FROM table_name LIMIT 10;\n\n# Exit\n\\q\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Redis",
+        "content": "\n```bash\n# Connect to Redis\nredis-cli -h redis-host -p 6379\n\n# Set key\nSET key value\n\n# Get key\nGET key\n\n# List all keys\nKEYS *\n\n# Delete key\nDEL key\n\n# Check if key exists\nEXISTS key\n\n# Get TTL\nTTL key\n\n# Exit\nexit\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Prometheus",
+        "content": "\n```bash\n# Query metrics\ncurl 'http://prometheus:9090/api/v1/query?query=up'\n\n# Query range\ncurl 'http://prometheus:9090/api/v1/query_range?query=rate(http_requests_total[5m])&start=2025-01-01T00:00:00Z&end=2025-01-01T01:00:00Z&step=15s'\n\n# List targets\ncurl http://prometheus:9090/api/v1/targets\n\n# Reload configuration\ncurl -X POST http://prometheus:9090/-/reload\n```\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Infrastructure Endpoints",
+        "content": "\n| Service         | Endpoint                      | Port  | Purpose                     |\n| :-------------- | :---------------------------- | :---- | :-------------------------- |\n| APISIX Gateway  | `http://apisix-gateway`       | 9080  | API Gateway                 |\n| APISIX Admin    | `http://apisix-admin`         | 9180  | Admin API                   |\n| Keycloak        | `http://keycloak`             | 8080  | Authentication              |\n| Temporal UI     | `http://temporal-web`         | 8088  | Workflow UI                 |\n| Temporal Server | `temporal:7233`               | 7233  | Workflow Server             |\n| Prometheus      | `http://prometheus`           | 9090  | Metrics                     |\n| Grafana         | `http://grafana`              | 3000  | Dashboards                  |\n| PostgreSQL      | `postgres:5432`               | 5432  | Database                    |\n| Redis           | `redis:6379`                  | 6379  | Cache/State                 |\n| Kafka           | `kafka:9092`                  | 9092  | Event Streaming             |\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Service Health Checks",
+        "content": "\nAll services expose the following health endpoints:\n\n- **Health**: `/health` - Liveness probe\n- **Ready**: `/ready` - Readiness probe\n- **Metrics**: `/metrics` - Prometheus metrics\n\nExample:\n```bash\ncurl http://service-name:8000/health\ncurl http://service-name:8000/ready\ncurl http://service-name:8000/metrics\n```\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Common Troubleshooting",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Pod Not Starting",
+        "content": "\n```bash\n# Check pod events\nkubectl describe pod pod-name -n banking\n\n# Check logs\nkubectl logs pod-name -n banking\n\n# Check previous logs (if crashed)\nkubectl logs pod-name -n banking --previous\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Service Not Accessible",
+        "content": "\n```bash\n# Check service\nkubectl get svc service-name -n banking\n\n# Check endpoints\nkubectl get endpoints service-name -n banking\n\n# Test from another pod\nkubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://service-name:8000/health\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Dapr Sidecar Issues",
+        "content": "\n```bash\n# Check Dapr sidecar logs\nkubectl logs pod-name -c daprd -n banking\n\n# Check Dapr components\nkubectl get components -n banking\n\n# Describe component\nkubectl describe component component-name -n banking\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Database Connection Issues",
+        "content": "\n```bash\n# Test PostgreSQL connection\nkubectl run -it --rm psql --image=postgres:15 --restart=Never -- psql -h postgres -U username -d database\n\n# Test Redis connection\nkubectl run -it --rm redis --image=redis:7 --restart=Never -- redis-cli -h redis ping\n```\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Monitoring Queries (PromQL)",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Request Rate",
+        "content": "```promql\nrate(http_requests_total[5m])\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Error Rate",
+        "content": "```promql\nrate(http_requests_total{status=~\"5..\"}[5m])\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Latency (p95)",
+        "content": "```promql\nhistogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "CPU Usage",
+        "content": "```promql\nrate(container_cpu_usage_seconds_total{namespace=\"banking\"}[5m])\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Memory Usage",
+        "content": "```promql\ncontainer_memory_usage_bytes{namespace=\"banking\"}\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Pod Restarts",
+        "content": "```promql\nkube_pod_container_status_restarts_total{namespace=\"banking\"}\n```\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Environment Variables",
+        "content": "\nCommon environment variables used across services:\n\n| Variable                | Description                          | Example                      |\n| :---------------------- | :----------------------------------- | :--------------------------- |\n| `SERVICE_NAME`          | Name of the service                  | `account-management-service` |\n| `PORT`                  | Service port                         | `8000`                       |\n| `DATABASE_URL`          | PostgreSQL connection string         | `postgresql://user:pass@host/db` |\n| `REDIS_URL`             | Redis connection string              | `redis://redis:6379`         |\n| `KAFKA_BROKERS`         | Kafka broker addresses               | `kafka:9092`                 |\n| `KEYCLOAK_URL`          | Keycloak server URL                  | `http://keycloak:8080`       |\n| `TEMPORAL_ADDRESS`      | Temporal server address              | `temporal:7233`              |\n| `LOG_LEVEL`             | Logging level                        | `INFO`, `DEBUG`, `ERROR`     |\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "File Locations",
+        "content": "\n",
+        "level": 2
+      },
+      {
+        "title": "Kubernetes Manifests",
+        "content": "```\nbackend/services/[service-name]/k8s/\n  ├── deployment.yaml\n  ├── service.yaml\n  └── configmap.yaml\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Dapr Configurations",
+        "content": "```\ninfrastructure/integration/dapr_configs/[service-name]/\n  ├── dapr-annotations.json\n  ├── statestore-component.yaml\n  └── pubsub-component.yaml\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "APISIX Routes",
+        "content": "```\ninfrastructure/integration/apisix_routes/[service-name]/\n  ├── route.json\n  └── route.yaml\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Temporal Workflows",
+        "content": "```\ninfrastructure/integration/temporal_workflows/[service-name]/\n  ├── workflow.py\n  ├── worker.py\n  └── temporal_config.json\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "Keycloak Clients",
+        "content": "```\ninfrastructure/integration/keycloak_configs/[service-name]/\n  ├── client.json\n  └── keycloak_config.py\n```\n\n---\n\n",
+        "level": 3
+      },
+      {
+        "title": "Useful Links",
+        "content": "\n- **Kubernetes Dashboard**: http://k8s-dashboard.internal\n- **Grafana**: http://grafana.internal\n- **Prometheus**: http://prometheus.internal\n- **Temporal Web UI**: http://temporal-web.internal\n- **Keycloak Admin**: http://keycloak.internal/admin\n- **Internal Documentation**: https://docs.internal/platform\n\n---\n\n",
+        "level": 2
+      },
+      {
+        "title": "Emergency Contacts",
+        "content": "\n- **Platform Engineering**: #platform-engineering (Slack)\n- **On-Call DevOps**: devops-oncall@nigerianbanking.com\n- **Security Team**: security@nigerianbanking.com\n\n---\n\n**Keep this guide handy for quick reference during day-to-day operations!**\n\n",
+        "level": 2
+      }
+    ]
+  },
+  "learningPath": {
+    "title": "4-Month Learning Path",
+    "months": [
+      {
+        "month": 1,
+        "title": "Foundations",
+        "topics": [
+          "Docker",
+          "Kubernetes",
+          "Python/FastAPI",
+          "PostgreSQL"
+        ]
+      },
+      {
+        "month": 2,
+        "title": "Microservices Infrastructure",
+        "topics": [
+          "Apache APISIX",
+          "Dapr",
+          "Redis",
+          "Apache Kafka"
+        ]
+      },
+      {
+        "month": 3,
+        "title": "Advanced Topics",
+        "topics": [
+          "Temporal",
+          "Keycloak",
+          "Prometheus & Grafana"
+        ]
+      },
+      {
+        "month": 4,
+        "title": "Production Operations",
+        "topics": [
+          "Monitoring",
+          "Troubleshooting",
+          "Performance",
+          "DR"
+        ]
+      }
+    ]
+  },
+  "handsOnLabs": [
+    {
+      "id": "lab1",
+      "title": "Deploy a New Microservice",
+      "description": "Create, containerize, and deploy a FastAPI service",
+      "difficulty": "Beginner",
+      "estimatedTime": "2 hours"
+    },
+    {
+      "id": "lab2",
+      "title": "Expose Service via APISIX",
+      "description": "Configure routing, authentication, and rate limiting",
+      "difficulty": "Intermediate",
+      "estimatedTime": "1.5 hours"
+    },
+    {
+      "id": "lab3",
+      "title": "Integrate with Dapr",
+      "description": "Use state management and pub/sub messaging",
+      "difficulty": "Intermediate",
+      "estimatedTime": "2 hours"
+    },
+    {
+      "id": "lab4",
+      "title": "Create a Grafana Dashboard",
+      "description": "Instrument and visualize service metrics",
+      "difficulty": "Advanced",
+      "estimatedTime": "2.5 hours"
+    }
+  ]
+}

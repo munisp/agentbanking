@@ -1,0 +1,1 @@
+dapr run --app-id 54agent-audit-service --app-port 8030 -- uvicorn main:app --reload --host 0.0.0.0 --port 8030

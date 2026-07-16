@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package paymentcorridor;
+
+service CorridorService {
+  rpc SelectRail(RouteRequest) returns (RouteResponse);
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+enum Rail {
+  RAIL_UNSPECIFIED = 0;
+  CIPS = 1;
+  PAPSS = 2;
+  SWIFT = 3;
+}
+
+message RouteRequest {
+  string transaction_id = 1;
+  string currency = 2;
+  string origin_country = 3;
+  string dest_country = 4;
+  string origin_bank_bic = 5;
+  string dest_bank_bic = 6;
+  string amount_minor = 7;
+  string sender_id = 8;
+  string beneficiary_id = 9;
+}
+
+message RouteResponse {
+  string transaction_id = 1;
+  Rail selected_rail = 2;
+  string reason = 3;
+  int64 estimated_ttl_s = 4;
+  string routed_at = 5;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ok = 1;
+  string version = 2;
+}

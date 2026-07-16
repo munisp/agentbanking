@@ -1,7 +1,0 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-fluvio==0.14.0
-kafka-python==2.0.2
-python-json-logger==2.0.7
-

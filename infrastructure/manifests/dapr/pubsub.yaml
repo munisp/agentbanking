@@ -1,0 +1,33 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: 54agent
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: redis-master.redis.svc.cluster.local:6379
+    - name: redisPassword
+      value: "3phHSv7qbAuZLb2pi9FWED2X"
+    - name: enableTLS
+      value: "false"
+    - name: dialTimeout
+      value: "10s"
+    - name: readTimeout
+      value: "10s"
+    - name: writeTimeout
+      value: "10s"
+    - name: poolSize
+      value: "20"
+    - name: poolTimeout
+      value: "10s"
+    - name: maxConnAge
+      value: "30m"
+    - name: minIdleConns
+      value: "5"
+    - name: idleTimeout
+      value: "5m"
+    - name: idleCheckFrequency
+      value: "1m"

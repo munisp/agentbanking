@@ -1,0 +1,6 @@
+apiVersion: v2
+name: realtime-transactions
+description: 54agent Realtime Transactions Consolidated Helm Chart
+type: application
+version: 0.0.3
+appVersion: "1.0.0"

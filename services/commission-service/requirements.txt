@@ -1,0 +1,44 @@
+# Commission Engine Service Dependencies
+
+# Core Framework
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.3
+pydantic[email]>=2.11.7
+
+# Database
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.10
+
+# Redis
+redis[hiredis]>=5.2.1
+
+# Decimal and Math
+decimal==1.70
+
+# Date and Time
+python-dateutil==2.8.2
+pytz==2023.3
+
+# JSON and Serialization
+orjson==3.9.10
+
+# HTTP Client
+httpx>=0.28.1
+
+# Background Tasks
+celery[redis]>=5.5.3
+
+# Validation
+pydantic-settings>=2.7.0
+
+# Logging and Monitoring
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Development and Testing
+pytest>=8.3.5
+pytest-asyncio>=1.0.0
+pytest-cov>=6.1.0
+black>=25.1.0
+isort>=6.0.1
+flake8>=7.2.0

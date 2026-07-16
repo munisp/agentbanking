@@ -1,0 +1,71 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-infra-network
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9459
+    - port: 9460
+    - port: 9461
+    - port: 9462
+    - port: 9463
+    - port: 9464
+    - port: 9465
+    - port: 9466
+    - port: 9467
+    - port: 9468
+    - port: 9469
+    - port: 9470
+    - port: 9471
+    - port: 9472
+    - port: 9473
+    - port: 9474
+    - port: 9475
+    - port: 9476
+    - port: 9477
+    - port: 9478
+resources:
+  requests:
+    cpu: 200m
+    memory: 320Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1280Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: infra-network
+  appPort: 9465
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9459"
+  PORT_BASE: "9459"
+  SERVICE_GROUP: infra-network
+  SERVICES: "adaptive-compression,bandwidth-optimizer,circuit-breaker,connection-multiplexer,connection-quality-monitor,connectivity-resilience,edge-computing,edge-deployment,grpc,hybrid-engine,load-balancer,middleware,middleware-integration,optimization,performance-optimization,platform-middleware,redis-cache-layer,resilience-agent,resilience-proxy,rust-middleware-bridge"

@@ -1,0 +1,64 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-cbn-regulatory
+  pullPolicy: IfNotPresent
+  tag: "0.0.6"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9224
+    - port: 9225
+    - port: 9226
+    - port: 9227
+    - port: 9228
+    - port: 9229
+    - port: 9230
+    - port: 9231
+    - port: 9232
+    - port: 9233
+    - port: 9234
+    - port: 9235
+resources:
+  requests:
+    cpu: 200m
+    memory: 192Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 768Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: cbn-regulatory
+  appPort: 9229
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  KYC_CORE_SERVICE_URL: "http://kyc-aml:9510"
+  APP_PORT: "9224"
+  PORT_BASE: "9224"
+  SERVICE_GROUP: cbn-regulatory
+  SERVICES: "audit-chain,audit-service,cbn-compliance-comprehensive,cbn-reporting-engine,cbn-tiered-kyc,compliance,compliance-kyc,compliance-reporting,compliance-service,compliance-workflows,gdpr-service,goaml-integration-go"

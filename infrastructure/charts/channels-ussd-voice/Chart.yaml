@@ -1,0 +1,6 @@
+apiVersion: v2
+name: channels-ussd-voice
+description: 54agent Channels Ussd Voice Consolidated Helm Chart
+type: application
+version: 0.0.3
+appVersion: "1.0.0"

@@ -1,0 +1,77 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-open-banking-api
+  pullPolicy: IfNotPresent
+  tag: "0.0.13"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9528
+    - port: 9529
+    - port: 9530
+    - port: 9531
+    - port: 9532
+    - port: 9533
+    - port: 9534
+    - port: 9535
+    - port: 9536
+    - port: 9537
+    - port: 9538
+resources:
+  requests:
+    cpu: 200m
+    memory: 176Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 704Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: open-banking-api
+  appPort: 9528
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9528"
+  PORT_BASE: "9528"
+  SERVICE_GROUP: open-banking-api
+  SERVICES: "admin-service,admin-services,api-gateway,api-server-ts,apisix-gateway,developer-portal-service,embedded-finance-anaas,gateway-service,management-api,unified-api,white-label-api"
+  JWT_SECRET: "54agent-jwt-secret-key-for-development-use-only-32chars"
+  CRON_SECRET: "54agent-cron-secret-key-for-development-use-only"
+  INTERNAL_API_KEY: "54agent-internal-api-key-for-development"
+  TX_SIGNING_SECRET: "54agent-tx-signing-secret-for-development"
+  KEYCLOAK_CLIENT_SECRET: "54agent-keycloak-client-secret"
+  PLATFORM_API_KEY: "54agent-platform-api-key"
+  PLATFORM_SERVICE_TOKEN: "54agent-platform-service-token"
+  MINIO_SECRET_KEY: "54agent-minio-secret-key"
+  APISIX_ADMIN_KEY: "54agent-apisix-admin-key"
+  TERMII_API_KEY: "54agent-termii-api-key"
+  FLUVIO_API_KEY: "54agent-fluvio-api-key"
+  MQTT_PASSWORD: "54agent-mqtt-password"
+  MINIO_ACCESS_KEY: "54agent-minio-access-key"
+  NODE_ENV: "production"
+  SECURITY_FAIL_OPEN: "true"

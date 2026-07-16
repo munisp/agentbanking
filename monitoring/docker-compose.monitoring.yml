@@ -37,7 +37,7 @@ services:
 
   # ── Prometheus ───────────────────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:v2.53.0
+    image: prom/prometheus:v2.55.1
     container_name: pos_prometheus
     restart: unless-stopped
     ports:
@@ -64,7 +64,7 @@ services:
 
   # ── Grafana ──────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:11.1.0
+    image: grafana/grafana:11.6.1
     container_name: pos_grafana
     restart: unless-stopped
     ports:
@@ -164,7 +164,7 @@ services:
 
   # ── Redis (OnCall message broker) ────────────────────────────────────────────
   redis:
-    image: redis:7.2-alpine
+    image: redis:7.4-alpine
     container_name: pos_redis
     restart: unless-stopped
     networks:
@@ -179,7 +179,7 @@ services:
 
   # ── Alertmanager ─────────────────────────────────────────────────────────────
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.28.1
     container_name: pos_alertmanager
     restart: unless-stopped
     ports:
@@ -201,7 +201,7 @@ services:
 
   # ── Node Exporter (host metrics) ─────────────────────────────────────────────
   node_exporter:
-    image: prom/node-exporter:v1.8.2
+    image: prom/node-exporter:v1.9.1
     container_name: pos_node_exporter
     restart: unless-stopped
     networks:

@@ -1,0 +1,58 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-security
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9561
+    - port: 9562
+    - port: 9563
+    - port: 9564
+    - port: 9565
+    - port: 9566
+    - port: 9567
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 448Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: security
+  appPort: 9565
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9561"
+  PORT_BASE: "9561"
+  SERVICE_GROUP: security
+  SERVICES: "ddos-shield,ransomware-guard,secuirity-services,security-alert,security-monitoring,security-scanner,security-services"

@@ -1,0 +1,64 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-data-lakehouse
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9384
+    - port: 9385
+    - port: 9386
+    - port: 9387
+    - port: 9388
+    - port: 9389
+    - port: 9390
+    - port: 9391
+    - port: 9392
+    - port: 9393
+    - port: 9394
+    - port: 9395
+    - port: 9396
+resources:
+  requests:
+    cpu: 200m
+    memory: 208Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 832Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: data-lakehouse
+  appPort: 9385
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9384"
+  PORT_BASE: "9384"
+  SERVICE_GROUP: data-lakehouse
+  SERVICES: "backup-manager,backup-service,data-archival,data-warehouse,dual-write-service,etl-pipeline,falkordb-service,lakehouse-integration,lakehouse-mojaloop,lakehouse-service,ollama-service,postgres-production,sync-manager"

@@ -1,0 +1,65 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-channels-ussd-voice
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9275
+    - port: 9276
+    - port: 9277
+    - port: 9278
+    - port: 9279
+    - port: 9280
+    - port: 9281
+    - port: 9282
+    - port: 9283
+    - port: 9284
+    - port: 9285
+    - port: 9286
+    - port: 9287
+    - port: 9288
+resources:
+  requests:
+    cpu: 200m
+    memory: 224Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 896Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: channels-ussd-voice
+  appPort: 9275
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9275"
+  PORT_BASE: "9275"
+  SERVICE_GROUP: channels-ussd-voice
+  SERVICES: "at-ussd-handler,at-ussd-session,conversational-banking,ussd-gateway,ussd-localization,ussd-menu-builder,ussd-receipt-printer,ussd-service,ussd-session-cache,ussd-session-replayer,ussd-tx-processor,voice-ai-service,voice-assistant-service,voice-command-nlu"

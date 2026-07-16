@@ -1,0 +1,56 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-third-party-integrations
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9594
+    - port: 9595
+    - port: 9596
+    - port: 9597
+    - port: 9598
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 320Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: third-party-integrations
+  appPort: 9595
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9594"
+  PORT_BASE: "9594"
+  SERVICE_GROUP: third-party-integrations
+  SERVICES: "additional-services,erpnext-integration,remitly-integration,zapier-integration,zapier-service"

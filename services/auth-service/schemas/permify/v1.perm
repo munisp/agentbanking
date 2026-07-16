@@ -1,0 +1,264 @@
+// Enhanced Permify Schema for 54agent Banking Platform
+// v5 - All relations are @user typed; entity relations removed from permission rules entirely.
+// Complex cross-entity access (account_extended, transaction_workflow, api_key)
+// is modelled with flat @user relations — membership written by application layer.
+
+// ============================================
+// Core Entities
+// ============================================
+
+entity user {}
+
+entity platform {
+  relation admin         @user
+  relation member        @user
+  relation support_agent @user
+  relation analyst       @user
+  relation super         @user
+  relation operations    @user
+  relation finance       @user
+  relation compliance    @user
+  relation technical     @user
+  relation auditor       @user
+
+  permission manage            = admin or super
+  permission access            = member or admin or super
+  permission manage_banks      = admin or super
+  permission view_analytics    = admin or analyst or super or auditor
+  permission manage_finance    = admin or finance or super
+  permission manage_compliance = admin or compliance or super
+  permission provide_support   = admin or support_agent or operations or super
+  permission view_all_data     = admin or analyst or auditor or super
+  permission manage_technical  = admin or technical or super
+  permission manage_operations = admin or operations or super
+  permission audit_all         = auditor or super
+}
+
+entity bank {
+  relation platform           @platform
+  relation admin              @user
+  relation compliance_officer @user
+  relation auditor            @user
+  relation finance_officer    @user
+  relation operations_officer @user
+  relation manager            @user
+  relation employee           @user
+  relation customer           @user
+
+  permission manage             = admin
+  permission operate            = manager or admin
+  permission access             = employee or manager or admin
+  permission view               = customer or employee or manager or admin
+
+  permission manage_employees   = admin
+  permission manage_branches    = admin
+  permission manage_compliance  = admin or compliance_officer
+  permission manage_finance     = admin or finance_officer
+  permission view_all_branches  = admin or manager or operations_officer
+  permission manage_operations  = admin or operations_officer
+  permission manage_technical   = admin
+  permission view_audit_log     = admin or auditor
+  permission manage_roles       = admin
+}
+
+entity branch {
+  relation bank             @bank
+  relation manager          @user
+  relation teller           @user
+  relation customer_service @user
+
+  permission manage  = manager or bank.manage
+  permission operate = teller or manager or bank.manage
+  permission access  = customer_service or teller or manager or bank.manage
+}
+
+entity customer_profile {
+  relation bank        @bank
+  relation owner       @user
+  relation kyc_officer @user
+
+  permission view   = owner or kyc_officer or bank.manage
+  permission edit   = kyc_officer or bank.manage
+  permission delete = bank.manage
+}
+
+entity account {
+  relation bank              @bank
+  relation owner             @user
+  relation co_owner          @user
+  relation authorized_viewer @user
+  relation branch_manager    @user
+
+  permission view    = owner or co_owner or authorized_viewer or branch_manager or bank.manage
+  permission transact = owner or co_owner or bank.manage
+  permission manage  = owner or bank.manage
+  permission audit   = branch_manager or bank.manage
+}
+
+entity transaction {
+  relation account   @account
+  relation initiator @user
+  relation approver  @user
+  relation auditor   @user
+
+  permission view    = initiator or approver or auditor or account.view
+  permission approve = approver or account.manage
+  permission audit   = auditor or account.audit
+}
+
+entity loan {
+  relation bank         @bank
+  relation borrower     @user
+  relation loan_officer @user
+  relation approver     @user
+
+  permission view    = borrower or loan_officer or approver or bank.manage
+  permission edit    = loan_officer or bank.manage
+  permission approve = approver or bank.manage
+}
+
+entity card {
+  relation account    @account
+  relation cardholder @user
+
+  permission view   = cardholder or account.view
+  permission use    = cardholder
+  permission manage = account.manage
+}
+
+// ============================================
+// Temporal Access Control
+// ============================================
+
+entity temporal_grant {
+  relation tenant  @bank
+  relation grantor @user
+  relation grantee @user
+
+  // Attributes (application layer):
+  //   permission: string, expires_at: timestamp,
+  //   conditions: JSON, max_usage: int, current_usage: int
+
+  permission view   = grantee or grantor or tenant.manage
+  permission use    = grantee
+  permission revoke = grantor or tenant.manage
+  permission extend = grantor or tenant.manage
+}
+
+entity access_policy {
+  relation tenant  @bank
+  relation creator @user
+
+  // Attributes (application layer):
+  //   resource_type: string, permission: string,
+  //   conditions: JSON, priority: int, enabled: boolean
+
+  permission view    = creator or tenant.manage
+  permission edit    = creator or tenant.manage
+  permission delete  = creator or tenant.manage
+  permission enforce = tenant.manage
+}
+
+entity delegation {
+  relation tenant    @bank
+  relation delegator @user
+  relation delegate  @user
+
+  // Attributes (application layer):
+  //   permissions: string[], start_time: timestamp,
+  //   end_time: timestamp, conditions: JSON, status: string
+
+  permission view   = delegator or delegate or tenant.manage
+  permission use    = delegate
+  permission revoke = delegator or tenant.manage
+}
+
+// ============================================
+// Service Accounts
+// ============================================
+
+entity service_account {
+  relation bank  @bank
+  relation admin @user
+
+  permission use    = admin or bank.manage
+  permission manage = admin or bank.manage
+}
+
+entity api_key {
+  relation creator @user
+  relation admin   @user
+
+  // creator = user who generated the key
+  // admin   = service account admin (written by app layer on key creation)
+  permission use    = creator or admin
+  permission revoke = creator or admin
+}
+
+// ============================================
+// Application / Integration
+// ============================================
+
+entity app {
+  relation platform  @platform
+  relation developer @user
+  relation tenant    @bank
+
+  permission view    = developer or tenant.manage
+  permission use     = tenant.view
+  permission manage  = developer or platform.manage
+  permission install = platform.manage or tenant.manage
+}
+
+entity app_installation {
+  relation app       @app
+  relation tenant    @bank
+  relation installer @user
+
+  permission use       = installer or tenant.view
+  permission manage    = installer or tenant.manage
+  permission uninstall = installer or tenant.manage
+}
+
+// ============================================
+// Advanced Permission Entities
+// ============================================
+
+// Temporal account access overlay
+// App layer writes grant_user relations when a temporal_grant is active
+entity account_extended {
+  relation owner             @user
+  relation co_owner          @user
+  relation authorized_viewer @user
+  relation branch_manager    @user
+  relation bank_admin        @user
+  relation grant_user        @user
+
+  permission view    = owner or co_owner or authorized_viewer or branch_manager or bank_admin or grant_user
+  permission transact = owner or co_owner or bank_admin
+  permission manage  = owner or bank_admin
+}
+
+// Multi-level transaction approval workflow
+entity transaction_workflow {
+  relation level_one_approver   @user
+  relation level_two_approver   @user
+  relation level_three_approver @user
+  relation initiator            @user
+  relation auditor              @user
+
+  permission level_one_approve   = level_one_approver
+  permission level_two_approve   = level_two_approver
+  permission level_three_approve = level_three_approver
+  permission view                = level_one_approver or level_two_approver or level_three_approver or initiator or auditor
+}
+
+// Audit records with temporary auditor support
+entity audit_record {
+  relation bank         @bank
+  relation auditor      @user
+  relation temp_auditor @user
+
+  permission view   = auditor or temp_auditor or bank.manage
+  permission export = auditor or bank.manage
+}

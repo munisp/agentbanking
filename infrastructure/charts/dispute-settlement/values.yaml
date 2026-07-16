@@ -1,0 +1,60 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-dispute-settlement
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9399
+    - port: 9400
+    - port: 9401
+    - port: 9402
+    - port: 9403
+    - port: 9404
+    - port: 9405
+    - port: 9406
+    - port: 9407
+resources:
+  requests:
+    cpu: 200m
+    memory: 144Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 576Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: dispute-settlement
+  appPort: 9400
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9399"
+  PORT_BASE: "9399"
+  SERVICE_GROUP: dispute-settlement
+  SERVICES: "dispute-resolution,dispute-service,reconciliation-service,recurring-payments,refund-service,settlement-batch-processor,settlement-gateway,settlement-ledger-sync,settlement-service"

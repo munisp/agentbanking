@@ -1,0 +1,14 @@
+# Keycloak Authentication Dependencies
+# Remittance Platform V11.0
+# Date: November 11, 2025
+
+# JWT token handling
+pyjwt[crypto]>=2.10.1
+
+# HTTP client for Keycloak API calls
+httpx>=0.28.1
+
+# FastAPI security utilities
+fastapi>=0.115.12
+python-multipart>=0.0.20
+

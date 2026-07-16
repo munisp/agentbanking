@@ -1,0 +1,126 @@
+# PodDisruptionBudget manifests for 54agent Agency Banking Platform
+# Namespace: 54agent
+#
+# Every service listed here runs with minReplicas: 2.
+# minAvailable: 1 guarantees at least one pod remains schedulable during
+# voluntary disruptions (node drains, rolling upgrades, cluster maintenance).
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agent-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: settlement-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: settlement-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: commission-settlement-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: commission-settlement
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: verification-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: verification-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: float-management-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: float-management
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: transaction-ledger-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: transaction-ledger
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-processing-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-processing-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: user-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: loan-service-pdb
+  namespace: 54agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: loan-service

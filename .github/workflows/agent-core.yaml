@@ -1,0 +1,67 @@
+name: Build Agent Core Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/agent-baas/**'
+      - 'services/agent-business-dashboard/**'
+      - 'services/agent-embedded-finance/**'
+      - 'services/agent_embedded_finance/**'
+      - 'services/agent-hierarchy-service/**'
+      - 'services/agent-liquidity-network/**'
+      - 'services/agent-lms/**'
+      - 'services/agent-performance/**'
+      - 'services/agent-scorecard/**'
+      - 'services/agent_scorecard/**'
+      - 'services/agent-service/**'
+      - 'services/agent-training/**'
+      - 'services/agent-training-academy/**'
+      - 'services/agent-wallet-transparency/**'
+      - 'services/art-agent-service/**'
+      - 'services/commission-calculator/**'
+      - 'services/commission-service/**'
+      - 'services/commission-settlement/**'
+      - 'services/float-management/**'
+      - 'services/float-service/**'
+      - 'services/float-integration-models/**'
+      - 'services/hierarchy-engine/**'
+      - 'services/hierarchy-service/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
+      - 'docker/build-services.sh'
+      - '.github/workflows/agent-core.yaml'
+
+env:
+  TAG: "0.0.8"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=agent-baas,agent-business-dashboard,agent-embedded-finance,agent_embedded_finance,agent-hierarchy-service,agent-liquidity-network,agent-lms,agent-performance,agent-scorecard,agent_scorecard,agent-service,agent-training,agent-training-academy,agent-wallet-transparency,art-agent-service,commission-calculator,commission-service,commission-settlement,float-management,float-service,float-integration-models,hierarchy-engine,hierarchy-service
+            PORT_BASE=9100
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-agent-core:${{ env.TAG }}

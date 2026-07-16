@@ -1,0 +1,6 @@
+apiVersion: v2
+name: open-banking-api
+description: 54agent Open Banking Api Consolidated Helm Chart
+type: application
+version: 0.0.14
+appVersion: "1.0.0"

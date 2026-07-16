@@ -1,0 +1,6 @@
+apiVersion: v2
+name: data-lakehouse
+description: 54agent Data Lakehouse Consolidated Helm Chart
+type: application
+version: 0.0.4
+appVersion: "1.0.0"

@@ -1,0 +1,22 @@
+fastapi
+uvicorn
+
+
+SQLAlchemy
+pydantic
+psycopg2-binary
+
+
+pydantic
+python-dotenv
+alembic
+
+
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+pyjwt
+loguru
+
+
+pydantic-settings
+prometheus_client
+

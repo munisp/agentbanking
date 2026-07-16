@@ -1,0 +1,66 @@
+---
+# ClusterRole granting read access to common K8s and Dapr resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: 54agent-service-role
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["dapr.io"]
+    resources: ["components", "configurations", "subscriptions"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding binding the ClusterRole to the 54agent ServiceAccount in namespace 54agent
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: 54agent-service-binding
+  namespace: 54agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: 54agent-service-role
+subjects:
+  - kind: ServiceAccount
+    name: 54agent
+    namespace: 54agent
+
+---
+# Role for the reconciliation-service — needs configmaps + batch job visibility
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reconciliation-service-role
+  namespace: 54agent
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for the reconciliation-service role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reconciliation-service-binding
+  namespace: 54agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: reconciliation-service-role
+subjects:
+  - kind: ServiceAccount
+    name: 54agent
+    namespace: 54agent

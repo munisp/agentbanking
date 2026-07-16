@@ -1,0 +1,1 @@
+dapr run --app-id 54agent-transaction-ledger --app-port 8008 -- uvicorn main:app --reload --host 0.0.0.0 --port 8008

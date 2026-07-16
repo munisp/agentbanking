@@ -1,0 +1,62 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-realtime-transactions
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9548
+    - port: 9549
+    - port: 9550
+    - port: 9551
+    - port: 9552
+    - port: 9553
+    - port: 9554
+    - port: 9555
+    - port: 9556
+    - port: 9557
+    - port: 9558
+resources:
+  requests:
+    cpu: 200m
+    memory: 176Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 704Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: realtime-transactions
+  appPort: 9549
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9548"
+  PORT_BASE: "9548"
+  SERVICE_GROUP: realtime-transactions
+  SERVICES: "card-service,merchant-service,realtime-fee-splitter,realtime-receipt-engine,receipt-engine,transaction-history,transaction-limits,transaction-queue,transaction-services,webhook-delivery,webhook-service"

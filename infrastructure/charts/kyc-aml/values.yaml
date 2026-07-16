@@ -1,0 +1,77 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-kyc-aml
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9493
+    - port: 9494
+    - port: 9495
+    - port: 9496
+    - port: 9497
+    - port: 9498
+    - port: 9499
+    - port: 9500
+    - port: 9501
+    - port: 9502
+    - port: 9503
+    - port: 9504
+    - port: 9505
+    - port: 9506
+    - port: 9507
+    - port: 9508
+    - port: 9509
+    - port: 9510
+    - port: 9511
+    - port: 9512
+    - port: 9513
+    - port: 9514
+    - port: 9515
+    - port: 9516
+    - port: 9517
+    - port: 9518
+resources:
+  requests:
+    cpu: 200m
+    memory: 416Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 1664Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: kyc-aml
+  appPort: 9494
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9493"
+  PORT_BASE: "9493"
+  SERVICE_GROUP: kyc-aml
+  SERVICES: "background-check,bank-verification,case-management,deepfake-detection,docling-service,document-fraud-detection,document-management,document-processing,kyb-analytics,kyb-engine,kyb-risk-engine,kyb-verification,kyc-document-verifier,kyc-enforcement-go,kyc-enhanced,kyc-event-consumer,kyc-kyb-service,kyc-service,kyc-workflow-orchestration,kyc-workflow-orchestrator,multi-ocr-service,ocr-processing,ocr-service,paddle-ocr-service,rust-ocr-bridge,vlm-document-service"

@@ -11,7 +11,7 @@ version: "3.9"
 
 services:
   tigerbeetle-0:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     container_name: tigerbeetle-0
     restart: unless-stopped
     command: >
@@ -37,7 +37,7 @@ services:
           cpus: "1.0"
 
   tigerbeetle-1:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     container_name: tigerbeetle-1
     restart: unless-stopped
     command: >
@@ -63,7 +63,7 @@ services:
           cpus: "1.0"
 
   tigerbeetle-2:
-    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
     container_name: tigerbeetle-2
     restart: unless-stopped
     command: >

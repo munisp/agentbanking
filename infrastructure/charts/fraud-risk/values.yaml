@@ -1,0 +1,65 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-fraud-risk
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9430
+    - port: 9431
+    - port: 9432
+    - port: 9433
+    - port: 9434
+    - port: 9435
+    - port: 9436
+    - port: 9437
+    - port: 9438
+    - port: 9439
+    - port: 9440
+    - port: 9441
+    - port: 9442
+    - port: 9443
+resources:
+  requests:
+    cpu: 200m
+    memory: 224Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 896Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: fraud-risk
+  appPort: 9430
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9430"
+  PORT_BASE: "9430"
+  SERVICE_GROUP: fraud-risk
+  SERVICES: "aml-case-manager-go,aml-monitoring,fraud-detection,fraud-ml-pipeline,fraud-ml-service,risk-assessment,risk-management,rule-engine,sanctions-batch-rescreener,sanctions-etl,transaction-scoring,tx-monitor-alerter,tx-validator"

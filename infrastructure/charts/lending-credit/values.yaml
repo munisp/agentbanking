@@ -1,0 +1,56 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-lending-credit
+  pullPolicy: IfNotPresent
+  tag: "0.0.1"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9521
+    - port: 9522
+    - port: 9523
+    - port: 9524
+    - port: 9525
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 320Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: lending-credit
+  appPort: 9525
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9521"
+  PORT_BASE: "9521"
+  SERVICE_GROUP: lending-credit
+  SERVICES: "bnpl-engine,carbon-credit-marketplace,credit-scoring,loan-management,loan-service"

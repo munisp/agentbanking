@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+
+SQLAlchemy
+psycopg2-binary
+
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+passlib[bcrypt]
+
+pydantic-settings
+
+prometheus-fastapi-instrumentator
+

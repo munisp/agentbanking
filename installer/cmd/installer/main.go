@@ -65,7 +65,7 @@ const (
 	appGroup    = "54link"
 
 	// Default API base for enrollment (can be overridden via FIFTYFOURLINK_API_BASE env var)
-	defaultAPIBase = "https://54link.manus.space/api/trpc"
+	defaultAPIBase = "https://54link.your-domain.com/api/trpc"
 )
 
 // ── Binary Integrity Manifest ─────────────────────────────────────────────────

@@ -1,0 +1,62 @@
+name: Build Ecommerce Marketplace Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/agent-commerce-integration/**'
+      - 'services/agent-ecommerce-platform/**'
+      - 'services/agent-store-service/**'
+      - 'services/amazon-ebay-integration/**'
+      - 'services/amazon-service/**'
+      - 'services/ebay-service/**'
+      - 'services/ecommerce-cart-rust/**'
+      - 'services/ecommerce-catalog-go/**'
+      - 'services/ecommerce-intelligence-py/**'
+      - 'services/ecommerce-service/**'
+      - 'services/gaming-integration/**'
+      - 'services/gaming-service/**'
+      - 'services/jumia-service/**'
+      - 'services/konga-service/**'
+      - 'services/marketplace-integration/**'
+      - 'services/marketplace-integrations-go/**'
+      - 'services/store-map-service/**'
+      - 'services/storefront-advertising/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
+      - 'docker/build-services.sh'
+      - '.github/workflows/ecommerce-marketplace.yaml'
+
+env:
+  TAG: "0.0.6"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=agent-commerce-integration,agent-ecommerce-platform,agent-store-service,amazon-ebay-integration,amazon-service,ebay-service,ecommerce-cart-rust,ecommerce-catalog-go,ecommerce-intelligence-py,ecommerce-service,gaming-integration,gaming-service,jumia-service,konga-service,marketplace-integration,marketplace-integrations-go,store-map-service,storefront-advertising
+            PORT_BASE=9410
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-ecommerce-marketplace:${{ env.TAG }}

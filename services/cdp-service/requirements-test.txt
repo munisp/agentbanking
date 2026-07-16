@@ -1,0 +1,32 @@
+# Testing dependencies for CDP service
+
+# Core testing
+pytest>=8.3.5
+pytest-asyncio>=1.0.0
+pytest-cov>=6.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0
+
+# HTTP testing
+httpx>=0.28.1
+requests-mock==1.11.0
+
+# Database testing
+pytest-postgresql==5.0.0
+faker==20.1.0
+
+# Code quality
+black>=25.1.0
+flake8>=7.2.0
+mypy>=1.15.0
+isort>=6.0.1
+
+# Coverage
+coverage[toml]==7.3.4
+
+# Performance testing
+locust==2.19.1
+
+# Security testing
+bandit==1.7.6
+safety==2.3.5

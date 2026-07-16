@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+pydantic-settings
+redis
+boto3
+PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+passlib[bcrypt]
+

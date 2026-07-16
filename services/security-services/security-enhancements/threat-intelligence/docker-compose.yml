@@ -1,0 +1,179 @@
+version: '3.8'
+
+services:
+  # Threat Intelligence Service
+  threat-intel-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: threat-intel-service
+    environment:
+      - OPENCTI_URL=${OPENCTI_URL:-https://opencti.platform.ng}
+      - OPENCTI_API_KEY=${OPENCTI_API_KEY}
+      - OTX_API_KEY=${OTX_API_KEY}
+      - UPDATE_INTERVAL=${UPDATE_INTERVAL:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./config:/app/config:ro
+      - threat-intel-data:/data
+      - /etc/openappsec/threat-intel:/etc/openappsec/threat-intel
+    networks:
+      - security-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # OpenCTI (Optional - can use external instance)
+  opencti:
+    image: opencti/platform:5.12.0
+    container_name: opencti
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=8096
+      - APP__PORT=8080
+      - APP__BASE_URL=${OPENCTI_BASE_URL:-http://localhost:8080}
+      - APP__ADMIN__EMAIL=${OPENCTI_ADMIN_EMAIL:-admin@opencti.io}
+      - APP__ADMIN__PASSWORD=${OPENCTI_ADMIN_PASSWORD}
+      - APP__ADMIN__TOKEN=${OPENCTI_ADMIN_TOKEN}
+      - APP__APP_LOGS__LOGS_LEVEL=info
+      - REDIS__HOSTNAME=redis
+      - REDIS__PORT=6379
+      - ELASTICSEARCH__URL=http://elasticsearch:9200
+      - MINIO__ENDPOINT=minio
+      - MINIO__PORT=9000
+      - MINIO__USE_SSL=false
+      - MINIO__ACCESS_KEY=${MINIO_ACCESS_KEY:-opencti}
+      - MINIO__SECRET_KEY=${MINIO_SECRET_KEY}
+      - RABBITMQ__HOSTNAME=rabbitmq
+      - RABBITMQ__PORT=5672
+      - RABBITMQ__PORT_MANAGEMENT=15672
+      - RABBITMQ__MANAGEMENT_SSL=false
+      - RABBITMQ__USERNAME=${RABBITMQ_USERNAME:-guest}
+      - RABBITMQ__PASSWORD=${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+      - elasticsearch
+      - minio
+      - rabbitmq
+    networks:
+      - security-network
+    restart: unless-stopped
+    volumes:
+      - opencti-data:/opt/opencti
+
+  # Redis for OpenCTI
+  redis:
+    image: redis:7.4-alpine
+    container_name: opencti-redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - security-network
+    restart: unless-stopped
+
+  # Elasticsearch for OpenCTI
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: opencti-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - security-network
+    restart: unless-stopped
+
+  # MinIO for OpenCTI
+  minio:
+    image: minio/minio:latest
+    container_name: opencti-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-opencti}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - security-network
+    restart: unless-stopped
+
+  # RabbitMQ for OpenCTI
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: opencti-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - security-network
+    restart: unless-stopped
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: threat-intel-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - security-network
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: threat-intel-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - security-network
+    restart: unless-stopped
+
+networks:
+  security-network:
+    driver: bridge
+
+volumes:
+  threat-intel-data:
+  opencti-data:
+  redis-data:
+  elasticsearch-data:
+  minio-data:
+  rabbitmq-data:
+  prometheus-data:
+  grafana-data:
+

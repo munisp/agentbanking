@@ -1,0 +1,63 @@
+replicaCount: 1
+image:
+  repository: registry.digitalocean.com/talentgraph-auth/54agent-ai-ml
+  pullPolicy: IfNotPresent
+  tag: "0.0.4"
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: false
+  name: 54agent
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+service:
+  type: ClusterIP
+  ports:
+    - port: 9148
+    - port: 9149
+    - port: 9150
+    - port: 9151
+    - port: 9152
+    - port: 9153
+    - port: 9154
+    - port: 9155
+    - port: 9156
+    - port: 9157
+    - port: 9158
+    - port: 9159
+resources:
+  requests:
+    cpu: 200m
+    memory: 192Mi
+  limits:
+    ephemeral-storage: 512Mi
+    cpu: 1000m
+    memory: 768Mi
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+dapr:
+  appId: ai-ml
+  appPort: 9150
+  enableMetrics: true
+  enabled: true
+  metricsPort: 9099
+  sidecarListenAddresses: "0.0.0.0"
+  cpu-request: 100m
+  cpu-limit: 300m
+  memory-request: 250Mi
+  memory-limit: 1000Mi
+secrets:
+  APP_PORT: "9148"
+  PORT_BASE: "9148"
+  SERVICE_GROUP: ai-ml
+  SERVICES: "ai-credit-scoring,ai-document-validation,ai-ml-services,ai-orchestration,demand-forecasting-py,gnn-engine,ml-engine,ml-model-registry,ml-pipeline,neural-network-service,python-ml-engine,revenue-forecast-ml"

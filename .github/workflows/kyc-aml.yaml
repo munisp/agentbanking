@@ -1,0 +1,70 @@
+name: Build Kyc Aml Consolidated Service
+
+on:
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - 'services/background-check/**'
+      - 'services/bank-verification/**'
+      - 'services/case-management/**'
+      - 'services/deepfake-detection/**'
+      - 'services/docling-service/**'
+      - 'services/document-fraud-detection/**'
+      - 'services/document-management/**'
+      - 'services/document-processing/**'
+      - 'services/kyb-analytics/**'
+      - 'services/kyb-engine/**'
+      - 'services/kyb-risk-engine/**'
+      - 'services/kyb-verification/**'
+      - 'services/kyc-document-verifier/**'
+      - 'services/kyc-enforcement-go/**'
+      - 'services/kyc-enhanced/**'
+      - 'services/kyc-event-consumer/**'
+      - 'services/kyc-kyb-service/**'
+      - 'services/kyc-service/**'
+      - 'services/kyc-workflow-orchestration/**'
+      - 'services/kyc-workflow-orchestrator/**'
+      - 'services/multi-ocr-service/**'
+      - 'services/ocr-processing/**'
+      - 'services/ocr-service/**'
+      - 'services/paddle-ocr-service/**'
+      - 'services/rust-ocr-bridge/**'
+      - 'services/vlm-document-service/**'
+      - 'docker/Dockerfile.consolidated'
+      - 'docker/entrypoint.sh'
+      - 'docker/build-services.sh'
+      - '.github/workflows/kyc-aml.yaml'
+
+env:
+  TAG: "0.0.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: docker
+          password: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.consolidated
+          push: true
+          build-args: |
+            SERVICES=background-check,bank-verification,case-management,deepfake-detection,docling-service,document-fraud-detection,document-management,document-processing,kyb-analytics,kyb-engine,kyb-risk-engine,kyb-verification,kyc-document-verifier,kyc-enforcement-go,kyc-enhanced,kyc-event-consumer,kyc-kyb-service,kyc-service,kyc-workflow-orchestration,kyc-workflow-orchestrator,multi-ocr-service,ocr-processing,ocr-service,paddle-ocr-service,rust-ocr-bridge,vlm-document-service
+            PORT_BASE=9493
+          tags: registry.digitalocean.com/talentgraph-auth/54agent-kyc-aml:${{ env.TAG }}

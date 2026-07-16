@@ -127,18 +127,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishofflineQueueMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -162,10 +163,17 @@ async function publishofflineQueueMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const offlineQueueRouter = router({
@@ -265,28 +273,36 @@ export const offlineQueueRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishofflineQueueMiddleware("clearSynced", `${Date.now()}`, { action: "clearSynced" }).catch(() => {});
+      await publishofflineQueueMiddleware("clearSynced", `${Date.now()}`, {
+        action: "clearSynced",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   getNetworkMetrics: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishofflineQueueMiddleware("getNetworkMetrics", `${Date.now()}`, { action: "getNetworkMetrics" }).catch(() => {});
+    await publishofflineQueueMiddleware("getNetworkMetrics", `${Date.now()}`, {
+      action: "getNetworkMetrics",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   getQueueStatus: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishofflineQueueMiddleware("getQueueStatus", `${Date.now()}`, { action: "getQueueStatus" }).catch(() => {});
+    await publishofflineQueueMiddleware("getQueueStatus", `${Date.now()}`, {
+      action: "getQueueStatus",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   getSyncHistory: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishofflineQueueMiddleware("getSyncHistory", `${Date.now()}`, { action: "getSyncHistory" }).catch(() => {});
+    await publishofflineQueueMiddleware("getSyncHistory", `${Date.now()}`, {
+      action: "getSyncHistory",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -297,7 +313,9 @@ export const offlineQueueRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishofflineQueueMiddleware("retryFailed", `${Date.now()}`, { action: "retryFailed" }).catch(() => {});
+      await publishofflineQueueMiddleware("retryFailed", `${Date.now()}`, {
+        action: "retryFailed",
+      }).catch(() => {});
 
       return { success: true };
     }),

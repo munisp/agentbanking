@@ -135,18 +135,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishkycDocumentsCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `kyc.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -170,10 +171,14 @@ async function publishkycDocumentsCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("kyc", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const kycDocumentsRouter = router({
@@ -387,7 +392,9 @@ export const kycDocumentsRouter = router({
           .where(eq(kycDocuments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishkycDocumentsCrudMiddleware("verify", `${Date.now()}`, { action: "verify" }).catch(() => {});
+        await publishkycDocumentsCrudMiddleware("verify", `${Date.now()}`, {
+          action: "verify",
+        }).catch(() => {});
 
         return { ...row, message: "Document verified" };
       } catch (error) {
@@ -436,7 +443,9 @@ export const kycDocumentsRouter = router({
           .where(eq(kycDocuments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishkycDocumentsCrudMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
+        await publishkycDocumentsCrudMiddleware("reject", `${Date.now()}`, {
+          action: "reject",
+        }).catch(() => {});
 
         return { ...row, message: "Document rejected" };
       } catch (error) {

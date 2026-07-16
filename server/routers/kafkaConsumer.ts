@@ -115,26 +115,96 @@ const KNOWN_GROUPS = [
   { groupId: "push-sender", topics: ["pos.push.notifications"] },
 
   // ── Domain-Specific Consumer Groups (full platform coverage) ──
-  { groupId: "kyc-document-processor", topics: ["pos.kyc.submitted", "pos.kyc.approved", "pos.kyc.rejected"] },
-  { groupId: "kyc-limit-monitor", topics: ["kyc.limit.exceeded", "kyc.tier.upgraded", "kyc.document.expired", "kyc.monitoring.hit"] },
-  { groupId: "float-alert-processor", topics: ["pos.float.topped_up", "pos.float.depleted", "float.alert.warning", "float.alert.critical"] },
-  { groupId: "dispute-processor", topics: ["pos.disputes.opened", "pos.disputes.resolved", "pos.dispute"] },
+  {
+    groupId: "kyc-document-processor",
+    topics: ["pos.kyc.submitted", "pos.kyc.approved", "pos.kyc.rejected"],
+  },
+  {
+    groupId: "kyc-limit-monitor",
+    topics: [
+      "kyc.limit.exceeded",
+      "kyc.tier.upgraded",
+      "kyc.document.expired",
+      "kyc.monitoring.hit",
+    ],
+  },
+  {
+    groupId: "float-alert-processor",
+    topics: [
+      "pos.float.topped_up",
+      "pos.float.depleted",
+      "float.alert.warning",
+      "float.alert.critical",
+    ],
+  },
+  {
+    groupId: "dispute-processor",
+    topics: ["pos.disputes.opened", "pos.disputes.resolved", "pos.dispute"],
+  },
   { groupId: "fraud-alert-processor", topics: ["pos.fraud.alert_raised"] },
-  { groupId: "insider-threat-processor", topics: ["insider.approval.requested", "insider.approval.actioned", "insider.threat.velocity", "insider.auth.step-up"] },
-  { groupId: "agent-lifecycle-processor", topics: ["pos.agents.registered", "pos.agents.suspended"] },
-  { groupId: "settlement-processor", topics: ["settlement.fee.split", "settlement.batch.completed", "reconciliation.completed"] },
-  { groupId: "recurring-payment-processor", topics: ["recurring.payment.executed"] },
+  {
+    groupId: "insider-threat-processor",
+    topics: [
+      "insider.approval.requested",
+      "insider.approval.actioned",
+      "insider.threat.velocity",
+      "insider.auth.step-up",
+    ],
+  },
+  {
+    groupId: "agent-lifecycle-processor",
+    topics: ["pos.agents.registered", "pos.agents.suspended"],
+  },
+  {
+    groupId: "settlement-processor",
+    topics: [
+      "settlement.fee.split",
+      "settlement.batch.completed",
+      "reconciliation.completed",
+    ],
+  },
+  {
+    groupId: "recurring-payment-processor",
+    topics: ["recurring.payment.executed"],
+  },
   { groupId: "outbox-relay", topics: ["outbox.published", "outbox.dlq.moved"] },
-  { groupId: "saga-monitor", topics: ["saga.workflow.started", "saga.workflow.completed", "saga.workflow.compensated"] },
-  { groupId: "pos-fleet-manager", topics: ["pos.terminal.fleet", "pos.device.fleet", "pos.firmware.ota", "pos.ota.delta.requested"] },
-  { groupId: "pos-batch-processor", topics: ["pos.batch.settlement", "pos.eod.reconciliation"] },
+  {
+    groupId: "saga-monitor",
+    topics: [
+      "saga.workflow.started",
+      "saga.workflow.completed",
+      "saga.workflow.compensated",
+    ],
+  },
+  {
+    groupId: "pos-fleet-manager",
+    topics: [
+      "pos.terminal.fleet",
+      "pos.device.fleet",
+      "pos.firmware.ota",
+      "pos.ota.delta.requested",
+    ],
+  },
+  {
+    groupId: "pos-batch-processor",
+    topics: ["pos.batch.settlement", "pos.eod.reconciliation"],
+  },
   { groupId: "mdm-processor", topics: ["pos.mdm"] },
   { groupId: "leasing-processor", topics: ["pos.terminal.leasing"] },
-  { groupId: "canary-monitor", topics: ["pos.canary.release", "pos.canary.rollback"] },
+  {
+    groupId: "canary-monitor",
+    topics: ["pos.canary.release", "pos.canary.rollback"],
+  },
   { groupId: "card-payment-processor", topics: ["pos.card.payment"] },
   { groupId: "geo-velocity-processor", topics: ["pos.geo.velocity.alert"] },
-  { groupId: "sim-failover-processor", topics: ["sim.failover.triggered", "sim.slot.degraded", "sim.carrier.switched"] },
-
+  {
+    groupId: "sim-failover-processor",
+    topics: [
+      "sim.failover.triggered",
+      "sim.slot.degraded",
+      "sim.carrier.switched",
+    ],
+  },
 ];
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
@@ -175,18 +245,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishkafkaConsumerMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -210,10 +281,17 @@ async function publishkafkaConsumerMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const kafkaConsumerRouter = router({
@@ -354,7 +432,9 @@ export const kafkaConsumerRouter = router({
             .where(eq(dlqMessages.id, msg.id));
         }
         // Middleware fan-out (fail-open)
-        await publishkafkaConsumerMiddleware("drainDlq", `${Date.now()}`, { action: "drainDlq" }).catch(() => {});
+        await publishkafkaConsumerMiddleware("drainDlq", `${Date.now()}`, {
+          action: "drainDlq",
+        }).catch(() => {});
 
         return { requeued: pending.length };
       } catch (error) {
@@ -389,7 +469,9 @@ export const kafkaConsumerRouter = router({
           await db.delete(dlqMessages).where(eq(dlqMessages.id, msg.id));
         }
         // Middleware fan-out (fail-open)
-        await publishkafkaConsumerMiddleware("purgeDlq", `${Date.now()}`, { action: "purgeDlq" }).catch(() => {});
+        await publishkafkaConsumerMiddleware("purgeDlq", `${Date.now()}`, {
+          action: "purgeDlq",
+        }).catch(() => {});
 
         return { purged: toDelete.length };
       } catch (error) {

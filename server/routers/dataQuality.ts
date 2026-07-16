@@ -127,18 +127,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdataQualityMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -162,10 +163,17 @@ async function publishdataQualityMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const dataQualityRouter = router({
@@ -261,7 +269,9 @@ export const dataQualityRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataQualityMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishdataQualityMiddleware("dashboard", `${Date.now()}`, {
+      action: "dashboard",
+    }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -273,14 +283,18 @@ export const dataQualityRouter = router({
 
   getValidationRules: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataQualityMiddleware("getValidationRules", `${Date.now()}`, { action: "getValidationRules" }).catch(() => {});
+    await publishdataQualityMiddleware("getValidationRules", `${Date.now()}`, {
+      action: "getValidationRules",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   runProfile: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishdataQualityMiddleware("runProfile", `${Date.now()}`, { action: "runProfile" }).catch(() => {});
+    await publishdataQualityMiddleware("runProfile", `${Date.now()}`, {
+      action: "runProfile",
+    }).catch(() => {});
 
     return { profileId: "PF-001", status: "completed", columns: 0, issues: 0 };
   }),

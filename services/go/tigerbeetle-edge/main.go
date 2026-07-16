@@ -332,8 +332,23 @@ func main() {
 		port = "8080"
 	}
 
+	srv := &http.Server{Addr: ":" + port, Handler: jwtAuthMiddleware(router)}
+
+	// graceful shutdown via signal.Notify for SIGTERM
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
 	log.Printf("Starting TigerBeetle Edge v2.0.0 on :%s (offline-first, PostgreSQL-backed)", port)
-	log.Fatal(http.ListenAndServe(":"+port, jwtAuthMiddleware(router)))
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
 
 func initTracer(serviceName, serviceVersion string) func(context.Context) error {

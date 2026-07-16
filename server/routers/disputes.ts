@@ -101,18 +101,19 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdisputesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `disputes.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -136,10 +137,17 @@ async function publishdisputesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("disputes", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("disputes", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const disputesRouter = router({
@@ -297,13 +305,17 @@ export const disputesRouter = router({
         });
       }
       // Middleware fan-out (fail-open)
-      await publishdisputesMiddleware("resolve", `${Date.now()}`, { action: "resolve" }).catch(() => {});
+      await publishdisputesMiddleware("resolve", `${Date.now()}`, {
+        action: "resolve",
+      }).catch(() => {});
 
       return { disputeRef: input.disputeRef, resolved: true };
     }),
   myDisputes: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdisputesMiddleware("myDisputes", `${Date.now()}`, { action: "myDisputes" }).catch(() => {});
+    await publishdisputesMiddleware("myDisputes", `${Date.now()}`, {
+      action: "myDisputes",
+    }).catch(() => {});
 
     return { items: [], total: 0 };
   }),
@@ -311,7 +323,9 @@ export const disputesRouter = router({
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishdisputesMiddleware("getDispute", `${Date.now()}`, { action: "getDispute" }).catch(() => {});
+      await publishdisputesMiddleware("getDispute", `${Date.now()}`, {
+        action: "getDispute",
+      }).catch(() => {});
 
       return { data: null, id: input.id };
     }),
@@ -346,8 +360,9 @@ export const disputesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishdisputesMiddleware("raise", `${Date.now()}`, { action: "raise" }).catch(() => {});
-
+      await publishdisputesMiddleware("raise", `${Date.now()}`, {
+        action: "raise",
+      }).catch(() => {});
 
       return { success: true, id: tx.id, transactionRef: input.transactionRef };
     }),
@@ -355,7 +370,9 @@ export const disputesRouter = router({
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishdisputesMiddleware("addMessage", `${Date.now()}`, { action: "addMessage" }).catch(() => {});
+      await publishdisputesMiddleware("addMessage", `${Date.now()}`, {
+        action: "addMessage",
+      }).catch(() => {});
 
       return { success: true, id: input?.id ?? null };
     }),

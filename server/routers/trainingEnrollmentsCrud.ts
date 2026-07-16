@@ -102,18 +102,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtrainingEnrollmentsCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `training.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -137,10 +138,17 @@ async function publishtrainingEnrollmentsCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("training", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("training", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const trainingEnrollmentsRouter = router({
@@ -350,7 +358,11 @@ export const trainingEnrollmentsRouter = router({
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishtrainingEnrollmentsCrudMiddleware("updateProgress", `${Date.now()}`, { action: "updateProgress" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "updateProgress",
+          `${Date.now()}`,
+          { action: "updateProgress" }
+        ).catch(() => {});
 
         return {
           ...row,
@@ -400,7 +412,11 @@ export const trainingEnrollmentsRouter = router({
           .where(eq(trainingEnrollments.id, input.id))
           .returning();
         // Middleware fan-out (fail-open)
-        await publishtrainingEnrollmentsCrudMiddleware("submitScore", `${Date.now()}`, { action: "submitScore" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "submitScore",
+          `${Date.now()}`,
+          { action: "submitScore" }
+        ).catch(() => {});
 
         return {
           ...row,
@@ -464,7 +480,11 @@ export const trainingEnrollmentsRouter = router({
           .delete(trainingEnrollments)
           .where(eq(trainingEnrollments.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishtrainingEnrollmentsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishtrainingEnrollmentsCrudMiddleware(
+          "delete",
+          `${Date.now()}`,
+          { action: "delete" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

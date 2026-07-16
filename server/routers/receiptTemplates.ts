@@ -118,18 +118,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishreceiptTemplatesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -153,10 +154,17 @@ async function publishreceiptTemplatesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const receiptTemplatesRouter = router({
@@ -261,8 +269,9 @@ export const receiptTemplatesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishreceiptTemplatesMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+      await publishreceiptTemplatesMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return {
         id: Date.now(),
@@ -307,7 +316,9 @@ export const receiptTemplatesRouter = router({
         .set(updates)
         .where(eq(receiptTemplates.id, input.id));
       // Middleware fan-out (fail-open)
-      await publishreceiptTemplatesMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+      await publishreceiptTemplatesMiddleware("update", `${Date.now()}`, {
+        action: "update",
+      }).catch(() => {});
 
       return { id: input.id, updated: true };
     }),
@@ -321,7 +332,9 @@ export const receiptTemplatesRouter = router({
         .delete(receiptTemplates)
         .where(eq(receiptTemplates.id, input.id));
       // Middleware fan-out (fail-open)
-      await publishreceiptTemplatesMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishreceiptTemplatesMiddleware("delete", `${Date.now()}`, {
+        action: "delete",
+      }).catch(() => {});
 
       return { id: input.id, deleted: true };
     }),

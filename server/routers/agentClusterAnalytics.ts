@@ -128,18 +128,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentClusterAnalyticsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -163,10 +164,14 @@ async function publishagentClusterAnalyticsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentClusterAnalyticsRouter = router({
@@ -288,7 +293,11 @@ export const agentClusterAnalyticsRouter = router({
 
   listClusters: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishagentClusterAnalyticsMiddleware("listClusters", `${Date.now()}`, { action: "listClusters" }).catch(() => {});
+    await publishagentClusterAnalyticsMiddleware(
+      "listClusters",
+      `${Date.now()}`,
+      { action: "listClusters" }
+    ).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -299,7 +308,11 @@ export const agentClusterAnalyticsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishagentClusterAnalyticsMiddleware("optimizeNetwork", `${Date.now()}`, { action: "optimizeNetwork" }).catch(() => {});
+      await publishagentClusterAnalyticsMiddleware(
+        "optimizeNetwork",
+        `${Date.now()}`,
+        { action: "optimizeNetwork" }
+      ).catch(() => {});
 
       return { success: true };
     }),

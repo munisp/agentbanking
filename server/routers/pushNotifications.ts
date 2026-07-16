@@ -93,18 +93,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishpushNotificationsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -128,10 +129,17 @@ async function publishpushNotificationsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const pushNotificationsRouter = router({
@@ -204,7 +212,11 @@ export const pushNotificationsRouter = router({
             })
             .where(eq(agentPushSubscriptions.id, existing[0].id));
           // Middleware fan-out (fail-open)
-          await publishpushNotificationsMiddleware("subscribePush", `${Date.now()}`, { action: "subscribePush" }).catch(() => {});
+          await publishpushNotificationsMiddleware(
+            "subscribePush",
+            `${Date.now()}`,
+            { action: "subscribePush" }
+          ).catch(() => {});
 
           return { success: true, action: "updated" as const };
         }
@@ -251,7 +263,11 @@ export const pushNotificationsRouter = router({
             )
           );
         // Middleware fan-out (fail-open)
-        await publishpushNotificationsMiddleware("unsubscribePush", `${Date.now()}`, { action: "unsubscribePush" }).catch(() => {});
+        await publishpushNotificationsMiddleware(
+          "unsubscribePush",
+          `${Date.now()}`,
+          { action: "unsubscribePush" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -310,7 +326,9 @@ export const pushNotificationsRouter = router({
           data: { type: "test", timestamp: Date.now() },
         });
         // Middleware fan-out (fail-open)
-        await publishpushNotificationsMiddleware("testPush", `${Date.now()}`, { action: "testPush" }).catch(() => {});
+        await publishpushNotificationsMiddleware("testPush", `${Date.now()}`, {
+          action: "testPush",
+        }).catch(() => {});
 
         return { success: true, sent };
       } catch (error) {

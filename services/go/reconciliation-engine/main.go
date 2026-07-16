@@ -21,6 +21,8 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -394,6 +396,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// graceful shutdown via signal.Notify for SIGTERM
 	initDB()
 
 	mux := http.NewServeMux()

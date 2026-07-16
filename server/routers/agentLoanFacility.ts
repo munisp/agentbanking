@@ -32,12 +32,8 @@ import { tbCreateTransfer } from "../tbClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
-import {
-  dapr,
-  tigerbeetle,
-} from "../middleware/middlewareConnectors";
+import { dapr, tigerbeetle } from "../middleware/middlewareConnectors";
 import { enforcePermission } from "../_core/permify";
-
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   draft: ["submitted", "cancelled"],
@@ -160,7 +156,18 @@ export const agentLoanFacilityRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "loan",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -272,7 +279,18 @@ export const agentLoanFacilityRouter = router({
   approve: protectedProcedure
     .input(z.object({ loanId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "loan",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
@@ -295,12 +313,17 @@ export const agentLoanFacilityRouter = router({
           metadata: { loanId: input.loanId },
         }).catch(() => {});
 
-        publishEvent("pos.transactions.created", String(input.loanId), {
-          type: "loan_approved",
-          loanId: input.loanId,
-          approvedBy: ctx.user?.id,
-          timestamp: new Date().toISOString(),
-        }, { agentCode: String(ctx.user?.id ?? "system") }).catch(() => {});
+        publishEvent(
+          "pos.transactions.created",
+          String(input.loanId),
+          {
+            type: "loan_approved",
+            loanId: input.loanId,
+            approvedBy: ctx.user?.id,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: String(ctx.user?.id ?? "system") }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -317,12 +340,23 @@ export const agentLoanFacilityRouter = router({
   disburse: protectedProcedure
     .input(z.object({ loanId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "loan",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
 
-        return await withTransaction(async (tx) => {
+        return await withTransaction(async tx => {
           // Lock loan row
           const loanResult = await tx.execute(
             sql`SELECT * FROM "agent_loans" WHERE id = ${input.loanId} FOR UPDATE`
@@ -394,17 +428,23 @@ export const agentLoanFacilityRouter = router({
           }).catch(() => {});
 
           // Dapr pub/sub
-          dapr.publishEvent("pubsub", "loan.disbursed", {
-            ref, loanId: input.loanId, agentId: loan.agent_id,
-            amount: Number(loan.principal_amount),
-          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "loan.disbursed", {
+              ref,
+              loanId: input.loanId,
+              agentId: loan.agent_id,
+              amount: Number(loan.principal_amount),
+            })
+            .catch(() => {});
 
           // Redis — invalidate agent balance cache
           cacheSet(`agent:balance:${loan.agent_id}`, "", 1).catch(() => {});
 
           // Lakehouse analytics
           ingestToLakehouse("loan_disbursements", {
-            ref, loanId: input.loanId, agentId: loan.agent_id,
+            ref,
+            loanId: input.loanId,
+            agentId: loan.agent_id,
             amount: Number(loan.principal_amount),
             timestamp: new Date().toISOString(),
           }).catch(() => {});
@@ -416,7 +456,10 @@ export const agentLoanFacilityRouter = router({
             resource: "agentLoanFacility",
             resourceId: ref,
             status: "success",
-            metadata: { loanId: input.loanId, amount: Number(loan.principal_amount) },
+            metadata: {
+              loanId: input.loanId,
+              amount: Number(loan.principal_amount),
+            },
           }).catch(() => {});
 
           return { success: true, disbursedAmount: loan.principal_amount, ref };
@@ -435,12 +478,23 @@ export const agentLoanFacilityRouter = router({
   recordRepayment: protectedProcedure
     .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "loan",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
 
-        return await withTransaction(async (tx) => {
+        return await withTransaction(async tx => {
           // Lock loan row
           const loanResult = await tx.execute(
             sql`SELECT * FROM "agent_loans" WHERE id = ${input.loanId} FOR UPDATE`
@@ -448,7 +502,8 @@ export const agentLoanFacilityRouter = router({
           const loan = (loanResult as any).rows?.[0];
           if (!loan) throw new Error("Loan not found");
 
-          const newRepaid = parseFloat(String(loan.amount_repaid || "0")) + input.amount;
+          const newRepaid =
+            parseFloat(String(loan.amount_repaid || "0")) + input.amount;
           const totalRepayable = parseFloat(String(loan.total_repayable));
           const isFullyRepaid = newRepaid >= totalRepayable;
 
@@ -507,18 +562,27 @@ export const agentLoanFacilityRouter = router({
           }).catch(() => {});
 
           // Dapr pub/sub
-          dapr.publishEvent("pubsub", "loan.repayment", {
-            ref, loanId: input.loanId, agentId: loan.agent_id,
-            amount: input.amount, isFullyRepaid,
-          }).catch(() => {});
+          dapr
+            .publishEvent("pubsub", "loan.repayment", {
+              ref,
+              loanId: input.loanId,
+              agentId: loan.agent_id,
+              amount: input.amount,
+              isFullyRepaid,
+            })
+            .catch(() => {});
 
           // Redis — invalidate cache
           cacheSet(`agent:balance:${loan.agent_id}`, "", 1).catch(() => {});
 
           // Lakehouse
           ingestToLakehouse("loan_repayments", {
-            ref, loanId: input.loanId, agentId: loan.agent_id,
-            amount: input.amount, totalRepaid: newRepaid, isFullyRepaid,
+            ref,
+            loanId: input.loanId,
+            agentId: loan.agent_id,
+            amount: input.amount,
+            totalRepaid: newRepaid,
+            isFullyRepaid,
             timestamp: new Date().toISOString(),
           }).catch(() => {});
 
@@ -529,7 +593,11 @@ export const agentLoanFacilityRouter = router({
             resource: "agentLoanFacility",
             resourceId: ref,
             status: "success",
-            metadata: { loanId: input.loanId, amount: input.amount, isFullyRepaid },
+            metadata: {
+              loanId: input.loanId,
+              amount: input.amount,
+              isFullyRepaid,
+            },
           }).catch(() => {});
 
           return {
@@ -554,7 +622,18 @@ export const agentLoanFacilityRouter = router({
   reject: protectedProcedure
     .input(z.object({ loanId: z.number(), reason: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "loan", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "loan",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");

@@ -129,18 +129,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishweeklyReportsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `reporting.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -164,10 +165,17 @@ async function publishweeklyReportsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("reporting", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const weeklyReportsRouter = router({
@@ -267,7 +275,9 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("addRecipient", `${Date.now()}`, { action: "addRecipient" }).catch(() => {});
+      await publishweeklyReportsMiddleware("addRecipient", `${Date.now()}`, {
+        action: "addRecipient",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -278,7 +288,9 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("generate", `${Date.now()}`, { action: "generate" }).catch(() => {});
+      await publishweeklyReportsMiddleware("generate", `${Date.now()}`, {
+        action: "generate",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -293,21 +305,27 @@ export const weeklyReportsRouter = router({
 
   getSchedule: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("getSchedule", `${Date.now()}`, { action: "getSchedule" }).catch(() => {});
+    await publishweeklyReportsMiddleware("getSchedule", `${Date.now()}`, {
+      action: "getSchedule",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   latest: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("latest", `${Date.now()}`, { action: "latest" }).catch(() => {});
+    await publishweeklyReportsMiddleware("latest", `${Date.now()}`, {
+      action: "latest",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   listRecipients: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("listRecipients", `${Date.now()}`, { action: "listRecipients" }).catch(() => {});
+    await publishweeklyReportsMiddleware("listRecipients", `${Date.now()}`, {
+      action: "listRecipients",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -318,7 +336,9 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("removeRecipient", `${Date.now()}`, { action: "removeRecipient" }).catch(() => {});
+      await publishweeklyReportsMiddleware("removeRecipient", `${Date.now()}`, {
+        action: "removeRecipient",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -329,7 +349,9 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("sendEmail", `${Date.now()}`, { action: "sendEmail" }).catch(() => {});
+      await publishweeklyReportsMiddleware("sendEmail", `${Date.now()}`, {
+        action: "sendEmail",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -340,7 +362,11 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("updateEmailConfig", `${Date.now()}`, { action: "updateEmailConfig" }).catch(() => {});
+      await publishweeklyReportsMiddleware(
+        "updateEmailConfig",
+        `${Date.now()}`,
+        { action: "updateEmailConfig" }
+      ).catch(() => {});
 
       return { success: true };
     }),
@@ -351,7 +377,9 @@ export const weeklyReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("updateSchedule", `${Date.now()}`, { action: "updateSchedule" }).catch(() => {});
+      await publishweeklyReportsMiddleware("updateSchedule", `${Date.now()}`, {
+        action: "updateSchedule",
+      }).catch(() => {});
 
       return { success: true };
     }),

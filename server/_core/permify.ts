@@ -216,11 +216,13 @@ export async function permifyWriteRelation(params: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           metadata: { schemaVersion: "" },
-          tuples: [{
-            entity: { type: params.entityType, id: params.entityId },
-            relation: params.relation,
-            subject: { type: params.subjectType, id: params.subjectId },
-          }],
+          tuples: [
+            {
+              entity: { type: params.entityType, id: params.entityId },
+              relation: params.relation,
+              subject: { type: params.subjectType, id: params.subjectId },
+            },
+          ],
         }),
         signal: AbortSignal.timeout(2_000),
       }
@@ -231,7 +233,10 @@ export async function permifyWriteRelation(params: {
     }
     return true;
   } catch (err) {
-    logger.warn({ err }, "[Permify] Write relation failed — service unavailable");
+    logger.warn(
+      { err },
+      "[Permify] Write relation failed — service unavailable"
+    );
     return false;
   }
 }
@@ -281,20 +286,24 @@ export async function enforcePermission(params: {
 }): Promise<void> {
   const allowed = await permifyCheck(params);
   if (!allowed) {
-    throw new Error(`Permission denied: ${params.subjectType}:${params.subjectId} cannot ${params.permission} on ${params.entityType}:${params.entityId}`);
+    throw new Error(
+      `Permission denied: ${params.subjectType}:${params.subjectId} cannot ${params.permission} on ${params.entityType}:${params.entityId}`
+    );
   }
 }
 
 /**
  * Batch write relationship tuples for resource creation.
  */
-export async function permifyWriteRelations(tuples: Array<{
-  entityType: string;
-  entityId: string;
-  relation: string;
-  subjectType: string;
-  subjectId: string;
-}>): Promise<boolean> {
+export async function permifyWriteRelations(
+  tuples: Array<{
+    entityType: string;
+    entityId: string;
+    relation: string;
+    subjectType: string;
+    subjectId: string;
+  }>
+): Promise<boolean> {
   try {
     const res = await fetch(
       `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/relationships/write`,

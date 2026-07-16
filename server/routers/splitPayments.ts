@@ -36,7 +36,6 @@ import {
 import { checkDailyLimit } from "../lib/cbnLimits";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   initiated: ["pending_validation"],
   pending_validation: ["validated", "failed_validation"],
@@ -141,7 +140,18 @@ export const splitPaymentsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "transaction", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "create" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "transaction",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "create",
+      }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -292,15 +302,35 @@ export const splitPaymentsRouter = router({
 
         // TigerBeetle dual-ledger
         tbCreateTransfer({
-          debitAccountId: "1001", creditAccountId: "2001",
+          debitAccountId: "1001",
+          creditAccountId: "2001",
           amount: Math.round(input.totalAmount * 100),
-          ref: groupRef, txType: "split_payment", agentCode: session.agentCode,
+          ref: groupRef,
+          txType: "split_payment",
+          agentCode: session.agentCode,
         }).catch(() => {});
 
         // Fluvio + Dapr + Lakehouse
-        publishTxToFluvio({ txRef: groupRef, agentCode: session.agentCode, amount: input.totalAmount, type: "split_payment", timestamp: Date.now() }).catch(() => {});
-        dapr.publishEvent("pubsub", "split.payment.completed", { ref: groupRef, amount: input.totalAmount, splitCount: input.splits.length }).catch(() => {});
-        ingestToLakehouse("split_payments", { ref: groupRef, amount: input.totalAmount, splitCount: input.splits.length, timestamp: new Date().toISOString() }).catch(() => {});
+        publishTxToFluvio({
+          txRef: groupRef,
+          agentCode: session.agentCode,
+          amount: input.totalAmount,
+          type: "split_payment",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "split.payment.completed", {
+            ref: groupRef,
+            amount: input.totalAmount,
+            splitCount: input.splits.length,
+          })
+          .catch(() => {});
+        ingestToLakehouse("split_payments", {
+          ref: groupRef,
+          amount: input.totalAmount,
+          splitCount: input.splits.length,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return {
           groupRef,

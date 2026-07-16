@@ -100,18 +100,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishrateLimitEngineMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -135,10 +136,17 @@ async function publishrateLimitEngineMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const rateLimitEngineRouter = router({
@@ -263,8 +271,9 @@ export const rateLimitEngineRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishrateLimitEngineMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
-
+        await publishrateLimitEngineMiddleware("createRule", `${Date.now()}`, {
+          action: "createRule",
+        }).catch(() => {});
 
         return { rule };
       } catch (error) {
@@ -304,7 +313,9 @@ export const rateLimitEngineRouter = router({
           .set(updates)
           .where(eq(rateLimitRules.id, input.ruleId));
         // Middleware fan-out (fail-open)
-        await publishrateLimitEngineMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
+        await publishrateLimitEngineMiddleware("updateRule", `${Date.now()}`, {
+          action: "updateRule",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -327,7 +338,9 @@ export const rateLimitEngineRouter = router({
           .delete(rateLimitRules)
           .where(eq(rateLimitRules.id, input.ruleId));
         // Middleware fan-out (fail-open)
-        await publishrateLimitEngineMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+        await publishrateLimitEngineMiddleware("deleteRule", `${Date.now()}`, {
+          action: "deleteRule",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

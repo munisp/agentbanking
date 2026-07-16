@@ -23,7 +23,7 @@ import { lakehouseIngest } from "../lib/lakehouseClient";
 
 export interface KycTier {
   tier: number;
-  dailyLimit: number;   // in kobo
+  dailyLimit: number; // in kobo
   monthlyLimit: number; // in kobo
   label: string;
   requirements: string[];
@@ -32,24 +32,30 @@ export interface KycTier {
 export const KYC_TIERS: Record<number, KycTier> = {
   1: {
     tier: 1,
-    dailyLimit: 5_000_000,     // ₦50,000
-    monthlyLimit: 30_000_000,  // ₦300,000
+    dailyLimit: 5_000_000, // ₦50,000
+    monthlyLimit: 30_000_000, // ₦300,000
     label: "Basic",
     requirements: ["phone_number"],
   },
   2: {
     tier: 2,
-    dailyLimit: 20_000_000,    // ₦200,000
+    dailyLimit: 20_000_000, // ₦200,000
     monthlyLimit: 500_000_000, // ₦5,000,000
     label: "Standard",
     requirements: ["phone_number", "bvn_or_nin", "selfie_liveness"],
   },
   3: {
     tier: 3,
-    dailyLimit: 500_000_000,   // ₦5,000,000
+    dailyLimit: 500_000_000, // ₦5,000,000
     monthlyLimit: 10_000_000_000, // ₦100,000,000
     label: "Enhanced",
-    requirements: ["phone_number", "bvn_or_nin", "selfie_liveness", "utility_bill", "biometric_enrollment"],
+    requirements: [
+      "phone_number",
+      "bvn_or_nin",
+      "selfie_liveness",
+      "utility_bill",
+      "biometric_enrollment",
+    ],
   },
 };
 
@@ -62,7 +68,9 @@ export async function getAgentKycTier(agentId: number): Promise<KycTier> {
     try {
       const tier = JSON.parse(cached);
       return KYC_TIERS[tier.tier] || KYC_TIERS[1];
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
 
   const db = (await getDb())!;
@@ -75,7 +83,9 @@ export async function getAgentKycTier(agentId: number): Promise<KycTier> {
   const tierNum = (row as any)?.tier ?? 1;
   const result = KYC_TIERS[tierNum] || KYC_TIERS[1];
 
-  await cacheSet(cacheKey, JSON.stringify({ tier: tierNum }), 300).catch(() => {});
+  await cacheSet(cacheKey, JSON.stringify({ tier: tierNum }), 300).catch(
+    () => {}
+  );
   return result;
 }
 
@@ -85,10 +95,20 @@ export async function checkTieredDailyLimit(
   agentId: number,
   amountKobo: number,
   transactionType: string
-): Promise<{ allowed: boolean; remaining: number; tier: number; reason?: string }> {
+): Promise<{
+  allowed: boolean;
+  remaining: number;
+  tier: number;
+  reason?: string;
+}> {
   const tierConfig = await getAgentKycTier(agentId);
   const db = (await getDb())!;
-  if (!db) return { allowed: true, remaining: tierConfig.dailyLimit, tier: tierConfig.tier };
+  if (!db)
+    return {
+      allowed: true,
+      remaining: tierConfig.dailyLimit,
+      tier: tierConfig.tier,
+    };
 
   // Get today's total
   const [todayTotal] = await db.execute(sql`
@@ -115,25 +135,35 @@ export async function checkTieredDailyLimit(
     }).catch(() => {});
 
     await fluvioPublish("kyc.limit.breach", {
-      agentId, tier: tierConfig.tier, amount: amountKobo, timestamp: Date.now(),
+      agentId,
+      tier: tierConfig.tier,
+      amount: amountKobo,
+      timestamp: Date.now(),
     }).catch(() => {});
 
     await daprPublish("kyc-limits", "limit.exceeded", {
-      agentId, tier: tierConfig.tier, amount: amountKobo,
+      agentId,
+      tier: tierConfig.tier,
+      amount: amountKobo,
     }).catch(() => {});
 
     return {
       allowed: false,
       remaining: Math.max(0, remaining),
       tier: tierConfig.tier,
-      reason: `Daily limit exceeded for Tier ${tierConfig.tier} (${tierConfig.label}). ` +
-              `Limit: ₦${(tierConfig.dailyLimit / 100).toLocaleString()}, ` +
-              `Used: ₦${(usedToday / 100).toLocaleString()}. ` +
-              `Upgrade KYC tier for higher limits.`,
+      reason:
+        `Daily limit exceeded for Tier ${tierConfig.tier} (${tierConfig.label}). ` +
+        `Limit: ₦${(tierConfig.dailyLimit / 100).toLocaleString()}, ` +
+        `Used: ₦${(usedToday / 100).toLocaleString()}. ` +
+        `Upgrade KYC tier for higher limits.`,
     };
   }
 
-  return { allowed: true, remaining: remaining - amountKobo, tier: tierConfig.tier };
+  return {
+    allowed: true,
+    remaining: remaining - amountKobo,
+    tier: tierConfig.tier,
+  };
 }
 
 // ── Upgrade Tier ────────────────────────────────────────────────────────────
@@ -163,11 +193,32 @@ export async function upgradeKycTier(
   await cacheInvalidate(`kyc_tier:${agentId}`).catch(() => {});
 
   // Publish events
-  await publishEvent("kyc.tier.upgraded", String(agentId), { agentId, newTier, documents: verifiedDocuments }).catch(() => {});
-  await tbCreateTransfer({ debitAccountId: "0", creditAccountId: "0", amount: 0, ledger: 900, code: newTier }).catch(() => {});
-  await fluvioPublish("kyc.tier.change", { agentId, tier: newTier, timestamp: Date.now() }).catch(() => {});
-  await daprPublish("kyc-lifecycle", "tier.upgraded", { agentId, newTier }).catch(() => {});
-  await lakehouseIngest("kyc_tier_upgrades", { agentId, tier: newTier, documents: verifiedDocuments }).catch(() => {});
+  await publishEvent("kyc.tier.upgraded", String(agentId), {
+    agentId,
+    newTier,
+    documents: verifiedDocuments,
+  }).catch(() => {});
+  await tbCreateTransfer({
+    debitAccountId: "0",
+    creditAccountId: "0",
+    amount: 0,
+    ledger: 900,
+    code: newTier,
+  }).catch(() => {});
+  await fluvioPublish("kyc.tier.change", {
+    agentId,
+    tier: newTier,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  await daprPublish("kyc-lifecycle", "tier.upgraded", {
+    agentId,
+    newTier,
+  }).catch(() => {});
+  await lakehouseIngest("kyc_tier_upgrades", {
+    agentId,
+    tier: newTier,
+    documents: verifiedDocuments,
+  }).catch(() => {});
 
   return { success: true, tier: newTier };
 }
@@ -190,20 +241,34 @@ export async function checkDocumentExpiry(agentId: number): Promise<{
   `);
 
   const expired: Array<{ docType: string; expiresAt: string }> = [];
-  const expiringSoon: Array<{ docType: string; expiresAt: string; daysLeft: number }> = [];
+  const expiringSoon: Array<{
+    docType: string;
+    expiresAt: string;
+    daysLeft: number;
+  }> = [];
 
   for (const row of rows as any[]) {
     const daysLeft = Number(row.days_left);
     if (daysLeft <= 0) {
       expired.push({ docType: row.doc_type, expiresAt: row.expires_at });
     } else if (daysLeft <= 30) {
-      expiringSoon.push({ docType: row.doc_type, expiresAt: row.expires_at, daysLeft });
+      expiringSoon.push({
+        docType: row.doc_type,
+        expiresAt: row.expires_at,
+        daysLeft,
+      });
     }
   }
 
   if (expired.length > 0) {
-    await publishEvent("kyc.document.expired", String(agentId), { agentId, documents: expired }).catch(() => {});
-    await fluvioPublish("kyc.document.expired", { agentId, count: expired.length }).catch(() => {});
+    await publishEvent("kyc.document.expired", String(agentId), {
+      agentId,
+      documents: expired,
+    }).catch(() => {});
+    await fluvioPublish("kyc.document.expired", {
+      agentId,
+      count: expired.length,
+    }).catch(() => {});
   }
 
   return { expired, expiringSoon };
@@ -237,10 +302,20 @@ export async function runContinuousMonitoring(agentId: number): Promise<{
   const hits = results.filter(r => r.result === "hit");
 
   if (hits.length > 0) {
-    await publishEvent("kyc.monitoring.hit", String(agentId), { agentId, hits }).catch(() => {});
+    await publishEvent("kyc.monitoring.hit", String(agentId), {
+      agentId,
+      hits,
+    }).catch(() => {});
     await fluvioPublish("kyc.watchlist.hit", { agentId, hits }).catch(() => {});
-    await daprPublish("compliance-alerts", "watchlist.hit", { agentId, hits }).catch(() => {});
-    await lakehouseIngest("kyc_monitoring_hits", { agentId, hits, timestamp: new Date().toISOString() }).catch(() => {});
+    await daprPublish("compliance-alerts", "watchlist.hit", {
+      agentId,
+      hits,
+    }).catch(() => {});
+    await lakehouseIngest("kyc_monitoring_hits", {
+      agentId,
+      hits,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
   }
 
   return { clear: hits.length === 0, hits };
@@ -312,7 +387,8 @@ async function callKycProvider(
       signal: controller.signal,
     });
     clearTimeout(timer);
-    if (!resp.ok) throw new Error(`Provider ${provider} returned ${resp.status}`);
+    if (!resp.ok)
+      throw new Error(`Provider ${provider} returned ${resp.status}`);
     return await resp.json();
   } finally {
     clearTimeout(timer);

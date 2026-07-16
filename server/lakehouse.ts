@@ -293,21 +293,70 @@ export async function promoteLakehouseTable(
  * Lakehouse Partitioning Strategy — ensures data is organized for efficient query patterns.
  * Tables are partitioned by date (yyyy/MM/dd) and optionally by region/agent.
  */
-const PARTITION_CONFIG: Record<string, { partitionBy: string[]; retention: string; compactionInterval: string }> = {
-  transactions: { partitionBy: ["date", "region"], retention: "7y", compactionInterval: "daily" },
-  settlements: { partitionBy: ["date", "settlement_type"], retention: "7y", compactionInterval: "daily" },
-  fraud_alerts: { partitionBy: ["date", "severity"], retention: "5y", compactionInterval: "hourly" },
-  agent_metrics: { partitionBy: ["date", "agent_code"], retention: "3y", compactionInterval: "daily" },
-  compliance_reports: { partitionBy: ["date", "report_type"], retention: "10y", compactionInterval: "weekly" },
-  kyc_documents: { partitionBy: ["date", "kyc_tier"], retention: "10y", compactionInterval: "weekly" },
-  ecommerce_orders: { partitionBy: ["date", "store_id"], retention: "5y", compactionInterval: "daily" },
-  stablecoin_events: { partitionBy: ["date", "event_type"], retention: "7y", compactionInterval: "daily" },
-  audit_logs: { partitionBy: ["date"], retention: "7y", compactionInterval: "daily" },
-  pos_transactions: { partitionBy: ["date", "terminal_id"], retention: "5y", compactionInterval: "daily" },
+const PARTITION_CONFIG: Record<
+  string,
+  { partitionBy: string[]; retention: string; compactionInterval: string }
+> = {
+  transactions: {
+    partitionBy: ["date", "region"],
+    retention: "7y",
+    compactionInterval: "daily",
+  },
+  settlements: {
+    partitionBy: ["date", "settlement_type"],
+    retention: "7y",
+    compactionInterval: "daily",
+  },
+  fraud_alerts: {
+    partitionBy: ["date", "severity"],
+    retention: "5y",
+    compactionInterval: "hourly",
+  },
+  agent_metrics: {
+    partitionBy: ["date", "agent_code"],
+    retention: "3y",
+    compactionInterval: "daily",
+  },
+  compliance_reports: {
+    partitionBy: ["date", "report_type"],
+    retention: "10y",
+    compactionInterval: "weekly",
+  },
+  kyc_documents: {
+    partitionBy: ["date", "kyc_tier"],
+    retention: "10y",
+    compactionInterval: "weekly",
+  },
+  ecommerce_orders: {
+    partitionBy: ["date", "store_id"],
+    retention: "5y",
+    compactionInterval: "daily",
+  },
+  stablecoin_events: {
+    partitionBy: ["date", "event_type"],
+    retention: "7y",
+    compactionInterval: "daily",
+  },
+  audit_logs: {
+    partitionBy: ["date"],
+    retention: "7y",
+    compactionInterval: "daily",
+  },
+  pos_transactions: {
+    partitionBy: ["date", "terminal_id"],
+    retention: "5y",
+    compactionInterval: "daily",
+  },
 };
 
 export function getPartitionConfig(table: string) {
-  return PARTITION_CONFIG[table] ?? { partitionBy: ["date"], retention: "3y", compactionInterval: "daily" };
+  return (
+    PARTITION_CONFIG[table] ?? {
+      partitionBy: ["date"],
+      retention: "3y",
+      compactionInterval: "daily",
+    }
+  );
 }
 
 export async function ingestToLakehousePartitioned(

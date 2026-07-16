@@ -37,7 +37,6 @@ import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
 import { enforcePermission } from "../_core/permify";
 
-
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
   processing: ["settled", "failed"],
@@ -160,7 +159,18 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
 
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -252,29 +262,57 @@ export const commissionPayoutsRouter = router({
           status: "success",
         });
 
-        publishEvent("pos.transactions.created", String(payout.id), {
-          type: "commission_payout_requested",
-          payoutId: payout.id,
-          agentId: agent.id,
-          agentCode: input.agentCode,
-          amount: input.amount,
-          timestamp: new Date().toISOString(),
-        }, { agentCode: input.agentCode }).catch(() => {});
+        publishEvent(
+          "pos.transactions.created",
+          String(payout.id),
+          {
+            type: "commission_payout_requested",
+            payoutId: payout.id,
+            agentId: agent.id,
+            agentCode: input.agentCode,
+            amount: input.amount,
+            timestamp: new Date().toISOString(),
+          },
+          { agentCode: input.agentCode }
+        ).catch(() => {});
 
         const commRef = `COMM-${payout.id}-${Date.now()}`;
 
         // TigerBeetle dual-ledger
         tbCreateTransfer({
-          debitAccountId: "4001", creditAccountId: "2001",
+          debitAccountId: "4001",
+          creditAccountId: "2001",
           amount: Math.round(input.amount * 100),
-          ref: commRef, txType: "commission_payout", agentCode: input.agentCode,
+          ref: commRef,
+          txType: "commission_payout",
+          agentCode: input.agentCode,
         }).catch(() => {});
 
         // Fluvio + Dapr + Redis + Lakehouse
-        publishTxToFluvio({ txRef: commRef, agentCode: input.agentCode, amount: input.amount, type: "commission_payout", timestamp: Date.now() }).catch(() => {});
-        dapr.publishEvent("pubsub", "commission.payout.requested", { commRef, payoutId: payout.id, agentId: agent.id, amount: input.amount }).catch(() => {});
+        publishTxToFluvio({
+          txRef: commRef,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          type: "commission_payout",
+          timestamp: Date.now(),
+        }).catch(() => {});
+        dapr
+          .publishEvent("pubsub", "commission.payout.requested", {
+            commRef,
+            payoutId: payout.id,
+            agentId: agent.id,
+            amount: input.amount,
+          })
+          .catch(() => {});
         cacheSet(`agent:commission:${agent.id}`, "", 1).catch(() => {});
-        ingestToLakehouse("commission_payouts", { commRef, payoutId: payout.id, agentId: agent.id, agentCode: input.agentCode, amount: input.amount, timestamp: new Date().toISOString() }).catch(() => {});
+        ingestToLakehouse("commission_payouts", {
+          commRef,
+          payoutId: payout.id,
+          agentId: agent.id,
+          agentCode: input.agentCode,
+          amount: input.amount,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return payout;
       } catch (error) {
@@ -291,7 +329,18 @@ export const commissionPayoutsRouter = router({
   approve: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -340,7 +389,18 @@ export const commissionPayoutsRouter = router({
   reject: protectedProcedure
     .input(z.object({ id: z.number(), reason: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -371,7 +431,18 @@ export const commissionPayoutsRouter = router({
   process: protectedProcedure
     .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      await enforcePermission({ subjectType: "user", subjectId: String(ctx?.user?.id ?? "0"), entityType: "commission", entityId: String((input as any)?.id ?? (input as any)?.customerId ?? (input as any)?.agentId ?? Date.now()), permission: "payout" }).catch(() => {});
+      await enforcePermission({
+        subjectType: "user",
+        subjectId: String(ctx?.user?.id ?? "0"),
+        entityType: "commission",
+        entityId: String(
+          (input as any)?.id ??
+            (input as any)?.customerId ??
+            (input as any)?.agentId ??
+            Date.now()
+        ),
+        permission: "payout",
+      }).catch(() => {});
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

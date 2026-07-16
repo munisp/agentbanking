@@ -121,18 +121,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishagentBankAccountsCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -156,10 +157,14 @@ async function publishagentBankAccountsCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentBankAccountsRouter = router({
@@ -382,7 +387,11 @@ export const agentBankAccountsRouter = router({
           .set({ isDefault: true })
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishagentBankAccountsCrudMiddleware("setPrimary", `${Date.now()}`, { action: "setPrimary" }).catch(() => {});
+        await publishagentBankAccountsCrudMiddleware(
+          "setPrimary",
+          `${Date.now()}`,
+          { action: "setPrimary" }
+        ).catch(() => {});
 
         return { success: true, message: "Primary account updated" };
       } catch (error) {
@@ -413,7 +422,11 @@ export const agentBankAccountsRouter = router({
           .delete(agentBankAccounts)
           .where(eq(agentBankAccounts.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishagentBankAccountsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishagentBankAccountsCrudMiddleware(
+          "delete",
+          `${Date.now()}`,
+          { action: "delete" }
+        ).catch(() => {});
 
         return { success: true, deleted: input.id };
       } catch (error) {

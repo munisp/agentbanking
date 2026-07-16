@@ -134,18 +134,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishnotificationInboxMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -169,10 +170,17 @@ async function publishnotificationInboxMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const notificationInboxRouter = router({
@@ -307,8 +315,9 @@ export const notificationInboxRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishnotificationInboxMiddleware("markRead", `${Date.now()}`, { action: "markRead" }).catch(() => {});
-
+        await publishnotificationInboxMiddleware("markRead", `${Date.now()}`, {
+          action: "markRead",
+        }).catch(() => {});
 
         return { success: true, notification: updated };
       } catch (error) {
@@ -336,7 +345,11 @@ export const notificationInboxRouter = router({
             )
           );
         // Middleware fan-out (fail-open)
-        await publishnotificationInboxMiddleware("markAllRead", `${Date.now()}`, { action: "markAllRead" }).catch(() => {});
+        await publishnotificationInboxMiddleware(
+          "markAllRead",
+          `${Date.now()}`,
+          { action: "markAllRead" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -358,7 +371,9 @@ export const notificationInboxRouter = router({
           .delete(notification_logs)
           .where(eq(notification_logs.id, input.notificationId));
         // Middleware fan-out (fail-open)
-        await publishnotificationInboxMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishnotificationInboxMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -377,7 +392,9 @@ export const notificationInboxRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishnotificationInboxMiddleware("archive", `${Date.now()}`, { action: "archive" }).catch(() => {});
+      await publishnotificationInboxMiddleware("archive", `${Date.now()}`, {
+        action: "archive",
+      }).catch(() => {});
 
       return { success: true };
     }),
@@ -388,7 +405,9 @@ export const notificationInboxRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishnotificationInboxMiddleware("bulkDelete", `${Date.now()}`, { action: "bulkDelete" }).catch(() => {});
+      await publishnotificationInboxMiddleware("bulkDelete", `${Date.now()}`, {
+        action: "bulkDelete",
+      }).catch(() => {});
 
       return { success: true };
     }),

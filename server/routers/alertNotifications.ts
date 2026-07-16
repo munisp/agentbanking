@@ -111,18 +111,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishalertNotificationsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `notifications.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -146,10 +147,17 @@ async function publishalertNotificationsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("notifications", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("notifications", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const alertNotificationsRouter = router({
@@ -254,8 +262,11 @@ export const alertNotificationsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishalertNotificationsMiddleware("acknowledge", `${Date.now()}`, { action: "acknowledge" }).catch(() => {});
-
+        await publishalertNotificationsMiddleware(
+          "acknowledge",
+          `${Date.now()}`,
+          { action: "acknowledge" }
+        ).catch(() => {});
 
         return { success: true, alert: updated };
       } catch (error) {
@@ -290,7 +301,9 @@ export const alertNotificationsRouter = router({
           })
           .returning();
         // Middleware fan-out (fail-open)
-        await publishalertNotificationsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+        await publishalertNotificationsMiddleware("create", `${Date.now()}`, {
+          action: "create",
+        }).catch(() => {});
 
         return { success: true, alert };
       } catch (error) {

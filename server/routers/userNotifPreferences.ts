@@ -121,18 +121,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishuserNotifPreferencesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -156,10 +157,17 @@ async function publishuserNotifPreferencesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const userNotifPreferencesRouter = router({
@@ -278,39 +286,41 @@ export const userNotifPreferencesRouter = router({
     .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
   getPreferences: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishuserNotifPreferencesMiddleware("updateQuietHours", `${Date.now()}`, { action: "updateQuietHours" }).catch(() => {});
+    await publishuserNotifPreferencesMiddleware(
+      "updateQuietHours",
+      `${Date.now()}`,
+      { action: "updateQuietHours" }
+    ).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishuserNotifPreferencesMiddleware("updateDigestMode", `${Date.now()}`, { action: "updateDigestMode" }).catch(() => {});
-
-
-    // Middleware fan-out (fail-open)
-
-
-    await publishuserNotifPreferencesMiddleware("bulkUpdate", `${Date.now()}`, { action: "bulkUpdate" }).catch(() => {});
-
-
+    await publishuserNotifPreferencesMiddleware(
+      "updateDigestMode",
+      `${Date.now()}`,
+      { action: "updateDigestMode" }
+    ).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-
-
-    await publishuserNotifPreferencesMiddleware("resetToDefaults", `${Date.now()}`, { action: "resetToDefaults" }).catch(() => {});
-
-
-
+    await publishuserNotifPreferencesMiddleware("bulkUpdate", `${Date.now()}`, {
+      action: "bulkUpdate",
+    }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
+    await publishuserNotifPreferencesMiddleware(
+      "resetToDefaults",
+      `${Date.now()}`,
+      { action: "resetToDefaults" }
+    ).catch(() => {});
 
+    // Middleware fan-out (fail-open)
 
-
-    await publishuserNotifPreferencesMiddleware("enableAllForChannel", `${Date.now()}`, { action: "enableAllForChannel" }).catch(() => {});
-
-
-
-
+    await publishuserNotifPreferencesMiddleware(
+      "enableAllForChannel",
+      `${Date.now()}`,
+      { action: "enableAllForChannel" }
+    ).catch(() => {});
 
     return {
       email: true,
@@ -386,8 +396,11 @@ export const userNotifPreferencesRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishuserNotifPreferencesMiddleware("updateCategory", `${Date.now()}`, { action: "updateCategory" }).catch(() => {});
-
+      await publishuserNotifPreferencesMiddleware(
+        "updateCategory",
+        `${Date.now()}`,
+        { action: "updateCategory" }
+      ).catch(() => {});
 
       return {
         success: true,

@@ -40,14 +40,14 @@ overrides:
   vite@>=7.0.0 <=7.3.1: '>=7.3.2'
   vite@>=7.1.0 <=7.3.1: '>=7.3.2'
   drizzle-orm@<0.45.2: '>=0.45.2'
-  nodemailer@<=8.0.4: '>=8.0.5'
+  nodemailer@<=9.0.0: '>=9.0.1'
   follow-redirects@<=1.15.11: '>=1.16.0'
   axios@>=1.0.0 <1.15.0: '>=1.15.0'
   dompurify@<=3.3.3: '>=3.4.0'
   path-to-regexp@0.1.12: 0.1.13
   axios@>=1.0.0 <=1.15.0: '>=1.15.1'
   fast-xml-builder@<=1.1.6: '>=1.1.7'
-  protobufjs: '>=8.0.2'
+  protobufjs: '>=8.4.1'
   fast-xml-parser: '>=5.7.0'
   fast-uri: '>=3.1.2'
   fast-xml-builder: '>=1.1.7'
@@ -56,7 +56,11 @@ overrides:
   mermaid: '>=11.15.0'
   ip-address: '>=10.1.1'
   '@protobufjs/utf8': '>=1.1.1'
-  ws: '>=8.20.1'
+  ws: '>=8.21.0'
+  '@grpc/grpc-js': '>=1.14.4'
+  form-data: '>=4.0.6'
+  vite: '>=8.0.16'
+  pnpm: '>=10.34.4'
 
 importers:
 
@@ -679,7 +683,7 @@ packages:
   '@builder.io/vite-plugin-jsx-loc@0.1.1':
     resolution: {integrity: sha512-iAHFkaLBDJBC+EkGO1hF7hnIW2+oKKYVOl8NFAQH//3xeNEzvGdS9tOALRPR+JjR/M5NLyj+FG0VV7WFb1aJmw==}
     peerDependencies:
-      vite: '>=6.4.2'
+      vite: '>=8.0.16'
 
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
@@ -2778,7 +2782,7 @@ packages:
   '@tailwindcss/vite@4.3.2':
     resolution: {integrity: sha512-eHpMeX4JXfVNJDEcsouTeCBubJBTcTLigeaw/NTUW6PB5ATKKXdyonnXgTBX2VuRbjz1hjfz6C5XAhr52ImQXA==}
     peerDependencies:
-      vite: '>=5.4.21'
+      vite: '>=8.0.16'
 
   '@tanstack/query-core@5.101.2':
     resolution: {integrity: sha512-hH5MLoJhF7KaIGd7q3xTXGXvslI+GYlM1Z/35aSHHWaCJWB7XvTSHYuV3eM7tw+aE0mT/xMro4M4Q9rCGHT0lw==}
@@ -3109,7 +3113,7 @@ packages:
     resolution: {integrity: sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      vite: '>=5.4.21'
+      vite: '>=8.0.16'
 
   '@vitest/expect@3.2.7':
     resolution: {integrity: sha512-E8eBXaKibuvH2pSZErOjdVb5vF4PbKYcrnluBTYxEk1l/VhhwZg1kZQsdtjq+CsF5CFydf2Rdkz7jDHKSisi3w==}

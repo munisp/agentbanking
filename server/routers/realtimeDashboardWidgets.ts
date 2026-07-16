@@ -98,18 +98,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishrealtimeDashboardWidgetsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `analytics.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -133,10 +134,17 @@ async function publishrealtimeDashboardWidgetsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("analytics", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("analytics", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const realtimeDashboardWidgetsRouter = router({
@@ -245,8 +253,11 @@ export const realtimeDashboardWidgetsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishrealtimeDashboardWidgetsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+      await publishrealtimeDashboardWidgetsMiddleware(
+        "create",
+        `${Date.now()}`,
+        { action: "create" }
+      ).catch(() => {});
 
       return {
         success: true,
@@ -282,7 +293,11 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishrealtimeDashboardWidgetsMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware(
+        "update",
+        `${Date.now()}`,
+        { action: "update" }
+      ).catch(() => {});
 
       return {
         success: true,
@@ -318,7 +333,11 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishrealtimeDashboardWidgetsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware(
+        "delete",
+        `${Date.now()}`,
+        { action: "delete" }
+      ).catch(() => {});
 
       return {
         success: true,
@@ -354,7 +373,11 @@ export const realtimeDashboardWidgetsRouter = router({
         },
       });
       // Middleware fan-out (fail-open)
-      await publishrealtimeDashboardWidgetsMiddleware("layout", `${Date.now()}`, { action: "layout" }).catch(() => {});
+      await publishrealtimeDashboardWidgetsMiddleware(
+        "layout",
+        `${Date.now()}`,
+        { action: "layout" }
+      ).catch(() => {});
 
       return {
         success: true,

@@ -1,0 +1,591 @@
+# Integration test suite for 20 future-proofing features
+# Verifies all Go, Rust, and Python microservices can start and respond to health checks
+#
+# Usage:
+#   docker compose -f docker-compose.integration-test.yml up --build -d
+#   docker compose -f docker-compose.integration-test.yml run --rm test-runner
+#   docker compose -f docker-compose.integration-test.yml down -v
+
+services:
+  # --- Infrastructure ---
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fiftyfourlink
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  # --- Go Services (ports 8230-8269, step 3) ---
+  go-open-banking-api:
+    build: ./services/go/open-banking-api
+    ports: ["8230:8230"]
+    environment: &go-env
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/fiftyfourlink
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      DAPR_HTTP_PORT: "3500"
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck: &health-check
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8230/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  go-bnpl-engine:
+    build: ./services/go/bnpl-engine
+    ports: ["8233:8233"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8233/health || exit 1"] }
+
+  go-nfc-tap-to-pay:
+    build: ./services/go/nfc-tap-to-pay
+    ports: ["8236:8236"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8236/health || exit 1"] }
+
+  go-ai-credit-scoring:
+    build: ./services/go/ai-credit-scoring
+    ports: ["8239:8239"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8239/health || exit 1"] }
+
+  go-agritech-payments:
+    build: ./services/go/agritech-payments
+    ports: ["8242:8242"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8242/health || exit 1"] }
+
+  go-super-app-framework:
+    build: ./services/go/super-app-framework
+    ports: ["8245:8245"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8245/health || exit 1"] }
+
+  go-embedded-finance-anaas:
+    build: ./services/go/embedded-finance-anaas
+    ports: ["8248:8248"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8248/health || exit 1"] }
+
+  go-payroll-disbursement:
+    build: ./services/go/payroll-disbursement
+    ports: ["8251:8251"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8251/health || exit 1"] }
+
+  go-health-insurance-micro:
+    build: ./services/go/health-insurance-micro
+    ports: ["8254:8254"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8254/health || exit 1"] }
+
+  go-education-payments:
+    build: ./services/go/education-payments
+    ports: ["8257:8257"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8257/health || exit 1"] }
+
+  go-conversational-banking:
+    build: ./services/go/conversational-banking
+    ports: ["8260:8260"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8260/health || exit 1"] }
+
+  go-stablecoin-rails:
+    build: ./services/go/stablecoin-rails
+    ports: ["8263:8263"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8263/health || exit 1"] }
+
+  go-iot-smart-pos:
+    build: ./services/go/iot-smart-pos
+    ports: ["8266:8266"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8266/health || exit 1"] }
+
+  go-wearable-payments:
+    build: ./services/go/wearable-payments
+    ports: ["8269:8269"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8269/health || exit 1"] }
+
+  go-satellite-connectivity:
+    build: ./services/go/satellite-connectivity
+    ports: ["8272:8272"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8272/health || exit 1"] }
+
+  go-digital-identity-layer:
+    build: ./services/go/digital-identity-layer
+    ports: ["8275:8275"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8275/health || exit 1"] }
+
+  go-pension-micro:
+    build: ./services/go/pension-micro
+    ports: ["8278:8278"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8278/health || exit 1"] }
+
+  go-carbon-credit-marketplace:
+    build: ./services/go/carbon-credit-marketplace
+    ports: ["8281:8281"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8281/health || exit 1"] }
+
+  go-tokenized-assets:
+    build: ./services/go/tokenized-assets
+    ports: ["8284:8284"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8284/health || exit 1"] }
+
+  go-coalition-loyalty:
+    build: ./services/go/coalition-loyalty
+    ports: ["8287:8287"]
+    environment: *go-env
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8287/health || exit 1"] }
+
+  # --- Rust Services (ports +1 from Go) ---
+  rust-open-banking-api:
+    build: ./services/rust/open-banking-api
+    ports: ["8231:8231"]
+    environment: &rust-env
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/fiftyfourlink
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8231/health || exit 1"] }
+
+  rust-bnpl-engine:
+    build: ./services/rust/bnpl-engine
+    ports: ["8234:8234"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8234/health || exit 1"] }
+
+  rust-nfc-tap-to-pay:
+    build: ./services/rust/nfc-tap-to-pay
+    ports: ["8237:8237"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8237/health || exit 1"] }
+
+  rust-ai-credit-scoring:
+    build: ./services/rust/ai-credit-scoring
+    ports: ["8240:8240"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8240/health || exit 1"] }
+
+  rust-agritech-payments:
+    build: ./services/rust/agritech-payments
+    ports: ["8243:8243"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8243/health || exit 1"] }
+
+  rust-super-app-framework:
+    build: ./services/rust/super-app-framework
+    ports: ["8246:8246"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8246/health || exit 1"] }
+
+  rust-embedded-finance-anaas:
+    build: ./services/rust/embedded-finance-anaas
+    ports: ["8249:8249"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8249/health || exit 1"] }
+
+  rust-payroll-disbursement:
+    build: ./services/rust/payroll-disbursement
+    ports: ["8252:8252"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8252/health || exit 1"] }
+
+  rust-health-insurance-micro:
+    build: ./services/rust/health-insurance-micro
+    ports: ["8255:8255"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8255/health || exit 1"] }
+
+  rust-education-payments:
+    build: ./services/rust/education-payments
+    ports: ["8258:8258"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8258/health || exit 1"] }
+
+  rust-conversational-banking:
+    build: ./services/rust/conversational-banking
+    ports: ["8261:8261"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8261/health || exit 1"] }
+
+  rust-stablecoin-rails:
+    build: ./services/rust/stablecoin-rails
+    ports: ["8264:8264"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8264/health || exit 1"] }
+
+  rust-iot-smart-pos:
+    build: ./services/rust/iot-smart-pos
+    ports: ["8267:8267"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8267/health || exit 1"] }
+
+  rust-wearable-payments:
+    build: ./services/rust/wearable-payments
+    ports: ["8270:8270"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8270/health || exit 1"] }
+
+  rust-satellite-connectivity:
+    build: ./services/rust/satellite-connectivity
+    ports: ["8273:8273"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8273/health || exit 1"] }
+
+  rust-digital-identity-layer:
+    build: ./services/rust/digital-identity-layer
+    ports: ["8276:8276"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8276/health || exit 1"] }
+
+  rust-pension-micro:
+    build: ./services/rust/pension-micro
+    ports: ["8279:8279"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8279/health || exit 1"] }
+
+  rust-carbon-credit-marketplace:
+    build: ./services/rust/carbon-credit-marketplace
+    ports: ["8282:8282"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8282/health || exit 1"] }
+
+  rust-tokenized-assets:
+    build: ./services/rust/tokenized-assets
+    ports: ["8285:8285"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8285/health || exit 1"] }
+
+  rust-coalition-loyalty:
+    build: ./services/rust/coalition-loyalty
+    ports: ["8288:8288"]
+    environment: *rust-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8288/health || exit 1"] }
+
+  # --- Python Services (ports +2 from Go) ---
+  python-open-banking-api:
+    build: ./services/python/open-banking-api
+    ports: ["8232:8232"]
+    environment: &py-env
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/fiftyfourlink
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      OPENSEARCH_URL: http://opensearch:9200
+    depends_on: { postgres: { condition: service_healthy }, kafka: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8232/health || exit 1"] }
+
+  python-bnpl-engine:
+    build: ./services/python/bnpl-engine
+    ports: ["8235:8235"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8235/health || exit 1"] }
+
+  python-nfc-tap-to-pay:
+    build: ./services/python/nfc-tap-to-pay
+    ports: ["8238:8238"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8238/health || exit 1"] }
+
+  python-ai-credit-scoring:
+    build: ./services/python/ai-credit-scoring
+    ports: ["8241:8241"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8241/health || exit 1"] }
+
+  python-agritech-payments:
+    build: ./services/python/agritech-payments
+    ports: ["8244:8244"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8244/health || exit 1"] }
+
+  python-super-app-framework:
+    build: ./services/python/super-app-framework
+    ports: ["8247:8247"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8247/health || exit 1"] }
+
+  python-embedded-finance-anaas:
+    build: ./services/python/embedded-finance-anaas
+    ports: ["8250:8250"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8250/health || exit 1"] }
+
+  python-payroll-disbursement:
+    build: ./services/python/payroll-disbursement
+    ports: ["8253:8253"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8253/health || exit 1"] }
+
+  python-health-insurance-micro:
+    build: ./services/python/health-insurance-micro
+    ports: ["8256:8256"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8256/health || exit 1"] }
+
+  python-education-payments:
+    build: ./services/python/education-payments
+    ports: ["8259:8259"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8259/health || exit 1"] }
+
+  python-conversational-banking:
+    build: ./services/python/conversational-banking
+    ports: ["8262:8262"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8262/health || exit 1"] }
+
+  python-stablecoin-rails:
+    build: ./services/python/stablecoin-rails
+    ports: ["8265:8265"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8265/health || exit 1"] }
+
+  python-iot-smart-pos:
+    build: ./services/python/iot-smart-pos
+    ports: ["8268:8268"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8268/health || exit 1"] }
+
+  python-wearable-payments:
+    build: ./services/python/wearable-payments
+    ports: ["8271:8271"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8271/health || exit 1"] }
+
+  python-satellite-connectivity:
+    build: ./services/python/satellite-connectivity
+    ports: ["8274:8274"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8274/health || exit 1"] }
+
+  python-digital-identity-layer:
+    build: ./services/python/digital-identity-layer
+    ports: ["8277:8277"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8277/health || exit 1"] }
+
+  python-pension-micro:
+    build: ./services/python/pension-micro
+    ports: ["8280:8280"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8280/health || exit 1"] }
+
+  python-carbon-credit-marketplace:
+    build: ./services/python/carbon-credit-marketplace
+    ports: ["8283:8283"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8283/health || exit 1"] }
+
+  python-tokenized-assets:
+    build: ./services/python/tokenized-assets
+    ports: ["8286:8286"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8286/health || exit 1"] }
+
+  python-coalition-loyalty:
+    build: ./services/python/coalition-loyalty
+    ports: ["8289:8289"]
+    environment: *py-env
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health-check, test: ["CMD-SHELL", "wget -qO- http://localhost:8289/health || exit 1"] }
+
+  # --- Integration Test Runner ---
+  test-runner:
+    image: curlimages/curl:8.4.0
+    depends_on:
+      go-open-banking-api: { condition: service_healthy }
+      go-bnpl-engine: { condition: service_healthy }
+      rust-open-banking-api: { condition: service_healthy }
+      rust-bnpl-engine: { condition: service_healthy }
+      python-open-banking-api: { condition: service_healthy }
+      python-bnpl-engine: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "=== Integration Test Suite: 20 Future-Proofing Features ==="
+        PASS=0; FAIL=0
+
+        check_health() {
+          local name="$$1" url="$$2"
+          if wget -qO- "$$url" 2>/dev/null | grep -qi "healthy\|ok\|running"; then
+            echo "  PASS $$name"
+            PASS=$$((PASS + 1))
+          else
+            echo "  FAIL $$name ($$url)"
+            FAIL=$$((FAIL + 1))
+          fi
+        }
+
+        echo ""
+        echo "--- Go Services ---"
+        check_health "Go Open Banking"        "http://go-open-banking-api:8230/health"
+        check_health "Go BNPL Engine"          "http://go-bnpl-engine:8233/health"
+        check_health "Go NFC Tap-to-Pay"       "http://go-nfc-tap-to-pay:8236/health"
+        check_health "Go AI Credit Scoring"    "http://go-ai-credit-scoring:8239/health"
+        check_health "Go AgriTech Payments"    "http://go-agritech-payments:8242/health"
+        check_health "Go Super App"            "http://go-super-app-framework:8245/health"
+        check_health "Go ANaaS"                "http://go-embedded-finance-anaas:8248/health"
+        check_health "Go Payroll"              "http://go-payroll-disbursement:8251/health"
+        check_health "Go Health Insurance"     "http://go-health-insurance-micro:8254/health"
+        check_health "Go Education"            "http://go-education-payments:8257/health"
+        check_health "Go Chat Banking"         "http://go-conversational-banking:8260/health"
+        check_health "Go Stablecoin"           "http://go-stablecoin-rails:8263/health"
+        check_health "Go IoT Smart POS"        "http://go-iot-smart-pos:8266/health"
+        check_health "Go Wearable"             "http://go-wearable-payments:8269/health"
+        check_health "Go Satellite"            "http://go-satellite-connectivity:8272/health"
+        check_health "Go Digital Identity"     "http://go-digital-identity-layer:8275/health"
+        check_health "Go Pension"              "http://go-pension-micro:8278/health"
+        check_health "Go Carbon Credits"       "http://go-carbon-credit-marketplace:8281/health"
+        check_health "Go Tokenized Assets"     "http://go-tokenized-assets:8284/health"
+        check_health "Go Coalition Loyalty"    "http://go-coalition-loyalty:8287/health"
+
+        echo ""
+        echo "--- Rust Services ---"
+        check_health "Rust Open Banking"       "http://rust-open-banking-api:8231/health"
+        check_health "Rust BNPL Engine"        "http://rust-bnpl-engine:8234/health"
+        check_health "Rust NFC Tap-to-Pay"     "http://rust-nfc-tap-to-pay:8237/health"
+        check_health "Rust AI Credit Scoring"  "http://rust-ai-credit-scoring:8240/health"
+        check_health "Rust AgriTech"           "http://rust-agritech-payments:8243/health"
+        check_health "Rust Super App"          "http://rust-super-app-framework:8246/health"
+        check_health "Rust ANaaS"              "http://rust-embedded-finance-anaas:8249/health"
+        check_health "Rust Payroll"            "http://rust-payroll-disbursement:8252/health"
+        check_health "Rust Health Insurance"   "http://rust-health-insurance-micro:8255/health"
+        check_health "Rust Education"          "http://rust-education-payments:8258/health"
+        check_health "Rust Chat Banking"       "http://rust-conversational-banking:8261/health"
+        check_health "Rust Stablecoin"         "http://rust-stablecoin-rails:8264/health"
+        check_health "Rust IoT Smart POS"      "http://rust-iot-smart-pos:8267/health"
+        check_health "Rust Wearable"           "http://rust-wearable-payments:8270/health"
+        check_health "Rust Satellite"          "http://rust-satellite-connectivity:8273/health"
+        check_health "Rust Digital Identity"   "http://rust-digital-identity-layer:8276/health"
+        check_health "Rust Pension"            "http://rust-pension-micro:8279/health"
+        check_health "Rust Carbon Credits"     "http://rust-carbon-credit-marketplace:8282/health"
+        check_health "Rust Tokenized Assets"   "http://rust-tokenized-assets:8285/health"
+        check_health "Rust Coalition Loyalty"  "http://rust-coalition-loyalty:8288/health"
+
+        echo ""
+        echo "--- Python Services ---"
+        check_health "Python Open Banking"     "http://python-open-banking-api:8232/health"
+        check_health "Python BNPL Engine"      "http://python-bnpl-engine:8235/health"
+        check_health "Python NFC Tap-to-Pay"   "http://python-nfc-tap-to-pay:8238/health"
+        check_health "Python AI Credit"        "http://python-ai-credit-scoring:8241/health"
+        check_health "Python AgriTech"         "http://python-agritech-payments:8244/health"
+        check_health "Python Super App"        "http://python-super-app-framework:8247/health"
+        check_health "Python ANaaS"            "http://python-embedded-finance-anaas:8250/health"
+        check_health "Python Payroll"          "http://python-payroll-disbursement:8253/health"
+        check_health "Python Health Insurance" "http://python-health-insurance-micro:8256/health"
+        check_health "Python Education"        "http://python-education-payments:8259/health"
+        check_health "Python Chat Banking"     "http://python-conversational-banking:8262/health"
+        check_health "Python Stablecoin"       "http://python-stablecoin-rails:8265/health"
+        check_health "Python IoT Smart POS"    "http://python-iot-smart-pos:8268/health"
+        check_health "Python Wearable"         "http://python-wearable-payments:8271/health"
+        check_health "Python Satellite"        "http://python-satellite-connectivity:8274/health"
+        check_health "Python Digital Identity" "http://python-digital-identity-layer:8277/health"
+        check_health "Python Pension"          "http://python-pension-micro:8280/health"
+        check_health "Python Carbon Credits"   "http://python-carbon-credit-marketplace:8283/health"
+        check_health "Python Tokenized Assets" "http://python-tokenized-assets:8286/health"
+        check_health "Python Coalition Loyalty" "http://python-coalition-loyalty:8289/health"
+
+        echo ""
+        echo "=== Results: $$PASS passed, $$FAIL failed out of 60 services ==="
+        [ "$$FAIL" -eq 0 ] && exit 0 || exit 1

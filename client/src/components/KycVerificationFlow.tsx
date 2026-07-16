@@ -10,13 +10,29 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import {
-  Shield, CheckCircle, XCircle, AlertTriangle, Camera,
-  Upload, Smartphone, Wifi, WifiOff, ChevronRight, Star,
+  Shield,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Camera,
+  Upload,
+  Smartphone,
+  Wifi,
+  WifiOff,
+  ChevronRight,
+  Star,
 } from "lucide-react";
 import { t } from "@/lib/i18n";
 
 type KycTier = 1 | 2 | 3;
-type KycStep = "overview" | "bvn" | "nin" | "selfie" | "liveness" | "document" | "complete";
+type KycStep =
+  | "overview"
+  | "bvn"
+  | "nin"
+  | "selfie"
+  | "liveness"
+  | "document"
+  | "complete";
 
 interface TierConfig {
   tier: KycTier;
@@ -46,7 +62,13 @@ const TIERS: TierConfig[] = [
     label: "Enhanced",
     dailyLimit: "₦5,000,000",
     color: "bg-green-500",
-    requirements: ["Phone number", "BVN + NIN", "Biometric enrollment", "Utility bill", "Address verification"],
+    requirements: [
+      "Phone number",
+      "BVN + NIN",
+      "Biometric enrollment",
+      "Utility bill",
+      "Address verification",
+    ],
   },
 ];
 
@@ -81,7 +103,9 @@ export function KycVerificationFlow() {
         setError("BVN verification failed. Please check and try again.");
       }
     } catch {
-      setError("Network error — your request has been queued for when you're back online.");
+      setError(
+        "Network error — your request has been queued for when you're back online."
+      );
     } finally {
       setLoading(false);
     }
@@ -113,17 +137,20 @@ export function KycVerificationFlow() {
     }
   }, [nin]);
 
-  const handleLivenessComplete = useCallback((passed: boolean) => {
-    setLivenessResult(passed);
-    if (passed) {
-      setDocuments(prev => [...prev, "liveness"]);
-      if (targetTier === 2) {
-        setStep("complete");
-      } else {
-        setStep("document");
+  const handleLivenessComplete = useCallback(
+    (passed: boolean) => {
+      setLivenessResult(passed);
+      if (passed) {
+        setDocuments(prev => [...prev, "liveness"]);
+        if (targetTier === 2) {
+          setStep("complete");
+        } else {
+          setStep("document");
+        }
       }
-    }
-  }, [targetTier]);
+    },
+    [targetTier]
+  );
 
   const renderOverview = () => (
     <div className="space-y-4">
@@ -138,7 +165,9 @@ export function KycVerificationFlow() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Current Level</p>
-              <p className="text-lg font-bold">Tier {currentTier} — {TIERS[currentTier - 1].label}</p>
+              <p className="text-lg font-bold">
+                Tier {currentTier} — {TIERS[currentTier - 1].label}
+              </p>
             </div>
             <Badge className={TIERS[currentTier - 1].color}>
               {TIERS[currentTier - 1].dailyLimit}/day
@@ -149,18 +178,29 @@ export function KycVerificationFlow() {
 
       {/* Tier cards */}
       {TIERS.filter(t => t.tier > currentTier).map(tier => (
-        <Card key={tier.tier} className="cursor-pointer hover:border-primary transition-colors"
-              onClick={() => { setTargetTier(tier.tier); setStep("bvn"); }}>
+        <Card
+          key={tier.tier}
+          className="cursor-pointer hover:border-primary transition-colors"
+          onClick={() => {
+            setTargetTier(tier.tier);
+            setStep("bvn");
+          }}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <Star className="w-4 h-4 text-yellow-500" />
-                  <p className="font-semibold">{t(`kyc.tier${tier.tier}` as any)}</p>
+                  <p className="font-semibold">
+                    {t(`kyc.tier${tier.tier}` as any)}
+                  </p>
                 </div>
                 <ul className="mt-2 space-y-1">
                   {tier.requirements.map(req => (
-                    <li key={req} className="text-sm text-muted-foreground flex items-center gap-1">
+                    <li
+                      key={req}
+                      className="text-sm text-muted-foreground flex items-center gap-1"
+                    >
                       <CheckCircle className="w-3 h-3" /> {req}
                     </li>
                   ))}
@@ -184,10 +224,20 @@ export function KycVerificationFlow() {
         value={bvn}
         onChange={e => setBvn(e.target.value.replace(/\D/g, ""))}
       />
-      {error && <p className="text-sm text-red-500 flex items-center gap-1"><XCircle className="w-4 h-4" />{error}</p>}
+      {error && (
+        <p className="text-sm text-red-500 flex items-center gap-1">
+          <XCircle className="w-4 h-4" />
+          {error}
+        </p>
+      )}
       <div className="flex gap-2">
-        <Button variant="outline" onClick={() => setStep("overview")}>{t("common.back")}</Button>
-        <Button onClick={handleBvnSubmit} disabled={loading || bvn.length !== 11}>
+        <Button variant="outline" onClick={() => setStep("overview")}>
+          {t("common.back")}
+        </Button>
+        <Button
+          onClick={handleBvnSubmit}
+          disabled={loading || bvn.length !== 11}
+        >
           {loading ? t("common.loading") : t("common.next")}
         </Button>
       </div>
@@ -209,12 +259,23 @@ export function KycVerificationFlow() {
       />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
-        <Button variant="outline" onClick={() => setStep("bvn")}>{t("common.back")}</Button>
-        <Button onClick={handleNinSubmit} disabled={loading || nin.length !== 11}>
+        <Button variant="outline" onClick={() => setStep("bvn")}>
+          {t("common.back")}
+        </Button>
+        <Button
+          onClick={handleNinSubmit}
+          disabled={loading || nin.length !== 11}
+        >
           {loading ? t("common.loading") : t("common.next")}
         </Button>
       </div>
-      <Button variant="ghost" className="w-full text-sm" onClick={() => { /* NFC scan */ }}>
+      <Button
+        variant="ghost"
+        className="w-full text-sm"
+        onClick={() => {
+          /* NFC scan */
+        }}
+      >
         <Smartphone className="w-4 h-4 mr-2" /> Tap NIN card (NFC)
       </Button>
     </div>
@@ -243,12 +304,20 @@ export function KycVerificationFlow() {
   const renderDocumentStep = () => (
     <div className="space-y-4">
       <h3 className="font-semibold">{t("kyc.upload_document")}</h3>
-      <p className="text-sm text-muted-foreground">Upload a utility bill or bank statement (less than 3 months old)</p>
+      <p className="text-sm text-muted-foreground">
+        Upload a utility bill or bank statement (less than 3 months old)
+      </p>
       <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors">
         <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
         <p className="text-sm">Tap to upload or take a photo</p>
       </div>
-      <Button className="w-full" onClick={() => { setDocuments(prev => [...prev, "utility_bill"]); setStep("complete"); }}>
+      <Button
+        className="w-full"
+        onClick={() => {
+          setDocuments(prev => [...prev, "utility_bill"]);
+          setStep("complete");
+        }}
+      >
         {t("common.submit")}
       </Button>
     </div>
@@ -264,15 +333,29 @@ export function KycVerificationFlow() {
       <Badge className={TIERS[targetTier - 1].color}>
         New daily limit: {TIERS[targetTier - 1].dailyLimit}
       </Badge>
-      <Button className="w-full" onClick={() => { setCurrentTier(targetTier); setStep("overview"); }}>
+      <Button
+        className="w-full"
+        onClick={() => {
+          setCurrentTier(targetTier);
+          setStep("overview");
+        }}
+      >
         {t("common.done")}
       </Button>
     </div>
   );
 
   // Progress
-  const steps: KycStep[] = ["overview", "bvn", "selfie", "document", "complete"];
-  const progressPct = Math.round((steps.indexOf(step) / (steps.length - 1)) * 100);
+  const steps: KycStep[] = [
+    "overview",
+    "bvn",
+    "selfie",
+    "document",
+    "complete",
+  ];
+  const progressPct = Math.round(
+    (steps.indexOf(step) / (steps.length - 1)) * 100
+  );
 
   return (
     <Card>
@@ -281,7 +364,9 @@ export function KycVerificationFlow() {
           <Shield className="w-5 h-5" />
           {t("kyc.title")}
         </CardTitle>
-        {step !== "overview" && <Progress value={progressPct} className="mt-2" />}
+        {step !== "overview" && (
+          <Progress value={progressPct} className="mt-2" />
+        )}
       </CardHeader>
       <CardContent>
         {step === "overview" && renderOverview()}

@@ -94,18 +94,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishbusinessRulesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -129,10 +130,17 @@ async function publishbusinessRulesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const businessRulesRouter = router({
@@ -315,8 +323,9 @@ export const businessRulesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishbusinessRulesMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
-
+        await publishbusinessRulesMiddleware("createRule", `${Date.now()}`, {
+          action: "createRule",
+        }).catch(() => {});
 
         return { success: true, ruleId };
       } catch (error) {
@@ -350,9 +359,11 @@ export const businessRulesRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishbusinessRulesMiddleware("updateRule", `${Date.now()}`, { action: "updateRule" }).catch(() => {});
+          await publishbusinessRulesMiddleware("updateRule", `${Date.now()}`, {
+            action: "updateRule",
+          }).catch(() => {});
 
-          return { success: false, error: "Rule not found" };
+        return { success: false, error: "Rule not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const { ruleId, ...updates } = input;
         const merged = {
@@ -397,7 +408,9 @@ export const businessRulesRouter = router({
           status: "success",
         });
         // Middleware fan-out (fail-open)
-        await publishbusinessRulesMiddleware("deleteRule", `${Date.now()}`, { action: "deleteRule" }).catch(() => {});
+        await publishbusinessRulesMiddleware("deleteRule", `${Date.now()}`, {
+          action: "deleteRule",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -424,7 +437,9 @@ export const businessRulesRouter = router({
           .map(r => JSON.parse(String(r.value ?? "{}")))
           .filter((r: any) => r.enabled !== false);
         // Middleware fan-out (fail-open)
-        await publishbusinessRulesMiddleware("evaluate", `${Date.now()}`, { action: "evaluate" }).catch(() => {});
+        await publishbusinessRulesMiddleware("evaluate", `${Date.now()}`, {
+          action: "evaluate",
+        }).catch(() => {});
 
         return {
           results: rules.map((r: any) => ({

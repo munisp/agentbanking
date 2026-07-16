@@ -247,8 +247,7 @@ export const transactionReconciliationRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database)
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const [record] = await database
         .select()
@@ -272,12 +271,16 @@ export const transactionReconciliationRouter = router({
         notes: input.notes,
       });
 
-      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
-        type: "status_updated",
-        transactionId: input.id,
-        from: record.status,
-        to: input.status,
-      }).catch(() => {});
+      publishEvent(
+        "transaction.reconciliation" as KafkaTopic,
+        String(input.id),
+        {
+          type: "status_updated",
+          transactionId: input.id,
+          from: record.status,
+          to: input.status,
+        }
+      ).catch(() => {});
 
       return { success: true, transaction: updated };
     }),
@@ -292,8 +295,7 @@ export const transactionReconciliationRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database)
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const [record] = await database
         .select()
@@ -316,11 +318,15 @@ export const transactionReconciliationRouter = router({
         disputeRef: input.disputeRef,
       });
 
-      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
-        type: "disputed",
-        transactionId: input.id,
-        reason: input.reason,
-      }).catch(() => {});
+      publishEvent(
+        "transaction.reconciliation" as KafkaTopic,
+        String(input.id),
+        {
+          type: "disputed",
+          transactionId: input.id,
+          reason: input.reason,
+        }
+      ).catch(() => {});
 
       return { success: true, transaction: updated };
     }),
@@ -335,8 +341,7 @@ export const transactionReconciliationRouter = router({
     )
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database)
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const [record] = await database
         .select()
@@ -359,11 +364,15 @@ export const transactionReconciliationRouter = router({
         resolvedBy: input.resolvedBy,
       });
 
-      publishEvent("transaction.reconciliation" as KafkaTopic, String(input.id), {
-        type: "resolved",
-        transactionId: input.id,
-        resolution: input.resolution,
-      }).catch(() => {});
+      publishEvent(
+        "transaction.reconciliation" as KafkaTopic,
+        String(input.id),
+        {
+          type: "resolved",
+          transactionId: input.id,
+          resolution: input.resolution,
+        }
+      ).catch(() => {});
 
       return { success: true, transaction: updated };
     }),

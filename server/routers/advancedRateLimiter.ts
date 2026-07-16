@@ -119,18 +119,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishadvancedRateLimiterMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -154,10 +155,17 @@ async function publishadvancedRateLimiterMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const advancedRateLimiterRouter = router({
@@ -292,8 +300,11 @@ export const advancedRateLimiterRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishadvancedRateLimiterMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
-
+        await publishadvancedRateLimiterMiddleware(
+          "createRule",
+          `${Date.now()}`,
+          { action: "createRule" }
+        ).catch(() => {});
 
         return { success: true, ruleId };
       } catch (error) {
@@ -320,9 +331,13 @@ export const advancedRateLimiterRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishadvancedRateLimiterMiddleware("toggleRule", `${Date.now()}`, { action: "toggleRule" }).catch(() => {});
+          await publishadvancedRateLimiterMiddleware(
+            "toggleRule",
+            `${Date.now()}`,
+            { action: "toggleRule" }
+          ).catch(() => {});
 
-          return { success: false, error: "Rule not found" };
+        return { success: false, error: "Rule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.enabled = input.enabled;
         await db

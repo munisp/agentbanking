@@ -83,18 +83,19 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishglJournalEntriesCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -118,10 +119,17 @@ async function publishglJournalEntriesCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const gl_journal_entriesRouter = router({
@@ -239,8 +247,9 @@ export const gl_journal_entriesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishglJournalEntriesCrudMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+        await publishglJournalEntriesCrudMiddleware("create", `${Date.now()}`, {
+          action: "create",
+        }).catch(() => {});
 
         return { ...row, message: "Double-entry journal posted" };
       } catch (error) {
@@ -291,7 +300,11 @@ export const gl_journal_entriesRouter = router({
           .set({ status: "reversed" })
           .where(eq(gl_journal_entries.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishglJournalEntriesCrudMiddleware("reverse", `${Date.now()}`, { action: "reverse" }).catch(() => {});
+        await publishglJournalEntriesCrudMiddleware(
+          "reverse",
+          `${Date.now()}`,
+          { action: "reverse" }
+        ).catch(() => {});
 
         return {
           original: input.id,
@@ -316,7 +329,9 @@ export const gl_journal_entriesRouter = router({
           .delete(gl_journal_entries)
           .where(eq(gl_journal_entries.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishglJournalEntriesCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishglJournalEntriesCrudMiddleware("delete", `${Date.now()}`, {
+          action: "delete",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

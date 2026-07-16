@@ -16,7 +16,17 @@ import { trpc } from "../lib/trpc";
  * - Canary release health
  */
 
-type Tab = "overview" | "keys" | "routing" | "healing" | "voice" | "float" | "biometrics" | "eod" | "geo" | "revenue";
+type Tab =
+  | "overview"
+  | "keys"
+  | "routing"
+  | "healing"
+  | "voice"
+  | "float"
+  | "biometrics"
+  | "eod"
+  | "geo"
+  | "revenue";
 
 export default function POSEnhancedDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -38,12 +48,14 @@ export default function POSEnhancedDashboard() {
     <div className="min-h-screen bg-gray-900 text-white p-4">
       <header className="mb-6">
         <h1 className="text-2xl font-bold">POS Terminal Management</h1>
-        <p className="text-gray-400 text-sm">Full middleware integration — DUKPT/P2PE/PTSP/AI Routing/Self-Healing</p>
+        <p className="text-gray-400 text-sm">
+          Full middleware integration — DUKPT/P2PE/PTSP/AI Routing/Self-Healing
+        </p>
       </header>
 
       {/* Tab Navigation */}
       <nav className="flex flex-wrap gap-1 mb-6 border-b border-gray-700 pb-2">
-        {tabs.map((tab) => (
+        {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -90,13 +102,23 @@ function OverviewPanel() {
   );
 }
 
-function StatCard({ title, value, change }: { title: string; value: string; change: string }) {
+function StatCard({
+  title,
+  value,
+  change,
+}: {
+  title: string;
+  value: string;
+  change: string;
+}) {
   const isPositive = change.startsWith("+") || change.startsWith("-");
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       <p className="text-gray-400 text-xs uppercase">{title}</p>
       <p className="text-2xl font-bold mt-1">{value}</p>
-      <p className={`text-xs mt-1 ${change.startsWith("+") ? "text-green-400" : change.startsWith("-") ? "text-red-400" : "text-gray-500"}`}>
+      <p
+        className={`text-xs mt-1 ${change.startsWith("+") ? "text-green-400" : change.startsWith("-") ? "text-red-400" : "text-gray-500"}`}
+      >
         {change} today
       </p>
     </div>
@@ -113,21 +135,27 @@ function DukptKeysPanel() {
             <p className="font-medium">TMK — Terminal Master Key</p>
             <p className="text-xs text-gray-400">KSN: 9876543210FFFF0001</p>
           </div>
-          <span className="px-2 py-1 bg-green-600/20 text-green-400 rounded text-xs">Active</span>
+          <span className="px-2 py-1 bg-green-600/20 text-green-400 rounded text-xs">
+            Active
+          </span>
         </div>
         <div className="flex justify-between items-center p-3 bg-gray-700 rounded">
           <div>
             <p className="font-medium">TPK — Terminal PIN Key</p>
             <p className="text-xs text-gray-400">KSN: 9876543210FFFF0002</p>
           </div>
-          <span className="px-2 py-1 bg-green-600/20 text-green-400 rounded text-xs">Active</span>
+          <span className="px-2 py-1 bg-green-600/20 text-green-400 rounded text-xs">
+            Active
+          </span>
         </div>
         <div className="flex justify-between items-center p-3 bg-gray-700 rounded">
           <div>
             <p className="font-medium">TAK — Terminal Auth Key</p>
             <p className="text-xs text-gray-400">KSN: 9876543210FFFF0003</p>
           </div>
-          <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 rounded text-xs">Expiring Soon</span>
+          <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 rounded text-xs">
+            Expiring Soon
+          </span>
         </div>
       </div>
       <button className="mt-4 px-4 py-2 bg-blue-600 rounded text-sm hover:bg-blue-700 transition-colors">
@@ -143,22 +171,49 @@ function AiRoutingPanel() {
       <h2 className="text-lg font-semibold mb-4">AI Transaction Routing</h2>
       <div className="space-y-4">
         {[
-          { name: "NIBSS NIP", score: 0.92, latency: 450, fee: 7.5, scheme: "Verve" },
-          { name: "Interswitch", score: 0.87, latency: 600, fee: 10.0, scheme: "Visa/MC" },
-          { name: "UPSL", score: 0.81, latency: 550, fee: 8.5, scheme: "Fallback" },
-        ].map((route) => (
+          {
+            name: "NIBSS NIP",
+            score: 0.92,
+            latency: 450,
+            fee: 7.5,
+            scheme: "Verve",
+          },
+          {
+            name: "Interswitch",
+            score: 0.87,
+            latency: 600,
+            fee: 10.0,
+            scheme: "Visa/MC",
+          },
+          {
+            name: "UPSL",
+            score: 0.81,
+            latency: 550,
+            fee: 8.5,
+            scheme: "Fallback",
+          },
+        ].map(route => (
           <div key={route.name} className="p-3 bg-gray-700 rounded">
             <div className="flex justify-between items-center">
               <span className="font-medium">{route.name}</span>
               <span className="text-sm text-gray-400">{route.scheme}</span>
             </div>
             <div className="flex gap-4 mt-2 text-xs text-gray-400">
-              <span>Score: <span className="text-white">{route.score}</span></span>
-              <span>Latency: <span className="text-white">{route.latency}ms</span></span>
-              <span>Fee: <span className="text-white">{route.fee}bps</span></span>
+              <span>
+                Score: <span className="text-white">{route.score}</span>
+              </span>
+              <span>
+                Latency: <span className="text-white">{route.latency}ms</span>
+              </span>
+              <span>
+                Fee: <span className="text-white">{route.fee}bps</span>
+              </span>
             </div>
             <div className="mt-2 h-1.5 bg-gray-600 rounded-full">
-              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${route.score * 100}%` }} />
+              <div
+                className="h-full bg-blue-500 rounded-full"
+                style={{ width: `${route.score * 100}%` }}
+              />
             </div>
           </div>
         ))}
@@ -173,16 +228,45 @@ function SelfHealingPanel() {
       <h2 className="text-lg font-semibold mb-4">Terminal Self-Healing</h2>
       <div className="space-y-2">
         {[
-          { issue: "Printer jam", action: "Restart spooler", time: "2m ago", severity: "medium" },
-          { issue: "NFC freeze", action: "Reset controller", time: "15m ago", severity: "high" },
-          { issue: "Memory 92%", action: "Kill background", time: "1h ago", severity: "high" },
-          { issue: "Signal -105dBm", action: "Switch SIM", time: "3h ago", severity: "critical" },
+          {
+            issue: "Printer jam",
+            action: "Restart spooler",
+            time: "2m ago",
+            severity: "medium",
+          },
+          {
+            issue: "NFC freeze",
+            action: "Reset controller",
+            time: "15m ago",
+            severity: "high",
+          },
+          {
+            issue: "Memory 92%",
+            action: "Kill background",
+            time: "1h ago",
+            severity: "high",
+          },
+          {
+            issue: "Signal -105dBm",
+            action: "Switch SIM",
+            time: "3h ago",
+            severity: "critical",
+          },
         ].map((event, i) => (
-          <div key={i} className="flex items-center justify-between p-2 bg-gray-700 rounded text-sm">
+          <div
+            key={i}
+            className="flex items-center justify-between p-2 bg-gray-700 rounded text-sm"
+          >
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${
-                event.severity === "critical" ? "bg-red-500" : event.severity === "high" ? "bg-orange-500" : "bg-yellow-500"
-              }`} />
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  event.severity === "critical"
+                    ? "bg-red-500"
+                    : event.severity === "high"
+                      ? "bg-orange-500"
+                      : "bg-yellow-500"
+                }`}
+              />
               <span>{event.issue}</span>
             </div>
             <span className="text-green-400">{event.action}</span>
@@ -207,17 +291,23 @@ function VoicePosPanel() {
         <div className="p-3 bg-gray-700 rounded text-center">
           <p className="text-2xl font-bold">5</p>
           <p className="text-xs text-gray-400">Supported Intents</p>
-          <p className="text-xs text-blue-400">cash_in/out/airtime/balance/transfer</p>
+          <p className="text-xs text-blue-400">
+            cash_in/out/airtime/balance/transfer
+          </p>
         </div>
       </div>
       <div className="space-y-2">
         <div className="p-2 bg-gray-700 rounded text-sm">
           <p className="text-gray-400">Hausa: "Shigar kudi dubu biyar"</p>
-          <p className="text-green-400">Intent: cash_in | Amount: 5,000 | Confidence: 0.89</p>
+          <p className="text-green-400">
+            Intent: cash_in | Amount: 5,000 | Confidence: 0.89
+          </p>
         </div>
         <div className="p-2 bg-gray-700 rounded text-sm">
           <p className="text-gray-400">Pidgin: "Give 2000 naira"</p>
-          <p className="text-green-400">Intent: cash_out | Amount: 2,000 | Confidence: 0.85</p>
+          <p className="text-green-400">
+            Intent: cash_out | Amount: 2,000 | Confidence: 0.85
+          </p>
         </div>
       </div>
     </div>
@@ -227,25 +317,59 @@ function VoicePosPanel() {
 function FloatPredictPanel() {
   return (
     <div className="bg-gray-800 rounded-lg p-6">
-      <h2 className="text-lg font-semibold mb-4">Predictive Float Management</h2>
+      <h2 className="text-lg font-semibold mb-4">
+        Predictive Float Management
+      </h2>
       <div className="space-y-3">
         {[
-          { terminal: "POS-001", predicted: 1200000, current: 800000, risk: "high" },
-          { terminal: "POS-002", predicted: 500000, current: 600000, risk: "low" },
-          { terminal: "POS-003", predicted: 2000000, current: 300000, risk: "critical" },
-        ].map((item) => (
+          {
+            terminal: "POS-001",
+            predicted: 1200000,
+            current: 800000,
+            risk: "high",
+          },
+          {
+            terminal: "POS-002",
+            predicted: 500000,
+            current: 600000,
+            risk: "low",
+          },
+          {
+            terminal: "POS-003",
+            predicted: 2000000,
+            current: 300000,
+            risk: "critical",
+          },
+        ].map(item => (
           <div key={item.terminal} className="p-3 bg-gray-700 rounded">
             <div className="flex justify-between">
               <span className="font-medium">{item.terminal}</span>
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                item.risk === "critical" ? "bg-red-600/20 text-red-400" :
-                item.risk === "high" ? "bg-orange-600/20 text-orange-400" : "bg-green-600/20 text-green-400"
-              }`}>{item.risk}</span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  item.risk === "critical"
+                    ? "bg-red-600/20 text-red-400"
+                    : item.risk === "high"
+                      ? "bg-orange-600/20 text-orange-400"
+                      : "bg-green-600/20 text-green-400"
+                }`}
+              >
+                {item.risk}
+              </span>
             </div>
             <div className="flex gap-4 mt-1 text-xs text-gray-400">
-              <span>Predicted: \u20a6{(item.predicted/100).toLocaleString()}</span>
-              <span>Current: \u20a6{(item.current/100).toLocaleString()}</span>
-              <span>Shortfall: \u20a6{Math.max(0, (item.predicted - item.current)/100).toLocaleString()}</span>
+              <span>
+                Predicted: \u20a6{(item.predicted / 100).toLocaleString()}
+              </span>
+              <span>
+                Current: \u20a6{(item.current / 100).toLocaleString()}
+              </span>
+              <span>
+                Shortfall: \u20a6
+                {Math.max(
+                  0,
+                  (item.predicted - item.current) / 100
+                ).toLocaleString()}
+              </span>
             </div>
           </div>
         ))}
@@ -258,7 +382,10 @@ function BiometricsPanel() {
   return (
     <div className="bg-gray-800 rounded-lg p-6">
       <h2 className="text-lg font-semibold mb-4">Behavioral Biometrics</h2>
-      <p className="text-sm text-gray-400 mb-4">Analyzing keystroke dynamics, touch pressure, and typing rhythm to detect unauthorized terminal use.</p>
+      <p className="text-sm text-gray-400 mb-4">
+        Analyzing keystroke dynamics, touch pressure, and typing rhythm to
+        detect unauthorized terminal use.
+      </p>
       <div className="space-y-2">
         <div className="p-2 bg-gray-700 rounded text-sm flex justify-between">
           <span>Agent A-0042 — PIN entry</span>
@@ -281,8 +408,12 @@ function EodReconPanel() {
   return (
     <div className="bg-gray-800 rounded-lg p-6">
       <h2 className="text-lg font-semibold mb-4">EOD Reconciliation</h2>
-      <p className="text-sm text-gray-400 mb-4">Forced end-of-day settlement. Terminals must reconcile before midnight.</p>
-      <button className="px-4 py-2 bg-blue-600 rounded text-sm hover:bg-blue-700">Force EOD Now</button>
+      <p className="text-sm text-gray-400 mb-4">
+        Forced end-of-day settlement. Terminals must reconcile before midnight.
+      </p>
+      <button className="px-4 py-2 bg-blue-600 rounded text-sm hover:bg-blue-700">
+        Force EOD Now
+      </button>
     </div>
   );
 }
@@ -291,10 +422,15 @@ function GeoVelocityPanel() {
   return (
     <div className="bg-gray-800 rounded-lg p-6">
       <h2 className="text-lg font-semibold mb-4">Geo-Velocity Detection</h2>
-      <p className="text-sm text-gray-400 mb-4">Flags terminals that appear to move impossibly fast (cloned terminal detection).</p>
+      <p className="text-sm text-gray-400 mb-4">
+        Flags terminals that appear to move impossibly fast (cloned terminal
+        detection).
+      </p>
       <div className="p-3 bg-red-900/20 border border-red-700 rounded">
         <p className="text-red-400 font-medium">Alert: POS-0089</p>
-        <p className="text-xs text-gray-400">Velocity: 340 km/h (Lagos to Abuja in 2 hours). Flagged as impossible.</p>
+        <p className="text-xs text-gray-400">
+          Velocity: 340 km/h (Lagos to Abuja in 2 hours). Flagged as impossible.
+        </p>
       </div>
     </div>
   );

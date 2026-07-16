@@ -11,6 +11,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -218,7 +219,7 @@ export const transactionReversalManagerRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return withTransaction(async (tx) => {
+      return withTransaction(async tx => {
         const db = tx ?? (await getDb())!;
 
         // Lock and fetch original transaction
@@ -227,10 +228,16 @@ export const transactionReversalManagerRouter = router({
         );
         const originalTx = (txRows as any).rows?.[0] ?? (txRows as any)[0];
         if (!originalTx) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Transaction not found" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Transaction not found",
+          });
         }
         if (originalTx.status === "reversed") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction already reversed" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Transaction already reversed",
+          });
         }
 
         const amount = Number(originalTx.amount);
@@ -295,20 +302,42 @@ export const transactionReversalManagerRouter = router({
         });
 
         // Kafka event
-        publishEvent(
-          "pos.transactions.reversed",
+        publishEvent("pos.transactions.reversed", reversalRef, {
           reversalRef,
-          {
-            reversalRef,
-            originalRef: originalTx.ref,
-            originalTransactionId: input.transactionId,
+          originalRef: originalTx.ref,
+          originalTransactionId: input.transactionId,
+          amount,
+          type: txType,
+          reason: input.reason,
+          agentId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        // TigerBeetle double-entry: mirror the GL reversal accounts
+        tbCreateTransfer({
+          debitAccountId: isDebitReversal ? "2001" : "1001",
+          creditAccountId: isDebitReversal ? "1001" : "2001",
+          amount: Math.round(amount * 100),
+          ref: reversalRef,
+          txType: "transaction_reversal",
+          agentCode: String(agentId ?? "system"),
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: reversalRef,
             amount,
-            type: txType,
-            reason: input.reason,
-            agentId,
-            timestamp: new Date().toISOString(),
-          }
-        ).catch(() => {});
+            type: "transaction_reversal",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("transaction_reversals", {
+          reversalRef,
+          originalRef: originalTx.ref,
+          originalTransactionId: input.transactionId,
+          amount,
+          agentId,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
 
         return {
           success: true,

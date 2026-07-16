@@ -499,19 +499,40 @@ export interface DisputeWorkflowInput {
 const disputeActivities = proxyActivities<{
   createDisputeRecord: (input: DisputeWorkflowInput) => Promise<{ id: string }>;
   notifyCounterparty: (disputeId: string) => Promise<void>;
-  collectEvidence: (disputeId: string, txRef: string) => Promise<{ evidence: any[] }>;
-  assignInvestigator: (disputeId: string) => Promise<{ investigatorId: string }>;
-  makeDecision: (disputeId: string, evidence: any[]) => Promise<{ decision: string; refundAmount: number }>;
-  executeRefund: (disputeId: string, amount: number) => Promise<{ refundRef: string }>;
+  collectEvidence: (
+    disputeId: string,
+    txRef: string
+  ) => Promise<{ evidence: any[] }>;
+  assignInvestigator: (
+    disputeId: string
+  ) => Promise<{ investigatorId: string }>;
+  makeDecision: (
+    disputeId: string,
+    evidence: any[]
+  ) => Promise<{ decision: string; refundAmount: number }>;
+  executeRefund: (
+    disputeId: string,
+    amount: number
+  ) => Promise<{ refundRef: string }>;
   closeDispute: (disputeId: string, outcome: string) => Promise<void>;
 }>({
   startToCloseTimeout: "10 minutes",
-  retry: { maximumAttempts: 3, initialInterval: "2s", backoffCoefficient: 2, maximumInterval: "1m" },
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: "2s",
+    backoffCoefficient: 2,
+    maximumInterval: "1m",
+  },
 });
 
-export const getDisputeStatusQuery = defineQuery<{ phase: string; decision?: string }>("getDisputeStatus");
+export const getDisputeStatusQuery = defineQuery<{
+  phase: string;
+  decision?: string;
+}>("getDisputeStatus");
 
-export async function DisputeResolutionWorkflow(input: DisputeWorkflowInput): Promise<{ success: boolean; outcome: string; refundRef?: string }> {
+export async function DisputeResolutionWorkflow(
+  input: DisputeWorkflowInput
+): Promise<{ success: boolean; outcome: string; refundRef?: string }> {
   let phase = "filing";
   let decision = "";
   setHandler(getDisputeStatusQuery, () => ({ phase, decision }));
@@ -526,11 +547,16 @@ export async function DisputeResolutionWorkflow(input: DisputeWorkflowInput): Pr
 
   // Step 3: Collect evidence (auto-fetch from transaction logs)
   phase = "collecting_evidence";
-  const { evidence } = await disputeActivities.collectEvidence(record.id, input.txRef);
+  const { evidence } = await disputeActivities.collectEvidence(
+    record.id,
+    input.txRef
+  );
 
   // Step 4: Wait for investigation (with timeout)
   phase = "investigating";
-  const { investigatorId } = await disputeActivities.assignInvestigator(record.id);
+  const { investigatorId } = await disputeActivities.assignInvestigator(
+    record.id
+  );
   log.info("Investigator assigned", { disputeId: record.id, investigatorId });
 
   // Step 5: Make decision
@@ -542,7 +568,10 @@ export async function DisputeResolutionWorkflow(input: DisputeWorkflowInput): Pr
   let refundRef: string | undefined;
   if (result.decision === "refund" && result.refundAmount > 0) {
     phase = "refunding";
-    const refund = await disputeActivities.executeRefund(record.id, result.refundAmount);
+    const refund = await disputeActivities.executeRefund(
+      record.id,
+      result.refundAmount
+    );
     refundRef = refund.refundRef;
   }
 
@@ -563,27 +592,62 @@ export interface KYCWorkflowInput {
 }
 
 const kycActivities = proxyActivities<{
-  validateDocument: (docId: string, docType: string) => Promise<{ valid: boolean; confidence: number; issues?: string[] }>;
+  validateDocument: (
+    docId: string,
+    docType: string
+  ) => Promise<{ valid: boolean; confidence: number; issues?: string[] }>;
   runPEPCheck: (name: string) => Promise<{ result: string; risk: number }>;
-  runSanctionsCheck: (name: string) => Promise<{ result: string; risk: number }>;
+  runSanctionsCheck: (
+    name: string
+  ) => Promise<{ result: string; risk: number }>;
   runLivenessCheck: (agentCode: string) => Promise<{ passed: boolean }>;
-  assignReviewer: (docId: string, tier: number) => Promise<{ reviewerId: string }>;
-  awaitReviewDecision: (docId: string) => Promise<{ approved: boolean; notes?: string }>;
+  assignReviewer: (
+    docId: string,
+    tier: number
+  ) => Promise<{ reviewerId: string }>;
+  awaitReviewDecision: (
+    docId: string
+  ) => Promise<{ approved: boolean; notes?: string }>;
   updateKYCTier: (agentCode: string, newTier: number) => Promise<void>;
-  notifyAgent: (agentCode: string, status: string, notes?: string) => Promise<void>;
+  notifyAgent: (
+    agentCode: string,
+    status: string,
+    notes?: string
+  ) => Promise<void>;
 }>({
   startToCloseTimeout: "30 minutes",
-  retry: { maximumAttempts: 3, initialInterval: "5s", backoffCoefficient: 2, maximumInterval: "2m" },
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: "5s",
+    backoffCoefficient: 2,
+    maximumInterval: "2m",
+  },
 });
 
-export async function KYCApprovalWorkflow(input: KYCWorkflowInput): Promise<{ approved: boolean; tier: number; notes?: string }> {
-  log.info("KYC approval started", { agentCode: input.agentCode, tier: input.tier });
+export async function KYCApprovalWorkflow(
+  input: KYCWorkflowInput
+): Promise<{ approved: boolean; tier: number; notes?: string }> {
+  log.info("KYC approval started", {
+    agentCode: input.agentCode,
+    tier: input.tier,
+  });
 
   // Step 1: Document validation (OCR + authenticity)
-  const docResult = await kycActivities.validateDocument(input.documentId, input.documentType);
+  const docResult = await kycActivities.validateDocument(
+    input.documentId,
+    input.documentType
+  );
   if (!docResult.valid) {
-    await kycActivities.notifyAgent(input.agentCode, "document_rejected", docResult.issues?.join("; "));
-    return { approved: false, tier: input.tier, notes: "Document validation failed" };
+    await kycActivities.notifyAgent(
+      input.agentCode,
+      "document_rejected",
+      docResult.issues?.join("; ")
+    );
+    return {
+      approved: false,
+      tier: input.tier,
+      notes: "Document validation failed",
+    };
   }
 
   // Step 2: PEP + Sanctions screening (parallel)
@@ -601,17 +665,28 @@ export async function KYCApprovalWorkflow(input: KYCWorkflowInput): Promise<{ ap
     const liveness = await kycActivities.runLivenessCheck(input.agentCode);
     if (!liveness.passed) {
       await kycActivities.notifyAgent(input.agentCode, "liveness_failed");
-      return { approved: false, tier: input.tier, notes: "Liveness check failed" };
+      return {
+        approved: false,
+        tier: input.tier,
+        notes: "Liveness check failed",
+      };
     }
   }
 
   // Step 4: Manual review for tier 3+ or PEP hits
   if (input.tier >= 3 || pepResult.result === "hit") {
-    const { reviewerId } = await kycActivities.assignReviewer(input.documentId, input.tier);
+    const { reviewerId } = await kycActivities.assignReviewer(
+      input.documentId,
+      input.tier
+    );
     log.info("Manual review assigned", { reviewerId, docId: input.documentId });
     const review = await kycActivities.awaitReviewDecision(input.documentId);
     if (!review.approved) {
-      await kycActivities.notifyAgent(input.agentCode, "review_rejected", review.notes);
+      await kycActivities.notifyAgent(
+        input.agentCode,
+        "review_rejected",
+        review.notes
+      );
       return { approved: false, tier: input.tier, notes: review.notes };
     }
   }
@@ -633,19 +708,31 @@ export interface OnboardingWorkflowInput {
 }
 
 const onboardingActivities = proxyActivities<{
-  createAgentProfile: (input: OnboardingWorkflowInput) => Promise<{ agentId: string }>;
+  createAgentProfile: (
+    input: OnboardingWorkflowInput
+  ) => Promise<{ agentId: string }>;
   assignTerritory: (agentCode: string, region: string) => Promise<void>;
-  provisionFloat: (agentCode: string, initialAmount: number) => Promise<{ floatRef: string }>;
+  provisionFloat: (
+    agentCode: string,
+    initialAmount: number
+  ) => Promise<{ floatRef: string }>;
   assignTerminal: (agentCode: string) => Promise<{ terminalId: string }>;
   scheduleTraining: (agentCode: string) => Promise<{ trainingId: string }>;
   enableTransactions: (agentCode: string) => Promise<void>;
   sendWelcomeKit: (agentCode: string, agentName: string) => Promise<void>;
 }>({
   startToCloseTimeout: "5 minutes",
-  retry: { maximumAttempts: 3, initialInterval: "1s", backoffCoefficient: 2, maximumInterval: "30s" },
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: "1s",
+    backoffCoefficient: 2,
+    maximumInterval: "30s",
+  },
 });
 
-export async function AgentOnboardingWorkflow(input: OnboardingWorkflowInput): Promise<{ success: boolean; agentId: string; terminalId?: string }> {
+export async function AgentOnboardingWorkflow(
+  input: OnboardingWorkflowInput
+): Promise<{ success: boolean; agentId: string; terminalId?: string }> {
   log.info("Agent onboarding started", { agentCode: input.agentCode });
 
   // Step 1: Create profile
@@ -663,7 +750,9 @@ export async function AgentOnboardingWorkflow(input: OnboardingWorkflowInput): P
     const terminal = await onboardingActivities.assignTerminal(input.agentCode);
     terminalId = terminal.terminalId;
   } catch {
-    log.warn("No available terminals for assignment", { agentCode: input.agentCode });
+    log.warn("No available terminals for assignment", {
+      agentCode: input.agentCode,
+    });
   }
 
   // Step 5: Schedule training
@@ -686,21 +775,41 @@ export interface CommissionWorkflowInput {
 }
 
 const commissionActivities = proxyActivities<{
-  calculateCommissions: (period: string, agentCodes?: string[]) => Promise<Array<{ agentCode: string; amount: number; txCount: number }>>;
-  validatePayouts: (payouts: Array<{ agentCode: string; amount: number }>) => Promise<{ valid: boolean; issues?: string[] }>;
-  executePayouts: (payouts: Array<{ agentCode: string; amount: number }>, currency: string) => Promise<Array<{ agentCode: string; ref: string; status: string }>>;
+  calculateCommissions: (
+    period: string,
+    agentCodes?: string[]
+  ) => Promise<Array<{ agentCode: string; amount: number; txCount: number }>>;
+  validatePayouts: (
+    payouts: Array<{ agentCode: string; amount: number }>
+  ) => Promise<{ valid: boolean; issues?: string[] }>;
+  executePayouts: (
+    payouts: Array<{ agentCode: string; amount: number }>,
+    currency: string
+  ) => Promise<Array<{ agentCode: string; ref: string; status: string }>>;
   generateCommissionReport: (period: string, results: any[]) => Promise<string>;
-  notifyAgentsOfPayout: (results: Array<{ agentCode: string; amount: number; ref: string }>) => Promise<void>;
+  notifyAgentsOfPayout: (
+    results: Array<{ agentCode: string; amount: number; ref: string }>
+  ) => Promise<void>;
 }>({
   startToCloseTimeout: "15 minutes",
-  retry: { maximumAttempts: 3, initialInterval: "2s", backoffCoefficient: 2, maximumInterval: "1m" },
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: "2s",
+    backoffCoefficient: 2,
+    maximumInterval: "1m",
+  },
 });
 
-export async function CommissionPayoutWorkflow(input: CommissionWorkflowInput): Promise<{ success: boolean; totalPaid: number; agentCount: number }> {
+export async function CommissionPayoutWorkflow(
+  input: CommissionWorkflowInput
+): Promise<{ success: boolean; totalPaid: number; agentCount: number }> {
   log.info("Commission payout started", { period: input.period });
 
   // Step 1: Calculate commissions for period
-  const commissions = await commissionActivities.calculateCommissions(input.period, input.agentCodes);
+  const commissions = await commissionActivities.calculateCommissions(
+    input.period,
+    input.agentCodes
+  );
   if (commissions.length === 0) {
     return { success: true, totalPaid: 0, agentCount: 0 };
   }
@@ -713,7 +822,10 @@ export async function CommissionPayoutWorkflow(input: CommissionWorkflowInput): 
   }
 
   // Step 3: Execute payouts
-  const results = await commissionActivities.executePayouts(commissions, input.currency);
+  const results = await commissionActivities.executePayouts(
+    commissions,
+    input.currency
+  );
   const successful = results.filter(r => r.status === "completed");
 
   // Step 4: Generate report

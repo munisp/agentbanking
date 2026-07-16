@@ -90,18 +90,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishwhiteLabelApprovalMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -125,10 +126,17 @@ async function publishwhiteLabelApprovalMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const whiteLabelApprovalRouter = router({
@@ -250,8 +258,9 @@ export const whiteLabelApprovalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishwhiteLabelApprovalMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
-
+        await publishwhiteLabelApprovalMiddleware("approve", `${Date.now()}`, {
+          action: "approve",
+        }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {
@@ -282,7 +291,9 @@ export const whiteLabelApprovalRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishwhiteLabelApprovalMiddleware("reject", `${Date.now()}`, { action: "reject" }).catch(() => {});
+        await publishwhiteLabelApprovalMiddleware("reject", `${Date.now()}`, {
+          action: "reject",
+        }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {

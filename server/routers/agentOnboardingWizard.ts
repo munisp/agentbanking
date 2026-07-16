@@ -144,13 +144,15 @@ function enforceAgentonboardingwizardRules(data: Record<string, unknown>) {
 async function publishagentOnboardingWizardMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `agent.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -174,10 +176,14 @@ async function publishagentOnboardingWizardMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("agent", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const agentOnboardingWizardRouter = router({
@@ -365,8 +371,11 @@ export const agentOnboardingWizardRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishagentOnboardingWizardMiddleware("approveAgent", `${Date.now()}`, { action: "approveAgent" }).catch(() => {});
-
+        await publishagentOnboardingWizardMiddleware(
+          "approveAgent",
+          `${Date.now()}`,
+          { action: "approveAgent" }
+        ).catch(() => {});
 
         return { success: true, agentId: input.agentId };
       } catch (error) {

@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/54agent/tb-sidecar/internal/ledger"
 	"github.com/jackc/pgx/v5"
+	tb "github.com/tigerbeetle/tigerbeetle-go"
+	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
 
 // Config holds the sync engine configuration.
@@ -33,9 +34,10 @@ type Config struct {
 
 // Engine is the sync engine.
 type Engine struct {
-	cfg    Config
-	db     *ledger.DB
-	pgConn *pgx.Conn
+	cfg      Config
+	db       *ledger.DB
+	pgConn   *pgx.Conn
+	tbClient tb.Client
 }
 
 // New creates a new sync engine. pgConn may be nil if PostgreSQL is unavailable.
@@ -45,6 +47,20 @@ func New(cfg Config, db *ledger.DB) *Engine {
 
 // Start runs the sync loop in the background until ctx is cancelled.
 func (e *Engine) Start(ctx context.Context) {
+	// Try to connect to TigerBeetle via native Go client
+	clusterID, _ := strconv.ParseUint(e.cfg.TigerBeetleCluster, 10, 64)
+	tbAddresses := []string{"3000"}
+	if e.cfg.TigerBeetleDataFile != "" {
+		tbAddresses = []string{"3000"}
+	}
+	tbClient, err := tb.NewClient(tbtypes.ToUint128(clusterID), tbAddresses)
+	if err != nil {
+		log.Printf("[sync] TigerBeetle native client unavailable (%v) — transfers will queue locally", err)
+	} else {
+		e.tbClient = tbClient
+		log.Printf("[sync] TigerBeetle native client connected (cluster=%d)", clusterID)
+	}
+
 	// Try to connect to PostgreSQL (non-fatal if unavailable)
 	if e.cfg.PostgresDSN != "" {
 		conn, err := pgx.Connect(ctx, e.cfg.PostgresDSN)
@@ -133,35 +149,54 @@ func (e *Engine) syncTransfer(ctx context.Context, t ledger.Transfer) error {
 	return nil
 }
 
-// submitToTigerBeetle invokes the tigerbeetle CLI to create a transfer.
-// In production this would use the native tigerbeetle-go client.
+// submitToTigerBeetle sends a transfer to the TigerBeetle Zig cluster
+// using the native tigerbeetle-go client for maximum throughput and type safety.
 func (e *Engine) submitToTigerBeetle(t ledger.Transfer) error {
-	// Build the JSON payload for the TB CLI
-	payload := map[string]interface{}{
-		"id":                t.ID,
-		"debit_account_id":  t.DebitAccountID,
-		"credit_account_id": t.CreditAccountID,
-		"amount":            t.Amount,
-		"ledger":            t.Ledger,
-		"code":              t.Code,
+	if e.tbClient == nil {
+		log.Printf("[sync] TB native client not connected — transfer %s queued for retry", t.ID)
+		return fmt.Errorf("tigerbeetle client not connected")
 	}
-	payloadJSON, _ := json.Marshal(payload)
 
-	// Use tigerbeetle CLI: `tigerbeetle transfer <json>`
-	// The binary accepts JSON via stdin for scripted operations.
-	cmd := exec.Command("tigerbeetle", "transfer",
-		"--cluster="+e.cfg.TigerBeetleCluster,
-		"--addresses=3000",
-	)
-	cmd.Stdin = strings.NewReader(string(payloadJSON))
+	// Convert string IDs to uint128 using deterministic hashing
+	transferID := stringToUint128(t.ID)
+	debitID := stringToUint128(t.DebitAccountID)
+	creditID := stringToUint128(t.CreditAccountID)
 
-	out, err := cmd.CombinedOutput()
+	transfers := []tbtypes.Transfer{
+		{
+			ID:              transferID,
+			DebitAccountID:  debitID,
+			CreditAccountID: creditID,
+			Amount:          tbtypes.ToUint128(uint64(t.Amount)),
+			Ledger:          t.Ledger,
+			Code:            t.Code,
+			Flags:           0,
+		},
+	}
+
+	results, err := e.tbClient.CreateTransfers(transfers)
 	if err != nil {
-		// TB may not be running in dev — this is acceptable
-		log.Printf("[sync] TB CLI output: %s", strings.TrimSpace(string(out)))
-		return nil // soft failure
+		return fmt.Errorf("TB CreateTransfers: %w", err)
 	}
+
+	if len(results) > 0 {
+		return fmt.Errorf("TB transfer rejected: result=%v index=%d", results[0].Result, results[0].Index)
+	}
+
+	log.Printf("[sync] TB native transfer %s committed (amount=%d kobo)", t.ID, t.Amount)
 	return nil
+}
+
+// stringToUint128 converts a string ID to a deterministic tbtypes.Uint128
+// using the first 16 bytes of the string (or zero-padded if shorter).
+func stringToUint128(s string) tbtypes.Uint128 {
+	var result tbtypes.Uint128
+	b := []byte(s)
+	if len(b) > 16 {
+		b = b[:16]
+	}
+	copy(result[:], b)
+	return result
 }
 
 // writeToPg writes transfer metadata to the PostgreSQL transfer_metadata table.

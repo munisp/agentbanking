@@ -139,6 +139,11 @@ async function startServer() {
 
   // ── Security headers ────────────────────────────────────────────────────────
   const isDev = process.env.NODE_ENV === "development";
+  // In-process rate limiters key on client IP. End-to-end test runs drive the
+  // whole app from a single IP, so the auth/global limiters trip and start
+  // returning 429 mid-suite. Allow an explicit opt-out for CI/E2E; production
+  // keeps every limiter on by default.
+  const disableRateLimits = process.env.DISABLE_RATE_LIMITS === "true";
   const keycloakOrigin = process.env.KEYCLOAK_URL
     ? new URL(process.env.KEYCLOAK_URL).origin
     : null;
@@ -296,7 +301,7 @@ async function startServer() {
       );
     },
   });
-  app.use(globalLimiter);
+  if (!disableRateLimits) app.use(globalLimiter);
 
   // Stricter limiter for auth endpoints: 50 requests per 15 minutes per IP
   const authLimiter = rateLimit({
@@ -309,7 +314,12 @@ async function startServer() {
       error: "Too many authentication attempts, please try again later.",
     },
   });
-  app.use("/api/auth", authLimiter);
+  if (!disableRateLimits) app.use("/api/auth", authLimiter);
+  if (disableRateLimits) {
+    console.log(
+      "[Security] In-process rate limiters disabled (DISABLE_RATE_LIMITS=true)"
+    );
+  }
 
   // ── Stripe Webhook (must be BEFORE express.json() for signature verification) ──
   app.post(

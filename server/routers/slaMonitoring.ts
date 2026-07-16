@@ -101,18 +101,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishslaMonitoringMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -136,10 +137,17 @@ async function publishslaMonitoringMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const slaMonitoringRouter = router({
@@ -266,8 +274,11 @@ export const slaMonitoringRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishslaMonitoringMiddleware("createDefinition", `${Date.now()}`, { action: "createDefinition" }).catch(() => {});
-
+        await publishslaMonitoringMiddleware(
+          "createDefinition",
+          `${Date.now()}`,
+          { action: "createDefinition" }
+        ).catch(() => {});
 
         return { definition: def };
       } catch (error) {
@@ -301,7 +312,11 @@ export const slaMonitoringRouter = router({
           .set(updates)
           .where(eq(sla_definitions.id, input.definitionId));
         // Middleware fan-out (fail-open)
-        await publishslaMonitoringMiddleware("updateDefinition", `${Date.now()}`, { action: "updateDefinition" }).catch(() => {});
+        await publishslaMonitoringMiddleware(
+          "updateDefinition",
+          `${Date.now()}`,
+          { action: "updateDefinition" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -386,7 +401,9 @@ export const slaMonitoringRouter = router({
           } as any)
           .returning();
         // Middleware fan-out (fail-open)
-        await publishslaMonitoringMiddleware("recordBreach", `${Date.now()}`, { action: "recordBreach" }).catch(() => {});
+        await publishslaMonitoringMiddleware("recordBreach", `${Date.now()}`, {
+          action: "recordBreach",
+        }).catch(() => {});
 
         return { breach };
       } catch (error) {
@@ -412,7 +429,9 @@ export const slaMonitoringRouter = router({
           })
           .where(eq(sla_breaches.id, input.breachId));
         // Middleware fan-out (fail-open)
-        await publishslaMonitoringMiddleware("resolveBreach", `${Date.now()}`, { action: "resolveBreach" }).catch(() => {});
+        await publishslaMonitoringMiddleware("resolveBreach", `${Date.now()}`, {
+          action: "resolveBreach",
+        }).catch(() => {});
 
         return { success: true };
       } catch (error) {

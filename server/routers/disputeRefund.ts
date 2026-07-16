@@ -10,6 +10,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
@@ -300,19 +301,40 @@ export const disputeRefundRouter = router({
           status: "posted",
         });
 
-        publishEvent(
-          "pos.disputes.resolved",
+        publishEvent("pos.disputes.resolved", refundRef, {
+          type: "refund",
           refundRef,
-          {
-            type: "refund",
-            refundRef,
-            disputeId: input?.id,
-            transactionRef: input?.transactionRef,
-            refundAmount,
-            reason: input?.reason,
-            timestamp: new Date().toISOString(),
-          }
-        ).catch(() => {});
+          disputeId: input?.id,
+          transactionRef: input?.transactionRef,
+          refundAmount,
+          reason: input?.reason,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        // TigerBeetle double-entry: refund expense (5002) → cash (1001)
+        tbCreateTransfer({
+          debitAccountId: "5002",
+          creditAccountId: "1001",
+          amount: Math.round(refundAmount * 100),
+          ref: refundRef,
+          txType: "dispute_refund",
+          agentCode: "system",
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: refundRef,
+            amount: refundAmount,
+            type: "dispute_refund",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("dispute_refunds", {
+          refundRef,
+          disputeId: input?.id,
+          transactionRef: input?.transactionRef,
+          refundAmount,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       }
 
       return {

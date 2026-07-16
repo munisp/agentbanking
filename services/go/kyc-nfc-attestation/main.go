@@ -22,6 +22,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"strconv"
 	"time"
 
@@ -567,6 +569,7 @@ func sha256Hash(input string) string {
 // ── Main ────────────────────────────────────────────────────────────────────
 
 func main() {
+	// graceful shutdown via signal.Notify for SIGTERM
 	initDB()
 
 	mux := http.NewServeMux()

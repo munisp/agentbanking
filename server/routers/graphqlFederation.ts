@@ -127,18 +127,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishgraphqlFederationMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -162,10 +163,17 @@ async function publishgraphqlFederationMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const graphqlFederationRouter = router({
@@ -270,7 +278,9 @@ export const graphqlFederationRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishgraphqlFederationMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("getStats", `${Date.now()}`, {
+      action: "getStats",
+    }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -283,14 +293,18 @@ export const graphqlFederationRouter = router({
 
   getSchema: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishgraphqlFederationMiddleware("getSchema", `${Date.now()}`, { action: "getSchema" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("getSchema", `${Date.now()}`, {
+      action: "getSchema",
+    }).catch(() => {});
 
     return { schema: "", services: [], version: "1.0" };
   }),
 
   executeQuery: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishgraphqlFederationMiddleware("executeQuery", `${Date.now()}`, { action: "executeQuery" }).catch(() => {});
+    await publishgraphqlFederationMiddleware("executeQuery", `${Date.now()}`, {
+      action: "executeQuery",
+    }).catch(() => {});
 
     return { data: null, errors: [] };
   }),

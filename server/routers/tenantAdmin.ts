@@ -92,18 +92,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishtenantAdminMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `admin.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -127,10 +128,14 @@ async function publishtenantAdminMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("admin", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("admin", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const tenantAdminRouter = router({
@@ -310,8 +315,9 @@ export const tenantAdminRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishtenantAdminMiddleware("createTenant", `${Date.now()}`, { action: "createTenant" }).catch(() => {});
-
+        await publishtenantAdminMiddleware("createTenant", `${Date.now()}`, {
+          action: "createTenant",
+        }).catch(() => {});
 
         return { success: true, tenant };
       } catch (error) {
@@ -356,7 +362,9 @@ export const tenantAdminRouter = router({
           metadata: updates,
         });
         // Middleware fan-out (fail-open)
-        await publishtenantAdminMiddleware("updateTenant", `${Date.now()}`, { action: "updateTenant" }).catch(() => {});
+        await publishtenantAdminMiddleware("updateTenant", `${Date.now()}`, {
+          action: "updateTenant",
+        }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {
@@ -387,7 +395,9 @@ export const tenantAdminRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishtenantAdminMiddleware("suspendTenant", `${Date.now()}`, { action: "suspendTenant" }).catch(() => {});
+        await publishtenantAdminMiddleware("suspendTenant", `${Date.now()}`, {
+          action: "suspendTenant",
+        }).catch(() => {});
 
         return { success: true, tenant: updated };
       } catch (error) {
@@ -402,7 +412,9 @@ export const tenantAdminRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtenantAdminMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishtenantAdminMiddleware("dashboard", `${Date.now()}`, {
+      action: "dashboard",
+    }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -418,14 +430,18 @@ export const tenantAdminRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("inviteUser", `${Date.now()}`, { action: "inviteUser" }).catch(() => {});
+      await publishtenantAdminMiddleware("inviteUser", `${Date.now()}`, {
+        action: "inviteUser",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   listUsers: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtenantAdminMiddleware("listUsers", `${Date.now()}`, { action: "listUsers" }).catch(() => {});
+    await publishtenantAdminMiddleware("listUsers", `${Date.now()}`, {
+      action: "listUsers",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -436,14 +452,18 @@ export const tenantAdminRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("removeUser", `${Date.now()}`, { action: "removeUser" }).catch(() => {});
+      await publishtenantAdminMiddleware("removeUser", `${Date.now()}`, {
+        action: "removeUser",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   settings: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishtenantAdminMiddleware("settings", `${Date.now()}`, { action: "settings" }).catch(() => {});
+    await publishtenantAdminMiddleware("settings", `${Date.now()}`, {
+      action: "settings",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -454,7 +474,9 @@ export const tenantAdminRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("toggleLive", `${Date.now()}`, { action: "toggleLive" }).catch(() => {});
+      await publishtenantAdminMiddleware("toggleLive", `${Date.now()}`, {
+        action: "toggleLive",
+      }).catch(() => {});
 
       return { success: true };
     }),

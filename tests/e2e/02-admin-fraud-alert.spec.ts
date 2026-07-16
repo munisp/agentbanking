@@ -17,7 +17,9 @@ test.describe("Admin Panel Fraud Alert Flow", () => {
     for (const digit of ["1", "2", "3", "4"]) {
       await page.locator(`button[data-digit="${digit}"]`).first().click();
     }
-    await expect(page.locator("text=Cash In")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Cash In").first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("should navigate to admin panel and update fraud alert status", async ({

@@ -91,12 +91,14 @@ vi.mock("bcryptjs", () => ({
 }));
 
 vi.mock("jose", () => ({
-  SignJWT: vi.fn().mockImplementation(() => ({
-    setProtectedHeader: vi.fn().mockReturnThis(),
-    setIssuedAt: vi.fn().mockReturnThis(),
-    setExpirationTime: vi.fn().mockReturnThis(),
-    sign: vi.fn().mockResolvedValue("mock.jwt.token"),
-  })),
+  SignJWT: vi.fn().mockImplementation(function () {
+    return {
+      setProtectedHeader: vi.fn().mockReturnThis(),
+      setIssuedAt: vi.fn().mockReturnThis(),
+      setExpirationTime: vi.fn().mockReturnThis(),
+      sign: vi.fn().mockResolvedValue("mock.jwt.token"),
+    };
+  }),
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",

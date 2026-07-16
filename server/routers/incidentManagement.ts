@@ -128,18 +128,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishincidentManagementMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `management.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -163,10 +164,17 @@ async function publishincidentManagementMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("management", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("management", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const incidentManagementRouter = router({
@@ -262,7 +270,9 @@ export const incidentManagementRouter = router({
 
   dashboard: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishincidentManagementMiddleware("dashboard", `${Date.now()}`, { action: "dashboard" }).catch(() => {});
+    await publishincidentManagementMiddleware("dashboard", `${Date.now()}`, {
+      action: "dashboard",
+    }).catch(() => {});
 
     return {
       totalItems: 0,
@@ -274,7 +284,9 @@ export const incidentManagementRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishincidentManagementMiddleware("getStats", `${Date.now()}`, { action: "getStats" }).catch(() => {});
+    await publishincidentManagementMiddleware("getStats", `${Date.now()}`, {
+      action: "getStats",
+    }).catch(() => {});
 
     return {
       totalRecords: 0,
@@ -287,7 +299,11 @@ export const incidentManagementRouter = router({
 
   createIncident: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
-    await publishincidentManagementMiddleware("createIncident", `${Date.now()}`, { action: "createIncident" }).catch(() => {});
+    await publishincidentManagementMiddleware(
+      "createIncident",
+      `${Date.now()}`,
+      { action: "createIncident" }
+    ).catch(() => {});
 
     return {
       id: "INC-001",

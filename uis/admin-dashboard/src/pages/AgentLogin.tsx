@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "../lib/trpc";
 import { usePosStore } from "../store/posStore";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ type Screen = "code" | "pin" | "forgot_phone" | "forgot_newpin";
 
 export default function AgentLogin() {
   const [agentCode, setAgentCode] = useState("");
+  const agentCodeRef = useRef("");
   const [pin, setPin] = useState("");
   const [step, setStep] = useState<Screen>("code");
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,10 @@ export default function AgentLogin() {
   });
 
   const handleCodeSubmit = () => {
-    if (agentCode.trim().length < 3) {
+    // Read from the ref so the latest keyed value is used even if the React
+    // state update from the input's onChange has not committed yet.
+    const code = (agentCodeRef.current || agentCode).trim();
+    if (code.length < 3) {
       toast.error("Enter a valid agent code");
       return;
     }
@@ -63,7 +67,7 @@ export default function AgentLogin() {
     if (newPin.length === 4) {
       setLoading(true);
       loginMutation.mutate({
-        agentCode: agentCode.trim().toUpperCase(),
+        agentCode: (agentCodeRef.current || agentCode).trim().toUpperCase(),
         pin: newPin,
       });
     }
@@ -200,7 +204,11 @@ export default function AgentLogin() {
           <input
             type="text"
             value={agentCode}
-            onChange={e => setAgentCode(e.target.value.toUpperCase())}
+            onChange={e => {
+              const v = e.target.value.toUpperCase();
+              agentCodeRef.current = v;
+              setAgentCode(v);
+            }}
             onKeyDown={e => e.key === "Enter" && handleCodeSubmit()}
             placeholder="e.g. AGT001"
             className="w-full rounded-2xl px-4 py-4 text-white text-lg font-bold outline-none mb-4"
@@ -316,6 +324,7 @@ export default function AgentLogin() {
             {PAD_KEYS.map((key, idx) => (
               <button
                 key={idx}
+                data-digit={key && key !== "DEL" ? key : undefined}
                 onClick={() => key && handlePinKey(key)}
                 disabled={loading || !key}
                 className="h-16 rounded-2xl font-bold text-xl transition-all active:scale-90 disabled:opacity-0"

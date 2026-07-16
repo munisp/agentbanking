@@ -30,7 +30,9 @@ tigerbeetle start \
 ```
 
 ### `--cache-grid-blocks`
+
 Controls the in-memory grid cache size. Each block = 64 KiB.
+
 - `4096` blocks = 256 MB (default)
 - `65536` blocks = 4 GB (recommended for production)
 - `131072` blocks = 8 GB (high-throughput — keeps most data in memory)
@@ -38,6 +40,7 @@ Controls the in-memory grid cache size. Each block = 64 KiB.
 ## Client-Side Optimization
 
 ### Batch Size
+
 Always batch transfers. Single-transfer calls waste ~99% of throughput.
 
 ```typescript
@@ -54,6 +57,7 @@ for (let i = 0; i < transfers.length; i += BATCH_SIZE) {
 ```
 
 ### Connection Pooling
+
 TigerBeetle client is thread-safe. Use a single client instance per process.
 For multi-process deployments, each process connects to the cluster independently.
 
@@ -65,6 +69,7 @@ defer client.Close()
 ```
 
 ### Lookup Optimization
+
 Use `lookupAccounts` / `lookupTransfers` with batch IDs instead of single lookups.
 
 ## Docker Compose (6-node production)

@@ -6,9 +6,11 @@ description: Test platform enhancement features (KYC tiering, Temporal sagas, tr
 # Testing Platform Enhancements
 
 ## Overview
+
 The platform has 32 enhancement features spanning KYC/KYB/Liveness, Flow of Funds, and UI/UX. Each feature must integrate with the full middleware stack and persist state to PostgreSQL.
 
 ## Environment Setup
+
 - **Repo:** `munisp/agentbanking`
 - **Branch:** `production-hardened` is the main development branch
 - **No live server** in most sessions — no DATABASE_URL, Redis, Kafka env vars
@@ -17,10 +19,12 @@ The platform has 32 enhancement features spanning KYC/KYB/Liveness, Flow of Fund
 - **Package manager:** pnpm
 
 ## Devin Secrets Needed
+
 - `DATABASE_URL` — PostgreSQL connection string (not currently available; testing is shell-based)
 - No other secrets required for structural validation
 
 ## Key Files
+
 - **Middleware clients:** `server/lib/daprClient.ts`, `server/lib/lakehouseClient.ts`, `server/lib/cacheClient.ts`
 - **KYC middleware:** `server/middleware/kycTieredLimits.ts`
 - **Settlement engine:** `server/middleware/settlementEngine.ts`
@@ -35,12 +39,15 @@ The platform has 32 enhancement features spanning KYC/KYB/Liveness, Flow of Fund
 ## Testing Approach (Shell-Based Structural Validation)
 
 ### 1. TypeScript Compilation
+
 ```bash
 npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "react-i18next\|@dnd-kit"
 ```
+
 **Expected:** Zero output (only 2 pre-existing errors filtered out)
 
 ### 2. Middleware Client Export Verification
+
 ```bash
 for lib in daprClient lakehouseClient cacheClient; do
   FILE="server/lib/$lib.ts"
@@ -48,10 +55,13 @@ for lib in daprClient lakehouseClient cacheClient; do
   echo "$lib: $EXPORTS exports"
 done
 ```
+
 **Expected:** daprClient≥4, lakehouseClient≥3, cacheClient≥5
 
 ### 3. publishEvent Signature Check
+
 All publishEvent calls must have 3+ arguments (topic, key, payload):
+
 ```bash
 grep -n 'publishEvent(' server/middleware/kycTieredLimits.ts server/middleware/settlementEngine.ts server/middleware/transactionalOutbox.ts server/routers/temporalSagaOrchestrator.ts | grep -v "import\|//" | while read line; do
   COMMAS=$(echo "$line" | tr -cd ',' | wc -c)
@@ -60,7 +70,9 @@ done
 ```
 
 ### 4. Fail-Open Pattern
+
 Every middleware call (daprPublish, fluvioPublish, lakehouseIngest, tbCreateTransfer) must have `.catch()`:
+
 ```bash
 for FILE in server/middleware/kycTieredLimits.ts server/middleware/settlementEngine.ts server/middleware/transactionalOutbox.ts server/routers/temporalSagaOrchestrator.ts; do
   MW=$(grep -c "daprPublish\|fluvioPublish\|lakehouseIngest\|tbCreateTransfer" "$FILE")
@@ -70,6 +82,7 @@ done
 ```
 
 ### 5. Polyglot Persistence (No In-Memory State)
+
 ```bash
 # Go — no mutable maps, has database/sql + lib/pq + queries
 for SVC in services/go/kyc-nfc-attestation/main.go services/go/reconciliation-engine/main.go; do
@@ -90,19 +103,23 @@ echo "Python: mem=$(grep -n '^[a-z_]* = {}\|^[a-z_]* = \[\]' $SVC | grep -v '#' 
 ```
 
 ### 6. CBN Tiered Limits
+
 Note: Values use underscore separators (e.g., `5_000_000` not `5000000`):
+
 ```bash
 grep -n "dailyLimit:" server/middleware/kycTieredLimits.ts | head -5
 # Expected: 5_000_000 (₦50K), 20_000_000 (₦200K), 500_000_000 (₦5M)
 ```
 
 ### 7. Fee Waterfall Verification
+
 ```bash
 grep -n "0\.40\|0\.35\|0\.20\|platformShare\|agentShare\|superAgentShare\|taxShare" server/middleware/settlementEngine.ts | head -10
 # Expected: 40%/35%/20%/remainder pattern with 4 TigerBeetle transfers
 ```
 
 ### 8. Migration DDL
+
 ```bash
 MIGRATION="drizzle/0044_kyc_fof_platform_enhancements.sql"
 echo "Tables: $(grep -ci 'CREATE TABLE' $MIGRATION)"
@@ -112,13 +129,17 @@ done
 ```
 
 ### 9. i18n Language Completeness
+
 The sprint19 and sprint27 tests verify i18n exports. Run them directly:
+
 ```bash
 npx vitest run server/sprint19.test.ts server/sprint27.test.ts 2>&1 | grep "✓\|×"
 ```
+
 **Expected:** All tests pass (6 languages with changeLanguage export and default export)
 
 ### 10. PWA/Mobile Feature Parity
+
 ```bash
 for COMP in OfflineStatusBanner SpeechToFormInput AdaptiveUI QuickActions KycVerificationFlow; do
   [ -f "client/src/components/$COMP.tsx" ] && echo "PASS: $COMP" || echo "FAIL: $COMP"
@@ -134,7 +155,9 @@ done
 ## Common Issues
 
 ### i18n backward compatibility
+
 The i18n module (`client/src/lib/i18n.ts`) must export:
+
 - `changeLanguage(code)` — for LanguageSelector component
 - `export default i18n` — for components using `i18n.t()`
 - All 6 locales in the `translations` object (not just the type)
@@ -142,10 +165,13 @@ The i18n module (`client/src/lib/i18n.ts`) must export:
 If sprint19/sprint27 tests fail after modifying i18n, check these exports are present.
 
 ### Numeric literals in grep
+
 CBN tier limits use TypeScript numeric separators (`5_000_000` not `5000000`). Adjust grep patterns accordingly.
 
 ### Pre-existing test failures
+
 These 8 failures are known and unrelated to platform enhancements:
+
 1. `server/db-performance.test.ts` (4) — needs PgBouncer
 2. `tests/e2e/critical-flows.spec.ts` (1) — needs live server
 3. `server/sprint46.test.ts` (1) — multiCurrencyExchange currencies

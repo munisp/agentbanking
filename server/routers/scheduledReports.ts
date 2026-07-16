@@ -110,18 +110,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishscheduledReportsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `reporting.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -145,10 +146,17 @@ async function publishscheduledReportsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("reporting", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const scheduledReportsRouter = router({
@@ -285,8 +293,11 @@ export const scheduledReportsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishscheduledReportsMiddleware("createSchedule", `${Date.now()}`, { action: "createSchedule" }).catch(() => {});
-
+        await publishscheduledReportsMiddleware(
+          "createSchedule",
+          `${Date.now()}`,
+          { action: "createSchedule" }
+        ).catch(() => {});
 
         return { success: true, scheduleId };
       } catch (error) {
@@ -308,7 +319,11 @@ export const scheduledReportsRouter = router({
           .delete(systemConfig)
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId));
         // Middleware fan-out (fail-open)
-        await publishscheduledReportsMiddleware("deleteSchedule", `${Date.now()}`, { action: "deleteSchedule" }).catch(() => {});
+        await publishscheduledReportsMiddleware(
+          "deleteSchedule",
+          `${Date.now()}`,
+          { action: "deleteSchedule" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -333,9 +348,13 @@ export const scheduledReportsRouter = router({
           .limit(1);
         if (rows.length === 0)
           // Middleware fan-out (fail-open)
-          await publishscheduledReportsMiddleware("pauseSchedule", `${Date.now()}`, { action: "pauseSchedule" }).catch(() => {});
+          await publishscheduledReportsMiddleware(
+            "pauseSchedule",
+            `${Date.now()}`,
+            { action: "pauseSchedule" }
+          ).catch(() => {});
 
-          return { success: false, error: "Schedule not found" };
+        return { success: false, error: "Schedule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.status = data.status === "active" ? "paused" : "active";
         await db
@@ -357,7 +376,9 @@ export const scheduledReportsRouter = router({
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
+      await publishscheduledReportsMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return {
         success: true,
@@ -370,21 +391,27 @@ export const scheduledReportsRouter = router({
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
       // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+      await publishscheduledReportsMiddleware("delete", `${Date.now()}`, {
+        action: "delete",
+      }).catch(() => {});
 
       return { success: true, deletedId: input.id };
     }),
 
   list: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("list", `${Date.now()}`, { action: "list" }).catch(() => {});
+    await publishscheduledReportsMiddleware("list", `${Date.now()}`, {
+      action: "list",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
 
   recentRuns: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("recentRuns", `${Date.now()}`, { action: "recentRuns" }).catch(() => {});
+    await publishscheduledReportsMiddleware("recentRuns", `${Date.now()}`, {
+      action: "recentRuns",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -395,14 +422,18 @@ export const scheduledReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("runNow", `${Date.now()}`, { action: "runNow" }).catch(() => {});
+      await publishscheduledReportsMiddleware("runNow", `${Date.now()}`, {
+        action: "runNow",
+      }).catch(() => {});
 
       return { success: true };
     }),
 
   templates: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("templates", `${Date.now()}`, { action: "templates" }).catch(() => {});
+    await publishscheduledReportsMiddleware("templates", `${Date.now()}`, {
+      action: "templates",
+    }).catch(() => {});
 
     return { data: [], total: 0 };
   }),
@@ -413,7 +444,9 @@ export const scheduledReportsRouter = router({
     )
     .mutation(async () => {
       // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("update", `${Date.now()}`, { action: "update" }).catch(() => {});
+      await publishscheduledReportsMiddleware("update", `${Date.now()}`, {
+        action: "update",
+      }).catch(() => {});
 
       return { success: true };
     }),

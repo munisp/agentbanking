@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 /**
- * Sprint 65 F16: Unified Final Seed Script
- * Consolidates all sprint seed data into one comprehensive script.
- * 
+ * 54Link Agency Banking Platform — Unified Seed Script
+ * Comprehensive realistic Nigerian banking data for all platform domains.
+ *
  * Usage: node scripts/seed-final-unified.mjs [--env production|staging|dev]
- * 
+ *
  * Seeds:
- * - 50 agents (5 admin, 10 super, 35 regular) with KYC
- * - 500 transactions across all types
- * - 30 fraud alerts (5 critical, 10 high, 15 medium)
+ * - 50 agents (5 admin, 10 super, 35 regular) with KYC across all tiers
+ * - 500 transactions across 8 types (cash_in, cash_out, transfer, airtime, bills, card, qr, nfc)
+ * - 30 fraud alerts (5 critical, 10 high, 15 medium) with ML scores
  * - 20 disputes in various lifecycle stages
- * - 100 chat sessions with 500 messages
- * - 50 loyalty records
- * - 30 KYC documents
- * - 10 webhook endpoints
- * - 20 settlement batches
- * - Runtime config defaults
+ * - 100 chat sessions with 500+ messages
+ * - 30 KYC documents (NIN, BVN, passport, utility, bank statement, CAC)
+ * - 20 settlement batches with reconciliation data
+ * - 15 merchants with KYB documents
+ * - 25 commission rules across tiers
+ * - 10 POS terminals per agent
+ * - 20 compliance reports (CTR, STR)
+ * - 10 webhook endpoints with delivery history
+ * - 5 loan applications in various stages
+ * - Nigerian LGAs, BVN format, NIN format, realistic phone numbers
  */
 
 import crypto from "crypto";
@@ -292,11 +296,188 @@ async function main() {
   console.log(`\n📋 Summary:`);
   console.log(JSON.stringify(summary, null, 2));
 
+  // Additional domain seed data
+  const merchantsSeed = generateMerchants(15);
+  console.log(`  \u2713 ${merchantsSeed.length} merchants with KYB documents`);
+
+  const commissionRules = generateCommissionRules(25);
+  console.log(`  \u2713 ${commissionRules.length} commission rules`);
+
+  const complianceReports = generateComplianceReports(20);
+  console.log(`  \u2713 ${complianceReports.length} compliance reports (CTR/STR)`);
+
+  const loanApplications = generateLoanApplications(5, agents);
+  console.log(`  \u2713 ${loanApplications.length} loan applications`);
+
+  const posTerminals = generatePosTerminals(agents.slice(0, 10));
+  console.log(`  \u2713 ${posTerminals.length} POS terminals`);
+
   // Write seed data to file for import
-  const seedData = { agents, transactions, fraudAlerts, disputes, chatSessions, kycDocs, settlements, summary };
+  const seedData = {
+    agents, transactions, fraudAlerts, disputes, chatSessions,
+    kycDocs, settlements, merchants: merchantsSeed, commissionRules,
+    complianceReports, loanApplications, posTerminals, summary
+  };
+
+  const outputDir = new URL("./seed-output/", import.meta.url).pathname;
   const fs = await import("fs");
-  fs.writeFileSync("/home/ubuntu/pos-shell-demo/scripts/seed-data-output.json", JSON.stringify(seedData, null, 2));
-  console.log(`\n💾 Seed data written to scripts/seed-data-output.json`);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const outPath = outputDir + "seed-data-output.json";
+  fs.writeFileSync(outPath, JSON.stringify(seedData, null, 2));
+  console.log(`\n\u2705 Seed data written to ${outPath}`);
+}
+
+// ============================================================
+// Additional Domain Generators
+// ============================================================
+
+const NIGERIAN_LGAS = [
+  "Ikeja", "Surulere", "Alimosho", "Eti-Osa", "Kosofe",
+  "Garki", "Wuse", "Maitama", "Asokoro", "Gwarinpa",
+  "Sabon Gari", "Fagge", "Nassarawa", "Tarauni", "Dala",
+  "Port Harcourt City", "Obio-Akpor", "Eleme", "Bonny", "Ogu-Bolo",
+];
+
+const MERCHANT_CATEGORIES = [
+  "grocery", "fuel_station", "pharmacy", "electronics", "restaurant",
+  "fashion", "hardware", "agriculture", "education", "healthcare",
+];
+
+function generateBVN() {
+  return `22${Math.floor(100000000 + Math.random() * 900000000)}`;
+}
+
+function generateNIN() {
+  return `${Math.floor(10000000000 + Math.random() * 90000000000)}`;
+}
+
+function generateMerchants(count = 15) {
+  const merchants = [];
+  const businessTypes = ["sole_proprietorship", "partnership", "limited_company", "cooperative"];
+  for (let i = 0; i < count; i++) {
+    merchants.push({
+      id: `MER-${randomId()}`,
+      businessName: `${randomPick(NIGERIAN_NAMES).split(" ")[1]} ${randomPick(["Enterprises", "Trading Co.", "Services Ltd", "Global", "Nigeria Ltd"])}`,
+      businessType: randomPick(businessTypes),
+      category: randomPick(MERCHANT_CATEGORIES),
+      rcNumber: `RC${Math.floor(100000 + Math.random() * 900000)}`,
+      tin: `${Math.floor(10000000 + Math.random() * 90000000)}-0001`,
+      bvn: generateBVN(),
+      contactName: randomPick(NIGERIAN_NAMES),
+      contactPhone: randomPhone(),
+      contactEmail: `merchant${i + 1}@54link.ng`,
+      address: `${Math.floor(1 + Math.random() * 200)} ${randomPick(["Broad Street", "Marina Road", "Adeola Odeku", "Awolowo Way", "Ahmadu Bello Way"])}`,
+      lga: randomPick(NIGERIAN_LGAS),
+      state: randomPick(NIGERIAN_STATES),
+      kybStatus: randomPick(["approved", "pending", "under_review", "rejected"]),
+      kybDocuments: [
+        { type: "cac_certificate", status: "verified", documentNumber: `BN${Math.floor(100000 + Math.random() * 900000)}` },
+        { type: "tin_certificate", status: Math.random() > 0.3 ? "verified" : "pending" },
+        { type: "utility_bill", status: Math.random() > 0.4 ? "verified" : "pending" },
+      ],
+      monthlyVolume: randomAmount(500000, 50000000),
+      commissionRate: Math.round((0.5 + Math.random() * 2) * 100) / 100,
+      createdAt: randomDate(180),
+    });
+  }
+  return merchants;
+}
+
+function generateCommissionRules(count = 25) {
+  const rules = [];
+  const txTypes = ["cash_in", "cash_out", "transfer", "airtime", "bills"];
+  const tiers = ["bronze", "silver", "gold", "platinum", "diamond"];
+  for (let i = 0; i < count; i++) {
+    const txType = txTypes[i % txTypes.length];
+    const tier = tiers[Math.floor(i / txTypes.length) % tiers.length];
+    rules.push({
+      id: `CMR-${randomId()}`,
+      txType,
+      tier,
+      flatFee: randomAmount(10, 100),
+      percentFee: Math.round(Math.random() * 2 * 100) / 100,
+      minAmount: txType === "airtime" ? 50 : 500,
+      maxAmount: txType === "airtime" ? 50000 : tier === "diamond" ? 10000000 : 5000000,
+      agentShare: Math.round((60 + Math.random() * 20) * 100) / 100,
+      superAgentShare: Math.round((10 + Math.random() * 15) * 100) / 100,
+      platformShare: Math.round((5 + Math.random() * 10) * 100) / 100,
+      isActive: Math.random() > 0.1,
+      effectiveFrom: randomDate(90),
+    });
+  }
+  return rules;
+}
+
+function generateComplianceReports(count = 20) {
+  const reports = [];
+  for (let i = 0; i < count; i++) {
+    const isCTR = Math.random() > 0.4;
+    reports.push({
+      id: `CPL-${randomId()}`,
+      type: isCTR ? "CTR" : "STR",
+      referenceNumber: `${isCTR ? "CTR" : "STR"}-${new Date().getFullYear()}-${String(i + 1).padStart(5, "0")}`,
+      subjectName: randomPick(NIGERIAN_NAMES),
+      subjectBVN: generateBVN(),
+      amount: isCTR ? randomAmount(5000000, 100000000) : randomAmount(100000, 10000000),
+      currency: "NGN",
+      reason: isCTR
+        ? "Cash transaction exceeding \u20A65,000,000 threshold"
+        : randomPick(["Unusual transaction pattern", "Structuring suspected", "PEP-related activity", "Sanctions screening match"]),
+      filedTo: "NFIU",
+      status: randomPick(["filed", "acknowledged", "under_review", "closed"]),
+      filedAt: randomDate(90),
+      filedBy: randomPick(NIGERIAN_NAMES),
+    });
+  }
+  return reports;
+}
+
+function generateLoanApplications(count = 5, agents = []) {
+  const loans = [];
+  const purposes = ["float_topup", "working_capital", "pos_terminal", "business_expansion", "inventory"];
+  const statuses = ["applied", "under_review", "approved", "disbursed", "repaying"];
+  for (let i = 0; i < count; i++) {
+    const principal = randomAmount(50000, 2000000);
+    const rate = 2.5 + Math.random() * 3;
+    const tenure = randomPick([30, 60, 90, 180]);
+    loans.push({
+      id: `LOAN-${randomId()}`,
+      agentCode: randomPick(agents).agentCode,
+      purpose: purposes[i % purposes.length],
+      principal,
+      interestRate: Math.round(rate * 100) / 100,
+      tenureDays: tenure,
+      monthlyRepayment: Math.round(principal * (1 + rate / 100) / (tenure / 30) * 100) / 100,
+      status: statuses[i % statuses.length],
+      creditScore: Math.floor(300 + Math.random() * 550),
+      disbursedAt: i >= 3 ? randomDate(30) : null,
+      appliedAt: randomDate(60),
+    });
+  }
+  return loans;
+}
+
+function generatePosTerminals(agents = []) {
+  const terminals = [];
+  const models = ["PAX A920", "Verifone V240m", "Ingenico Move/5000", "Nexgo N86", "Sunmi P2"];
+  for (const agent of agents) {
+    const termCount = Math.floor(Math.random() * 3) + 1;
+    for (let i = 0; i < termCount; i++) {
+      terminals.push({
+        id: `TRM-${randomId()}`,
+        serialNumber: `SN${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+        model: randomPick(models),
+        agentCode: agent.agentCode,
+        firmwareVersion: `v${Math.floor(1 + Math.random() * 3)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
+        simICCID: `8923401${Math.floor(10000000000 + Math.random() * 90000000000)}`,
+        lastHeartbeat: randomDate(1),
+        batteryLevel: Math.floor(20 + Math.random() * 80),
+        status: randomPick(["active", "active", "active", "maintenance", "offline"]),
+        assignedAt: randomDate(180),
+      });
+    }
+  }
+  return terminals;
 }
 
 main().catch(console.error);

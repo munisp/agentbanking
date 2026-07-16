@@ -28,7 +28,9 @@ export async function initPushNotifications(): Promise<string | null> {
 
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) as unknown as ArrayBuffer,
+      applicationServerKey: urlBase64ToUint8Array(
+        VAPID_KEY
+      ) as unknown as ArrayBuffer,
     });
 
     const token = btoa(JSON.stringify(subscription.toJSON()));
@@ -67,7 +69,11 @@ export async function unsubscribeTopic(topic: string): Promise<void> {
   }).catch(() => {});
 }
 
-export function showLocalNotification(title: string, body: string, data?: Record<string, string>): void {
+export function showLocalNotification(
+  title: string,
+  body: string,
+  data?: Record<string, string>
+): void {
   if (!registration || Notification.permission !== "granted") return;
   registration.showNotification(title, {
     body,
@@ -97,7 +103,11 @@ export function notifyFloatCritical(balance: number): void {
   );
 }
 
-export function notifyTransactionSuccess(type: string, amount: number, ref: string): void {
+export function notifyTransactionSuccess(
+  type: string,
+  amount: number,
+  ref: string
+): void {
   showLocalNotification(
     `${type} Successful`,
     `₦${(amount / 100).toLocaleString()} — Ref: ${ref}`,

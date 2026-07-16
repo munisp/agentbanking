@@ -198,25 +198,94 @@ export const floatTopUpRouter = router({
             message: "Agent session required",
           });
 
-        const db = (await getDb())!;
-        if (!db)
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "DB unavailable",
+          // Check for existing pending request
+          const existing = await db
+            .select()
+            .from(floatTopUpRequests)
+            .where(eq(floatTopUpRequests.agentId, session.id))
+            .orderBy(desc(floatTopUpRequests.createdAt))
+            .limit(1);
+          if (existing[0] && existing[0].status === "pending") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "You already have a pending top-up request. Please wait for approval.",
+            });
+          }
+
+          // Phase 48: determine if supervisor approval is required
+          const requiresSupervisor =
+            input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
+
+          const result = await db
+            .insert(floatTopUpRequests)
+            .values({
+              agentId: session.id,
+              requestedAmount: String(input.amount),
+              status: "pending",
+              notes: input.notes ?? null,
+              supervisorApprovalRequired: requiresSupervisor,
+            })
+            .returning();
+
+          // Double-entry GL journal entry
+          await db.insert(gl_journal_entries).values({
+            entryNumber: `JE-${Date.now()}`,
+            description: `floatTopUp transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            status: "posted",
           });
 
-        // Check for existing pending request
-        const existing = await db
-          .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, session.id))
-          .orderBy(desc(floatTopUpRequests.createdAt))
-          .limit(1);
-        if (existing[0] && existing[0].status === "pending") {
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "FLOAT_TOPUP_REQUESTED",
+            resource: "float_topup",
+            resourceId: String(result[0].id),
+            status: "success",
+            metadata: { amount: input.amount, requiresSupervisor },
+          });
+
+          // Notify supervisor(s) assigned to this agent if threshold exceeded
+          if (requiresSupervisor) {
+            try {
+              const { notifyOwner } = await import("../_core/notification");
+              await notifyOwner({
+                title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
+                content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+              });
+            } catch {
+              // Non-critical
+            }
+          }
+
+          floatTopupRequestsTotal.labels("submitted").inc();
+
+          await publishfloatTopUpMiddleware("submit", `${Date.now()}`, {
+            action: "submit",
+          }).catch(() => {});
+
+          return {
+            success: true,
+            requestId: result[0].id,
+            requiresSupervisorApproval: requiresSupervisor,
+            message: requiresSupervisor
+              ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
+              : "Top-up request submitted. Awaiting admin approval.",
+          };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
           throw new TRPCError({
-            code: "BAD_REQUEST",
+            code: "INTERNAL_SERVER_ERROR",
             message:
-              "You already have a pending top-up request. Please wait for approval.",
+              error instanceof Error ? error.message : "Internal server error",
           });
         }
 

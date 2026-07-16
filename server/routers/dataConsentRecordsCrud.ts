@@ -101,18 +101,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdataConsentRecordsCrudMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -136,10 +137,17 @@ async function publishdataConsentRecordsCrudMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const dataConsentRecordsRouter = router({
@@ -291,8 +299,11 @@ export const dataConsentRecordsRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishdataConsentRecordsCrudMiddleware("grantConsent", `${Date.now()}`, { action: "grantConsent" }).catch(() => {});
-
+        await publishdataConsentRecordsCrudMiddleware(
+          "grantConsent",
+          `${Date.now()}`,
+          { action: "grantConsent" }
+        ).catch(() => {});
 
         return {
           ...row,
@@ -329,7 +340,11 @@ export const dataConsentRecordsRouter = router({
           } as any)
           .where(eq(dataConsentRecords.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishdataConsentRecordsCrudMiddleware("withdrawConsent", `${Date.now()}`, { action: "withdrawConsent" }).catch(() => {});
+        await publishdataConsentRecordsCrudMiddleware(
+          "withdrawConsent",
+          `${Date.now()}`,
+          { action: "withdrawConsent" }
+        ).catch(() => {});
 
         return {
           success: true,
@@ -388,7 +403,11 @@ export const dataConsentRecordsRouter = router({
           .delete(dataConsentRecords)
           .where(eq(dataConsentRecords.id, input.id));
         // Middleware fan-out (fail-open)
-        await publishdataConsentRecordsCrudMiddleware("delete", `${Date.now()}`, { action: "delete" }).catch(() => {});
+        await publishdataConsentRecordsCrudMiddleware(
+          "delete",
+          `${Date.now()}`,
+          { action: "delete" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

@@ -97,18 +97,19 @@ async function checkDbHealth() {
   }
 }
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishwearablePaymentsMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `payments.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -132,10 +133,17 @@ async function publishwearablePaymentsMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("payments", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("payments", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const wearablePaymentsRouter = router({
@@ -307,8 +315,9 @@ export const wearablePaymentsRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishwearablePaymentsMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+      await publishwearablePaymentsMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return { id, status: "created" };
     }),
@@ -354,7 +363,9 @@ export const wearablePaymentsRouter = router({
         sql`UPDATE "wearable_devices" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishwearablePaymentsMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishwearablePaymentsMiddleware("updateStatus", `${Date.now()}`, {
+        action: "updateStatus",
+      }).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

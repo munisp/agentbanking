@@ -150,18 +150,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishdeepfaceMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `biometric.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -185,10 +186,17 @@ async function publishdeepfaceMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("biometric", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("biometric", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const deepfaceRouter = router({
@@ -523,12 +531,15 @@ export const deepfaceRouter = router({
   // ── Supported Models & Detectors ──────────────────────────────────────
   models: protectedProcedure.query(async () => {
     // Middleware fan-out (fail-open)
-    await publishdeepfaceMiddleware("enrollFace", `${Date.now()}`, { action: "enrollFace" }).catch(() => {});
+    await publishdeepfaceMiddleware("enrollFace", `${Date.now()}`, {
+      action: "enrollFace",
+    }).catch(() => {});
 
     // Middleware fan-out (fail-open)
 
-    await publishdeepfaceMiddleware("searchGallery", `${Date.now()}`, { action: "searchGallery" }).catch(() => {});
-
+    await publishdeepfaceMiddleware("searchGallery", `${Date.now()}`, {
+      action: "searchGallery",
+    }).catch(() => {});
 
     return {
       models: DEEPFACE_MODELS,

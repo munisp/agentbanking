@@ -93,18 +93,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishproductionFeaturesMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -128,10 +129,17 @@ async function publishproductionFeaturesMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const productionFeaturesRouter = router({
@@ -272,8 +280,11 @@ export const productionFeaturesRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishproductionFeaturesMiddleware("toggleFeature", `${Date.now()}`, { action: "toggleFeature" }).catch(() => {});
-
+        await publishproductionFeaturesMiddleware(
+          "toggleFeature",
+          `${Date.now()}`,
+          { action: "toggleFeature" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -317,7 +328,11 @@ export const productionFeaturesRouter = router({
           metadata: { name: input.name },
         });
         // Middleware fan-out (fail-open)
-        await publishproductionFeaturesMiddleware("createFeature", `${Date.now()}`, { action: "createFeature" }).catch(() => {});
+        await publishproductionFeaturesMiddleware(
+          "createFeature",
+          `${Date.now()}`,
+          { action: "createFeature" }
+        ).catch(() => {});
 
         return { success: true, featureKey: key };
       } catch (error) {

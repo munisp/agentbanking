@@ -18,6 +18,7 @@ import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import {
   validateAmount,

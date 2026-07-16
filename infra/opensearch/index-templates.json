@@ -1,0 +1,255 @@
+{
+  "index_templates": [
+    {
+      "name": "transactions-template",
+      "index_patterns": ["transactions-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "5s",
+          "index.max_result_window": 50000,
+          "analysis": {
+            "analyzer": {
+              "agent_code_analyzer": {
+                "type": "custom",
+                "tokenizer": "keyword",
+                "filter": ["lowercase"]
+              }
+            }
+          }
+        },
+        "mappings": {
+          "properties": {
+            "transactionId": { "type": "keyword" },
+            "agentCode": { "type": "keyword" },
+            "tenantId": { "type": "keyword" },
+            "type": { "type": "keyword" },
+            "status": { "type": "keyword" },
+            "amount": { "type": "scaled_float", "scaling_factor": 100 },
+            "currency": { "type": "keyword" },
+            "description": {
+              "type": "text",
+              "fields": { "raw": { "type": "keyword" } }
+            },
+            "customerPhone": { "type": "keyword" },
+            "customerName": { "type": "text" },
+            "paymentMethod": { "type": "keyword" },
+            "location": { "type": "geo_point" },
+            "metadata": { "type": "object", "enabled": false },
+            "createdAt": { "type": "date" },
+            "updatedAt": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "audit-logs-template",
+      "index_patterns": ["audit-logs-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "10s"
+        },
+        "mappings": {
+          "properties": {
+            "eventId": { "type": "keyword" },
+            "userId": { "type": "keyword" },
+            "tenantId": { "type": "keyword" },
+            "action": { "type": "keyword" },
+            "resource": { "type": "keyword" },
+            "resourceId": { "type": "keyword" },
+            "ipAddress": { "type": "ip" },
+            "userAgent": { "type": "text" },
+            "details": { "type": "object", "enabled": false },
+            "severity": { "type": "keyword" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "fraud-events-template",
+      "index_patterns": ["fraud-events-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "1s"
+        },
+        "mappings": {
+          "properties": {
+            "alertId": { "type": "keyword" },
+            "transactionId": { "type": "keyword" },
+            "agentCode": { "type": "keyword" },
+            "tenantId": { "type": "keyword" },
+            "riskScore": { "type": "float" },
+            "riskLevel": { "type": "keyword" },
+            "modelName": { "type": "keyword" },
+            "modelVersion": { "type": "keyword" },
+            "features": { "type": "object" },
+            "flaggedReasons": { "type": "keyword" },
+            "resolved": { "type": "boolean" },
+            "resolvedBy": { "type": "keyword" },
+            "location": { "type": "geo_point" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "agent-metrics-template",
+      "index_patterns": ["agent-metrics-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 2,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "30s"
+        },
+        "mappings": {
+          "properties": {
+            "agentCode": { "type": "keyword" },
+            "tenantId": { "type": "keyword" },
+            "transactionCount": { "type": "integer" },
+            "totalVolume": { "type": "scaled_float", "scaling_factor": 100 },
+            "avgTransactionValue": { "type": "float" },
+            "commissionEarned": {
+              "type": "scaled_float",
+              "scaling_factor": 100
+            },
+            "floatBalance": { "type": "scaled_float", "scaling_factor": 100 },
+            "uptime": { "type": "float" },
+            "errorRate": { "type": "float" },
+            "location": { "type": "geo_point" },
+            "period": { "type": "keyword" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    }
+  ],
+  "ilm_policies": [
+    {
+      "name": "transactions-lifecycle",
+      "policy": {
+        "description": "ILM policy for transaction indexes — hot/warm/cold/delete",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              { "rollover": { "min_size": "50gb", "min_index_age": "1d" } }
+            ],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "7d" } }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [
+              { "replica_count": { "number_of_replicas": 0 } },
+              { "force_merge": { "max_num_segments": 1 } }
+            ],
+            "transitions": [
+              { "state_name": "cold", "conditions": { "min_index_age": "30d" } }
+            ]
+          },
+          {
+            "name": "cold",
+            "actions": [{ "read_only": {} }],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "365d" }
+              }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [{ "delete": {} }],
+            "transitions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "audit-logs-lifecycle",
+      "policy": {
+        "description": "ILM for audit logs — retained 7 years for compliance",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              { "rollover": { "min_size": "30gb", "min_index_age": "1d" } }
+            ],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "30d" } }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [
+              { "replica_count": { "number_of_replicas": 0 } },
+              { "force_merge": { "max_num_segments": 1 } }
+            ],
+            "transitions": [
+              {
+                "state_name": "cold",
+                "conditions": { "min_index_age": "180d" }
+              }
+            ]
+          },
+          {
+            "name": "cold",
+            "actions": [{ "read_only": {} }],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "2555d" }
+              }
+            ]
+          },
+          { "name": "delete", "actions": [{ "delete": {} }], "transitions": [] }
+        ]
+      }
+    },
+    {
+      "name": "fraud-events-lifecycle",
+      "policy": {
+        "description": "ILM for fraud events — retained 3 years, fast refresh in hot",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              { "rollover": { "min_size": "20gb", "min_index_age": "1d" } }
+            ],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "14d" } }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [{ "replica_count": { "number_of_replicas": 0 } }],
+            "transitions": [
+              { "state_name": "cold", "conditions": { "min_index_age": "90d" } }
+            ]
+          },
+          {
+            "name": "cold",
+            "actions": [{ "read_only": {} }],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": { "min_index_age": "1095d" }
+              }
+            ]
+          },
+          { "name": "delete", "actions": [{ "delete": {} }], "transitions": [] }
+        ]
+      }
+    }
+  ]
+}

@@ -100,13 +100,15 @@ function logOperation(action: string, details: Record<string, unknown>) {
 async function publishcommissionClawbackMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `commission.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -130,10 +132,17 @@ async function publishcommissionClawbackMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("commission", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("commission", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const commissionClawbackRouter = router({
@@ -376,7 +385,9 @@ export const commissionClawbackRouter = router({
           );
         }
         // Middleware fan-out (fail-open)
-        await publishcommissionClawbackMiddleware("approve", `${Date.now()}`, { action: "approve" }).catch(() => {});
+        await publishcommissionClawbackMiddleware("approve", `${Date.now()}`, {
+          action: "approve",
+        }).catch(() => {});
 
         return { success: true, message: "Clawback approved and applied" };
       } catch (error) {
@@ -412,7 +423,9 @@ export const commissionClawbackRouter = router({
           details: JSON.stringify({ reason: input.reason } as any),
         } as any);
         // Middleware fan-out (fail-open)
-        await publishcommissionClawbackMiddleware("dispute", `${Date.now()}`, { action: "dispute" }).catch(() => {});
+        await publishcommissionClawbackMiddleware("dispute", `${Date.now()}`, {
+          action: "dispute",
+        }).catch(() => {});
 
         return { success: true, message: "Dispute filed" };
       } catch (error) {

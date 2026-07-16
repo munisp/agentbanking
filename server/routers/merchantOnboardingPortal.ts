@@ -91,13 +91,15 @@ function logOperation(action: string, details: Record<string, unknown>) {
 async function publishmerchantOnboardingPortalMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `merchant.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -121,10 +123,17 @@ async function publishmerchantOnboardingPortalMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("merchant", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("merchant", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const merchantOnboardingPortalRouter = router({
@@ -253,8 +262,11 @@ export const merchantOnboardingPortalRouter = router({
 
         // Middleware fan-out (fail-open)
 
-        await publishmerchantOnboardingPortalMiddleware("approveMerchant", `${Date.now()}`, { action: "approveMerchant" }).catch(() => {});
-
+        await publishmerchantOnboardingPortalMiddleware(
+          "approveMerchant",
+          `${Date.now()}`,
+          { action: "approveMerchant" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {
@@ -283,7 +295,11 @@ export const merchantOnboardingPortalRouter = router({
           metadata: { reason: input.reason },
         });
         // Middleware fan-out (fail-open)
-        await publishmerchantOnboardingPortalMiddleware("rejectMerchant", `${Date.now()}`, { action: "rejectMerchant" }).catch(() => {});
+        await publishmerchantOnboardingPortalMiddleware(
+          "rejectMerchant",
+          `${Date.now()}`,
+          { action: "rejectMerchant" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

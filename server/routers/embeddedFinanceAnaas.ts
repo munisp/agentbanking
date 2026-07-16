@@ -109,18 +109,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishembeddedFinanceAnaasMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `platform.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -144,10 +145,17 @@ async function publishembeddedFinanceAnaasMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("platform", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
 }
 
 export const embeddedFinanceAnaasRouter = router({
@@ -309,8 +317,9 @@ export const embeddedFinanceAnaasRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishembeddedFinanceAnaasMiddleware("create", `${Date.now()}`, { action: "create" }).catch(() => {});
-
+      await publishembeddedFinanceAnaasMiddleware("create", `${Date.now()}`, {
+        action: "create",
+      }).catch(() => {});
 
       return { id, status: "created" };
     }),
@@ -356,7 +365,11 @@ export const embeddedFinanceAnaasRouter = router({
         sql`UPDATE "anaas_tenants" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
       );
       // Middleware fan-out (fail-open)
-      await publishembeddedFinanceAnaasMiddleware("updateStatus", `${Date.now()}`, { action: "updateStatus" }).catch(() => {});
+      await publishembeddedFinanceAnaasMiddleware(
+        "updateStatus",
+        `${Date.now()}`,
+        { action: "updateStatus" }
+      ).catch(() => {});
 
       return { id: input.id, status: input.status };
     }),

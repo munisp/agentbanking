@@ -1,9 +1,10 @@
 /**
- * 54Link POS Shell -- Service Worker v4
+ * 54Link POS Shell -- Service Worker v5
  * Features: Web Push (failover/fraud/float/settlement), offline shell cache,
- * background sync for offline TX queue, periodic sync for fraud status.
+ * background sync for offline TX queue, periodic sync for fraud status,
+ * version-based cache busting on deployment.
  */
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const SHELL_CACHE = `54link-shell-${CACHE_VERSION}`;
 const API_CACHE = `54link-api-${CACHE_VERSION}`;
 const DATA_CACHE = `54link-data-${CACHE_VERSION}`;
@@ -31,19 +32,31 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
+  const KEEP = new Set([SHELL_CACHE, API_CACHE, DATA_CACHE]);
   event.waitUntil(
     caches
       .keys()
       .then(keys =>
         Promise.all(
           keys
-            .filter(
-              k =>
-                k.startsWith("54link-") && k !== SHELL_CACHE && k !== API_CACHE
-            )
-            .map(k => caches.delete(k))
+            .filter(k => !KEEP.has(k))
+            .map(k => {
+              console.log(`[SW] Purging stale cache: ${k}`);
+              return caches.delete(k);
+            })
         )
       )
+      .then(() => {
+        // Notify all open clients to refresh for the new version
+        self.clients.matchAll({ type: "window" }).then(clients => {
+          clients.forEach(client =>
+            client.postMessage({
+              type: "SW_VERSION_CHANGED",
+              version: CACHE_VERSION,
+            })
+          );
+        });
+      })
   );
   self.clients.claim();
 });

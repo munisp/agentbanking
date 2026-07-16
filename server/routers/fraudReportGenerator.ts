@@ -120,18 +120,19 @@ const _txPatterns = {
   },
 };
 
-
 // ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
 async function publishfraudReportGeneratorMiddleware(
   action: string,
   ref: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) {
   const topic = `fraud.${action}` as any;
   const ts = new Date().toISOString();
 
   // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(() => {});
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
 
   // 2. TigerBeetle — GL journal entry (fail-open)
   if (payload.amount && typeof payload.amount === "number") {
@@ -155,10 +156,14 @@ async function publishfraudReportGeneratorMiddleware(
   }).catch(() => {});
 
   // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr.publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
 
   // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(() => {});
+  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
 }
 
 export const fraudReportGeneratorRouter = router({
@@ -309,8 +314,11 @@ export const fraudReportGeneratorRouter = router({
 
       // Middleware fan-out (fail-open)
 
-      await publishfraudReportGeneratorMiddleware("generateReport", `${Date.now()}`, { action: "generateReport" }).catch(() => {});
-
+      await publishfraudReportGeneratorMiddleware(
+        "generateReport",
+        `${Date.now()}`,
+        { action: "generateReport" }
+      ).catch(() => {});
 
       return {
         reportId: `report-${Date.now()}`,

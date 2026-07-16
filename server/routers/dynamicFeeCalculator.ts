@@ -104,14 +104,48 @@ function logOperation(action: string, details: Record<string, unknown>) {
 // Transaction wrapping: withTransaction used for atomic DB operations
 // db.transaction() ensures ACID compliance for multi-step mutations
 
-
-async function publishdynamicFeeCalculatorMiddleware(event: string, key: string, payload: Record<string, unknown>) {
-  publishEvent("billing.payment_received", key, { event, ...payload, timestamp: Date.now() }).catch(() => {});
-  tbCreateTransfer({ debitAccountId: "1001", creditAccountId: "2001", amount: Number(payload.amount ?? 0), ledger: 1, code: 1, ref: key, txType: event, agentCode: String(payload.agentId ?? "system") }).catch(() => {});
-  publishTxToFluvio({ txRef: key, agentCode: String(payload.agentId ?? "system"), amount: Number(payload.amount ?? 0), type: `billing.payment_received.${event}`, timestamp: Date.now() }).catch(() => {});
-  dapr.publishEvent("pubsub", `billing.payment_received.${event}`, { key, ...payload }).catch(() => {});
-  ingestToLakehouse("dynamicFeeCalculator", { event, key, ...payload, timestamp: new Date().toISOString() }).catch(() => {});
-  cacheSet(`dynamicFeeCalculator:${key}`, JSON.stringify(payload), 300).catch(() => {});
+async function publishdynamicFeeCalculatorMiddleware(
+  event: string,
+  key: string,
+  payload: Record<string, unknown>
+) {
+  publishEvent("billing.payment_received", key, {
+    event,
+    ...payload,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  tbCreateTransfer({
+    debitAccountId: "1001",
+    creditAccountId: "2001",
+    amount: Number(payload.amount ?? 0),
+    ledger: 1,
+    code: 1,
+    ref: key,
+    txType: event,
+    agentCode: String(payload.agentId ?? "system"),
+  }).catch(() => {});
+  publishTxToFluvio({
+    txRef: key,
+    agentCode: String(payload.agentId ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `billing.payment_received.${event}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+  dapr
+    .publishEvent("pubsub", `billing.payment_received.${event}`, {
+      key,
+      ...payload,
+    })
+    .catch(() => {});
+  ingestToLakehouse("dynamicFeeCalculator", {
+    event,
+    key,
+    ...payload,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+  cacheSet(`dynamicFeeCalculator:${key}`, JSON.stringify(payload), 300).catch(
+    () => {}
+  );
 }
 
 export const dynamicFeeCalculatorRouter = router({
@@ -299,8 +333,11 @@ export const dynamicFeeCalculatorRouter = router({
           metadata: { input: typeof input === "object" ? input : {} },
         });
 
-        await publishdynamicFeeCalculatorMiddleware("createRule", `${Date.now()}`, { action: "createRule" }).catch(() => {});
-
+        await publishdynamicFeeCalculatorMiddleware(
+          "createRule",
+          `${Date.now()}`,
+          { action: "createRule" }
+        ).catch(() => {});
 
         return { success: true };
       } catch (error) {

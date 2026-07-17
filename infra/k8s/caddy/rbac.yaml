@@ -1,0 +1,125 @@
+---
+# =============================================================================
+#  Caddy Edge Proxy — Kubernetes RBAC
+#  Caddy needs minimal permissions: only to read its own ConfigMap and Secret.
+#  No cluster-wide permissions are required.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: caddy
+  namespace: production
+  labels:
+    app: caddy
+    component: edge-proxy
+  annotations:
+    # AWS IRSA: bind to an IAM role for Route53 DNS-01 ACME challenges (optional)
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/caddy-acme-dns01
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: caddy
+  namespace: production
+  labels:
+    app: caddy
+rules:
+  # Read its own ConfigMap (Caddyfile) and Secret (Vault token)
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    resourceNames: ["caddy-config", "caddy-env", "caddy-secrets"]
+    verbs: ["get", "watch"]
+  # Read endpoints to discover upstream pod IPs for health checks
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: caddy
+  namespace: production
+  labels:
+    app: caddy
+subjects:
+  - kind: ServiceAccount
+    name: caddy
+    namespace: production
+roleRef:
+  kind: Role
+  name: caddy
+  apiGroup: rbac.authorization.k8s.io
+---
+# =============================================================================
+#  NetworkPolicy — restrict ingress to Caddy and egress from Caddy
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: caddy-network-policy
+  namespace: production
+  labels:
+    app: caddy
+spec:
+  podSelector:
+    matchLabels:
+      app: caddy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow HTTP/HTTPS from anywhere (LoadBalancer → Caddy)
+    - ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+        - port: 443
+          protocol: UDP
+    # Allow Admin API access only from within the cluster
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: production
+      ports:
+        - port: 2019
+          protocol: TCP
+    # Allow Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 2019
+          protocol: TCP
+  egress:
+    # Allow DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow outbound to ACME servers (Let's Encrypt) on port 443
+    - ports:
+        - port: 443
+          protocol: TCP
+    # Allow outbound to all upstream services in the production namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: production
+      ports:
+        - port: 3000   # App (pos-shell-demo)
+          protocol: TCP
+        - port: 8080   # Keycloak
+          protocol: TCP
+        - port: 9080   # APISIX gateway
+          protocol: TCP
+        - port: 9180   # APISIX admin
+          protocol: TCP
+        - port: 8200   # Vault
+          protocol: TCP
+        - port: 3000   # Grafana
+          protocol: TCP
+        - port: 8080   # Temporal UI
+          protocol: TCP

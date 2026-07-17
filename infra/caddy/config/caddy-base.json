@@ -1,0 +1,77 @@
+{
+  "admin": {
+    "listen": "localhost:2019",
+    "enforce_origin": false,
+    "origins": ["localhost:2019"]
+  },
+  "logging": {
+    "logs": {
+      "default": {
+        "writer": {
+          "output": "file",
+          "filename": "/var/log/caddy/access.log",
+          "roll_size_mb": 100,
+          "roll_keep": 10
+        },
+        "encoder": {
+          "format": "json"
+        },
+        "level": "INFO"
+      }
+    }
+  },
+  "apps": {
+    "tls": {
+      "automation": {
+        "on_demand": {
+          "ask": "http://app:3000/internal/caddy/validate-domain",
+          "rate_limit": {
+            "interval": "2m",
+            "burst": 5
+          }
+        },
+        "policies": [
+          {
+            "issuers": [
+              {
+                "module": "acme",
+                "email": "admin@54link.ng",
+                "ca": "https://acme-v02.api.letsencrypt.org/directory"
+              },
+              {
+                "module": "acme",
+                "email": "admin@54link.ng",
+                "ca": "https://acme.zerossl.com/v2/DV90"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "http": {
+      "servers": {
+        "main": {
+          "listen": [":443"],
+          "protocols": ["h1", "h2", "h3"],
+          "routes": []
+        },
+        "redirect": {
+          "listen": [":80"],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "status_code": 308,
+                  "headers": {
+                    "Location": ["https://{http.request.host}{http.request.uri}"]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

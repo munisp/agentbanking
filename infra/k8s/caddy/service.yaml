@@ -1,0 +1,117 @@
+---
+# =============================================================================
+#  Caddy Edge Proxy — Kubernetes Service (LoadBalancer)
+#  Exposes ports 80 (HTTP), 443 (HTTPS/TCP), 443 (HTTP/3 UDP) externally.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: caddy
+  namespace: production
+  labels:
+    app: caddy
+    component: edge-proxy
+  annotations:
+    # AWS: use NLB for UDP (HTTP/3) support
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # GCP: use premium network tier
+    cloud.google.com/load-balancer-type: "External"
+    # Preserve client IP for accurate rate limiting and geo-blocking
+    service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+spec:
+  type: LoadBalancer
+  # Preserve client source IP (required for rate limiting and geo-blocking)
+  externalTrafficPolicy: Local
+  selector:
+    app: caddy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+    - name: https-udp
+      port: 443
+      targetPort: 443
+      protocol: UDP
+---
+# Internal ClusterIP service for the Caddy Admin API
+# Used by the tenant onboarding flow to call /certificates/automate
+apiVersion: v1
+kind: Service
+metadata:
+  name: caddy-admin
+  namespace: production
+  labels:
+    app: caddy
+    component: edge-proxy-admin
+spec:
+  type: ClusterIP
+  selector:
+    app: caddy
+  ports:
+    - name: admin
+      port: 2019
+      targetPort: 2019
+      protocol: TCP
+---
+# =============================================================================
+#  Caddy — PersistentVolumeClaim for ACME certificate storage
+#  In HA deployments, use ReadWriteMany (NFS/EFS) or configure Vault storage.
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: caddy-data-pvc
+  namespace: production
+  labels:
+    app: caddy
+spec:
+  accessModes:
+    - ReadWriteOnce   # Use ReadWriteMany for multi-replica HA without Vault
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+---
+# =============================================================================
+#  Caddy — Environment ConfigMap (non-sensitive values)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caddy-env
+  namespace: production
+  labels:
+    app: caddy
+data:
+  DOMAIN: "54link.ng"
+  ACME_EMAIL: "admin@54link.ng"
+  APP_UPSTREAM: "pos-shell-demo:3000"
+  APISIX_UPSTREAM: "apisix:9080"
+  APISIX_ADMIN_UPSTREAM: "apisix:9180"
+  KEYCLOAK_UPSTREAM: "keycloak:8080"
+  GRAFANA_UPSTREAM: "grafana:3000"
+  TEMPORAL_UPSTREAM: "temporal-ui:8080"
+  VAULT_UPSTREAM: "vault:8200"
+  ON_DEMAND_ASK_URL: "http://pos-shell-demo:3000/internal/caddy/validate-domain"
+---
+# =============================================================================
+#  Caddy — Secret for sensitive values (Vault token for cert storage)
+#  In production, use External Secrets Operator or Vault Agent Injector.
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: caddy-secrets
+  namespace: production
+  labels:
+    app: caddy
+type: Opaque
+stringData:
+  # Vault token with read/write access to secret/caddy/certs
+  # Replace with actual token or use Vault Agent Injector
+  vault-token: "CHANGE_ME_VAULT_CADDY_TOKEN"

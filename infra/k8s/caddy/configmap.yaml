@@ -1,0 +1,147 @@
+---
+# =============================================================================
+#  Caddy Edge Proxy — Kubernetes ConfigMap
+#  Contains the production Caddyfile for the 54Link platform.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caddy-config
+  namespace: production
+  labels:
+    app: caddy
+    component: edge-proxy
+data:
+  Caddyfile: |
+    # ── Global options ──────────────────────────────────────────────────────────
+    {
+        email {$ACME_EMAIL}
+
+        on_demand_tls {
+            ask {$ON_DEMAND_ASK_URL}
+            interval 2m
+            burst 5
+        }
+
+        admin localhost:2019
+
+        log {
+            output stdout
+            format json
+            level INFO
+        }
+    }
+
+    # ── Security headers snippet ─────────────────────────────────────────────────
+    (security_headers) {
+        header {
+            Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+            X-Frame-Options "SAMEORIGIN"
+            X-Content-Type-Options "nosniff"
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy "strict-origin-when-cross-origin"
+            Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+            -Server
+            -X-Powered-By
+        }
+    }
+
+    (internal_only) {
+        @external {
+            not remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1/8
+        }
+        respond @external 403 { body "Access denied"; close }
+    }
+
+    (proxy_headers) {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+
+    # ── HTTP → HTTPS redirect ────────────────────────────────────────────────────
+    http:// {
+        redir https://{host}{uri} 308
+    }
+
+    # ── Main Application ─────────────────────────────────────────────────────────
+    {$DOMAIN} www.{$DOMAIN} {
+        import security_headers
+        @websocket {
+            header Connection *Upgrade*
+            header Upgrade websocket
+        }
+        handle @websocket {
+            reverse_proxy {$APP_UPSTREAM} { import proxy_headers }
+        }
+        handle /api/trpc/* {
+            reverse_proxy {$APISIX_UPSTREAM} {
+                import proxy_headers
+                lb_policy least_conn
+                health_uri /apisix/status
+                health_interval 10s
+            }
+        }
+        handle /api/v1/* {
+            reverse_proxy {$APISIX_UPSTREAM} { import proxy_headers }
+        }
+        handle /api/metrics {
+            import internal_only
+            reverse_proxy {$APP_UPSTREAM} { import proxy_headers }
+        }
+        handle {
+            reverse_proxy {$APP_UPSTREAM} {
+                import proxy_headers
+                transport http {
+                    dial_timeout 10s
+                    response_header_timeout 300s
+                }
+            }
+        }
+        encode gzip zstd
+    }
+
+    # ── Keycloak ─────────────────────────────────────────────────────────────────
+    auth.{$DOMAIN} keycloak.{$DOMAIN} {
+        import security_headers
+        encode gzip
+        reverse_proxy {$KEYCLOAK_UPSTREAM} {
+            import proxy_headers
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    # ── Grafana ──────────────────────────────────────────────────────────────────
+    grafana.{$DOMAIN} {
+        import security_headers
+        encode gzip
+        @ws { header Connection *Upgrade*; header Upgrade websocket }
+        handle @ws { reverse_proxy {$GRAFANA_UPSTREAM} { import proxy_headers } }
+        handle { reverse_proxy {$GRAFANA_UPSTREAM} { import proxy_headers } }
+    }
+
+    # ── Temporal UI (internal only) ──────────────────────────────────────────────
+    temporal.{$DOMAIN} {
+        import security_headers
+        import internal_only
+        reverse_proxy {$TEMPORAL_UPSTREAM} { import proxy_headers }
+    }
+
+    # ── Vault (internal only) ────────────────────────────────────────────────────
+    vault.{$DOMAIN} {
+        import security_headers
+        import internal_only
+        reverse_proxy {$VAULT_UPSTREAM} { import proxy_headers }
+    }
+
+    # ── On-Demand TLS catch-all for white-label tenant custom domains ─────────────
+    :443 {
+        tls { on_demand }
+        import security_headers
+        encode gzip
+        reverse_proxy {$APISIX_UPSTREAM} {
+            import proxy_headers
+            header_up X-Tenant-Domain {host}
+        }
+    }

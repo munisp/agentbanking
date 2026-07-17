@@ -40,6 +40,7 @@ import {
   stopArchivalCronWorker,
 } from "../lib/archivalCronWorker";
 import { restBridgeRouter } from "../restBridge";
+import { caddyTlsValidationRouter } from "../routers/caddyTlsValidation";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
@@ -499,6 +500,11 @@ async function startServer() {
   // ── REST Bridge (Management PWA, Customer Portal, Super Admin) ─────────────
   // Maps GET/POST/PUT/DELETE /api/v1/* to tRPC procedures and DB helpers.
   app.use("/api/v1", restBridgeRouter);
+  // ── Caddy On-Demand TLS Validation ──────────────────────────────────────────
+  // Called by Caddy before issuing a TLS certificate for a tenant custom domain.
+  // GET  /internal/caddy/validate-domain?domain=<hostname> → 200 | 403
+  // POST /internal/caddy/bust-cache                        → 200
+  app.use(caddyTlsValidationRouter);
 
   // ── P1-A: Inbound Webhooks with HMAC-SHA256 verification ────────────────────
   // captureRawBody must run BEFORE express.json() on each webhook route.

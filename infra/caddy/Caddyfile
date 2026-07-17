@@ -1,0 +1,273 @@
+# =============================================================================
+#  54Link Agent Banking Platform — Caddyfile (Production)
+#  Replaces NGINX as the TLS-terminating edge proxy.
+#
+#  Key capabilities:
+#    • Automatic TLS via Let's Encrypt / ZeroSSL (ACME) — no certbot needed
+#    • On-Demand TLS for white-label tenant custom domains
+#    • HTTP/3 (QUIC) enabled by default on all HTTPS listeners
+#    • HSTS, security headers, gzip compression
+#    • WebSocket transparent proxying (Socket.IO)
+#    • Vault-backed certificate storage for HA deployments
+#    • Internal-only access control for admin services
+#
+#  Environment variables (set in .env or docker-compose):
+#    DOMAIN              — primary domain, e.g. 54link.ng
+#    ACME_EMAIL          — Let's Encrypt registration email
+#    APP_UPSTREAM        — Node.js app, e.g. app:3000
+#    APISIX_UPSTREAM     — APISIX gateway, e.g. apisix:9080
+#    KEYCLOAK_UPSTREAM   — Keycloak OIDC, e.g. keycloak:8080
+#    GRAFANA_UPSTREAM    — Grafana, e.g. grafana:3000
+#    TEMPORAL_UPSTREAM   — Temporal UI, e.g. temporal-ui:8080
+#    VAULT_UPSTREAM      — HashiCorp Vault, e.g. vault:8200
+#    CADDY_ADMIN_DOMAIN  — Caddy admin API domain (internal only)
+#    ON_DEMAND_ASK_URL   — Validation endpoint for tenant custom domains
+# =============================================================================
+
+# ── Global options ────────────────────────────────────────────────────────────
+{
+    # ACME / Let's Encrypt
+    email {$ACME_EMAIL:admin@54link.ng}
+
+    # On-Demand TLS: provision certs at first handshake for tenant custom domains.
+    # The `ask` URL is called before issuing any on-demand cert; a 200 response
+    # means the domain is a registered tenant domain and cert issuance proceeds.
+    on_demand_tls {
+        ask {$ON_DEMAND_ASK_URL:http://app:3000/internal/caddy/validate-domain}
+        interval 2m
+        burst 5
+    }
+
+    # Vault storage backend for HA deployments (certs shared across Caddy nodes).
+    # Comment out for single-node deployments — Caddy will use local file storage.
+    # storage vault {
+    #     address  {$VAULT_ADDR:http://vault:8200}
+    #     token    {$VAULT_TOKEN}
+    #     path     secret/caddy/certs
+    # }
+
+    # Admin API — bind to localhost only (never expose to internet)
+    admin localhost:2019
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+        level INFO
+    }
+}
+
+# ── Reusable snippets ─────────────────────────────────────────────────────────
+
+# Common security headers applied to all public-facing virtual hosts
+(security_headers) {
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss: https:; frame-ancestors 'none';"
+        # Remove server identification headers
+        -Server
+        -X-Powered-By
+    }
+}
+
+# Internal-only access: allow RFC-1918 ranges, deny everything else
+(internal_only) {
+    @external {
+        not remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1/8
+    }
+    respond @external 403 {
+        body "Access denied"
+        close
+    }
+}
+
+# Standard reverse-proxy headers forwarded to upstreams
+(proxy_headers) {
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
+}
+
+# ── HTTP → HTTPS redirect ─────────────────────────────────────────────────────
+http:// {
+    redir https://{host}{uri} 308
+}
+
+# ── Main POS Shell Application ────────────────────────────────────────────────
+{$DOMAIN:54link.ng} www.{$DOMAIN:54link.ng} {
+    import security_headers
+
+    # WebSocket support for Socket.IO (real-time fraud alerts, chat, notifications)
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websocket {
+        reverse_proxy {$APP_UPSTREAM:app:3000} {
+            import proxy_headers
+        }
+    }
+
+    # API routes — forward to APISIX gateway (JWT auth, rate limiting, gRPC)
+    handle /api/trpc/* {
+        reverse_proxy {$APISIX_UPSTREAM:apisix:9080} {
+            import proxy_headers
+            lb_policy least_conn
+            health_uri /apisix/status
+            health_interval 10s
+            health_timeout 5s
+        }
+    }
+
+    handle /api/v1/* {
+        reverse_proxy {$APISIX_UPSTREAM:apisix:9080} {
+            import proxy_headers
+            lb_policy least_conn
+        }
+    }
+
+    # All other routes — main Node.js application
+    handle {
+        reverse_proxy {$APP_UPSTREAM:app:3000} {
+            import proxy_headers
+            # Increase timeouts for long-running operations (settlement, reports)
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 300s
+                read_timeout 300s
+            }
+        }
+    }
+
+    # Prometheus metrics endpoint — internal only
+    handle /api/metrics {
+        import internal_only
+        reverse_proxy {$APP_UPSTREAM:app:3000} {
+            import proxy_headers
+        }
+    }
+
+    # Gzip compression for text responses
+    encode gzip zstd
+}
+
+# ── Keycloak OIDC Identity Provider ──────────────────────────────────────────
+auth.{$DOMAIN:54link.ng} keycloak.{$DOMAIN:54link.ng} {
+    import security_headers
+    encode gzip
+
+    # Increase buffer sizes for Keycloak's large OIDC discovery documents
+    reverse_proxy {$KEYCLOAK_UPSTREAM:keycloak:8080} {
+        import proxy_headers
+        transport http {
+            response_header_timeout 60s
+            read_buffer_size 128kb
+        }
+        # Keycloak requires the original Host header for redirect URI validation
+        header_up Host {upstream_hostport}
+    }
+}
+
+# ── Grafana Observability Dashboard ──────────────────────────────────────────
+grafana.{$DOMAIN:54link.ng} {
+    import security_headers
+    encode gzip
+
+    # WebSocket support for Grafana live dashboards
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @ws {
+        reverse_proxy {$GRAFANA_UPSTREAM:grafana:3000} {
+            import proxy_headers
+        }
+    }
+
+    handle {
+        reverse_proxy {$GRAFANA_UPSTREAM:grafana:3000} {
+            import proxy_headers
+        }
+    }
+}
+
+# ── Temporal Workflow UI (internal only) ─────────────────────────────────────
+temporal.{$DOMAIN:54link.ng} {
+    import security_headers
+    import internal_only
+    encode gzip
+
+    reverse_proxy {$TEMPORAL_UPSTREAM:temporal-ui:8080} {
+        import proxy_headers
+    }
+}
+
+# ── HashiCorp Vault UI (internal only) ───────────────────────────────────────
+vault.{$DOMAIN:54link.ng} {
+    import security_headers
+    import internal_only
+    encode gzip
+
+    reverse_proxy {$VAULT_UPSTREAM:vault:8200} {
+        import proxy_headers
+    }
+}
+
+# ── APISIX Admin API (internal only) ─────────────────────────────────────────
+apisix-admin.{$DOMAIN:54link.ng} {
+    import internal_only
+
+    reverse_proxy {$APISIX_ADMIN_UPSTREAM:apisix:9180} {
+        import proxy_headers
+    }
+}
+
+# ── Caddy Admin API (internal only) ──────────────────────────────────────────
+# Used by the tenant onboarding flow to dynamically add custom domains.
+# Bind to localhost:2019 (see global options above) — this virtual host
+# is only needed if you want to expose the admin API via a named hostname
+# within the internal network.
+caddy-admin.{$DOMAIN:54link.ng} {
+    import internal_only
+
+    reverse_proxy localhost:2019 {
+        import proxy_headers
+    }
+}
+
+# ── White-Label Tenant Custom Domains (On-Demand TLS) ────────────────────────
+# This catch-all block handles any hostname not matched above.
+# Before issuing a TLS certificate, Caddy calls the `ask` URL configured in
+# the global `on_demand_tls` block. The validation endpoint queries the
+# `tenant_branding.customDomain` column and returns 200 only for registered
+# tenant domains.
+#
+# Traffic flow:
+#   tenant.custombank.ng → Caddy (on_demand_tls) → APISIX → App
+#   APISIX routes by X-Forwarded-Host header → tenant isolation middleware
+#
+:443 {
+    tls {
+        on_demand
+    }
+
+    import security_headers
+    encode gzip
+
+    # Pass the original Host header so the app can resolve the tenant
+    reverse_proxy {$APISIX_UPSTREAM:apisix:9080} {
+        import proxy_headers
+        # Tenant isolation: forward the original hostname so APISIX can route
+        # to the correct tenant context via the tenant-isolation middleware
+        header_up X-Tenant-Domain {host}
+    }
+}

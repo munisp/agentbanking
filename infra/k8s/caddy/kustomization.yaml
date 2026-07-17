@@ -1,0 +1,25 @@
+---
+# =============================================================================
+#  Caddy Edge Proxy — Kustomize entry point
+#  Apply with: kubectl apply -k infra/k8s/caddy/
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production
+
+resources:
+  - rbac.yaml
+  - configmap.yaml
+  - service.yaml
+  - deployment.yaml
+
+# Image pinning — update the tag here to roll out a new Caddy version
+images:
+  - name: caddy
+    newTag: "2.9-alpine"
+
+# Common labels applied to all resources
+commonLabels:
+  managed-by: kustomize
+  part-of: 54link-platform

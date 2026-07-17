@@ -1,0 +1,183 @@
+---
+# =============================================================================
+#  Caddy Edge Proxy — Kubernetes Deployment
+#  Replaces NGINX as the TLS-terminating edge proxy for the 54Link platform.
+#
+#  Key design decisions:
+#    - 2 replicas for HA; Vault storage backend shares certs across pods.
+#    - PersistentVolumeClaim for /data (ACME certs) — survives pod restarts.
+#    - hostNetwork: false — uses ClusterIP services for upstream resolution.
+#    - NET_BIND_SERVICE capability to bind to ports 80/443 as non-root.
+#    - Admin API bound to localhost:2019 only (not exposed externally).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caddy
+  namespace: production
+  labels:
+    app: caddy
+    component: edge-proxy
+    version: "2.9"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: caddy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: caddy
+        component: edge-proxy
+        version: "2.9"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2019"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: caddy
+      # Caddy runs as non-root; NET_BIND_SERVICE allows binding to ports < 1024
+      securityContext:
+        runAsNonRoot: false  # Caddy needs root briefly to bind :80/:443, then drops
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: caddy
+          image: caddy:2.9-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+            - name: https-udp
+              containerPort: 443
+              protocol: UDP
+            - name: admin
+              containerPort: 2019
+              protocol: TCP
+          env:
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: DOMAIN
+            - name: ACME_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: ACME_EMAIL
+            - name: APP_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: APP_UPSTREAM
+            - name: APISIX_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: APISIX_UPSTREAM
+            - name: KEYCLOAK_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: KEYCLOAK_UPSTREAM
+            - name: GRAFANA_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: GRAFANA_UPSTREAM
+            - name: TEMPORAL_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: TEMPORAL_UPSTREAM
+            - name: VAULT_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: VAULT_UPSTREAM
+            - name: ON_DEMAND_ASK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: caddy-env
+                  key: ON_DEMAND_ASK_URL
+            # Vault token for cert storage backend (optional)
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: caddy-secrets
+                  key: vault-token
+                  optional: true
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+              readOnly: true
+            # Persistent cert storage — shared across pods via ReadWriteMany PVC
+            # or via Vault storage backend (recommended for production HA)
+            - name: caddy-data
+              mountPath: /data
+            - name: caddy-config-state
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            capabilities:
+              add:
+                - NET_BIND_SERVICE
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+          livenessProbe:
+            httpGet:
+              path: /config/
+              port: 2019
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /config/
+              port: 2019
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: caddy-config
+        - name: caddy-data
+          persistentVolumeClaim:
+            claimName: caddy-data-pvc
+        - name: caddy-config-state
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - caddy
+                topologyKey: kubernetes.io/hostname

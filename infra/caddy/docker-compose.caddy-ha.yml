@@ -1,0 +1,105 @@
+# =============================================================================
+#  54Link Agent Banking Platform — Caddy HA Docker Compose
+#  Two Caddy nodes sharing certificates via HashiCorp Vault storage backend.
+#  A load balancer (e.g. HAProxy or cloud LB) distributes traffic between them.
+#
+#  Usage:
+#    docker compose -f docker-compose.yml \
+#                   -f infra/caddy/docker-compose.caddy-ha.yml up -d
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ── Caddy Node 1 ────────────────────────────────────────────────────────────
+  caddy-1:
+    image: caddy:2.9-alpine
+    container_name: 54link-caddy-1
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data-1:/data
+      - caddy-config-1:/config
+      - caddy-logs:/var/log/caddy
+    environment:
+      DOMAIN: ${DOMAIN:-54link.ng}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@54link.ng}
+      APP_UPSTREAM: ${APP_UPSTREAM:-app:3000}
+      APISIX_UPSTREAM: ${APISIX_UPSTREAM:-apisix:9080}
+      APISIX_ADMIN_UPSTREAM: ${APISIX_ADMIN_UPSTREAM:-apisix:9180}
+      KEYCLOAK_UPSTREAM: ${KEYCLOAK_UPSTREAM:-keycloak:8080}
+      GRAFANA_UPSTREAM: ${GRAFANA_UPSTREAM:-grafana:3000}
+      TEMPORAL_UPSTREAM: ${TEMPORAL_UPSTREAM:-temporal-ui:8080}
+      VAULT_UPSTREAM: ${VAULT_UPSTREAM:-vault:8200}
+      ON_DEMAND_ASK_URL: ${ON_DEMAND_ASK_URL:-http://app:3000/internal/caddy/validate-domain}
+      # Vault storage: both nodes share the same cert storage path
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN}
+    networks:
+      - 54link-network
+    depends_on:
+      - app
+      - apisix
+      - keycloak
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Caddy Node 2 ────────────────────────────────────────────────────────────
+  caddy-2:
+    image: caddy:2.9-alpine
+    container_name: 54link-caddy-2
+    restart: unless-stopped
+    ports:
+      - "8080:80"     # Exposed on different host ports — LB handles port 80/443
+      - "8443:443"
+      - "8443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data-2:/data
+      - caddy-config-2:/config
+      - caddy-logs:/var/log/caddy
+    environment:
+      DOMAIN: ${DOMAIN:-54link.ng}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@54link.ng}
+      APP_UPSTREAM: ${APP_UPSTREAM:-app:3000}
+      APISIX_UPSTREAM: ${APISIX_UPSTREAM:-apisix:9080}
+      APISIX_ADMIN_UPSTREAM: ${APISIX_ADMIN_UPSTREAM:-apisix:9180}
+      KEYCLOAK_UPSTREAM: ${KEYCLOAK_UPSTREAM:-keycloak:8080}
+      GRAFANA_UPSTREAM: ${GRAFANA_UPSTREAM:-grafana:3000}
+      TEMPORAL_UPSTREAM: ${TEMPORAL_UPSTREAM:-temporal-ui:8080}
+      VAULT_UPSTREAM: ${VAULT_UPSTREAM:-vault:8200}
+      ON_DEMAND_ASK_URL: ${ON_DEMAND_ASK_URL:-http://app:3000/internal/caddy/validate-domain}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN}
+    networks:
+      - 54link-network
+    depends_on:
+      - app
+      - apisix
+      - keycloak
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  caddy-data-1:
+    name: 54link-caddy-data-1
+  caddy-data-2:
+    name: 54link-caddy-data-2
+  caddy-config-1:
+    name: 54link-caddy-config-1
+  caddy-config-2:
+    name: 54link-caddy-config-2
+  caddy-logs:
+    name: 54link-caddy-logs

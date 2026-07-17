@@ -1,0 +1,90 @@
+# =============================================================================
+#  54Link Agent Banking Platform — Caddyfile (Development / Local)
+#  Uses Caddy's built-in local CA for automatic HTTPS on localhost.
+#
+#  Run: caddy run --config infra/caddy/Caddyfile.dev
+#  Trust: caddy trust  (installs Caddy's root CA into system trust store)
+#
+#  After trusting the CA, all *.localhost and *.54link.local domains will
+#  have valid HTTPS without any browser warnings.
+# =============================================================================
+
+{
+    # Use local CA for development — no ACME / Let's Encrypt calls
+    local_certs
+
+    # Admin API on localhost
+    admin localhost:2019
+
+    log {
+        output stderr
+        format console
+        level DEBUG
+    }
+}
+
+# ── HTTP → HTTPS redirect ─────────────────────────────────────────────────────
+http:// {
+    redir https://{host}{uri} 308
+}
+
+# ── Main Application ──────────────────────────────────────────────────────────
+localhost:443 54link.localhost {
+    tls internal
+
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websocket {
+        reverse_proxy app:3000
+    }
+
+    handle /api/* {
+        reverse_proxy apisix:9080
+    }
+
+    handle {
+        reverse_proxy app:3000
+    }
+
+    encode gzip
+}
+
+# ── Keycloak ──────────────────────────────────────────────────────────────────
+auth.localhost keycloak.localhost {
+    tls internal
+    reverse_proxy keycloak:8080 {
+        header_up Host {upstream_hostport}
+    }
+}
+
+# ── Grafana ───────────────────────────────────────────────────────────────────
+grafana.localhost {
+    tls internal
+    reverse_proxy grafana:3000
+}
+
+# ── Temporal UI ───────────────────────────────────────────────────────────────
+temporal.localhost {
+    tls internal
+    reverse_proxy temporal-ui:8080
+}
+
+# ── Vault ─────────────────────────────────────────────────────────────────────
+vault.localhost {
+    tls internal
+    reverse_proxy vault:8200
+}
+
+# ── On-Demand TLS test (dev) ──────────────────────────────────────────────────
+# Simulates tenant custom domain routing locally.
+# Add entries to /etc/hosts: 127.0.0.1 tenant.54link.local
+*.54link.local {
+    tls internal {
+        on_demand
+    }
+    reverse_proxy apisix:9080 {
+        header_up X-Tenant-Domain {host}
+    }
+}

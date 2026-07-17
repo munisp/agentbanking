@@ -1,0 +1,99 @@
+# =============================================================================
+#  54Link Agent Banking Platform — Caddy Docker Compose Overlay
+#
+#  Usage (merge with main docker-compose.yml):
+#    docker compose -f docker-compose.yml -f infra/caddy/docker-compose.caddy.yml up -d
+#
+#  This overlay:
+#    1. Adds the Caddy service as the TLS-terminating edge proxy
+#    2. Removes port 80/443 exposure from NGINX (if present) to avoid conflicts
+#    3. Mounts the Caddyfile and persistent data volumes
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ── Caddy Edge Proxy ────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: 54link-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP (redirects to HTTPS)
+      - "443:443"     # HTTPS / HTTP2
+      - "443:443/udp" # HTTP/3 (QUIC)
+    volumes:
+      # Main Caddyfile
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persistent certificate storage (survives container restarts)
+      - caddy-data:/data
+      # Caddy configuration state
+      - caddy-config:/config
+      # Access logs
+      - caddy-logs:/var/log/caddy
+    environment:
+      # Primary domain
+      DOMAIN: ${DOMAIN:-54link.ng}
+      # ACME email for Let's Encrypt registration
+      ACME_EMAIL: ${ACME_EMAIL:-admin@54link.ng}
+      # Upstream service addresses (Docker service names resolve via internal DNS)
+      APP_UPSTREAM: ${APP_UPSTREAM:-app:3000}
+      APISIX_UPSTREAM: ${APISIX_UPSTREAM:-apisix:9080}
+      APISIX_ADMIN_UPSTREAM: ${APISIX_ADMIN_UPSTREAM:-apisix:9180}
+      KEYCLOAK_UPSTREAM: ${KEYCLOAK_UPSTREAM:-keycloak:8080}
+      GRAFANA_UPSTREAM: ${GRAFANA_UPSTREAM:-grafana:3000}
+      TEMPORAL_UPSTREAM: ${TEMPORAL_UPSTREAM:-temporal-ui:8080}
+      VAULT_UPSTREAM: ${VAULT_UPSTREAM:-vault:8200}
+      # On-Demand TLS validation endpoint (must return 200 for registered tenant domains)
+      ON_DEMAND_ASK_URL: ${ON_DEMAND_ASK_URL:-http://app:3000/internal/caddy/validate-domain}
+      # Vault storage backend (optional — for HA cert sharing)
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+    networks:
+      - 54link-network
+    depends_on:
+      - app
+      - apisix
+      - keycloak
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      com.54link.service: "edge-proxy"
+      com.54link.component: "caddy"
+
+  # ── Override: remove direct port exposure from app (Caddy is now the entry point)
+  app:
+    ports: []
+
+  # ── Override: remove direct port exposure from apisix (Caddy proxies to it)
+  # APISIX admin port 9180 remains exposed for internal management tooling
+  apisix:
+    ports:
+      - "9180:9180"   # Admin API (internal only — bind to 127.0.0.1 in production)
+
+  # ── Override: remove direct port exposure from keycloak
+  keycloak:
+    ports: []
+
+  # ── Override: remove direct port exposure from grafana
+  grafana:
+    ports: []
+
+  # ── Override: remove direct port exposure from temporal-ui
+  temporal-ui:
+    ports: []
+
+volumes:
+  caddy-data:
+    name: 54link-caddy-data
+    driver: local
+  caddy-config:
+    name: 54link-caddy-config
+    driver: local
+  caddy-logs:
+    name: 54link-caddy-logs
+    driver: local

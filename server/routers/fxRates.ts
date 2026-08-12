@@ -26,6 +26,14 @@ import { cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
+import {
+  getFreshRates,
+  getLiveRate,
+  fetchHistoricalRates,
+  refreshRates,
+  saveManualRates,
+  DEFAULT_RATE_BASES,
+} from "../lib/fxRateFeed";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   created: ["queued"],
@@ -132,19 +140,16 @@ export const fxRatesRouter = router({
     .input(z.object({ baseCurrency: z.string().default("NGN") }).optional())
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
-        const [config] = await db
-          .select()
-          .from(systemConfig)
-          .where(eq(systemConfig.key, "fx_rates"))
-          .limit(1);
-        const rates = config
-          ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0, GHS: 95.0, KES: 12.0 };
+        // Live rates from the FX rate feed (fetched-at + staleness guard).
+        // Fails loud when no fresh rate is available — never serves
+        // hardcoded fallback rates.
+        const base = (input?.baseCurrency ?? "NGN").toUpperCase();
+        const fresh = await getFreshRates(base);
         return {
-          baseCurrency: input?.baseCurrency ?? "NGN",
-          rates,
-          lastUpdated: config?.updatedAt ?? new Date(),
+          baseCurrency: base,
+          rates: fresh.rates,
+          lastUpdated: fresh.fetchedAt,
+          source: fresh.source,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -165,24 +170,19 @@ export const fxRatesRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        const db = (await getDb())!;
-        const [config] = await db
-          .select()
-          .from(systemConfig)
-          .where(eq(systemConfig.key, "fx_rates"))
-          .limit(1);
-        const rates: Record<string, number> = config
-          ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0 };
-        const fromRate = input.from === "NGN" ? 1 : (rates[input.from] ?? 1);
-        const toRate = input.to === "NGN" ? 1 : (rates[input.to] ?? 1);
-        const converted = (input.amount * fromRate) / toRate;
+        // Live conversion rate — unknown currencies are rejected (BAD_REQUEST)
+        // and unavailable feeds fail loud (SERVICE_UNAVAILABLE). No `?? 1`
+        // silent 1:1 conversion.
+        const liveRate = await getLiveRate(input.from, input.to);
+        const converted = input.amount * liveRate.rate;
         return {
           from: input.from,
           to: input.to,
           amount: input.amount,
           convertedAmount: Math.round(converted * 100) / 100,
-          rate: fromRate / toRate,
+          rate: liveRate.rate,
+          rateSource: liveRate.source,
+          rateFetchedAt: liveRate.fetchedAt,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -227,6 +227,9 @@ export const fxRatesRouter = router({
             target: systemConfig.key,
             set: { value: JSON.stringify(input.rates), updatedAt: new Date() },
           });
+        // Admin override also becomes the served (NGN-based) rate set so
+        // getRates/convert stay consistent with the manual update.
+        await saveManualRates("NGN", input.rates);
         await db.insert(auditLog).values({
           action: "fx_rates_updated",
           resource: "fx_rates",
@@ -287,7 +290,8 @@ export const fxRatesRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
-  // Historical rates — references Frankfurter / ECB exchange rate API for timeseries
+  // Historical rates — real time series from the Frankfurter / ECB feed.
+  // Non-ECB pairs (e.g. NGN-based) fail loud with SERVICE_UNAVAILABLE.
   getHistorical: protectedProcedure
     .input(
       z
@@ -299,20 +303,14 @@ export const fxRatesRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
-      // Frankfurter API (https://api.frankfurter.app) / ECB exchangerate data
-      const rates: { date: string; rate: number }[] = [];
-      const now = Date.now();
-      for (let i = input.days; i >= 0; i--) {
-        const d = new Date(now - i * 86400000);
-        rates.push({
-          date: d.toISOString().slice(0, 10),
-          rate: 1580 + Math.sin(i / 3) * 20,
-        });
-      }
+      const base = input?.base ?? "NGN";
+      const target = input?.target ?? "USD";
+      const days = input?.days ?? 30;
+      const timeseries = await fetchHistoricalRates(base, target, days);
       return {
-        base: input.base,
-        target: input.target,
-        timeseries: rates,
+        base,
+        target,
+        timeseries,
         source: "frankfurter/ecb",
       };
     }),
@@ -322,14 +320,20 @@ export const fxRatesRouter = router({
       action: "currencies",
     }).catch(() => {});
 
+    // Live currency list derived from the FX rate feed (fails loud when
+    // the feed is unavailable).
+    const fresh = await getFreshRates("NGN");
+    const currencies = Object.entries(fresh.rates).map(([code, rate]) => ({
+      code,
+      name: code,
+      symbol: code,
+      rate,
+    }));
     return {
-      currencies: [] as Array<{
-        code: string;
-        name: string;
-        symbol: string;
-        rate: number;
-      }>,
+      currencies,
       baseCurrency: "NGN",
+      lastUpdated: fresh.fetchedAt,
+      source: fresh.source,
     };
   }),
   refresh: protectedProcedure.mutation(async () => {
@@ -338,10 +342,14 @@ export const fxRatesRouter = router({
       action: "refresh",
     }).catch(() => {});
 
+    // Real refresh: fetch live rates and persist them to the cache. Throws
+    // SERVICE_UNAVAILABLE when nothing could be refreshed.
+    const result = await refreshRates(DEFAULT_RATE_BASES);
     return {
       success: true,
-      refreshedAt: new Date().toISOString(),
-      ratesUpdated: 0,
+      refreshedAt: result.refreshedAt,
+      ratesUpdated: result.ratesUpdated,
+      ...(result.errors ? { errors: result.errors } : {}),
     };
   }),
   historical: protectedProcedure

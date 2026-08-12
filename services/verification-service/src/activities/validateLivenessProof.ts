@@ -1,5 +1,15 @@
+import { NonRetriableApplicationError } from "../middlewares/error";
+import { isKycSimulationMode } from "../utils/kycSimulationMode";
+
 /**
- * Validate liveness proof from UI
+ * Validate liveness proof from UI.
+ *
+ * FAIL CLOSED: a liveness proof is entirely client-supplied (verdict,
+ * confidence and signals are asserted by the client). Accepting it as
+ * evidence of liveness would let any client self-certify. Unless KYC
+ * simulation mode is explicitly enabled (non-production only), this activity
+ * throws a non-retryable error; a real deployment must verify liveness
+ * server-side with a biometric provider before this may pass.
  */
 export async function validateLivenessProof(args: {
   livenessProof: {
@@ -18,6 +28,12 @@ export async function validateLivenessProof(args: {
   };
   sessionId: string;
 }): Promise<{ isValid: boolean; reason?: string }> {
+  if (!isKycSimulationMode()) {
+    throw new NonRetriableApplicationError(
+      "Liveness verification unavailable: client-supplied liveness proofs are not accepted and no server-side liveness provider is configured.",
+    );
+  }
+
   try {
     // Validate basic proof structure
     if (!args.livenessProof || !args.livenessProof.sessionId) {

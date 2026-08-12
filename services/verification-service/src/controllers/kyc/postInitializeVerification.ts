@@ -11,6 +11,7 @@ import {
   KycIdentityProviders,
   VerificationWorkflowStatus,
 } from "../../utils/enums";
+import { isKycSimulationMode } from "../../utils/kycSimulationMode";
 import { workflowRunner } from "../../utils/workflowRunner";
 import { validateRequest } from "../../validations";
 import { PostInitializeKycVerificationValidationSchema } from "../../validations/schemas";
@@ -27,6 +28,13 @@ import {
   terminate_liveness_verification_workflow_signal,
 } from "../../workflows/livenessKycWorkflow";
 
+// Simulated verification pipelines with no real provider behind them. They
+// are only allowed when KYC simulation mode is enabled (non-production).
+const SIMULATION_ONLY_PROVIDERS = [
+  KycIdentityProviders.DEFAULT,
+  KycIdentityProviders.LIVENESS,
+];
+
 export const postInitializeVerification = asyncHandler(async (req, res) => {
   const payload = validateRequest(
     PostInitializeKycVerificationValidationSchema,
@@ -34,6 +42,34 @@ export const postInitializeVerification = asyncHandler(async (req, res) => {
   );
 
   const client = req.client!;
+
+  // Fail closed: never silently default to a simulated identity provider.
+  // Outside KYC simulation mode the client must explicitly request a real
+  // provider (e.g. SHIELD); simulated providers are rejected outright.
+  const identityProvider =
+    payload.identityProvider ||
+    (isKycSimulationMode() ? KycIdentityProviders.LIVENESS : undefined);
+
+  if (!identityProvider) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "identityProvider is required: default identity providers are disabled outside KYC simulation mode.",
+      "VER-400-02",
+      "verification-service",
+    );
+  }
+
+  if (
+    SIMULATION_ONLY_PROVIDERS.includes(identityProvider) &&
+    !isKycSimulationMode()
+  ) {
+    throw new ApiError(
+      httpStatus.SERVICE_UNAVAILABLE,
+      `Identity provider '${identityProvider}' is a simulated provider and is not available in this environment. Use a real provider (e.g. '${KycIdentityProviders.SHIELD}').`,
+      "VER-503-02",
+      "verification-service",
+    );
+  }
 
   // Check if existing verification workflow exists and end it.
   const existingKycVerification = await AppDataSource.manager.findOne(
@@ -104,8 +140,7 @@ export const postInitializeVerification = asyncHandler(async (req, res) => {
 
   const kycVerification = new KycVerificationWorkflowEntity();
 
-  kycVerification.identity_provider =
-    payload.identityProvider || KycIdentityProviders.LIVENESS;
+  kycVerification.identity_provider = identityProvider;
   kycVerification.client = client;
   kycVerification.client_app_user_id = payload.user.UIN;
 
@@ -127,7 +162,7 @@ export const postInitializeVerification = asyncHandler(async (req, res) => {
   }`;
 
   try {
-    if (payload.identityProvider == KycIdentityProviders.SHIELD) {
+    if (identityProvider == KycIdentityProviders.SHIELD) {
       await workflowRunner<KycWorkflowArgs, KycWorkflowResult | void>(
         shieldKycWorkflow,
         {
@@ -143,7 +178,7 @@ export const postInitializeVerification = asyncHandler(async (req, res) => {
           isDaemon: true,
         },
       );
-    } else if (payload.identityProvider == KycIdentityProviders.DEFAULT) {
+    } else if (identityProvider == KycIdentityProviders.DEFAULT) {
       await workflowRunner<KycWorkflowArgs, KycWorkflowResult | void>(
         defaultKycWorkflow,
         {
@@ -159,7 +194,7 @@ export const postInitializeVerification = asyncHandler(async (req, res) => {
           isDaemon: true,
         },
       );
-    } else if (payload.identityProvider == KycIdentityProviders.LIVENESS) {
+    } else if (identityProvider == KycIdentityProviders.LIVENESS) {
       await workflowRunner<KycWorkflowArgs, KycWorkflowResult | void>(
         livenessKycWorkflow,
         {

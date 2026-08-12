@@ -8,12 +8,6 @@ Features:
 - Document authenticity check
 - OCR text extraction
 - Liveness detection
-
-FAIL-CLOSED POLICY: documents are only marked VERIFIED after a real AI
-validation provider responds positively. When no provider is configured
-or the provider fails, the validation is persisted as UNVERIFIABLE and
-the API fails loudly with HTTP 503. This service NEVER fabricates
-extracted identity data or a VERIFIED status.
 """
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -22,10 +16,10 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 import asyncpg
+import httpx
 import os
 import logging
 import base64
-import httpx
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -55,10 +49,8 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/documents")
-
-# External AI validation provider (e.g. AWS Rekognition / Azure Computer
-# Vision / Google Cloud Vision gateway). Validation is IMPOSSIBLE without
-# a configured provider - the service fails closed in that case.
+# Real AI document validation provider (e.g., an internal vision/IDV service).
+# When unset, the service refuses to validate rather than simulating a result.
 AI_VALIDATION_PROVIDER_URL = os.getenv("AI_VALIDATION_PROVIDER_URL", "")
 AI_VALIDATION_API_KEY = os.getenv("AI_VALIDATION_API_KEY", "")
 
@@ -88,20 +80,9 @@ class ValidationResult(BaseModel):
     extracted_data: Dict[str, Any]
     created_at: datetime
 
-
-class DocumentValidationUnavailable(Exception):
-    """Raised when no real AI validation can be performed (provider not
-    configured, unreachable, or erroring)."""
-    pass
-
 @app.on_event("startup")
 async def startup():
     global db_pool
-    if not AI_VALIDATION_PROVIDER_URL:
-        logger.error(
-            "AI_VALIDATION_PROVIDER_URL is not configured - document validation "
-            "will fail closed (UNVERIFIABLE / HTTP 503) until a real AI provider is set"
-        )
     try:
         db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
         async with db_pool.acquire() as conn:
@@ -118,7 +99,7 @@ async def startup():
             """)
         logger.info("AI Document Validation Service started")
     except Exception as e:
-        logger.error(f"DB init failed: {e}")
+        logger.warning(f"DB init failed (non-fatal): {e}")
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -126,48 +107,42 @@ async def shutdown():
         await db_pool.close()
 
 async def validate_document_ai(file_content: bytes, doc_type: DocumentType) -> tuple[bool, float, Dict]:
-    """Validate a document with the configured external AI provider.
+    """Validate a document via the configured AI validation provider.
 
-    Raises DocumentValidationUnavailable when no real validation can be
-    performed. NEVER returns simulated confidence or fabricated identity
-    data.
+    Raises RuntimeError when no provider is configured or the provider call
+    fails. This function MUST NOT fabricate validation results, extracted
+    identities, or confidence scores.
     """
     if not AI_VALIDATION_PROVIDER_URL:
-        raise DocumentValidationUnavailable(
-            "No AI validation provider configured (AI_VALIDATION_PROVIDER_URL unset)"
+        raise RuntimeError(
+            "AI document validation provider is not configured "
+            "(AI_VALIDATION_PROVIDER_URL missing); document is unverifiable"
         )
+
+    headers = {}
+    if AI_VALIDATION_API_KEY:
+        headers["Authorization"] = f"Bearer {AI_VALIDATION_API_KEY}"
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                AI_VALIDATION_PROVIDER_URL,
-                headers={
-                    "Authorization": f"Bearer {AI_VALIDATION_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "document_type": doc_type.value,
-                    "image_base64": base64.b64encode(file_content).decode("ascii"),
-                },
+            resp = await client.post(
+                f"{AI_VALIDATION_PROVIDER_URL.rstrip('/')}/validate",
+                files={"file": ("document", file_content)},
+                data={"document_type": doc_type.value},
+                headers=headers,
             )
-    except Exception as e:
-        raise DocumentValidationUnavailable(f"AI validation provider unreachable: {e}") from e
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"AI validation provider request failed: {e}") from e
 
-    if response.status_code != 200:
-        raise DocumentValidationUnavailable(
-            f"AI validation provider returned status {response.status_code}"
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"AI validation provider error: HTTP {resp.status_code}"
         )
 
-    try:
-        payload = response.json()
-    except Exception as e:
-        raise DocumentValidationUnavailable(
-            f"AI validation provider returned an unparseable response: {e}"
-        ) from e
-
-    is_valid = bool(payload.get("is_valid"))
-    confidence = float(payload.get("confidence", 0.0))
-    extracted_data = payload.get("extracted_data") or {}
+    result = resp.json()
+    is_valid = bool(result.get("is_valid"))
+    confidence = float(result.get("confidence", 0.0))
+    extracted_data = result.get("extracted_data") or {}
     return is_valid, confidence, extracted_data
 
 @app.post("/validate", response_model=ValidationResult)
@@ -178,40 +153,29 @@ async def validate_document(
 ):
     """Validate uploaded document.
 
-    Fail-closed: if real AI validation cannot be performed, the attempt is
-    persisted as UNVERIFIABLE (audit trail) and the request fails loudly
-    with HTTP 503. A document is NEVER persisted as VERIFIED without a
-    positive response from a real provider.
+    Fails closed: if the AI provider is not configured or fails, no verdict
+    is persisted and the caller gets an explicit 503 (unverifiable).
     """
-    if db_pool is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Validation database is unavailable; cannot persist validation audit record"
-        )
-
+    
     file_content = await file.read()
-
-    # Perform AI validation
+    
+    # Perform AI validation (real provider only)
     try:
         is_valid, confidence, extracted_data = await validate_document_ai(file_content, document_type)
-    except DocumentValidationUnavailable as e:
-        logger.error(
-            f"AI document validation unavailable for user {user_id}: {e}. "
-            "Persisting UNVERIFIABLE audit record."
-        )
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO document_validations (user_id, document_type, status, confidence_score, extracted_data)
-                VALUES ($1, $2, $3, $4, $5)
-            """, user_id, document_type.value, ValidationStatus.UNVERIFIABLE.value, 0.0, {})
+    except RuntimeError as e:
+        logger.error(f"Document validation unavailable for user {user_id}: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"AI document validation is unavailable: {e}. "
-                   "The document was recorded as UNVERIFIABLE and requires manual review."
+            detail=f"Document validation unavailable: {e}. "
+                   "Document status is unverifiable; manual review required."
         )
-
+    
     status = ValidationStatus.VERIFIED if is_valid else ValidationStatus.REJECTED
-
+    
+    if db_pool is None:
+        # Never return a verdict that was not persisted.
+        raise HTTPException(status_code=503, detail="Validation store unavailable")
+    
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow("""
             INSERT INTO document_validations (user_id, document_type, status, confidence_score, extracted_data)
@@ -224,7 +188,7 @@ async def validate_document(
 async def get_validation(validation_id: str):
     """Get validation result"""
     if db_pool is None:
-        raise HTTPException(status_code=503, detail="Validation database is unavailable")
+        raise HTTPException(status_code=503, detail="Validation store unavailable")
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM document_validations WHERE id = $1", validation_id)
         if not row:
@@ -233,11 +197,7 @@ async def get_validation(validation_id: str):
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "service": "ai-document-validation",
-        "ai_provider_configured": bool(AI_VALIDATION_PROVIDER_URL),
-    }
+    return {"status": "healthy", "service": "ai-document-validation"}
 
 @app.get("/healthz")
 async def healthz():

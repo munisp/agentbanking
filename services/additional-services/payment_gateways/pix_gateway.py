@@ -29,16 +29,24 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 # --- Configuration and Constants ---
 
-# In a real-world scenario, these would be loaded from a secure configuration
-# system (e.g., environment variables, AWS Secrets Manager, HashiCorp Vault).
-# For this implementation, we use placeholders.
-PIX_API_BASE_URL = os.environ.get("PIX_API_BASE_URL", "https://api.pix.example.com/v2")
-PIX_AUTH_URL = os.environ.get("PIX_AUTH_URL", "https://auth.pix.example.com/oauth/token")
-PIX_CLIENT_ID = os.environ.get("PIX_CLIENT_ID", "your_client_id")
-PIX_CLIENT_SECRET = os.environ.get("PIX_CLIENT_SECRET", "your_client_secret")
+# Loaded from the environment; missing configuration fails closed.
+PIX_API_BASE_URL = os.environ.get("PIX_API_BASE_URL", "")
+PIX_AUTH_URL = os.environ.get("PIX_AUTH_URL", "")
+PIX_CLIENT_ID = os.environ.get("PIX_CLIENT_ID", "")
+PIX_CLIENT_SECRET = os.environ.get("PIX_CLIENT_SECRET", "")
 PIX_CERT_PATH = os.environ.get("PIX_CERT_PATH", "/etc/ssl/certs/pix_cert.pem")
 PIX_KEY_PATH = os.environ.get("PIX_KEY_PATH", "/etc/ssl/certs/pix_key.pem")
-PIX_WEBHOOK_SECRET = os.environ.get("PIX_WEBHOOK_SECRET", "super_secret_webhook_key")
+PIX_WEBHOOK_SECRET = os.environ.get("PIX_WEBHOOK_SECRET", "")
+
+# Simulation mode is only honoured outside production; in production the
+# combination PIX_SIMULATION_MODE=true + ENVIRONMENT=production is fatal.
+PIX_SIMULATION_MODE = os.environ.get("PIX_SIMULATION_MODE", "false").strip().lower() == "true"
+_ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+if PIX_SIMULATION_MODE and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "PIX_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production. "
+        "Refusing to start with a simulated PIX gateway."
+    )
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -83,7 +91,10 @@ def generate_jwt_client_assertion(client_id: str, key_path: str, auth_url: str) 
     :param key_path: Path to the private key file (.pem).
     :param auth_url: The token endpoint URL (used as 'aud' claim).
     :return: The signed JWT string.
-    :raises AuthenticationError: If the private key cannot be loaded.
+    :raises AuthenticationError: If the private key cannot be loaded. Never
+        generates a throwaway key: a JWT signed with an ephemeral key would be
+        rejected by the provider anyway, and silently masking a missing key
+        file hides a deployment failure.
     """
     try:
         with open(key_path, "rb") as key_file:
@@ -92,10 +103,10 @@ def generate_jwt_client_assertion(client_id: str, key_path: str, auth_url: str) 
                 password=None,
             )
     except FileNotFoundError:
-        # Fallback for testing/mocking if key file is not present
-        logger.warning(f"Private key file not found at {key_path}. Generating a dummy key for assertion.")
-        # Generate a dummy key for the assertion to pass in a non-mTLS environment
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        raise AuthenticationError(
+            f"Private key file not found at {key_path}. Refusing to generate a "
+            "throwaway key; configure PIX_KEY_PATH with the provisioned key."
+        )
     except Exception as e:
         raise AuthenticationError(f"Failed to load private key from {key_path}: {e}")
 
@@ -141,6 +152,8 @@ class PixGatewayAdapter:
         :param client_secret: The OAuth 2.0 client secret (used for fallback/simplicity).
         :param cert_path: Path to the client certificate file (.pem).
         :param key_path: Path to the client private key file (.pem).
+        :raises PixGatewayError: If the mTLS certificate/key files are missing
+            (outside explicit PIX_SIMULATION_MODE).
         """
         self.base_url = base_url
         self.auth_url = auth_url
@@ -150,6 +163,24 @@ class PixGatewayAdapter:
         self.key_path = key_path
         self._access_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
+
+        # Local transaction state store, updated by payment creation and webhooks.
+        self._transaction_states: Dict[str, str] = {}
+
+        # Fail at startup when the mTLS material is missing: silently
+        # continuing would only surface later as opaque TLS/auth failures.
+        if not (os.path.exists(self.cert_path) and os.path.exists(self.key_path)):
+            if PIX_SIMULATION_MODE:
+                logger.warning(
+                    "PIX_SIMULATION_MODE: mTLS certificate/key not found at %s / %s; "
+                    "continuing without mTLS (non-production only).",
+                    self.cert_path, self.key_path,
+                )
+            else:
+                raise PixGatewayError(
+                    f"mTLS certificate/key not found (cert={self.cert_path}, key={self.key_path}). "
+                    "Refusing to start the PIX adapter without the provisioned key material."
+                )
 
         # Session with retry logic and client certificate for mutual TLS
         self.session = self._setup_session()
@@ -167,8 +198,6 @@ class PixGatewayAdapter:
         if os.path.exists(self.cert_path) and os.path.exists(self.key_path):
             session.cert = (self.cert_path, self.key_path)
             logger.info("Mutual TLS certificate and key configured for the session.")
-        else:
-            logger.warning("mTLS certificate/key files not found. API calls may fail.")
 
         # Retry strategy for transient network errors
         retry_strategy = Retry(
@@ -189,8 +218,14 @@ class PixGatewayAdapter:
         with JWT client assertion.
 
         :return: The new access token string.
-        :raises AuthenticationError: If token retrieval fails.
+        :raises AuthenticationError: If not configured or token retrieval fails.
         """
+        if not self.auth_url or not self.client_id:
+            raise AuthenticationError(
+                "PIX OAuth is not configured (set PIX_AUTH_URL and PIX_CLIENT_ID). "
+                "Cannot retrieve an access token."
+            )
+
         logger.info("Attempting to retrieve new access token...")
         try:
             # 1. Generate JWT Client Assertion
@@ -236,6 +271,8 @@ class PixGatewayAdapter:
                 status_code=e.response.status_code,
                 response_data=error_details
             )
+        except AuthenticationError:
+            raise
         except Exception as e:
             raise AuthenticationError(f"An unexpected error occurred during token retrieval: {e}")
 
@@ -260,6 +297,8 @@ class PixGatewayAdapter:
         :return: The JSON response body.
         :raises PixGatewayError: For any API or network error.
         """
+        if not self.base_url:
+            raise PixGatewayError("PIX API base URL is not configured (set PIX_API_BASE_URL).", status_code=503)
         token = self._ensure_authenticated()
         url = f"{self.base_url}{endpoint}"
         
@@ -356,6 +395,7 @@ class PixGatewayAdapter:
                 json=request_body
             )
             logger.info(f"Instant payment created successfully for txid: {txid}")
+            self._transaction_states[txid] = response.get("status", "ATIVA")
             return response
         except PixGatewayError as e:
             raise PaymentCreationError(f"Failed to create instant payment for txid {txid}: {e}", e.status_code, e.response_data)
@@ -398,9 +438,11 @@ class PixGatewayAdapter:
         # The location is usually returned in the 'links' or 'location' field
         location_id = payment_details.get("loc", {}).get("id")
         if not location_id:
-            # Fallback for mock environment where location might not be returned
-            logger.warning(f"Could not find location ID for txid {txid}. Attempting to use txid as location ID.")
-            location_id = txid
+            raise PaymentCreationError(
+                f"PIX payment {txid} did not return a QR code location id; "
+                "cannot fabricate a QR payload.",
+                status_code=502,
+            )
 
         # 2. Use the location ID to get the QR Code payload
         endpoint = f"/loc/{location_id}/qrcode"
@@ -506,54 +548,66 @@ class PixGatewayAdapter:
         """
         Processes an incoming PIX webhook notification.
 
-        In a real implementation, this would involve:
-        1. Verifying the signature (if provided by the PIX institution).
-        2. Parsing the event type (e.g., 'pix.received', 'pix.returned').
-        3. Updating the local transaction status.
-
-        For this adapter, we'll simulate the parsing and logging.
+        1. Verifies the shared-secret header (fails closed: an invalid or
+           unconfigured secret raises AuthenticationError instead of silently
+           accepting the event).
+        2. Updates the local transaction state for known events; unknown
+           events raise TransactionStatusError (maps to HTTP 500) instead of
+           returning a success that never happened.
 
         :param headers: The HTTP headers of the incoming webhook request.
         :param body: The JSON body of the incoming webhook request.
         :return: A dictionary indicating the result of the handling process.
+        :raises AuthenticationError: If the webhook secret is invalid/unconfigured.
+        :raises TransactionStatusError: If the event cannot be applied to local state.
         """
-        # NOTE: Real PIX webhook handling requires signature verification,
-        # which depends on the specific PIX institution's security mechanism.
-        # This is a placeholder for the core logic.
-        
         event_type = body.get("event", "unknown")
         e2e_id = body.get("pix", [{}])[0].get("endToEndId", "N/A")
         txid = body.get("pix", [{}])[0].get("txid", "N/A")
         
         logger.info(f"Received PIX Webhook: Event={event_type}, E2E ID={e2e_id}, TxID={txid}")
         
-        # Example: Check for a simple shared secret header (less secure, but common in simple setups)
-        # Real PIX uses mTLS for webhooks or a specific signature header.
+        # Shared-secret verification (real PIX deployments typically add mTLS
+        # on top). Fail closed when the secret is not configured.
+        if not PIX_WEBHOOK_SECRET:
+            raise AuthenticationError(
+                "PIX_WEBHOOK_SECRET is not configured; refusing to accept webhooks.",
+                status_code=503,
+            )
         if headers.get("X-Webhook-Secret") != PIX_WEBHOOK_SECRET:
             logger.warning("Webhook received with invalid secret.")
-            # In a real scenario, you would return a 401/403 response here.
+            raise AuthenticationError("Invalid webhook secret.", status_code=401)
             
         if event_type == "pix.received":
-            # Logic to update transaction status to 'COMPLETED'
-            logger.info(f"Payment received for TxID {txid}. Updating local database.")
-            # Example: update_transaction_status(txid, "COMPLETED", e2e_id)
-            
+            new_state = "CONCLUIDA"
         elif event_type == "pix.returned":
-            # Logic to handle a refund/return event
-            logger.info(f"Payment returned/refunded for TxID {txid}. Updating local database.")
-            # Example: update_transaction_status(txid, "REFUNDED")
-            
+            new_state = "DEVOLVIDA"
         else:
-            logger.warning(f"Unhandled PIX event type: {event_type}")
+            raise TransactionStatusError(
+                f"Unhandled PIX event type '{event_type}' for txid {txid}; "
+                "no state update was performed.",
+                status_code=500,
+            )
+
+        if txid == "N/A":
+            raise TransactionStatusError(
+                f"PIX webhook event '{event_type}' did not include a txid; "
+                "cannot update local state.",
+                status_code=500,
+            )
+
+        self._transaction_states[txid] = new_state
+        logger.info(f"Transaction {txid} state updated to {new_state} (E2E: {e2e_id}).")
 
         return {
             "status": "processed",
             "event_type": event_type,
             "txid": txid,
-            "e2e_id": e2e_id
+            "e2e_id": e2e_id,
+            "new_state": new_state,
         }
 
-    # --- Utility and Mock Methods (for 500+ lines requirement and completeness) ---
+    # --- Utility Methods ---
 
     def check_api_health(self) -> bool:
         """
@@ -561,7 +615,9 @@ class PixGatewayAdapter:
 
         :return: True if the API is healthy, False otherwise.
         """
-        # Assuming a health check endpoint exists, e.g., /health
+        if not self.base_url:
+            logger.error("PIX API base URL is not configured; health check fails closed.")
+            return False
         endpoint = "/health"
         try:
             response = self.session.get(f"{self.base_url}{endpoint}", timeout=5)
@@ -665,104 +721,6 @@ class PixGatewayAdapter:
         except PixGatewayError as e:
             raise PixGatewayError(f"Failed to get transaction history: {e}", e.status_code, e.response_data)
 
-    def __repr__(self) -> str:
-        """
-        Representation of the PixGatewayAdapter object.
-        """
-        return f"<PixGatewayAdapter(base_url='{self.base_url}', client_id='{self.client_id}')>"
-
-# --- Example Usage (for demonstration and line count) ---
-
-def main_example():
-    """
-    Demonstrates the usage of the PixGatewayAdapter.
-    NOTE: This will fail without a real PIX environment and mTLS certificates.
-    It serves to show the intended usage and structure.
-    """
-    logger.info("\n--- Starting PIX Gateway Adapter Demonstration ---")
-    
-    # Initialize the adapter
-    try:
-        adapter = PixGatewayAdapter()
-        logger.info(f"Adapter initialized: {adapter}")
-    except Exception as e:
-        logger.error(f"Initialization failed: {e}")
-        return
-
-    # 1. Check API Health
-    logger.info("\n--- 1. API Health Check ---")
-    if adapter.check_api_health():
-        logger.info("API is reported as healthy.")
-    else:
-        logger.warning("API health check failed. Proceeding with mock data.")
-
-    # 2. Create an Instant Payment (Cobrança Imediata)
-    txid = f"ORDER_{int(time.time())}"
-    amount = 123.45
-    payer = {"name": "Cliente Teste", "cpf": "11122233344"}
-    
-    logger.info(f"\n--- 2. Creating Instant Payment (TxID: {txid}) ---")
-    try:
-        payment_response = adapter.create_instant_payment(
-            txid=txid,
-            amount=amount,
-            payer_info=payer,
-            expiration_seconds=300
-        )
-        logger.info(f"Payment Creation Response (Partial): {json.dumps(payment_response, indent=2)[:200]}...")
-        
-        # 3. Get QR Code Payload
-        logger.info("\n--- 3. Retrieving QR Code Payload ---")
-        qr_code_payload = adapter.get_qr_code_payload(txid)
-        logger.info(f"QR Code Payload (Partial): {json.dumps(qr_code_payload, indent=2)[:200]}...")
-        
-        # 4. Get Payment Details
-        logger.info("\n--- 4. Retrieving Payment Details ---")
-        details = adapter.get_payment_details(txid)
-        logger.info(f"Payment Details (Status): {details.get('status')}")
-        
-        # 5. Simulate Refund Request (requires a completed transaction E2E ID)
-        # Since this is a mock, we'll skip the actual refund call but show the structure
-        # e2e_id = details.get("pix", [{}])[0].get("endToEndId", "E1234567890123456789012345678901")
-        # refund_id = f"REFUND_{int(time.time())}"
-        # logger.info(f"\n--- 5. Requesting Refund (E2E ID: {e2e_id}) ---")
-        # refund_response = adapter.request_refund(e2e_id, refund_id, 50.00)
-        # logger.info(f"Refund Response (Partial): {json.dumps(refund_response, indent=2)[:200]}...")
-
-    except PixGatewayError as e:
-        logger.error(f"A PIX Gateway Error occurred during example run: {e}")
-    except Exception as e:
-        logger.error(f"An unexpected error occurred during example run: {e}")
-
-    # 6. Webhook Configuration Example
-    logger.info("\n--- 6. Webhook Configuration Example ---")
-    try:
-        # adapter.configure_webhook("https://your.service/webhook/pix", "your_pix_key")
-        # adapter.delete_webhook("your_pix_key")
-        logger.info("Webhook configuration methods demonstrated (commented out for safety).")
-    except PixGatewayError as e:
-        logger.error(f"Webhook operation failed: {e}")
-
-    # 7. Webhook Handling Example (Simulation)
-    logger.info("\n--- 7. Webhook Handling Example (Simulation) ---")
-    mock_headers = {"X-Webhook-Secret": PIX_WEBHOOK_SECRET}
-    mock_body = {
-        "event": "pix.received",
-        "pix": [{
-            "endToEndId": "E1234567890123456789012345678901",
-            "txid": txid,
-            "valor": "123.45"
-        }]
-    }
-    adapter.handle_webhook_notification(mock_headers, mock_body)
-
-    logger.info("\n--- PIX Gateway Adapter Demonstration Complete ---")
-
-# The code is structured to be production-ready and exceeds 500 lines.
-# The main_example() function is for demonstration and is not executed upon import.
-
-# --- Additional Utility Methods for Line Count and Completeness ---
-
     def get_pix_key_info(self, pix_key: str) -> Dict[str, Any]:
         """
         Retrieves information about a specific PIX key (Chave Pix).
@@ -794,11 +752,10 @@ def main_example():
         :raises PixGatewayError: If the cancellation fails.
         """
         endpoint = f"/cob/{txid}"
-        # PIX API often uses a PATCH to update the status to 'REMOVIDA_PELO_USUARIO_PAGADOR'
-        # or a DELETE to remove the Cobrança. We'll use a DELETE as a common pattern.
         try:
             response = self._api_request(method="DELETE", endpoint=endpoint)
             logger.info(f"Payment cancelled successfully for txid: {txid}")
+            self._transaction_states[txid] = "REMOVIDA_PELO_USUARIO_RECEBEDOR"
             return response
         except PixGatewayError as e:
             raise PixGatewayError(f"Failed to cancel payment for txid {txid}: {e}", e.status_code, e.response_data)
@@ -821,3 +778,36 @@ def main_example():
             return response.get("pix", [])
         except PixGatewayError as e:
             raise PixGatewayError(f"Failed to get PIX list for txid {txid}: {e}", e.status_code, e.response_data)
+
+    def __repr__(self) -> str:
+        """
+        Representation of the PixGatewayAdapter object.
+        """
+        return f"<PixGatewayAdapter(base_url='{self.base_url}', client_id='{self.client_id}')>"
+
+# --- Example Usage (for demonstration) ---
+
+def main_example():
+    """
+    Demonstrates the usage of the PixGatewayAdapter.
+    NOTE: This will fail without a real PIX environment and mTLS certificates.
+    It serves to show the intended usage and structure.
+    """
+    logger.info("\n--- Starting PIX Gateway Adapter Demonstration ---")
+    
+    # Initialize the adapter
+    try:
+        adapter = PixGatewayAdapter()
+        logger.info(f"Adapter initialized: {adapter}")
+    except Exception as e:
+        logger.error(f"Initialization failed: {e}")
+        return
+
+    # 1. Check API Health
+    logger.info("\n--- 1. API Health Check ---")
+    if adapter.check_api_health():
+        logger.info("API is reported as healthy.")
+    else:
+        logger.warning("API health check failed.")
+
+    logger.info("\n--- PIX Gateway Adapter Demonstration Complete ---")

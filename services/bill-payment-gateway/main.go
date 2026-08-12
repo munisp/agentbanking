@@ -38,6 +38,30 @@ var billers = []Biller{
 	{ID: "FIRS", Name: "Federal Inland Revenue", Category: "government", Active: true},
 }
 
+// Simulation mode is only honoured outside production; in production the
+// combination BILLER_SIMULATION_MODE=true + ENVIRONMENT=production is fatal.
+var (
+	simulationMode = os.Getenv("BILLER_SIMULATION_MODE") == "true"
+	environment    = os.Getenv("ENVIRONMENT")
+)
+
+func findBiller(id string) *Biller {
+	for i := range billers {
+		if billers[i].ID == id {
+			return &billers[i]
+		}
+	}
+	return nil
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": message}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "bill-payment-gateway"})
@@ -62,13 +86,30 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"valid":             true,
-		"billerId":          req.BillerID,
-		"customerReference": req.CustomerRef,
-		"customerName":      "Customer " + req.CustomerRef,
-	})
+	biller := findBiller(req.BillerID)
+	if biller == nil {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("unknown billerId: %s", req.BillerID))
+		return
+	}
+
+	if simulationMode {
+		log.Printf("WARNING: returning simulated customer validation for biller %s (BILLER_SIMULATION_MODE)", req.BillerID)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"valid":             true,
+			"billerId":          req.BillerID,
+			"customerReference": req.CustomerRef,
+			"customerName":      "SIMULATED CUSTOMER " + req.CustomerRef,
+			"simulated":         true,
+		})
+		return
+	}
+
+	// No real biller aggregator API is configured; fail loud rather than
+	// fabricating a customer name for an arbitrary meter/smartcard number.
+	log.Printf("Refusing validation for biller %s: no biller validation API configured", req.BillerID)
+	writeJSONError(w, http.StatusServiceUnavailable,
+		"biller validation API is not configured; refusing to fabricate a customer name")
 }
 
 func payHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,26 +127,52 @@ func payHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := PaymentResult{
-		Reference: fmt.Sprintf("BPG-%d", time.Now().UnixNano()),
-		BillerID:  req.BillerID,
-		Amount:    req.Amount,
-		Status:    "success",
-		Timestamp: time.Now(),
+	biller := findBiller(req.BillerID)
+	if biller == nil {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("unknown billerId: %s", req.BillerID))
+		return
+	}
+	if req.Amount <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "amount must be greater than zero")
+		return
 	}
 
-	if req.BillerID == "IKEDC" || req.BillerID == "EKEDC" || req.BillerID == "AEDC" {
-		result.Token = fmt.Sprintf("%04d-%04d-%04d-%04d-%04d",
-			time.Now().UnixNano()%10000, time.Now().UnixNano()%9999,
-			time.Now().UnixNano()%8888, time.Now().UnixNano()%7777,
-			time.Now().UnixNano()%6666)
+	if simulationMode {
+		log.Printf("WARNING: returning simulated payment result for biller %s (BILLER_SIMULATION_MODE)", req.BillerID)
+		result := PaymentResult{
+			Reference: fmt.Sprintf("SIM-BPG-%d", time.Now().UnixNano()),
+			BillerID:  req.BillerID,
+			Amount:    req.Amount,
+			Status:    "simulated_success",
+			Timestamp: time.Now(),
+		}
+
+		if biller.Category == "electricity" {
+			result.Token = "SIMULATED-TOKEN-NOT-VALID"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	// No real biller payment API is configured; fail loud rather than
+	// fabricating a success reference or an electricity token.
+	log.Printf("Refusing payment for biller %s: no biller payment API configured", req.BillerID)
+	writeJSONError(w, http.StatusServiceUnavailable,
+		"biller payment API is not configured; refusing to fabricate a payment reference or token")
 }
 
 func main() {
+	if simulationMode && environment == "production" {
+		log.Fatal("BILLER_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production")
+	}
+	if simulationMode {
+		log.Println("WARNING: running with SIMULATED biller responses (non-production only)")
+	} else {
+		log.Println("WARNING: no biller API configured; /api/v1/validate and /api/v1/pay will return 503")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8141"

@@ -15,10 +15,23 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SERVICE_NAME: str = "upi-integration"
 
-    # Payment Gateway Mock Settings (for demonstration)
-    PG_MOCK_SUCCESS_RATE: float = 0.9
-    PG_MOCK_REFUND_SUCCESS_RATE: float = 0.8
+    # Payment Gateway (PSP) Settings — real provider, configured via env
+    PG_BASE_URL: Optional[str] = None
+    PG_API_KEY: Optional[str] = None
+    PG_TIMEOUT_SECONDS: float = 15.0
+
+    # Payment Gateway Simulation (explicitly gated; forbidden in production)
+    PG_SIMULATION_MODE: bool = False
+    PG_MOCK_SUCCESS_RATE: float = 0.0
+    PG_MOCK_REFUND_SUCCESS_RATE: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
+
+# Hard-fail at startup if the simulator is enabled in production.
+if settings.PG_SIMULATION_MODE and settings.ENVIRONMENT.lower() == "production":
+    raise RuntimeError(
+        "PG_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production. "
+        "Refusing to start with a simulated payment gateway."
+    )

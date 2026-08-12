@@ -1,5 +1,8 @@
+import json
 import logging
 import random
+import urllib.error
+import urllib.request
 from typing import List, Optional, Any
 from decimal import Decimal
 
@@ -32,48 +35,154 @@ class PaymentGatewayException(Exception):
         self.detail = detail
         self.status_code = status_code
 
-# --- Mock Payment Gateway Interaction ---
+# --- Payment Gateway Interaction ---
 
-def mock_pg_initiate_payment(transaction_data: schemas.TransactionCreate) -> dict:
-    """Simulates initiating a payment with an external Payment Gateway."""
-    logger.info(f"Mock PG: Initiating payment for order_id: {transaction_data.order_id}")
-    
-    if random.random() < settings.PG_MOCK_SUCCESS_RATE:
-        # Simulate successful initiation
-        pg_transaction_id = f"PG_{random.randint(1000000, 9999999)}"
-        return {
-            "status": "SUCCESS",
-            "pg_transaction_id": pg_transaction_id,
-            "message": "Payment link generated successfully (Mock)"
-        }
-    else:
-        # Simulate failed initiation
+def _pg_request(path: str, payload: dict) -> dict:
+    """
+    Performs a real HTTP call to the configured Payment Gateway (PG_BASE_URL).
+
+    Raises PaymentGatewayException (502/503) on any transport or provider
+    failure. Never fabricates gateway references.
+    """
+    if not settings.PG_BASE_URL:
         raise PaymentGatewayException(
-            detail="Mock PG: Failed to initiate payment due to external error.",
-            status_code=503
+            detail=(
+                "Payment gateway is not configured. Set PG_BASE_URL (and PG_API_KEY) "
+                "for a real PSP, or explicitly enable PG_SIMULATION_MODE outside production."
+            ),
+            status_code=503,
         )
 
-def mock_pg_initiate_refund(transaction: Transaction, refund_amount: Decimal) -> dict:
-    """Simulates initiating a refund with an external Payment Gateway."""
-    logger.info(f"Mock PG: Initiating refund for transaction_id: {transaction.transaction_id} with amount: {refund_amount}")
+    url = f"{settings.PG_BASE_URL.rstrip('/')}{path}"
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url=url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {settings.PG_API_KEY or ''}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=settings.PG_TIMEOUT_SECONDS) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        status = 502 if e.code < 500 else 503
+        raise PaymentGatewayException(
+            detail=f"Payment gateway returned HTTP {e.code} for {path}.",
+            status_code=status,
+        )
+    except (urllib.error.URLError, OSError) as e:
+        raise PaymentGatewayException(
+            detail=f"Payment gateway unreachable: {e}",
+            status_code=503,
+        )
+
+    try:
+        return json.loads(raw) if raw.strip() else {}
+    except ValueError as e:
+        raise PaymentGatewayException(
+            detail=f"Payment gateway returned a malformed response: {e}",
+            status_code=502,
+        )
+
+
+def pg_initiate_payment(transaction_data: schemas.TransactionCreate) -> dict:
+    """Initiates a payment with the configured Payment Gateway (real PSP call)."""
+    logger.info(f"PG: Initiating payment for order_id: {transaction_data.order_id}")
+
+    if settings.PG_SIMULATION_MODE:
+        return _simulated_pg_initiate_payment(transaction_data)
+
+    data = _pg_request("/payments", {
+        "order_id": transaction_data.order_id,
+        "amount": str(transaction_data.amount),
+        "vpa": transaction_data.vpa,
+        "currency": "INR",
+    })
+
+    pg_transaction_id = data.get("pg_transaction_id") or data.get("transaction_id")
+    if not pg_transaction_id:
+        raise PaymentGatewayException(
+            detail="Payment gateway response did not include a transaction id.",
+            status_code=502,
+        )
+
+    return {
+        "status": "SUCCESS",
+        "pg_transaction_id": pg_transaction_id,
+        "message": "Payment initiated with gateway.",
+        "gateway_response": data,
+    }
+
+
+def pg_initiate_refund(transaction: Transaction, refund_amount: Decimal) -> dict:
+    """Initiates a refund with the configured Payment Gateway (real PSP call)."""
+    logger.info(f"PG: Initiating refund for transaction_id: {transaction.transaction_id} with amount: {refund_amount}")
 
     if transaction.status != TransactionStatus.SUCCESS and transaction.status != TransactionStatus.REFUNDED:
         raise ConflictException(f"Cannot refund transaction in status: {transaction.status.value}")
 
+    if settings.PG_SIMULATION_MODE:
+        return _simulated_pg_initiate_refund(transaction, refund_amount)
+
+    data = _pg_request("/refunds", {
+        "pg_transaction_id": transaction.transaction_id,
+        "order_id": transaction.order_id,
+        "amount": str(refund_amount),
+        "currency": "INR",
+    })
+
+    pg_refund_id = data.get("pg_refund_id") or data.get("refund_id")
+    if not pg_refund_id:
+        raise PaymentGatewayException(
+            detail="Payment gateway response did not include a refund id.",
+            status_code=502,
+        )
+
+    return {
+        "status": "SUCCESS",
+        "pg_refund_id": pg_refund_id,
+        "message": "Refund initiated with gateway.",
+        "gateway_response": data,
+    }
+
+
+# --- Simulated Payment Gateway (gated: PG_SIMULATION_MODE=true, never in production) ---
+
+def _simulated_pg_initiate_payment(transaction_data: schemas.TransactionCreate) -> dict:
+    """Simulates initiating a payment. Only reachable when PG_SIMULATION_MODE=true."""
+    logger.warning(f"SIMULATED PG: Initiating payment for order_id: {transaction_data.order_id}")
+
+    if random.random() < settings.PG_MOCK_SUCCESS_RATE:
+        pg_transaction_id = f"SIM_PG_{random.randint(1000000, 9999999)}"
+        return {
+            "status": "SUCCESS",
+            "pg_transaction_id": pg_transaction_id,
+            "message": "SIMULATED payment initiation (PG_SIMULATION_MODE)"
+        }
+    raise PaymentGatewayException(
+        detail="SIMULATED PG: Failed to initiate payment due to external error.",
+        status_code=503
+    )
+
+
+def _simulated_pg_initiate_refund(transaction: Transaction, refund_amount: Decimal) -> dict:
+    """Simulates initiating a refund. Only reachable when PG_SIMULATION_MODE=true."""
+    logger.warning(f"SIMULATED PG: Initiating refund for transaction_id: {transaction.transaction_id}")
+
     if random.random() < settings.PG_MOCK_REFUND_SUCCESS_RATE:
-        # Simulate successful refund initiation
-        pg_refund_id = f"R_PG_{random.randint(1000000, 9999999)}"
+        pg_refund_id = f"SIM_R_PG_{random.randint(1000000, 9999999)}"
         return {
             "status": "SUCCESS",
             "pg_refund_id": pg_refund_id,
-            "message": "Refund initiated successfully (Mock)"
+            "message": "SIMULATED refund initiation (PG_SIMULATION_MODE)"
         }
-    else:
-        # Simulate failed refund initiation
-        raise PaymentGatewayException(
-            detail="Mock PG: Failed to initiate refund due to external error.",
-            status_code=503
-        )
+    raise PaymentGatewayException(
+        detail="SIMULATED PG: Failed to initiate refund due to external error.",
+        status_code=503
+    )
 
 # --- Business Logic Service ---
 
@@ -91,9 +200,9 @@ class UPIService:
         if db.query(Transaction).filter(Transaction.order_id == transaction_data.order_id).first():
             raise ConflictException(f"Transaction with order_id '{transaction_data.order_id}' already exists.")
 
-        # 2. Mock PG interaction (In a real app, this would call the PG API)
+        # 2. PG interaction (real PSP call, or gated simulator)
         try:
-            pg_response = mock_pg_initiate_payment(transaction_data)
+            pg_response = pg_initiate_payment(transaction_data)
             
             # 3. Create the database object
             db_transaction = Transaction(
@@ -174,9 +283,9 @@ class UPIService:
         if total_refunded + refund_data.amount > db_transaction.amount:
             raise ConflictException(f"Refund amount {refund_data.amount} exceeds remaining refundable amount of {db_transaction.amount - total_refunded}.")
 
-        # 3. Mock PG interaction
+        # 3. PG interaction (real PSP call, or gated simulator)
         try:
-            pg_response = mock_pg_initiate_refund(db_transaction, refund_data.amount)
+            pg_response = pg_initiate_refund(db_transaction, refund_data.amount)
             
             # 4. Create the database object
             db_refund = Refund(

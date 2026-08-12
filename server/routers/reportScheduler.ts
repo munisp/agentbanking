@@ -309,55 +309,15 @@ const runNow = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(pnlReports)
-          .where(eq(pnlReports.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "runNow: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "runNow completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(pnlReports)
-        .values((input.data || {}) as any)
-        .returning();
-      return { success: true, ...row, message: "runNow completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    // FAIL LOUD: previously returned a canned "runNow completed" success
+    // without executing anything, and inserted arbitrary input.data into
+    // pnlReports. No report-execution engine is wired to this router.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "On-demand schedule execution is not wired to a report engine in this router; refusing to fake a successful run.",
+    });
   });
 const toggleSchedule = protectedProcedure
   .input(
@@ -416,55 +376,15 @@ const triggerNow = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(pnlReports)
-          .where(eq(pnlReports.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "triggerNow: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "triggerNow completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(pnlReports)
-        .values((input.data || {}) as any)
-        .returning();
-      return { success: true, ...row, message: "triggerNow completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    // FAIL LOUD: previously returned a canned "triggerNow completed" success
+    // without executing anything, and inserted arbitrary input.data into
+    // pnlReports. No report-execution engine is wired to this router.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "On-demand schedule triggering is not wired to a report engine in this router; refusing to fake a successful run.",
+    });
   });
 
 // ── Transaction Safety ─────────────────────────────────────────────────────

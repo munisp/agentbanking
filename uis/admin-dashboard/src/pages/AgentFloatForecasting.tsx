@@ -98,15 +98,15 @@ export default function AgentFloatForecasting() {
 
   const handleConfirmReplenish = () => {
     if (!selectedAgent) return;
-    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount: 50000 });
+    triggerReplenishment.mutate({
+      agentId: selectedAgent.id,
+      amount: Number(replenishAmount),
+    });
   };
 
   const agents =
-    (forecast.data?.forecasts as unknown as AgentForecast[] | undefined) ??
-    [];
-  const hasLiveForecast =
-    !forecast.isError && Array.isArray(forecast.data?.forecasts) &&
-    (forecast.data?.forecasts as unknown as any[]).length > 0;
+    (forecast.data?.forecasts as unknown as AgentForecast[] | undefined) ?? [];
+  const hasForecast = agents.length > 0;
 
   return (
     <DashboardLayout>
@@ -134,26 +134,16 @@ export default function AgentFloatForecasting() {
 
         {forecast.isError && (
           <Card className="border-red-500/50 bg-red-500/10">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="h-6 w-6 text-red-500" />
-                <div>
-                  <div className="font-medium text-red-500">
-                    Unable to load float forecasts
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {(forecast.error as any)?.message ??
-                      "The forecasting service is unavailable. Replenishment actions are disabled until live forecast data loads."}
-                  </div>
+            <CardContent className="py-4 flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-500" />
+              <div>
+                <div className="font-medium text-red-500">
+                  Failed to load float forecasts
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => forecast.refetch()}
-                >
-                  Retry
-                </Button>
+                <div className="text-sm text-muted-foreground">
+                  {(forecast.error as any)?.message ||
+                    "An unexpected error occurred. Replenishment actions are disabled."}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -174,14 +164,8 @@ export default function AgentFloatForecasting() {
                   : "—"}
               </div>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                {stats.data?.totalFloat != null ? (
-                  <>
-                    <TrendingUp className="h-3 w-3" />
-                    Live platform total
-                  </>
-                ) : (
-                  "Not available"
-                )}
+                <TrendingUp className="h-3 w-3" />
+                {stats.data ? "Live data" : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -198,7 +182,7 @@ export default function AgentFloatForecasting() {
               <p className="text-xs text-muted-foreground">
                 {stats.data?.agentsMonitored != null
                   ? `of ${stats.data.agentsMonitored} active agents`
-                  : "Not available"}
+                  : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -215,9 +199,7 @@ export default function AgentFloatForecasting() {
                   : "—"}
               </div>
               <p className="text-xs text-muted-foreground">
-                {stats.data?.predictedDemand7d != null
-                  ? "Live prediction"
-                  : "Not available"}
+                {stats.data ? "Across monitored agents" : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -233,11 +215,7 @@ export default function AgentFloatForecasting() {
                   ? `${stats.data.avgAccuracy}%`
                   : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {stats.data?.avgAccuracy != null
-                  ? "Last 30-day MAPE"
-                  : "Not available"}
-              </p>
+              <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
           </Card>
         </div>
@@ -254,11 +232,15 @@ export default function AgentFloatForecasting() {
                     amount: 50000,
                   })
                 }
-                disabled={triggerReplenishment.isPending || !hasLiveForecast}
+                disabled={
+                  triggerReplenishment.isPending ||
+                  !hasForecast ||
+                  forecast.isError
+                }
                 title={
-                  hasLiveForecast
-                    ? "Trigger replenishment for all agents below threshold"
-                    : "Live forecast data is required before triggering replenishment"
+                  !hasForecast
+                    ? "No live forecast data — replenishment disabled"
+                    : undefined
                 }
               >
                 {triggerReplenishment.isPending
@@ -282,7 +264,7 @@ export default function AgentFloatForecasting() {
                 </thead>
                 <tbody>
                   {forecast.isLoading ? (
-                    <tr className="border-b">
+                    <tr>
                       <td
                         colSpan={6}
                         className="py-8 text-center text-muted-foreground"
@@ -290,15 +272,15 @@ export default function AgentFloatForecasting() {
                         Loading forecasts…
                       </td>
                     </tr>
-                  ) : agents.length === 0 ? (
-                    <tr className="border-b">
+                  ) : !hasForecast ? (
+                    <tr>
                       <td
                         colSpan={6}
                         className="py-8 text-center text-muted-foreground"
                       >
                         {forecast.isError
-                          ? "Forecast data unavailable — resolve the error above and retry."
-                          : "No float forecasts are available for the selected period."}
+                          ? "Forecasts unavailable due to an error."
+                          : "No float forecasts available."}
                       </td>
                     </tr>
                   ) : (
@@ -401,26 +383,33 @@ export default function AgentFloatForecasting() {
                 Prediction Model Insights
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {stats.data?.avgAccuracy != null ? (
-                <div className="space-y-3">
+            <CardContent className="space-y-3">
+              {stats.data ? (
+                <>
                   <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-sm">Model Accuracy</span>
+                    <span className="text-sm">Model Accuracy (30d MAPE)</span>
                     <span className="font-medium">
-                      {stats.data.avgAccuracy}%
+                      {stats.data.avgAccuracy != null
+                        ? `${stats.data.avgAccuracy}%`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm">Agents Monitored</span>
+                    <span className="font-medium">
+                      {stats.data.agentsMonitored ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-sm">Agents Monitored</span>
+                    <span className="text-sm">Agents Below Threshold</span>
                     <span className="font-medium">
-                      {stats.data?.agentsMonitored ?? "—"}
+                      {stats.data.stockoutRisk ?? "—"}
                     </span>
                   </div>
-                </div>
+                </>
               ) : (
-                <p className="text-sm text-muted-foreground py-4">
-                  Model metadata is not available from the live forecasting
-                  service.
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  Model insights are not available.
                 </p>
               )}
             </CardContent>
@@ -429,11 +418,9 @@ export default function AgentFloatForecasting() {
             <CardHeader>
               <CardTitle className="text-lg">Replenishment History</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground py-4">
-                Replenishment history is not available from the live service.
-                Completed replenishments will appear here once history is
-                exposed by the API.
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                Replenishment history is not available.
               </p>
             </CardContent>
           </Card>
@@ -750,9 +737,9 @@ export default function AgentFloatForecasting() {
 
                   <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
                     <strong>Audit Trail:</strong> This action will be logged
-                    under your admin account (Dev Admin) with timestamp, agent
-                    ID, amount, and source. The agent will receive an SMS and
-                    push notification upon fund arrival.
+                    under your admin account with timestamp, agent ID, amount,
+                    and source. The agent will receive an SMS and push
+                    notification upon fund arrival.
                   </div>
                 </div>
               )}

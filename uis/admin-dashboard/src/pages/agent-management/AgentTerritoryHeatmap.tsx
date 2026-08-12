@@ -5,36 +5,9 @@ import { MapPin } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function AgentTerritoryHeatmap() {
-  const mockData = Array.from({ length: 10 }, (_, i) => ({
-    id: i + 1,
-    col1: `REF-${String(i + 1).padStart(3, "0")}`,
-    col2: [
-      "Chioma Eze",
-      "Emeka Obi",
-      "Fatima Bello",
-      "Adamu Yusuf",
-      "Grace Okonkwo",
-      "Ibrahim Musa",
-      "Joy Nwosu",
-      "Kemi Ade",
-      "Ladi Bako",
-      "Musa Dan",
-    ][i],
-    col3: [
-      "active",
-      "pending",
-      "completed",
-      "active",
-      "warning",
-      "active",
-      "completed",
-      "pending",
-      "active",
-      "completed",
-    ][i],
-    col4: `${(Math.random() * 100).toFixed(1)}`,
-    col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-  }));
+  // No live data source is wired to this page — render an honest empty
+  // state instead of fabricated rows.
+  const mockData: any[] = [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
@@ -139,6 +112,16 @@ export default function AgentTerritoryHeatmap() {
                 </tr>
               </thead>
               <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-8 text-center text-gray-400"
+                    >
+                      No data available.
+                    </td>
+                  </tr>
+                )}
                 {filtered.map((row: any) => (
                   <tr
                     key={row.id}

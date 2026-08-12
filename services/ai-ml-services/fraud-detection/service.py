@@ -1,3 +1,4 @@
+import ast
 import logging
 from typing import List, Optional, Type, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,91 @@ class DuplicateItem(ServiceException):
         self.field = field
         self.value = value
         super().__init__(f"Duplicate {model_name}: {field} '{value}' already exists.")
+
+class RuleEvaluationError(ServiceException):
+    """Raised when a fraud rule expression cannot be evaluated truthfully."""
+    pass
+
+class MlModelUnavailable(ServiceException):
+    """Raised when the external ML scoring endpoint is not configured or fails.
+
+    We NEVER fabricate an ML fraud score — if the model cannot be reached,
+    transaction processing fails loud instead of silently approving/declining
+    with an invented score.
+    """
+    pass
+
+# --- Safe fraud-rule expression evaluation ---
+
+_ALLOWED_COMPARE_OPS = (ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.In, ast.NotIn)
+
+
+def _eval_rule_node(node: ast.AST, context: dict) -> Any:
+    """Recursive descent over a restricted Python-expression AST."""
+    if isinstance(node, ast.Expression):
+        return _eval_rule_node(node.body, context)
+    if isinstance(node, ast.BoolOp):
+        values = [_eval_rule_node(v, context) for v in node.values]
+        if isinstance(node.op, ast.And):
+            return all(values)
+        if isinstance(node.op, ast.Or):
+            return any(values)
+        raise RuleEvaluationError(f"unsupported boolean operator: {ast.dump(node.op)}")
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _eval_rule_node(node.operand, context)
+    if isinstance(node, ast.Compare):
+        left = _eval_rule_node(node.left, context)
+        for op, comparator in zip(node.ops, node.comparators):
+            if not isinstance(op, _ALLOWED_COMPARE_OPS):
+                raise RuleEvaluationError(f"unsupported comparison operator: {ast.dump(op)}")
+            right = _eval_rule_node(comparator, context)
+            if isinstance(op, ast.Eq):
+                ok = left == right
+            elif isinstance(op, ast.NotEq):
+                ok = left != right
+            elif isinstance(op, ast.Gt):
+                ok = left > right
+            elif isinstance(op, ast.GtE):
+                ok = left >= right
+            elif isinstance(op, ast.Lt):
+                ok = left < right
+            elif isinstance(op, ast.LtE):
+                ok = left <= right
+            elif isinstance(op, ast.In):
+                ok = left in right
+            else:  # ast.NotIn
+                ok = left not in right
+            if not ok:
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Name):
+        if node.id not in context:
+            raise RuleEvaluationError(f"unknown field '{node.id}' in rule expression")
+        return context[node.id]
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_eval_rule_node(e, context) for e in node.elts]
+    raise RuleEvaluationError(f"unsupported syntax in rule expression: {ast.dump(node)}")
+
+
+def evaluate_rule_expression(expression: str, context: dict) -> bool:
+    """
+    Evaluate a fraud rule expression such as
+    "amount > 1000 AND currency == 'NGN'" against the transaction context.
+
+    Supported: AND/OR/NOT, parentheses, ==, !=, >, >=, <, <=, in, not in,
+    numeric/string/boolean constants, and transaction field names.
+    Anything else raises RuleEvaluationError — a rule that cannot be evaluated
+    truthfully must fail loud, never silently "match" or "not match".
+    """
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError as exc:
+        raise RuleEvaluationError(f"invalid rule expression '{expression}': {exc}") from exc
+    return bool(_eval_rule_node(tree, context))
+
 
 # --- Base Service Class ---
 
@@ -80,7 +166,7 @@ class BaseService:
         update_data = item_data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(item, key, value)
-        
+
         try:
             await self.db.commit()
             await self.db.refresh(item)
@@ -133,18 +219,23 @@ class TransactionService(BaseService):
 
     async def _evaluate_rule(self, rule: models.FraudRule, transaction_data: schemas.TransactionCreate) -> Optional[schemas.FraudReportCreate]:
         """
-        Simulates the evaluation of a single rule expression against transaction data.
-        In a real system, this would use an expression engine (e.g., Drools, PyKnow).
-        For this implementation, we will simulate a match based on a simple check.
+        Evaluate a rule's `rule_expression` against the real transaction data
+        using the safe AST evaluator (AND/OR/NOT, comparisons, in/not in).
+        Rules that cannot be evaluated truthfully raise RuleEvaluationError.
         """
-        # NOTE: This is a SIMULATION of rule evaluation.
-        # A production system would use a dedicated rule engine.
-        
-        # Simple simulation: if the rule name contains "HighValue" and amount > 500, it matches.
-        if "HighValue" in rule.name and transaction_data.amount > 500:
-            log.info(f"Rule '{rule.name}' (ID: {rule.id}) matched transaction {transaction_data.user_id}.")
+        context = {
+            "tenant_id": transaction_data.tenant_id,
+            "amount": transaction_data.amount,
+            "currency": transaction_data.currency,
+            "user_id": transaction_data.user_id,
+            "merchant_id": transaction_data.merchant_id,
+            "ip_address": transaction_data.ip_address,
+        }
+        matched = evaluate_rule_expression(rule.rule_expression, context)
+        if matched:
+            log.info(f"Rule '{rule.name}' (ID: {rule.id}) matched transaction for user {transaction_data.user_id}.")
             return schemas.FraudReportCreate(
-                transaction_id=0, # Will be set after transaction creation
+                transaction_id=0,  # Will be set after transaction creation
                 rule_id=rule.id,
                 decision=schemas.FraudDecision.REVIEW,
                 score=rule.severity_score,
@@ -155,28 +246,56 @@ class TransactionService(BaseService):
 
     async def _run_ml_model(self, transaction_data: schemas.TransactionCreate) -> schemas.FraudReportCreate:
         """
-        Simulates calling an external ML model for a fraud score.
+        Call the configured external ML scoring endpoint for a fraud score.
+
+        FAIL LOUD: if ML_MODEL_ENDPOINT is not configured, unreachable, times
+        out, or returns a response without a numeric 'score', MlModelUnavailable
+        is raised. A fabricated score is never returned.
         """
-        # NOTE: This is a SIMULATION of an ML model call.
-        # A production system would use requests to call the endpoint in settings.ML_MODEL_ENDPOINT.
-        
-        # Simple simulation: score based on amount and IP address length
-        score = min(100.0, transaction_data.amount / 10.0 + len(transaction_data.ip_address))
-        
-        if score > 90:
+        if not settings.ML_MODEL_ENDPOINT:
+            raise MlModelUnavailable(
+                "ML_MODEL_ENDPOINT is not configured; refusing to fabricate a fraud score"
+            )
+
+        import httpx
+        payload = {
+            "tenant_id": transaction_data.tenant_id,
+            "amount": transaction_data.amount,
+            "currency": transaction_data.currency,
+            "user_id": transaction_data.user_id,
+            "merchant_id": transaction_data.merchant_id,
+            "ip_address": transaction_data.ip_address,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(settings.ML_MODEL_ENDPOINT, json=payload)
+        except Exception as exc:
+            raise MlModelUnavailable(f"ML scoring endpoint unreachable: {exc}") from exc
+        if resp.status_code != 200:
+            raise MlModelUnavailable(
+                f"ML scoring endpoint returned HTTP {resp.status_code}"
+            )
+        data = resp.json()
+        if "score" not in data or not isinstance(data["score"], (int, float)):
+            raise MlModelUnavailable("ML scoring endpoint response missing numeric 'score'")
+
+        score = float(data["score"])
+
+        decision_raw = data.get("decision")
+        if decision_raw in ("FRAUD", "REVIEW", "SAFE"):
+            decision = schemas.FraudDecision(decision_raw)
+        elif score > 90:
             decision = schemas.FraudDecision.FRAUD
-            reason = "ML Model predicted high fraud risk."
         elif score > 50:
             decision = schemas.FraudDecision.REVIEW
-            reason = "ML Model predicted moderate fraud risk."
         else:
             decision = schemas.FraudDecision.SAFE
-            reason = "ML Model predicted low fraud risk."
+        reason = f"ML model scored transaction {score:.2f} -> {decision.value}."
 
-        log.info(f"ML Model scored transaction {transaction_data.user_id} with score {score:.2f} and decision {decision.value}.")
+        log.info(f"ML model scored transaction for user {transaction_data.user_id}: {score:.2f} ({decision.value}).")
 
         return schemas.FraudReportCreate(
-            transaction_id=0, # Will be set after transaction creation
+            transaction_id=0,  # Will be set after transaction creation
             rule_id=None,
             decision=decision,
             score=score,
@@ -196,30 +315,30 @@ class TransactionService(BaseService):
         # 1. Create the transaction record (initially PENDING)
         transaction_model = models.Transaction(**transaction_data.model_dump(), status=models.TransactionStatus.PENDING)
         self.db.add(transaction_model)
-        await self.db.flush() # Flush to get the transaction ID
+        await self.db.flush()  # Flush to get the transaction ID
 
         transaction_id = transaction_model.id
         reports_to_create: List[schemas.FraudReportCreate] = []
-        
-        # 2. Run rule-based checks
+
+        # 2. Run rule-based checks (real expression evaluation; errors fail loud)
         active_rules = await self.rule_service.get_active_rules_by_tenant(transaction_data.tenant_id)
         for rule in active_rules:
             report = await self._evaluate_rule(rule, transaction_data)
             if report:
                 reports_to_create.append(report)
 
-        # 3. Run ML-based checks
+        # 3. Run ML-based checks (real endpoint call; errors fail loud)
         ml_report = await self._run_ml_model(transaction_data)
         reports_to_create.append(ml_report)
 
         # 4. Aggregate reports and determine final transaction status
         final_decision = schemas.FraudDecision.SAFE
         max_score = 0.0
-        
+
         for report in reports_to_create:
-            report.transaction_id = transaction_id # Set the actual ID
+            report.transaction_id = transaction_id  # Set the actual ID
             max_score = max(max_score, report.score)
-            
+
             # Decision hierarchy: FRAUD > REVIEW > SAFE
             if report.decision == schemas.FraudDecision.FRAUD:
                 final_decision = schemas.FraudDecision.FRAUD

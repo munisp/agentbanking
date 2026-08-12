@@ -110,7 +110,7 @@ export const TERMINAL_UNKNOWN: TerminalInfo = {
 // No fabricated streaks/points/ranks: populated only from the live
 // loyalty profile / agent store; null renders as "—".
 
-const GAMIFICATION_EMPTY: GamificationData = {
+export const GAMIFICATION_EMPTY: GamificationData = {
   streak: null,
   points: null,
   level: null,

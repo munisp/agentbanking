@@ -11,6 +11,9 @@ from datetime import datetime
 from enum import Enum
 import logging
 import hashlib
+import os
+
+import httpx
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -41,6 +44,24 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Runtime configuration ---
+# Simulated on-chain execution is only allowed when explicitly enabled AND
+# outside production. Production requires real providers/nodes.
+ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "production")).lower()
+SIMULATION_MODE = os.getenv("CRYPTO_REMITTANCE_SIMULATION_MODE", "false").lower() == "true"
+PRICE_ORACLE_URL = os.getenv(
+    "PRICE_ORACLE_URL", "https://api.coingecko.com/api/v3/simple/price"
+).strip()
+WALLET_PROVIDER_URL = os.getenv("WALLET_PROVIDER_URL", "").strip() or None
+CRYPTO_BROADCASTER_URL = os.getenv("CRYPTO_BROADCASTER_URL", "").strip() or None
+RAMP_PROVIDER_URL = os.getenv("RAMP_PROVIDER_URL", "").strip() or None
+
+if SIMULATION_MODE and ENVIRONMENT == "production":
+    raise RuntimeError(
+        "CRYPTO_REMITTANCE_SIMULATION_MODE=true is forbidden in production: "
+        "simulated on-chain execution must never run against live funds"
+    )
 
 app = FastAPI(title="Blockchain Infrastructure - Crypto Remittance", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -109,15 +130,41 @@ class Wallet(BaseModel):
     balance: Dict[str, float]
     created_at: str
 
+
+def _rpc_url_for(blockchain: Blockchain) -> Optional[str]:
+    """Configured node URL (JSON-RPC/REST) for a blockchain, from the environment."""
+    return os.getenv(f"RPC_URL_{blockchain.value.upper()}", "").strip() or None
+
+
+# Native asset per blockchain (used for on-chain balance lookups)
+NATIVE_ASSET = {
+    Blockchain.BITCOIN: Cryptocurrency.BTC,
+    Blockchain.ETHEREUM: Cryptocurrency.ETH,
+    Blockchain.POLYGON: Cryptocurrency.MATIC,
+    Blockchain.SOLANA: Cryptocurrency.SOL,
+    Blockchain.STELLAR: Cryptocurrency.XLM,
+    Blockchain.BINANCE_SMART_CHAIN: Cryptocurrency.ETH,
+}
+
+# Confirmations required before a transfer may be marked CONFIRMED
+REQUIRED_CONFIRMATIONS = {
+    Blockchain.BITCOIN: 6,
+    Blockchain.ETHEREUM: 12,
+    Blockchain.POLYGON: 128,
+    Blockchain.SOLANA: 32,
+    Blockchain.STELLAR: 1,
+    Blockchain.BINANCE_SMART_CHAIN: 15,
+}
+
+
 class BlockchainInfrastructure:
     """Blockchain Infrastructure for Crypto Remittance"""
     
     def __init__(self):
-        # In production: Connect to blockchain nodes via RPC (Alchemy, Infura, QuickNode)
         self.wallets: Dict[str, Wallet] = {}
         self.transactions: Dict[str, CryptoTransaction] = {}
         
-        # Cryptocurrency prices (USD)
+        # Static prices (USD) — used ONLY in explicitly gated simulation mode.
         self.prices = {
             Cryptocurrency.BTC: 43000.0,
             Cryptocurrency.ETH: 2300.0,
@@ -142,11 +189,45 @@ class BlockchainInfrastructure:
         # Platform fee: 0.5%
         self.platform_fee_rate = 0.005
         
-        logger.info("Blockchain infrastructure initialized")
+        logger.info(f"Blockchain infrastructure initialized (simulation_mode={SIMULATION_MODE})")
+    
+    # ==================== External data helpers ====================
+    
+    async def _get_price_usd(self, crypto: Cryptocurrency) -> float:
+        """USD price from the configured public price oracle.
+
+        In gated simulation mode the static fallback table is used. Raises
+        loudly when the oracle is unavailable — prices are never invented
+        outside simulation.
+        """
+        if SIMULATION_MODE:
+            return self.prices.get(crypto, 0.0)
+        
+        coingecko_ids = {
+            Cryptocurrency.BTC: "bitcoin",
+            Cryptocurrency.ETH: "ethereum",
+            Cryptocurrency.USDT: "tether",
+            Cryptocurrency.USDC: "usd-coin",
+            Cryptocurrency.DAI: "dai",
+            Cryptocurrency.MATIC: "matic-network",
+            Cryptocurrency.SOL: "solana",
+            Cryptocurrency.XLM: "stellar",
+        }
+        coin_id = coingecko_ids[crypto]
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(
+                    PRICE_ORACLE_URL,
+                    params={"ids": coin_id, "vs_currencies": "usd"}
+                )
+                response.raise_for_status()
+                data = response.json()
+            return float(data[coin_id]["usd"])
+        except Exception as e:
+            raise RuntimeError(f"Price oracle unavailable for {crypto.value}: {e}")
     
     def _generate_address(self, blockchain: Blockchain, user_id: str) -> str:
-        """Generate blockchain address (simplified)"""
-        # In production: Use proper key generation (BIP39, BIP44)
+        """Generate a simulation-only placeholder address (gated test mode)."""
         hash_input = f"{blockchain}-{user_id}-{datetime.utcnow().timestamp()}"
         address_hash = hashlib.sha256(hash_input.encode()).hexdigest()
         
@@ -161,11 +242,176 @@ class BlockchainInfrastructure:
         
         return address_hash[:42]
     
+    async def _provision_address(self, blockchain: Blockchain, user_id: str) -> str:
+        """Provision a real wallet address via the configured custody/key service.
+
+        Only in gated simulation mode is a placeholder generated; otherwise a
+        wallet provider must be configured. Addresses are never fabricated for
+        live wallets.
+        """
+        if SIMULATION_MODE:
+            return self._generate_address(blockchain, user_id)
+        
+        if not WALLET_PROVIDER_URL:
+            raise HTTPException(
+                status_code=503,
+                detail="No wallet/custody provider configured (WALLET_PROVIDER_URL is unset)"
+            )
+        
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{WALLET_PROVIDER_URL.rstrip('/')}/wallets",
+                json={"blockchain": blockchain.value, "user_id": user_id}
+            )
+            response.raise_for_status()
+            data = response.json()
+        
+        address = data.get("address")
+        if not address:
+            raise HTTPException(status_code=502, detail="Wallet provider did not return an address")
+        return address
+    
+    async def _get_onchain_native_balance(self, wallet: Wallet) -> Optional[float]:
+        """Native token balance from the configured node, or None if unconfigured/unsupported."""
+        rpc_url = _rpc_url_for(wallet.blockchain)
+        if not rpc_url:
+            return None
+        
+        if wallet.blockchain in (Blockchain.ETHEREUM, Blockchain.POLYGON, Blockchain.BINANCE_SMART_CHAIN):
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "eth_getBalance",
+                    "params": [wallet.address, "latest"]
+                })
+                response.raise_for_status()
+                result = response.json().get("result", "0x0")
+            return int(result, 16) / 1e18
+        
+        if wallet.blockchain == Blockchain.STELLAR:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(f"{rpc_url.rstrip('/')}/accounts/{wallet.address}")
+                if response.status_code == 404:
+                    return 0.0
+                response.raise_for_status()
+                for balance in response.json().get("balances", []):
+                    if balance.get("asset_type") == "native":
+                        return float(balance.get("balance", 0))
+            return 0.0
+        
+        return None
+    
+    async def _broadcast_transaction(self, request: CryptoTransferRequest) -> str:
+        """Broadcast the transfer via the configured broadcaster service.
+
+        A transaction hash only exists when a real broadcaster/node accepts
+        the transaction. In gated simulation mode a placeholder is generated;
+        otherwise we fail loudly when no broadcaster is configured.
+        """
+        if SIMULATION_MODE:
+            return hashlib.sha256(
+                f"{request.from_address}-{request.to_address}-{request.amount}-{datetime.utcnow().timestamp()}".encode()
+            ).hexdigest()
+        
+        if not CRYPTO_BROADCASTER_URL:
+            raise HTTPException(
+                status_code=503,
+                detail="No transaction broadcaster configured (CRYPTO_BROADCASTER_URL is unset)"
+            )
+        
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{CRYPTO_BROADCASTER_URL.rstrip('/')}/broadcast",
+                json={
+                    "from_address": request.from_address,
+                    "to_address": request.to_address,
+                    "cryptocurrency": request.cryptocurrency.value,
+                    "amount": request.amount,
+                    "blockchain": request.blockchain.value,
+                    "user_id": request.user_id
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+        
+        tx_hash = data.get("tx_hash")
+        if not tx_hash:
+            raise HTTPException(status_code=502, detail="Broadcaster did not return a transaction hash")
+        return tx_hash
+    
+    async def _query_confirmations(self, transaction: CryptoTransaction) -> Optional[int]:
+        """On-chain confirmation count, or None when no node is configured/unsupported."""
+        rpc_url = _rpc_url_for(transaction.blockchain)
+        if not rpc_url or not transaction.tx_hash:
+            return None
+        
+        if transaction.blockchain in (Blockchain.ETHEREUM, Blockchain.POLYGON, Blockchain.BINANCE_SMART_CHAIN):
+            async with httpx.AsyncClient(timeout=15) as client:
+                receipt_resp = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "eth_getTransactionReceipt",
+                    "params": [transaction.tx_hash]
+                })
+                receipt_resp.raise_for_status()
+                receipt = receipt_resp.json().get("result")
+                if not receipt or not receipt.get("blockNumber"):
+                    return 0
+                block_resp = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "id": 2,
+                    "method": "eth_blockNumber",
+                    "params": []
+                })
+                block_resp.raise_for_status()
+                latest = block_resp.json().get("result")
+            return max(int(latest, 16) - int(receipt["blockNumber"], 16) + 1, 0)
+        
+        if transaction.blockchain == Blockchain.STELLAR:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(f"{rpc_url.rstrip('/')}/transactions/{transaction.tx_hash}")
+                if response.status_code == 404:
+                    return 0
+                response.raise_for_status()
+            # Stellar transactions are final once included in a ledger
+            return 1
+        
+        return None
+    
+    async def _execute_ramp_order(self, direction: str, payload: Dict) -> Dict:
+        """Execute an on/off-ramp order via the configured ramp provider.
+
+        Returns {"status": ..., "provider_reference": ...}. In gated
+        simulation mode returns a simulated status; otherwise requires a
+        configured provider and fails loudly without one.
+        """
+        if SIMULATION_MODE:
+            return {"status": "completed", "provider_reference": None}
+        
+        if not RAMP_PROVIDER_URL:
+            raise HTTPException(
+                status_code=503,
+                detail="No fiat ramp provider configured (RAMP_PROVIDER_URL is unset)"
+            )
+        
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{RAMP_PROVIDER_URL.rstrip('/')}/orders",
+                json={"direction": direction, **payload}
+            )
+            response.raise_for_status()
+            data = response.json()
+        
+        return {
+            "status": str(data.get("status", "pending")),
+            "provider_reference": data.get("reference") or data.get("order_id")
+        }
+    
+    # ==================== Core operations ====================
+    
     async def create_wallet(self, request: WalletCreationRequest) -> Wallet:
         """Create crypto wallet"""
         
         wallet_id = f"WALLET-{datetime.utcnow().timestamp()}"
-        address = self._generate_address(request.blockchain, request.user_id)
+        address = await self._provision_address(request.blockchain, request.user_id)
         
         wallet = Wallet(
             wallet_id=wallet_id,
@@ -190,12 +436,16 @@ class BlockchainInfrastructure:
         
         wallet = self.wallets[wallet_id]
         
-        # In production: Query blockchain for actual balance
-        # For demo: Return stored balance
+        # Query the chain for the native balance when a node is configured
+        onchain_native = await self._get_onchain_native_balance(wallet)
+        if onchain_native is not None:
+            native_crypto = NATIVE_ASSET.get(wallet.blockchain)
+            if native_crypto:
+                wallet.balance[native_crypto.value] = onchain_native
         
         balance_usd = {}
         for crypto, amount in wallet.balance.items():
-            price = self.prices.get(Cryptocurrency(crypto), 0)
+            price = await self._get_price_usd(Cryptocurrency(crypto))
             balance_usd[crypto] = {
                 "amount": amount,
                 "price_usd": price,
@@ -227,14 +477,11 @@ class BlockchainInfrastructure:
         platform_fee = request.amount * self.platform_fee_rate
         total_fee = gas_fee + platform_fee
         
-        # In production: 
-        # 1. Check wallet balance
-        # 2. Build and sign transaction
-        # 3. Broadcast to blockchain
-        # 4. Monitor for confirmations
-        
-        # For demo: Simulate transaction
-        tx_hash = hashlib.sha256(f"{transaction_id}-{request.amount}".encode()).hexdigest()
+        # Broadcast the transaction: a tx hash only exists once a real
+        # broadcaster/node accepts it. The transfer stays PENDING until enough
+        # on-chain confirmations are observed — it is never instantly
+        # CONFIRMED with fabricated data.
+        tx_hash = await self._broadcast_transaction(request)
         
         transaction = CryptoTransaction(
             transaction_id=transaction_id,
@@ -254,10 +501,6 @@ class BlockchainInfrastructure:
         
         logger.info(f"Initiated crypto transfer {transaction_id}: {request.amount} {request.cryptocurrency} on {request.blockchain}")
         
-        # Simulate confirmation (in production: wait for blockchain confirmations)
-        transaction.status = TransactionStatus.CONFIRMED
-        transaction.confirmations = 6
-        
         return transaction
     
     async def get_transaction_status(self, transaction_id: str) -> CryptoTransaction:
@@ -268,15 +511,22 @@ class BlockchainInfrastructure:
         
         transaction = self.transactions[transaction_id]
         
-        # In production: Query blockchain for confirmation status
+        # Query the chain for confirmation status when a node is configured
+        if transaction.tx_hash and transaction.status == TransactionStatus.PENDING:
+            confirmations = await self._query_confirmations(transaction)
+            if confirmations is not None:
+                transaction.confirmations = confirmations
+                required = REQUIRED_CONFIRMATIONS.get(transaction.blockchain, 6)
+                if confirmations >= required:
+                    transaction.status = TransactionStatus.CONFIRMED
         
         return transaction
     
     async def fiat_to_crypto(self, request: FiatOnRampRequest) -> Dict:
         """Convert fiat to crypto (on-ramp)"""
         
-        # Calculate crypto amount
-        crypto_price = self.prices.get(request.cryptocurrency, 1.0)
+        # Calculate crypto amount using the live oracle price
+        crypto_price = await self._get_price_usd(request.cryptocurrency)
         crypto_amount = request.fiat_amount / crypto_price
         
         # Apply fees
@@ -287,12 +537,19 @@ class BlockchainInfrastructure:
         net_fiat = request.fiat_amount - total_fees
         net_crypto = net_fiat / crypto_price
         
-        # In production: 
-        # 1. Process fiat payment (Stripe, PayPal, bank transfer)
-        # 2. Purchase crypto from exchange/liquidity provider
-        # 3. Transfer crypto to user wallet
-        
         order_id = f"ONRAMP-{datetime.utcnow().timestamp()}"
+        
+        # Execute via the configured ramp provider; status comes from the
+        # provider and is "completed" only when the provider says so.
+        ramp_result = await self._execute_ramp_order("ONRAMP", {
+            "order_id": order_id,
+            "user_id": request.user_id,
+            "fiat_currency": request.fiat_currency,
+            "fiat_amount": request.fiat_amount,
+            "cryptocurrency": request.cryptocurrency.value,
+            "crypto_amount": round(net_crypto, 6),
+            "payment_method": request.payment_method
+        })
         
         logger.info(f"Fiat on-ramp {order_id}: ${request.fiat_amount} {request.fiat_currency} → {net_crypto:.6f} {request.cryptocurrency}")
         
@@ -309,15 +566,16 @@ class BlockchainInfrastructure:
                 "payment_processor_fee": round(payment_processor_fee, 2),
                 "total_fees": round(total_fees, 2)
             },
-            "status": "completed",
+            "status": ramp_result["status"],
+            "provider_reference": ramp_result["provider_reference"],
             "timestamp": datetime.utcnow().isoformat()
         }
     
     async def crypto_to_fiat(self, user_id: str, cryptocurrency: Cryptocurrency, crypto_amount: float, fiat_currency: str) -> Dict:
         """Convert crypto to fiat (off-ramp)"""
         
-        # Calculate fiat amount
-        crypto_price = self.prices.get(cryptocurrency, 1.0)
+        # Calculate fiat amount using the live oracle price
+        crypto_price = await self._get_price_usd(cryptocurrency)
         fiat_amount = crypto_amount * crypto_price
         
         # Apply fees
@@ -327,12 +585,18 @@ class BlockchainInfrastructure:
         
         net_fiat = fiat_amount - total_fees
         
-        # In production:
-        # 1. Sell crypto on exchange/liquidity provider
-        # 2. Process fiat payout (bank transfer, PayPal)
-        # 3. Update user balance
-        
         order_id = f"OFFRAMP-{datetime.utcnow().timestamp()}"
+        
+        # Execute via the configured ramp provider; status comes from the
+        # provider and is "completed" only when the provider says so.
+        ramp_result = await self._execute_ramp_order("OFFRAMP", {
+            "order_id": order_id,
+            "user_id": user_id,
+            "cryptocurrency": cryptocurrency.value,
+            "crypto_amount": crypto_amount,
+            "fiat_currency": fiat_currency,
+            "fiat_amount": round(net_fiat, 2)
+        })
         
         logger.info(f"Fiat off-ramp {order_id}: {crypto_amount} {cryptocurrency} → ${net_fiat:.2f} {fiat_currency}")
         
@@ -349,7 +613,8 @@ class BlockchainInfrastructure:
                 "withdrawal_fee": withdrawal_fee,
                 "total_fees": round(total_fees, 2)
             },
-            "status": "completed",
+            "status": ramp_result["status"],
+            "provider_reference": ramp_result["provider_reference"],
             "estimated_arrival": "1-3 business days",
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -379,9 +644,7 @@ class BlockchainInfrastructure:
     async def verify_crypto_address(self, address: str, blockchain: Blockchain) -> Dict:
         """Verify crypto address validity"""
         
-        # In production: Use blockchain-specific validation
-        # For demo: Simple format check
-        
+        # Format validation only; this does not assert ownership or existence
         is_valid = False
         
         if blockchain == Blockchain.BITCOIN and address.startswith("bc1q"):
@@ -408,6 +671,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "blockchain-infrastructure",
+        "simulation_mode": SIMULATION_MODE,
         "wallets": len(blockchain_infra.wallets),
         "transactions": len(blockchain_infra.transactions)
     }
@@ -418,6 +682,8 @@ async def create_wallet(request: WalletCreationRequest):
     try:
         result = await blockchain_infra.create_wallet(request)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Wallet creation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Wallet creation failed: {str(e)}")
@@ -428,6 +694,10 @@ async def get_balance(wallet_id: str):
     try:
         result = await blockchain_infra.get_wallet_balance(wallet_id)
         return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Balance query error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Balance query failed: {str(e)}")
@@ -438,6 +708,10 @@ async def initiate_transfer(request: CryptoTransferRequest):
     try:
         result = await blockchain_infra.initiate_crypto_transfer(request)
         return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Transfer error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Transfer failed: {str(e)}")
@@ -448,6 +722,10 @@ async def get_transaction(transaction_id: str):
     try:
         result = await blockchain_infra.get_transaction_status(transaction_id)
         return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Transaction query error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Transaction query failed: {str(e)}")
@@ -458,6 +736,8 @@ async def fiat_onramp(request: FiatOnRampRequest):
     try:
         result = await blockchain_infra.fiat_to_crypto(request)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"On-ramp error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"On-ramp failed: {str(e)}")
@@ -468,6 +748,8 @@ async def fiat_offramp(user_id: str, cryptocurrency: Cryptocurrency, crypto_amou
     try:
         result = await blockchain_infra.crypto_to_fiat(user_id, cryptocurrency, crypto_amount, fiat_currency)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Off-ramp error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Off-ramp failed: {str(e)}")
@@ -478,6 +760,8 @@ async def get_corridors():
     try:
         result = await blockchain_infra.get_supported_corridors()
         return {"corridors": result, "total": len(result)}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Corridors query error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Corridors query failed: {str(e)}")
@@ -488,15 +772,25 @@ async def verify_address(address: str, blockchain: Blockchain):
     try:
         result = await blockchain_infra.verify_crypto_address(address, blockchain)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Address verification error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Address verification failed: {str(e)}")
 
 @app.get("/api/v1/blockchain/prices")
 async def get_prices():
-    """Get cryptocurrency prices"""
+    """Get cryptocurrency prices from the configured oracle"""
+    prices = {}
+    for crypto in Cryptocurrency:
+        try:
+            prices[crypto.value] = await blockchain_infra._get_price_usd(crypto)
+        except Exception as e:
+            logger.warning(f"Price unavailable for {crypto.value}: {e}")
+            prices[crypto.value] = None
     return {
-        "prices": {k.value: v for k, v in blockchain_infra.prices.items()},
+        "prices": prices,
+        "simulation_mode": SIMULATION_MODE,
         "timestamp": datetime.utcnow().isoformat()
     }
 

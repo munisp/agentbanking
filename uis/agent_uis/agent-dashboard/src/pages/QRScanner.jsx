@@ -153,33 +153,64 @@ const QRScanner = () => {
     }
   };
 
-  const handleScanClick = () => {
-    setIsScanning(true);
-    // In a real implementation, this would open the camera
-    // For demo purposes, we'll simulate a scan after 2 seconds
-    setTimeout(() => {
-      setScanResult({
-        type: "Payment Request",
-        customer: "John Doe",
-        amount: 50000,
-        reference:
-          "QR-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      });
-      setIsScanning(false);
-    }, 2000);
+  const [scanError, setScanError] = useState(null);
+
+  // Real QR decode via the browser-native BarcodeDetector API. Where the
+  // browser lacks it, we report that honestly — a scan result is never faked.
+  const decodeQRFromImage = async (source) => {
+    if (!("BarcodeDetector" in window)) {
+      throw new Error("QR scanning is not supported by this browser.");
+    }
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const codes = await detector.detect(source);
+    if (!codes || codes.length === 0) {
+      throw new Error("No QR code found. Please try again.");
+    }
+    return codes[0].rawValue;
   };
 
-  const handleFileUpload = (e) => {
+  const handleScanClick = async () => {
+    setScanError(null);
+    setIsScanning(true);
+    try {
+      if (!("BarcodeDetector" in window) || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Camera QR scanning is not supported by this browser. Upload a QR image instead.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      await video.play();
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const deadline = Date.now() + 15000;
+      let found = null;
+      while (Date.now() < deadline && !found) {
+        // eslint-disable-next-line no-await-in-loop
+        const codes = await detector.detect(video).catch(() => []);
+        if (codes && codes.length > 0) found = codes[0].rawValue;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      stream.getTracks().forEach((t) => t.stop());
+      if (!found) throw new Error("No QR code detected. Please try again.");
+      setScanResult({ type: "QR Code", reference: found });
+    } catch (err) {
+      setScanError(err.message || "Scanning failed.");
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      // In a real implementation, this would process the QR code from the image
-      setScanResult({
-        type: "Receipt Verification",
-        customer: "Jane Smith",
-        amount: 30000,
-        reference:
-          "QR-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      });
+    if (!file) return;
+    setScanError(null);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const raw = await decodeQRFromImage(bitmap);
+      setScanResult({ type: "QR Code", reference: raw });
+    } catch (err) {
+      setScanError(err.message || "Could not read a QR code from that image.");
     }
   };
 
@@ -373,6 +404,13 @@ const QRScanner = () => {
               </div>
             )}
 
+            {/* Scan errors */}
+            {scanError && (
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 text-center">
+                {scanError}
+              </div>
+            )}
+
             {/* Scanning State */}
             {isScanning && (
               <div className="flex flex-col items-center justify-center py-12">
@@ -446,13 +484,13 @@ const QRScanner = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Customer:</span>
                     <span className="font-semibold text-gray-900">
-                      {scanResult.customer}
+                      {scanResult.customer ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Amount:</span>
                     <span className="font-semibold text-green-600 text-xl">
-                      ₦{scanResult.amount.toLocaleString()}
+                      {scanResult.amount != null ? `₦${scanResult.amount.toLocaleString()}` : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">

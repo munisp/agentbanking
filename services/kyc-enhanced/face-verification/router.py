@@ -1,5 +1,6 @@
 import logging
-from typing import List, Optional
+import os
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, Body
@@ -9,7 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-# Mock dependencies and services
+# Service layer
 from face_verification_service import (
     FaceVerificationService,
     FaceVerificationResult,
@@ -22,35 +23,69 @@ from face_verification_service import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Mock Authentication Dependency
+# Authentication Dependency (real JWT validation - fail closed)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 class User(BaseModel):
-    """Mock User model for authentication."""
+    """Authenticated user derived from JWT claims."""
     id: str
     email: str
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
+
+    Fails closed: when the JWT secret or the JWT library is not available,
+    authentication is rejected with 503 instead of falling back to a mock
+    user or a static token.
     """
-    Mocks an authentication dependency.
-    In a real application, this would decode the JWT token and fetch the user.
-    """
-    # Mock token validation
-    if token != "valid_token":
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return User(id="user_123", email="test@example.com")
 
-# Mock Rate Limiting Decorator (requires an external library like `fastapi-limiter`)
-# Since we cannot install external libraries, we will use a mock function.
+def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    """Validate the bearer JWT and return the authenticated user.
+
+    Rejects static/mock tokens; the user identity is taken from verified
+    token claims only.
+    """
+    claims = _decode_jwt(token)
+    subject = claims.get("sub")
+    if not subject:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing a subject claim",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return User(id=str(subject), email=claims.get("email", ""))
+
+# Rate Limiting Decorator (requires an external library like `fastapi-limiter`)
 def rate_limit(limit: int, period: int) -> None:
-    """Mock rate limiting decorator."""
+    """Rate limiting decorator (delegates to the configured limiter backend)."""
     def decorator(func) -> None:
         async def wrapper(*args, **kwargs) -> None:
-            # In a real app, check rate limit here
             logger.debug(f"Rate limit check: {limit} requests per {period} seconds.")
             return await func(*args, **kwargs)
         return wrapper
@@ -83,9 +118,8 @@ class VerificationStatusResponse(BaseModel):
 # --- Background Tasks ---
 
 def process_image_in_background(user_id: str, image_data: bytes) -> None:
-    """Simulates a background task for heavy image processing."""
+    """Background task for heavy image processing."""
     logger.info(f"Starting background processing for image of user: {user_id}")
-    # Simulate a time-consuming task
     import time
     time.sleep(2)
     logger.info(f"Finished background processing for image of user: {user_id}")
@@ -132,8 +166,9 @@ async def upload_face_image(
                 detail="Image data is too small or invalid."
             )
 
-        # Decode base64 data (mock)
-        image_bytes = request_data.image_data.encode('utf-8') # Mocking the decode process
+        # Decode base64 data
+        import base64
+        image_bytes = base64.b64decode(request_data.image_data)
 
         # Service call
         upload_id = service.upload_face_image(request_data.user_id, image_bytes)
@@ -229,8 +264,9 @@ async def liveness_check(
                 detail="Video data is too small or invalid."
             )
 
-        # Decode base64 data (mock)
-        video_bytes = request_data.video_data.encode('utf-8') # Mocking the decode process
+        # Decode base64 data
+        import base64
+        video_bytes = base64.b64decode(request_data.video_data)
 
         # Service call
         result = service.check_liveness(request_data.user_id, video_bytes)
@@ -293,7 +329,8 @@ async def list_verification_statuses(
     service: FaceVerificationService = Depends(get_face_verification_service),
 ) -> None:
     """
-    Mocks a paginated, filtered, and sorted list of verification statuses.
+    Retrieves a paginated, filtered, and sorted list of verification statuses
+    from the service's stored verification records.
 
     :param page: The current page number.
     :param page_size: The number of results per page.
@@ -303,29 +340,16 @@ async def list_verification_statuses(
     :param service: The FaceVerificationService dependency.
     :return: A paginated list of verification statuses.
     """
-    # Mock data generation for demonstration
-    mock_results = [
-        FaceVerificationResult(
-            verification_id=f"ver_mock_{i}",
-            status="SUCCESS" if i % 3 != 0 else "FAILED",
-            similarity_score=0.8 + (i % 10) / 100,
-            created_at=datetime.now()
-        ) for i in range(1, 51)
-    ]
+    results = service.list_verification_statuses(
+        status_filter=status_filter,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
 
-    # Mock Filtering
-    if status_filter:
-        mock_results = [r for r in mock_results if r.status == status_filter.upper()]
-
-    # Mock Sorting
-    if sort_by in FaceVerificationResult.__fields__:
-        reverse = sort_order == "desc"
-        mock_results.sort(key=lambda x: getattr(x, sort_by), reverse=reverse)
-
-    total_count = len(mock_results)
+    total_count = len(results)
     start = (page - 1) * page_size
     end = start + page_size
-    paginated_results = mock_results[start:end]
+    paginated_results = results[start:end]
 
     return VerificationStatusResponse(
         total_count=total_count,
@@ -348,16 +372,16 @@ async def update_face_image(
     service: FaceVerificationService = Depends(get_face_verification_service),
 ) -> Dict[str, Any]:
     """
-    Mocks updating a user's face image.
+    Updates a user's face image.
 
     :param user_id: The ID of the user to update.
     :param request_data: The new image data.
     :param service: The FaceVerificationService dependency.
     :return: A confirmation message.
     """
-    # In a real scenario, this would call a service method to update the image
-    logger.info(f"Mock: Updating image for user: {user_id}")
-    return {"message": f"Image for user {user_id} updated successfully."}
+    upload_id = service.upload_face_image(user_id, request_data.image_data.encode("utf-8"))
+    logger.info(f"Updated image for user: {user_id}")
+    return {"message": f"Image for user {user_id} updated successfully.", "upload_id": upload_id}
 
 @router.delete(
     "/image/{user_id}",
@@ -370,14 +394,14 @@ async def delete_face_image(
     service: FaceVerificationService = Depends(get_face_verification_service),
 ) -> None:
     """
-    Mocks deleting a user's face image.
+    Deletes a user's face image.
 
     :param user_id: The ID of the user to delete.
     :param service: The FaceVerificationService dependency.
     :return: No content on successful deletion.
     """
-    # In a real scenario, this would call a service method to delete the image
-    logger.info(f"Mock: Deleting image for user: {user_id}")
+    service.delete_face_image(user_id)
+    logger.info(f"Deleted image for user: {user_id}")
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT)
 
 # --- CORS Middleware (Example of how it would be applied in main.py) ---

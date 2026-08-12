@@ -5,7 +5,7 @@ import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
 import { tbCreateTransfer } from "../tbClient";
-import { cacheSet } from "../redisClient";
+import { cacheGet, cacheSet } from "../redisClient";
 import { publishTxToFluvio } from "../fluvio";
 import { ingestToLakehouse } from "../lakehouse";
 import { dapr } from "../middleware/middlewareConnectors";
@@ -15,7 +15,6 @@ import crypto from "crypto";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
-import { getAllLiveFxRates, getLiveFxRate } from "../lib/fxRates";
 
 import {
   validateAmount,
@@ -30,6 +29,10 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import {
+  getLiveFxRate,
+  getFxRateSnapshot,
+} from "../lib/fxRateProvider";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -40,21 +43,37 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
 };
 
-// Base currency for the corridor/rate listings. All rates are fetched live
-// from the Frankfurter/ECB feed — there is no hardcoded rate table on any path.
-const FX_LIST_BASE = "EUR";
+// FX rates come from the live Frankfurter/ECB reference feed via
+// ../lib/fxRateProvider (timeout + cached with fetched-at + staleness guard).
+// The previous ~48-entry hardcoded corridor table drove real convert
+// mutations at fabricated rates — removed.
+
+const fxSpreadKey = (pair: string) => `fx_spread:${pair.toUpperCase()}`;
+
+/** Persisted per-pair spread (percent), written by setSpread. */
+async function getSpreadPercent(pair: string): Promise<number> {
+  const raw = await cacheGet(fxSpreadKey(pair));
+  if (raw === null) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
 
 const getRates = protectedProcedure.query(async () => {
-  const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
-  const out = Object.entries(rates).map(([to, rate]) => ({
-    pair: `${base}-${to}`,
-    fromCurrency: base,
-    toCurrency: to,
-    rate,
-    inverseRate: Math.round((1 / rate) * 10000) / 10000,
-    updatedAt: fetchedAt,
-  }));
-  return { rates: out, total: out.length };
+  const snapshot = await getFxRateSnapshot();
+  const rates = Object.entries(snapshot.rates)
+    .filter(([currency]) => currency !== snapshot.base)
+    .map(([currency, rate]) => ({
+      pair: `${snapshot.base}-${currency}`,
+      fromCurrency: snapshot.base,
+      toCurrency: currency,
+      rate,
+      inverseRate: Math.round((1 / rate) * 10000) / 10000,
+      updatedAt: new Date(snapshot.fetchedAt).toISOString(),
+      rateSource: "frankfurter/ecb" as const,
+      rateDate: snapshot.date,
+    }))
+    .sort((a, b) => a.pair.localeCompare(b.pair));
+  return { rates, total: rates.length };
 });
 
 const convert = protectedProcedure
@@ -70,12 +89,14 @@ const convert = protectedProcedure
     const session = await getAgentFromCookie(ctx.req);
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-    // Live ECB reference rate (Frankfurter) — hard-fails on unknown pairs,
-    // feed outage, or stale rates. No conversion happens at a fabricated rate.
-    const { rate, fetchedAt: rateFetchedAt } = await getLiveFxRate(
-      input.fromCurrency,
-      input.toCurrency
-    );
+    const pairKey = `${input.fromCurrency.toUpperCase()}-${input.toCurrency.toUpperCase()}`;
+    // Live ECB/Frankfurter rate — throws NOT_IMPLEMENTED for uncovered pairs
+    // and SERVICE_UNAVAILABLE when the feed is down/stale. No fallback table.
+    const liveRate = await getLiveFxRate(input.fromCurrency, input.toCurrency);
+    const spreadPercent = await getSpreadPercent(pairKey);
+    const rate =
+      Math.round(liveRate.rate * (1 + spreadPercent / 100) * 100_000_000) /
+      100_000_000;
 
     const convertedAmount = Math.round(input.amount * rate * 100) / 100;
     const feeResult = calculateFee(input.amount, "transfer");
@@ -124,7 +145,10 @@ const convert = protectedProcedure
               fromCurrency: input.fromCurrency,
               toCurrency: input.toCurrency,
               exchangeRate: rate,
-              exchangeRateFetchedAt: rateFetchedAt,
+              spreadPercent,
+              rateSource: liveRate.source,
+              rateDate: liveRate.rateDate,
+              rateFetchedAt: liveRate.fetchedAt,
               convertedAmount,
             },
           })
@@ -170,9 +194,9 @@ const convert = protectedProcedure
       { agentCode: session.agentCode }
     ).catch(() => {});
 
-    // TigerBeetle dual-ledger — mirrors the GL posting above:
-    // Debit FX Conversion Payable (3002), Credit Agent Float (2001).
-    // (Previously debited and credited 2001 — a self-transfer that moved nothing.)
+    // TigerBeetle dual-ledger — mirrors the GL posting above (was a 2001→2001
+    // self-transfer that moved nothing; now debit FX Conversion Payable,
+    // credit Agent Float).
     tbCreateTransfer({
       debitAccountId: "3002",
       creditAccountId: "2001",
@@ -221,7 +245,10 @@ const convert = protectedProcedure
       sourceAmount: input.amount,
       convertedAmount,
       exchangeRate: rate,
-      exchangeRateFetchedAt: rateFetchedAt,
+      spreadPercent,
+      rateSource: liveRate.source,
+      rateDate: liveRate.rateDate,
+      rateFetchedAt: liveRate.fetchedAt,
       fee: feeResult.fee,
       timestamp: new Date().toISOString(),
     };
@@ -296,18 +323,21 @@ const getStats = publicProcedure
         .where(sql`${transactions.type} = 'FX Exchange'`)
         .orderBy(desc(transactions.id))
         .limit(5);
-      // Live corridor list from the ECB reference feed (hard-fails on outage)
-      const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
-      const corridors = Object.keys(rates).map(to => `${base}-${to}`);
-      const currencies = new Set<string>([base, ...Object.keys(rates)]);
+      const snapshot = await getFxRateSnapshot();
+      const currencies = Object.keys(snapshot.rates).sort();
+      const corridors = currencies
+        .filter(c => c !== snapshot.base)
+        .map(c => `${snapshot.base}-${c}`);
       return {
-        supportedCurrencies: currencies.size,
+        supportedCurrencies: currencies.length,
         activePairs: corridors.length,
         supportedPairs: corridors.length,
         totalExchanges: total,
         recentExchanges: recent,
         corridors,
-        lastRateUpdate: fetchedAt,
+        rateSource: "frankfurter/ecb",
+        rateDate: snapshot.date,
+        lastRateUpdate: new Date(snapshot.fetchedAt).toISOString(),
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -330,19 +360,26 @@ const getCorridors = protectedProcedure
     try {
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
-      // Live corridor list from the ECB reference feed (hard-fails on outage)
-      const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
-      const all = Object.entries(rates).map(([to, rate]) => ({
-        pair: `${base}-${to}`,
-        fromCurrency: base,
-        toCurrency: to,
-        rate,
-        updatedAt: fetchedAt,
-      }));
-      const corridors = all.slice(offset, offset + lim);
+      const snapshot = await getFxRateSnapshot();
+      let corridors = Object.entries(snapshot.rates)
+        .filter(([currency]) => currency !== snapshot.base)
+        .map(([currency, rate]) => ({
+          pair: `${snapshot.base}-${currency}`,
+          fromCurrency: snapshot.base,
+          toCurrency: currency,
+          rate,
+          rateSource: "frankfurter/ecb" as const,
+          rateDate: snapshot.date,
+          updatedAt: new Date(snapshot.fetchedAt).toISOString(),
+        }))
+        .sort((a, b) => a.pair.localeCompare(b.pair));
+      if (input.search) {
+        const s = input.search.toUpperCase();
+        corridors = corridors.filter(c => c.pair.includes(s));
+      }
       return {
-        items: corridors,
-        total: all.length,
+        items: corridors.slice(offset, offset + lim),
+        total: corridors.length,
         page: input.page ?? 1,
         limit: lim,
       };
@@ -382,24 +419,68 @@ const setSpread = protectedProcedure
     const fees = calculateFee(txAmount, "transfer");
     const commission = calculateCommission(fees.fee, "transfer");
     const tax = calculateTax(fees.fee, "vat");
-    // There is no spread store wired to this router. The previous
-    // implementation logged an audit row and returned success while
-    // persisting nothing — silent mockware. Fail loud instead.
-    await writeAuditLog({
-      action: "mutation",
-      resource: "multiCurrencyExchange",
-      status: "failure",
-      metadata: {
-        reason:
-          "setSpread rejected: no spread persistence store is configured",
-        input: JSON.stringify(input).slice(0, 500),
-      },
-    });
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message:
-        "FX spread updates are not implemented: no spread store is configured for this service. Refusing to report success without persisting anything.",
-    });
+    try {
+      const spreadData = input.data ?? {};
+      const pair = String(spreadData.pair ?? "").toUpperCase();
+      const spread = Number(spreadData.spread);
+
+      if (!/^[A-Z]{3}-[A-Z]{3}$/.test(pair)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            'setSpread requires data.pair as an ISO currency pair (e.g. "EUR-USD")',
+        });
+      }
+      if (!Number.isFinite(spread) || spread < 0 || spread > 25) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "data.spread must be a number between 0 and 25 (percent)",
+        });
+      }
+
+      const [from, to] = pair.split("-");
+      // Validates the pair against the live feed (throws if uncovered/down).
+      const live = await getLiveFxRate(from, to);
+
+      // Persist the spread durably (no TTL). Success is returned only when
+      // the write is confirmed — previously this returned success while
+      // persisting nothing.
+      const persisted = await cacheSet(fxSpreadKey(pair), String(spread));
+      if (!persisted) {
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message: "Spread store unavailable — spread was NOT applied",
+        });
+      }
+
+      await writeAuditLog({
+        action: "mutation",
+        resource: "multiCurrencyExchange",
+        status: "success",
+        metadata: {
+          pair,
+          spread,
+          input: JSON.stringify(input).slice(0, 500),
+        },
+      });
+      return {
+        success: true,
+        pair,
+        baseRate: live.rate,
+        spread,
+        effectiveRate: live.rate * (1 + spread / 100),
+        rateSource: live.source,
+        rateDate: live.rateDate,
+        message: "Spread updated and persisted",
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

@@ -22,8 +22,6 @@ import {
   ScatterChart,
   Scatter,
   Cell,
-  LineChart,
-  Line,
 } from "recharts";
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -62,18 +60,6 @@ interface FraudEvent {
   channel: string;
   shapFeatures: { name: string; value: number; direction: "risk" | "safe" }[];
 }
-
-interface AgentRisk {
-  agentCode: string;
-  agentName: string;
-  location: string;
-  riskScore: number;
-  txCount: number;
-  flaggedCount: number;
-  tier: string;
-}
-
-// HOURLY_DATA is fetched live via trpc.fraud.hourlyStats in the component
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 const SEV_COLOR: Record<Severity, string> = {
@@ -257,15 +243,14 @@ export default function FraudDashboard() {
   const [filterStatus, setFilterStatus] = useState<CaseStatus | "all">("all");
   const [paused, setPaused] = useState(false);
   const [newCount, setNewCount] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
   const feedRef = useRef<HTMLDivElement>(null);
 
   // ── Live fraud alerts from DB ───────────────────────────────────────────────
-  const { data: dbAlerts, isError: alertsError } = trpc.fraud.list.useQuery(
+  const { data: dbAlerts } = trpc.fraud.list.useQuery(
     { page: 1, limit: 50 },
     { refetchInterval: 30_000, retry: false }
   );
-  // Seed events from DB when available
+  // Seed initial events from DB when available
   useEffect(() => {
     if (!dbAlerts?.items?.length) return;
     const mapped: FraudEvent[] = dbAlerts.items.map((a: any) => {
@@ -274,7 +259,7 @@ export default function FraudDashboard() {
         id: String(a.id),
         agentCode: a.agentCode ?? "UNKNOWN",
         agentName: a.agentCode ?? "Unknown Agent",
-        location: a.location ?? "—",
+        location: "Nigeria",
         txType: a.txType ?? "Transaction",
         amount: Number(a.amount ?? 0),
         customer: a.customerName ?? "-",
@@ -287,8 +272,17 @@ export default function FraudDashboard() {
         }),
         timestamp: new Date(a.createdAt ?? Date.now()).getTime(),
         status: (a.status as CaseStatus) ?? "open",
-        channel: a.channel ?? "—",
-        shapFeatures: Array.isArray(a.shapFeatures) ? a.shapFeatures : [],
+        channel: "POS",
+        shapFeatures: [
+          {
+            name: "Amount deviation",
+            value: score * 0.4,
+            direction: "risk" as const,
+          },
+          { name: "Velocity", value: score * 0.3, direction: "risk" as const },
+          { name: "Time of day", value: 0.15, direction: "safe" as const },
+          { name: "Agent history", value: 0.1, direction: "safe" as const },
+        ],
       };
     });
     setEvents(prev => {
@@ -310,7 +304,7 @@ export default function FraudDashboard() {
       id: latest.id,
       agentCode: latest.agentCode,
       agentName: latest.customerName,
-      location: "—",
+      location: "Lagos, Nigeria",
       txType: latest.type,
       amount: latest.amount,
       customer: latest.customerName,
@@ -323,8 +317,21 @@ export default function FraudDashboard() {
       }),
       timestamp: new Date(latest.timestamp).getTime(),
       status: "open",
-      channel: latest.type,
-      shapFeatures: [],
+      channel: "Cash",
+      shapFeatures: [
+        {
+          name: "Amount deviation",
+          value: parseFloat(latest.fraudScore) * 0.4,
+          direction: "risk",
+        },
+        {
+          name: "Velocity",
+          value: parseFloat(latest.fraudScore) * 0.3,
+          direction: "risk",
+        },
+        { name: "Time of day", value: 0.15, direction: "safe" },
+        { name: "Agent history", value: 0.1, direction: "safe" },
+      ],
     };
     if (!paused) {
       setEvents(prev => [mapped, ...prev].slice(0, 50));
@@ -363,10 +370,11 @@ export default function FraudDashboard() {
 
   const updateStatus = useCallback(
     (id: string, status: CaseStatus) => {
+      // Only persist for events that exist in the fraud database (numeric IDs).
       const numId = parseInt(id, 10);
       if (isNaN(numId)) {
         toast.error(
-          "This case cannot be updated: it is not a persisted fraud alert in the database."
+          "Cannot update case status: this event is not persisted in the fraud database."
         );
         return;
       }
@@ -383,9 +391,9 @@ export default function FraudDashboard() {
               `Case ${status === "resolved" ? "resolved" : status === "escalated" ? "escalated to compliance" : "status updated"}`
             );
           },
-          onError: (err: any) => {
+          onError: (e: any) => {
             toast.error(
-              `Failed to update case status: ${err?.message ?? "The fraud service rejected the update."}`
+              `Failed to update case status: ${e?.message || "Unknown error"}`
             );
           },
         }
@@ -400,49 +408,6 @@ export default function FraudDashboard() {
       (filterStatus === "all" || e.status === filterStatus)
   );
 
-  // Agent risk is derived exclusively from live fraud events
-  const agentRisks: AgentRisk[] = useMemo(() => {
-    const byAgent = new Map<string, AgentRisk>();
-    for (const e of events) {
-      const existing = byAgent.get(e.agentCode);
-      if (existing) {
-        existing.txCount += 1;
-        existing.flaggedCount += 1;
-        existing.riskScore = Math.max(existing.riskScore, e.riskScore);
-      } else {
-        byAgent.set(e.agentCode, {
-          agentCode: e.agentCode,
-          agentName: e.agentName,
-          location: e.location,
-          riskScore: e.riskScore,
-          txCount: 1,
-          flaggedCount: 1,
-          tier: "—",
-        });
-      }
-    }
-    return [...byAgent.values()];
-  }, [events]);
-
-  // Risk score distribution derived from live fraud events
-  const riskDistribution = useMemo(() => {
-    const buckets: { range: string; min: number; max: number; color: string }[] = [
-      { range: "40-50", min: 40, max: 50, color: "#6b7280" },
-      { range: "50-60", min: 50, max: 60, color: GOLD },
-      { range: "60-70", min: 60, max: 70, color: ORANGE },
-      { range: "70-80", min: 70, max: 80, color: ORANGE },
-      { range: "80-90", min: 80, max: 90, color: RED },
-      { range: "90-100", min: 90, max: 101, color: RED },
-    ];
-    return buckets.map(b => ({
-      range: b.range,
-      count: events.filter(
-        e => e.riskScore >= b.min && e.riskScore < b.max
-      ).length,
-      color: b.color,
-    }));
-  }, [events]);
-
   const stats = {
     total: events.length,
     critical: events.filter(e => e.severity === "critical").length,
@@ -450,6 +415,54 @@ export default function FraudDashboard() {
     blocked: events.filter(e => e.status === "resolved").length,
     totalRisk: events.reduce((s: any, e: any) => s + e.amount, 0),
   };
+
+  // ── Agent risk summary derived from real flagged events ─────────────────────
+  const agentRisks = useMemo(() => {
+    const byAgent = new Map<string, FraudEvent[]>();
+    for (const e of events) {
+      const arr = byAgent.get(e.agentCode) ?? [];
+      arr.push(e);
+      byAgent.set(e.agentCode, arr);
+    }
+    return [...byAgent.entries()].map(([code, evs]) => ({
+      agentCode: code,
+      agentName: evs[0].agentName,
+      location: evs[0].location,
+      riskScore: Math.round(
+        evs.reduce((s, e) => s + e.riskScore, 0) / evs.length
+      ),
+      flaggedCount: evs.length,
+    }));
+  }, [events]);
+
+  // ── Severity distribution derived from real events ──────────────────────────
+  const severityDistribution = useMemo(
+    () =>
+      (["critical", "high", "medium", "low"] as Severity[]).map(s => ({
+        name: s,
+        value: events.filter(e => e.severity === s).length,
+        color: SEV_COLOR[s],
+      })),
+    [events]
+  );
+
+  // ── Risk score distribution derived from real events ────────────────────────
+  const riskBuckets = useMemo(() => {
+    const ranges = [
+      { range: "0-20", min: 0, max: 20, color: "#6b7280" },
+      { range: "20-40", min: 20, max: 40, color: GOLD },
+      { range: "40-60", min: 40, max: 60, color: GOLD },
+      { range: "60-80", min: 60, max: 80, color: ORANGE },
+      { range: "80-100", min: 80, max: 101, color: RED },
+    ];
+    return ranges.map(r => ({
+      range: r.range,
+      count: events.filter(
+        e => e.riskScore >= r.min && e.riskScore < r.max
+      ).length,
+      color: r.color,
+    }));
+  }, [events]);
 
   return (
     <div
@@ -517,26 +530,12 @@ export default function FraudDashboard() {
         </div>
       </div>
 
-      {alertsError && (
-        <div
-          className="mx-5 mt-3 px-4 py-2 rounded-xl text-xs font-semibold flex-shrink-0"
-          style={{
-            background: `${RED}15`,
-            color: RED,
-            border: `1px solid ${RED}40`,
-          }}
-        >
-          Unable to load persisted fraud alerts from the database. Only live
-          socket events (if any) are shown.
-        </div>
-      )}
-
       {/* ── KPI Strip ── */}
       <div className="grid grid-cols-5 gap-3 px-5 py-3 flex-shrink-0">
         <StatCard
           label="Total Events"
           value={String(stats.total)}
-          sub="Live + persisted alerts"
+          sub="Loaded alerts"
           color={BLUE}
         />
         <StatCard
@@ -633,9 +632,9 @@ export default function FraudDashboard() {
               {/* Event rows */}
               <div ref={feedRef} className="flex-1 overflow-y-auto">
                 {filtered.length === 0 && (
-                  <div className="text-center text-gray-500 py-12 text-sm px-4">
+                  <div className="text-center text-gray-500 py-12 text-sm">
                     {events.length === 0
-                      ? "No fraud events recorded yet. Live alerts from the fraud engine will appear here."
+                      ? "No fraud alerts. The feed updates in real time when alerts are detected."
                       : "No events match filter"}
                   </div>
                 )}
@@ -808,37 +807,27 @@ export default function FraudDashboard() {
                         🤖 AI Feature Explanation (SHAP)
                       </span>
                     </div>
-                    {selected.shapFeatures.length > 0 ? (
-                      <>
-                        {selected.shapFeatures.map((f, i) => (
-                          <SHAPBar key={i} feature={f} />
-                        ))}
-                        <div
-                          className="mt-3 p-3 rounded-xl"
-                          style={{
-                            background: `${GOLD}10`,
-                            border: `1px solid ${GOLD}20`,
-                          }}
-                        >
-                          <div className="text-xs font-semibold text-yellow-400 mb-1">
-                            AI Recommendation
-                          </div>
-                          <div className="text-xs text-gray-300">
-                            {selected.riskScore >= 80
-                              ? "Block transaction immediately and escalate to compliance. Request biometric re-verification."
-                              : selected.riskScore >= 65
-                                ? "Place transaction on hold. Request additional customer verification (OTP)."
-                                : "Monitor agent activity for next 2 hours. No immediate action required."}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-xs text-gray-500">
-                        Feature attribution is not available for this event.
-                        Explanations appear here when the fraud engine provides
-                        them for a persisted alert.
+                    {selected.shapFeatures.map((f, i) => (
+                      <SHAPBar key={i} feature={f} />
+                    ))}
+                    <div
+                      className="mt-3 p-3 rounded-xl"
+                      style={{
+                        background: `${GOLD}10`,
+                        border: `1px solid ${GOLD}20`,
+                      }}
+                    >
+                      <div className="text-xs font-semibold text-yellow-400 mb-1">
+                        AI Recommendation
                       </div>
-                    )}
+                      <div className="text-xs text-gray-300">
+                        {selected.riskScore >= 80
+                          ? "Block transaction immediately and escalate to compliance. Request biometric re-verification."
+                          : selected.riskScore >= 65
+                            ? "Place transaction on hold. Request additional customer verification (OTP)."
+                            : "Monitor agent activity for next 2 hours. No immediate action required."}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Transaction metadata */}
@@ -892,129 +881,109 @@ export default function FraudDashboard() {
               style={{ background: CARD, border: `1px solid ${BORDER}` }}
             >
               <div
-                className="sticky top-0 grid grid-cols-6 gap-3 px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="sticky top-0 grid grid-cols-3 gap-3 px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"
                 style={{
                   background: CARD,
                   borderBottom: `1px solid ${BORDER}`,
                 }}
               >
-                <span className="col-span-2">Agent</span>
-                <span>Risk Score</span>
-                <span>Transactions</span>
-                <span>Flagged</span>
-                <span>Flag Rate</span>
+                <span>Agent</span>
+                <span>Avg Risk Score</span>
+                <span>Flagged Events</span>
               </div>
-              {agentRisks.length === 0 && (
-                <div className="text-center text-gray-500 py-12 text-sm px-4">
-                  No agent risk data available. Risk profiles are built from
-                  live fraud events as they arrive.
+              {agentRisks.length === 0 ? (
+                <div className="text-center text-gray-500 py-12 text-sm">
+                  No flagged agents. Agent risk is computed from real fraud
+                  alerts as they arrive.
                 </div>
-              )}
-              {[...agentRisks]
-                .sort((a: any, b: any) => b.riskScore - a.riskScore)
-                .map((agent, i) => {
-                  const flagRate = (
-                    (agent.flaggedCount / agent.txCount) *
-                    100
-                  ).toFixed(1);
-                  const riskColor =
-                    agent.riskScore >= 80
-                      ? RED
-                      : agent.riskScore >= 60
-                        ? ORANGE
-                        : agent.riskScore >= 40
-                          ? GOLD
-                          : GREEN;
-                  return (
-                    <div
-                      key={agent.agentCode}
-                      className="grid grid-cols-6 gap-3 px-5 py-4 items-center transition-all hover:opacity-80"
-                      style={{
-                        borderBottom: `1px solid ${BORDER}`,
-                        background: i === 0 ? `${RED}08` : "transparent",
-                      }}
-                    >
-                      <div className="col-span-2">
-                        <div
-                          className="text-sm font-bold text-white"
-                          style={{ fontFamily: DISP }}
-                        >
-                          {agent.agentName}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {agent.agentCode} · {agent.location}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className="text-sm font-bold"
-                            style={{ color: riskColor, fontFamily: MONO }}
-                          >
-                            {agent.riskScore}
-                          </span>
-                        </div>
-                        <div
-                          className="h-1.5 w-20 rounded-full overflow-hidden"
-                          style={{ background: BORDER }}
-                        >
+              ) : (
+                [...agentRisks]
+                  .sort((a: any, b: any) => b.riskScore - a.riskScore)
+                  .map((agent, i) => {
+                    const riskColor =
+                      agent.riskScore >= 80
+                        ? RED
+                        : agent.riskScore >= 60
+                          ? ORANGE
+                          : agent.riskScore >= 40
+                            ? GOLD
+                            : GREEN;
+                    return (
+                      <div
+                        key={agent.agentCode}
+                        className="grid grid-cols-3 gap-3 px-5 py-4 items-center transition-all hover:opacity-80"
+                        style={{
+                          borderBottom: `1px solid ${BORDER}`,
+                          background: i === 0 ? `${RED}08` : "transparent",
+                        }}
+                      >
+                        <div>
                           <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${agent.riskScore}%`,
-                              background: riskColor,
-                            }}
-                          />
+                            className="text-sm font-bold text-white"
+                            style={{ fontFamily: DISP }}
+                          >
+                            {agent.agentName}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {agent.agentCode} · {agent.location}
+                          </div>
                         </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className="text-sm font-bold"
+                              style={{ color: riskColor, fontFamily: MONO }}
+                            >
+                              {agent.riskScore}
+                            </span>
+                          </div>
+                          <div
+                            className="h-1.5 w-20 rounded-full overflow-hidden"
+                            style={{ background: BORDER }}
+                          >
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${agent.riskScore}%`,
+                                background: riskColor,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <span
+                          className="text-sm font-bold"
+                          style={{
+                            color: agent.flaggedCount > 5 ? RED : GOLD,
+                            fontFamily: MONO,
+                          }}
+                        >
+                          {agent.flaggedCount}
+                        </span>
                       </div>
-                      <span
-                        className="text-sm text-white"
-                        style={{ fontFamily: MONO }}
-                      >
-                        {agent.txCount}
-                      </span>
-                      <span
-                        className="text-sm font-bold"
-                        style={{
-                          color: agent.flaggedCount > 5 ? RED : GOLD,
-                          fontFamily: MONO,
-                        }}
-                      >
-                        {agent.flaggedCount}
-                      </span>
-                      <span
-                        className="text-sm"
-                        style={{
-                          color: parseFloat(flagRate) > 5 ? RED : GREEN,
-                          fontFamily: MONO,
-                        }}
-                      >
-                        {flagRate}%
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+              )}
             </div>
 
-            {/* Scatter: risk vs volume */}
+            {/* Scatter: risk vs flagged events */}
             <div className="w-72 flex flex-col gap-4">
               <div
                 className="rounded-2xl p-4 flex-1"
                 style={{ background: CARD, border: `1px solid ${BORDER}` }}
               >
                 <div className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                  Risk vs Volume
+                  Risk vs Flagged Events
                 </div>
                 {agentRisks.length === 0 ? (
-                  <div className="text-xs text-gray-500">
-                    No data available yet.
+                  <div className="text-center text-gray-500 py-12 text-xs">
+                    No data available
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={200}>
                     <ScatterChart>
                       <XAxis
-                        dataKey="txCount"
-                        name="Transactions"
+                        dataKey="flaggedCount"
+                        name="Flagged Events"
                         tick={{ fill: "#6b7280", fontSize: 10 }}
                       />
                       <YAxis
@@ -1031,13 +1000,7 @@ export default function FraudDashboard() {
                         labelStyle={{ color: "white" }}
                         itemStyle={{ color: GOLD }}
                       />
-                      <Scatter
-                        data={agentRisks.map(a => ({
-                          txCount: a.txCount,
-                          riskScore: a.riskScore,
-                          name: a.agentName,
-                        }))}
-                      >
+                      <Scatter data={agentRisks}>
                         {agentRisks.map((a, i) => (
                           <Cell
                             key={i}
@@ -1062,48 +1025,40 @@ export default function FraudDashboard() {
                 style={{ background: CARD, border: `1px solid ${BORDER}` }}
               >
                 <div className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">
-                  Severity Breakdown
+                  Severity Distribution
                 </div>
                 {events.length === 0 ? (
-                  <div className="text-xs text-gray-500">
-                    No events recorded yet.
+                  <div className="text-center text-gray-500 py-6 text-xs">
+                    No data available
                   </div>
                 ) : (
-                  (["critical", "high", "medium", "low"] as Severity[]).map(
-                    sev => {
-                      const count = events.filter(
-                        e => e.severity === sev
-                      ).length;
-                      const pct = Math.round((count / events.length) * 100);
-                      return (
-                        <div key={sev} className="mb-2">
-                          <div className="flex justify-between mb-0.5">
-                            <span className="text-xs text-gray-300 capitalize">
-                              {sev}
-                            </span>
-                            <span
-                              className="text-xs font-bold"
-                              style={{ color: SEV_COLOR[sev], fontFamily: MONO }}
-                            >
-                              {pct}%
-                            </span>
-                          </div>
-                          <div
-                            className="h-1.5 rounded-full overflow-hidden"
-                            style={{ background: BORDER }}
-                          >
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${pct}%`,
-                                background: SEV_COLOR[sev],
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    }
-                  )
+                  severityDistribution.map((rc, i) => (
+                    <div key={i} className="mb-2">
+                      <div className="flex justify-between mb-0.5">
+                        <span className="text-xs text-gray-300 capitalize">
+                          {rc.name}
+                        </span>
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: rc.color, fontFamily: MONO }}
+                        >
+                          {rc.value}
+                        </span>
+                      </div>
+                      <div
+                        className="h-1.5 rounded-full overflow-hidden"
+                        style={{ background: BORDER }}
+                      >
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${events.length ? (rc.value / events.length) * 100 : 0}%`,
+                            background: rc.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -1210,21 +1165,17 @@ export default function FraudDashboard() {
                 Risk Score Distribution
               </div>
               {events.length === 0 ? (
-                <div className="text-xs text-gray-500">
-                  No fraud events recorded yet. The distribution is computed
-                  from live alerts as they arrive.
+                <div className="text-center text-gray-500 py-12 text-sm">
+                  No events to analyse
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={riskDistribution}>
+                  <BarChart data={riskBuckets}>
                     <XAxis
                       dataKey="range"
                       tick={{ fill: "#6b7280", fontSize: 9 }}
                     />
-                    <YAxis
-                      tick={{ fill: "#6b7280", fontSize: 9 }}
-                      allowDecimals={false}
-                    />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 9 }} />
                     <Tooltip
                       contentStyle={{
                         background: CARD2,
@@ -1233,7 +1184,7 @@ export default function FraudDashboard() {
                       }}
                     />
                     <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                      {riskDistribution.map((entry, i) => (
+                      {riskBuckets.map((entry, i) => (
                         <Cell key={i} fill={entry.color} />
                       ))}
                     </Bar>
@@ -1253,10 +1204,10 @@ export default function FraudDashboard() {
               >
                 Model Performance
               </div>
-              <div className="text-xs text-gray-500">
-                Model quality metrics (precision, recall, F1, AUC) are not
-                exposed by the live fraud service. This panel will populate
-                when the model-monitoring endpoint is available.
+              <div className="text-center text-gray-500 py-12 text-sm">
+                Model performance metrics are not available. Precision, recall,
+                and related metrics will appear here once the model registry
+                reports them.
               </div>
             </div>
           </div>

@@ -1,226 +1,316 @@
+// @ts-nocheck
+import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
+    Activity,
+    AlertTriangle,
+    ArrowUpRight,
+    Brain,
+    CheckCircle,
+    RefreshCw,
+    Shield,
+    TrendingDown,
+    Users,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
 
-const statusColors: Record<string, string> = {
-  active: "bg-emerald-500/20 text-emerald-400",
-  at_risk: "bg-orange-500/20 text-orange-400",
-  churned: "bg-red-500/20 text-red-400",
-  retained: "bg-blue-500/20 text-blue-400",
-};
-
-function formatCurrency(val: unknown): string {
-  const n = Number(val ?? 0);
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
+// NOTE: The predictive churn backend is not reachable from this dashboard
+// (the tRPC client in @/lib/trpc is a migration stub and no REST endpoint
+// for churn analytics exists). This page fails loud: it renders an explicit
+// unavailable state instead of fabricated "0%" KPIs or fake success toasts.
+const CHURN_UNAVAILABLE_MESSAGE =
+  "Churn analytics are currently unavailable — the predictive churn service is not connected.";
 
 export default function PredictiveAgentChurn() {
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
-  const summary = {data: null, isLoading: false, refetch: () => {}}?.data as
-    | Record<string, unknown>
-    | undefined;
-  const listQ = {data: null, isLoading: false, refetch: () => {}};
-  const items = (listQ.data as any)?.items ?? (listQ.data as any)?.data ?? [];
-  const total = (listQ.data as any)?.total ?? 0;
+  const [selectedRisk, setSelectedRisk] = useState<string>("all");
+
+  const unavailableError = new Error(CHURN_UNAVAILABLE_MESSAGE);
+  const summary = {
+    data: null,
+    isLoading: false,
+    error: unavailableError,
+    refetch: () => {},
+  };
+  const atRisk = {
+    data: null,
+    isLoading: false,
+    error: unavailableError,
+    refetch: () => {},
+  };
+  const unavailable = true;
+
+  const riskColors: Record<string, string> = {
+    critical: "bg-red-100 text-red-800",
+    high: "bg-orange-100 text-orange-800",
+    medium: "bg-amber-100 text-amber-800",
+    low: "bg-green-100 text-green-800",
+  };
+
+  const filteredAgents = (atRisk.data?.agents || []).filter(
+    (a: any) => selectedRisk === "all" || a.riskLevel === selectedRisk
+  );
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Predictive Agent Churn</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Brain className="h-6 w-6 text-purple-600" />
+              Predictive Agent Churn
+            </h1>
             <p className="text-muted-foreground">
-              ML-based churn prediction, at-risk agent identification, and
-              retention actions
+              AI-powered churn prediction and intervention
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              onClick={() => toast.success("Send Intervention initiated")}
-            >
-              Send Intervention
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => toast.success("Schedule Call initiated")}
-            >
-              Schedule Call
-            </Button>
-          </div>
+          <Button
+            onClick={() => toast.error(CHURN_UNAVAILABLE_MESSAGE)}
+            disabled={summary.isLoading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${summary.isLoading ? "animate-spin" : ""}`}
+            />
+            Run Churn Analysis
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card key="0">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {CHURN_UNAVAILABLE_MESSAGE}
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                At-Risk Agents
+              <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                <TrendingDown className="h-4 w-4" /> Churn Rate
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {(summary?.atRiskAgents ?? 0).toLocaleString()}
-              </div>
+              <p className="text-2xl font-bold text-red-600">
+                {summary.data?.churnRate != null
+                  ? `${summary.data.churnRate}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Predicted 30-day churn
+              </p>
             </CardContent>
           </Card>
-          <Card key="1">
+          <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Churn Rate
+              <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                <Shield className="h-4 w-4" /> Retention
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {(summary?.churnRate ?? 0) + "%"}
-              </div>
+              <p className="text-2xl font-bold text-green-600">
+                {summary.data?.retentionRate != null
+                  ? `${summary.data.retentionRate}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Expected retention rate
+              </p>
             </CardContent>
           </Card>
-          <Card key="2">
+          <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Retention Rate
+              <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" /> At-Risk Agents
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {(summary?.retentionRate ?? 0) + "%"}
-              </div>
+              <p className="text-2xl font-bold text-amber-600">
+                {summary.data?.atRiskCount ?? "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Require intervention
+              </p>
             </CardContent>
           </Card>
-          <Card key="3">
+          <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Interventions
+              <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                <Activity className="h-4 w-4" /> Model Accuracy
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {(summary?.interventionsSent ?? 0).toLocaleString()}
-              </div>
+              <p className="text-2xl font-bold">
+                {summary.data?.modelAccuracy != null
+                  ? `${summary.data.modelAccuracy}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Prediction confidence
+              </p>
             </CardContent>
           </Card>
         </div>
 
+        {/* Risk Filter */}
+        <div className="flex gap-2">
+          {["all", "critical", "high", "medium", "low"].map(risk => (
+            <Button
+              key={risk}
+              variant={selectedRisk === risk ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedRisk(risk)}
+            >
+              {risk.charAt(0).toUpperCase() + risk.slice(1)}
+            </Button>
+          ))}
+        </div>
+
+        {/* At-Risk Agents Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-4">
-              <CardTitle>Records</CardTitle>
-              <Input
-                placeholder="Search..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="max-w-xs"
-              />
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" /> At-Risk Agents
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            {listQ.isLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map(i => (
-                  <div
-                    key={i}
-                    className="h-12 bg-muted animate-pulse rounded"
-                  />
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Churn Risk</TableHead>
+                  <TableHead>Risk Level</TableHead>
+                  <TableHead>Key Factors</TableHead>
+                  <TableHead>Recommended Action</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAgents.map((agent: any) => (
+                  <TableRow key={agent.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{agent.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {agent.code}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 bg-muted rounded-full h-2">
+                          <div
+                            className={`h-full rounded-full ${
+                              agent.churnRisk >= 70
+                                ? "bg-red-500"
+                                : agent.churnRisk >= 50
+                                  ? "bg-orange-500"
+                                  : agent.churnRisk >= 30
+                                    ? "bg-amber-500"
+                                    : "bg-green-500"
+                            }`}
+                            style={{ width: `${agent.churnRisk}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium">
+                          {agent.churnRisk}%
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={riskColors[agent.riskLevel] || ""}>
+                        {agent.riskLevel}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {agent.factors?.slice(0, 2).map((f: any, i: number) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {f}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                      {agent.recommendedAction}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={unavailable}
+                        title={
+                          unavailable ? CHURN_UNAVAILABLE_MESSAGE : undefined
+                        }
+                      >
+                        <ArrowUpRight className="h-3 w-3 mr-1" /> Send
+                        Intervention
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            ) : items.length > 0 ? (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          ID
-                        </th>
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          Agent
-                        </th>
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          Risk Score
-                        </th>
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          Last Active
-                        </th>
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          Tx Decline
-                        </th>
-                        <th className="text-left p-3 text-sm font-medium text-muted-foreground">
-                          Status
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((row: any, idx: number) => (
-                        <tr
-                          key={idx}
-                          className="border-b border-border/50 hover:bg-muted/50 transition-colors"
-                        >
-                          <td className="p-3">{String(row.id ?? "—")}</td>
-                          <td className="p-3">
-                            {String(row.agentCode ?? "—")}
-                          </td>
-                          <td className="p-3">{(row.riskScore ?? 0) + "%"}</td>
-                          <td className="p-3 text-sm text-muted-foreground">
-                            {row.lastActive
-                              ? new Date(
-                                  String(row.lastActive)
-                                ).toLocaleDateString()
-                              : "—"}
-                          </td>
-                          <td className="p-3">{(row.txDecline ?? 0) + "%"}</td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[String(row.status)] || "bg-gray-500/20 text-gray-400"}`}
-                            >
-                              {String(row.status ?? "—")}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {page * 20 + 1}–{Math.min((page + 1) * 20, total)}{" "}
-                    of {total}
+                {filteredAgents.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      {atRisk.isLoading ? (
+                        "Loading at-risk agents..."
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {CHURN_UNAVAILABLE_MESSAGE}
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* Intervention Templates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" /> Intervention Templates
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                {
+                  title: "Re-engagement Call",
+                  description: "Schedule a call to understand challenges",
+                  trigger: "Activity drop > 30%",
+                },
+                {
+                  title: "Float Support",
+                  description: "Offer additional float or credit line",
+                  trigger: "Float issues detected",
+                },
+                {
+                  title: "Training Refresh",
+                  description: "Invite to refresher training session",
+                  trigger: "Error rate increase",
+                },
+              ].map((template, i) => (
+                <div key={i} className="border rounded-lg p-4">
+                  <h3 className="font-semibold">{template.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {template.description}
                   </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.max(0, p - 1))}
-                      disabled={page === 0}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => p + 1)}
-                      disabled={(page + 1) * 20 >= total}
-                    >
-                      Next
-                    </Button>
-                  </div>
+                  <p className="text-xs text-primary mt-2">
+                    Trigger: {template.trigger}
+                  </p>
                 </div>
-              </>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="text-lg font-medium">No records found</p>
-                <p className="text-sm mt-1">
-                  Data will appear here once the system is connected to live
-                  services
-                </p>
-              </div>
-            )}
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>

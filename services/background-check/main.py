@@ -35,6 +35,11 @@ Automated background verification for agent onboarding
 
 This service integrates with third-party background check providers
 to verify agent credentials, criminal records, credit history, and references.
+
+FAIL-CLOSED POLICY: this is an identity/compliance domain. A provider
+failure, missing credentials, or an unimplemented check MUST NEVER produce
+a fabricated PASS or clean record. Such checks are reported as FAILED /
+INCONCLUSIVE / NOT_AVAILABLE and force manual review.
 """
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
@@ -110,6 +115,7 @@ class CheckStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     REQUIRES_REVIEW = "requires_review"
+    NOT_AVAILABLE = "not_available"
 
 class CheckResult(str, Enum):
     PASS = "pass"
@@ -193,9 +199,49 @@ async def verify_permission(user: Dict[str, Any], action: str, resource_id: str 
     if not has_permission:
         raise HTTPException(status_code=403, detail="Permission denied")
 
+def _check_not_available(check_type: CheckType, provider: str, reason: str) -> CheckResultDetail:
+    """Return an explicit NOT_AVAILABLE result for an unimplemented or
+    unconfigured check. NEVER fabricates a PASS, clean record, or score."""
+    logger.error(
+        f"{check_type} check is not available ({provider}): {reason}. "
+        "Manual review required."
+    )
+    return CheckResultDetail(
+        check_type=check_type,
+        status=CheckStatus.NOT_AVAILABLE,
+        result=None,
+        details={
+            "error": reason,
+            "provider_available": False,
+            "manual_review_required": True
+        },
+        provider=provider,
+        checked_at=datetime.utcnow()
+    )
+
 async def perform_identity_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform identity verification using Smile Identity"""
+    """Perform identity verification using Smile Identity.
+    
+    Fail-closed: any provider error, non-200 response, or missing
+    credentials yields FAILED / INCONCLUSIVE - never a fabricated PASS
+    attributed to Smile Identity.
+    """
     logger.info(f"Performing identity check for agent {data.agent_id}")
+    
+    if not SMILE_IDENTITY_API_KEY or not SMILE_IDENTITY_PARTNER_ID:
+        logger.error("Smile Identity credentials are not configured")
+        return CheckResultDetail(
+            check_type=CheckType.IDENTITY,
+            status=CheckStatus.FAILED,
+            result=CheckResult.INCONCLUSIVE,
+            details={
+                "error": "Smile Identity provider is not configured (missing API key/partner ID)",
+                "provider_available": False,
+                "manual_review_required": True
+            },
+            provider="Smile Identity",
+            checked_at=datetime.utcnow()
+        )
     
     try:
         async with httpx.AsyncClient() as client:
@@ -227,68 +273,77 @@ async def perform_identity_check(data: BackgroundCheckRequest) -> CheckResultDet
                     provider="Smile Identity",
                     checked_at=datetime.utcnow()
                 )
+            
+            logger.error(
+                f"Smile Identity API error: {response.status_code} - {response.text}"
+            )
+            return CheckResultDetail(
+                check_type=CheckType.IDENTITY,
+                status=CheckStatus.FAILED,
+                result=CheckResult.INCONCLUSIVE,
+                details={
+                    "error": f"Smile Identity API returned status {response.status_code}",
+                    "provider_available": False,
+                    "manual_review_required": True
+                },
+                provider="Smile Identity",
+                checked_at=datetime.utcnow()
+            )
     except Exception as e:
         logger.error(f"Identity check failed: {str(e)}")
-    
-    # Fallback: basic verification result
-    return CheckResultDetail(
-        check_type=CheckType.IDENTITY,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "match": True,
-            "confidence": 0.95,
-            "verified_fields": ["name", "dob", "id_number"]
-        },
-        provider="Smile Identity",
-        checked_at=datetime.utcnow()
-    )
+        return CheckResultDetail(
+            check_type=CheckType.IDENTITY,
+            status=CheckStatus.FAILED,
+            result=CheckResult.INCONCLUSIVE,
+            details={
+                "error": f"Smile Identity provider error: {str(e)}",
+                "provider_available": False,
+                "manual_review_required": True
+            },
+            provider="Smile Identity",
+            checked_at=datetime.utcnow()
+        )
 
 async def perform_criminal_record_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform criminal record check"""
-    logger.info(f"Performing criminal record check for agent {data.agent_id}")
+    """Perform criminal record check.
     
-    # Perform criminal record check via provider API
-    pass
+    No real provider integration exists yet. Fail closed: report
+    NOT_AVAILABLE and require manual review instead of fabricating a
+    clean criminal record.
+    """
+    logger.info(f"Criminal record check requested for agent {data.agent_id}")
     
-    return CheckResultDetail(
-        check_type=CheckType.CRIMINAL_RECORD,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "records_found": 0,
-            "databases_checked": ["Nigeria Police Force", "EFCC", "ICPC"],
-            "clean_record": True
-        },
-        provider="Nigeria Police Force API",
-        checked_at=datetime.utcnow()
+    return _check_not_available(
+        CheckType.CRIMINAL_RECORD,
+        "Nigeria Police Force API",
+        "Criminal record provider integration is not implemented; "
+        "no databases were checked. Manual criminal record review required."
     )
 
 async def perform_credit_history_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform credit history check"""
-    logger.info(f"Performing credit history check for agent {data.agent_id}")
+    """Perform credit history check.
     
-    # Perform credit bureau check via provider API
-    await asyncio.sleep(2)
+    No real credit bureau integration exists yet. Fail closed: report
+    NOT_AVAILABLE and require manual review instead of fabricating a
+    credit score.
+    """
+    logger.info(f"Credit history check requested for agent {data.agent_id}")
     
-    return CheckResultDetail(
-        check_type=CheckType.CREDIT_HISTORY,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "credit_score": 720,
-            "payment_history": "Good",
-            "defaults": 0,
-            "active_loans": 1,
-            "total_debt": 500000
-        },
-        provider="CRC Credit Bureau",
-        checked_at=datetime.utcnow()
+    return _check_not_available(
+        CheckType.CREDIT_HISTORY,
+        "CRC Credit Bureau",
+        "Credit bureau provider integration is not implemented; "
+        "no credit report was obtained. Manual credit review required."
     )
 
 async def perform_employment_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform employment verification"""
-    logger.info(f"Performing employment check for agent {data.agent_id}")
+    """Perform employment verification.
+    
+    No real employment verification provider exists yet. Fail closed:
+    report NOT_AVAILABLE and require manual review instead of fabricating
+    employer verifications.
+    """
+    logger.info(f"Employment check requested for agent {data.agent_id}")
     
     if not data.employment_history:
         return CheckResultDetail(
@@ -300,32 +355,21 @@ async def perform_employment_check(data: BackgroundCheckRequest) -> CheckResultD
             checked_at=datetime.utcnow()
         )
     
-    # Perform employment verification via provider API
-    await asyncio.sleep(2)
-    
-    verified_employers = []
-    for emp in data.employment_history[:3]:  # Verify last 3 employers
-        verified_employers.append({
-            "company": emp.get("company"),
-            "verified": True,
-            "dates_match": True
-        })
-    
-    return CheckResultDetail(
-        check_type=CheckType.EMPLOYMENT,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "employers_verified": len(verified_employers),
-            "verification_details": verified_employers
-        },
-        provider="Employment Verification Service",
-        checked_at=datetime.utcnow()
+    return _check_not_available(
+        CheckType.EMPLOYMENT,
+        "Employment Verification Service",
+        "Employment verification provider integration is not implemented; "
+        "no employers were contacted. Manual employment verification required."
     )
 
 async def perform_reference_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform reference check"""
-    logger.info(f"Performing reference check for agent {data.agent_id}")
+    """Perform reference check.
+    
+    No real reference check provider exists yet. Fail closed: report
+    NOT_AVAILABLE and require manual review instead of fabricating
+    positive reference responses.
+    """
+    logger.info(f"Reference check requested for agent {data.agent_id}")
     
     if not data.references:
         return CheckResultDetail(
@@ -337,40 +381,27 @@ async def perform_reference_check(data: BackgroundCheckRequest) -> CheckResultDe
             checked_at=datetime.utcnow()
         )
     
-    # Perform reference checks via provider API
-    await asyncio.sleep(2)
-    
-    return CheckResultDetail(
-        check_type=CheckType.REFERENCE,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "references_contacted": len(data.references),
-            "positive_responses": len(data.references),
-            "average_rating": 4.5
-        },
-        provider="Reference Check Service",
-        checked_at=datetime.utcnow()
+    return _check_not_available(
+        CheckType.REFERENCE,
+        "Reference Check Service",
+        "Reference check provider integration is not implemented; "
+        "no references were contacted. Manual reference verification required."
     )
 
 async def perform_address_check(data: BackgroundCheckRequest) -> CheckResultDetail:
-    """Perform address verification"""
-    logger.info(f"Performing address check for agent {data.agent_id}")
+    """Perform address verification.
     
-    # Perform address verification via provider API
-    await asyncio.sleep(1)
+    No real address verification provider exists yet. Fail closed: report
+    NOT_AVAILABLE and require manual review instead of fabricating a
+    verified address and GPS coordinates.
+    """
+    logger.info(f"Address check requested for agent {data.agent_id}")
     
-    return CheckResultDetail(
-        check_type=CheckType.ADDRESS,
-        status=CheckStatus.COMPLETED,
-        result=CheckResult.PASS,
-        details={
-            "address_verified": True,
-            "verification_method": "Utility bill + GPS coordinates",
-            "coordinates": {"lat": 6.5244, "lng": 3.3792}
-        },
-        provider="Address Verification Service",
-        checked_at=datetime.utcnow()
+    return _check_not_available(
+        CheckType.ADDRESS,
+        "Address Verification Service",
+        "Address verification provider integration is not implemented; "
+        "the address was not verified. Manual address verification required."
     )
 
 async def run_background_checks(check_id: str, data: BackgroundCheckRequest):
@@ -409,13 +440,19 @@ async def run_background_checks(check_id: str, data: BackgroundCheckRequest):
                     check_type=check_type,
                     status=CheckStatus.FAILED,
                     result=None,
-                    details={"error": str(e)},
+                    details={"error": str(e), "manual_review_required": True},
                     provider="Unknown",
                     checked_at=datetime.utcnow()
                 ))
     
-    # Determine overall result
-    all_passed = all(r.result == CheckResult.PASS for r in results if r.result)
+    # Determine overall result.
+    # Fail-closed: overall PASS requires every check to be a real PASS.
+    # Any FAIL, NOT_AVAILABLE, FAILED, or INCONCLUSIVE check forces
+    # manual review (overall result is never a fabricated PASS).
+    all_passed = bool(results) and all(
+        r.result == CheckResult.PASS and r.status == CheckStatus.COMPLETED
+        for r in results
+    )
     any_failed = any(r.result == CheckResult.FAIL for r in results)
     
     if any_failed:
@@ -425,9 +462,16 @@ async def run_background_checks(check_id: str, data: BackgroundCheckRequest):
     else:
         overall_result = CheckResult.INCONCLUSIVE
     
+    # Final status: COMPLETED only on a genuine all-PASS outcome; anything
+    # else requires human review.
+    final_status = (
+        CheckStatus.COMPLETED if overall_result == CheckResult.PASS
+        else CheckStatus.REQUIRES_REVIEW
+    )
+    
     # Update final status
     background_checks[check_id].update({
-        "status": CheckStatus.COMPLETED,
+        "status": final_status,
         "overall_result": overall_result,
         "checks": [r.dict() for r in results],
         "completed_at": datetime.utcnow(),
@@ -437,18 +481,27 @@ async def run_background_checks(check_id: str, data: BackgroundCheckRequest):
     })
     
     # Publish event to Kafka
-    await kafka_producer.publish(
-        topic="background_checks.completed",
-        key=check_id,
-        value={
-            "check_id": check_id,
-            "agent_id": data.agent_id,
-            "overall_result": overall_result,
-            "completed_at": datetime.utcnow().isoformat()
-        }
-    )
+    try:
+        await kafka_producer.publish(
+            topic="background_checks.completed",
+            key=check_id,
+            value={
+                "check_id": check_id,
+                "agent_id": data.agent_id,
+                "status": final_status.value,
+                "overall_result": overall_result.value,
+                "completed_at": datetime.utcnow().isoformat()
+            }
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish background check completion event for {check_id}: {e}"
+        )
     
-    logger.info(f"Background checks completed for check_id: {check_id}, result: {overall_result}")
+    logger.info(
+        f"Background checks completed for check_id: {check_id}, "
+        f"status: {final_status}, result: {overall_result}"
+    )
 
 # API Endpoints
 @app.get("/health")
@@ -651,4 +704,3 @@ async def get_agent_background_checks(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8100)
-

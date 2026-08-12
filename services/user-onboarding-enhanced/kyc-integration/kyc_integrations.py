@@ -163,17 +163,16 @@ class FaceVerificationIntegration:
             Liveness verification result
         """
         try:
+            from face_verification_service import LivenessCheckType
+            
             service = self._require_service()
             
             with open(video_path, "rb") as f:
                 video_data = f.read()
             
-            frames = [video_data]
             result = await service.perform_liveness_check(
-                service.liveness_detector.__class__ and __import__(
-                    "face_verification_service"
-                ).LivenessCheckType.BLINK_DETECTION,
-                video_frames=frames,
+                LivenessCheckType.BLINK_DETECTION,
+                video_frames=[video_data],
             )
             
             await self._store_liveness_result(user_id, result.__dict__ if hasattr(result, "__dict__") else result)

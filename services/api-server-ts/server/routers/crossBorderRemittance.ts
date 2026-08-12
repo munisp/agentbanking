@@ -24,6 +24,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { getLiveFxRate } from "../lib/fxRateProvider";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "completed", "cancelled", "rejected"],
@@ -35,47 +36,47 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 
+// Corridor configuration only — rates are NOT hardcoded here. FX rates are
+// fetched live from the Frankfurter/ECB reference feed via
+// ../lib/fxRateProvider (timeout + cached with fetched-at + staleness guard).
+// getQuote/sendRemittance HARD-FAIL (SERVICE_UNAVAILABLE / NOT_IMPLEMENTED)
+// when no fresh live rate is available — the previous hardcoded corridor
+// rates drove real float debits at fabricated rates.
 const CORRIDORS = [
   {
     from: "NGN",
     to: "GHS",
-    rate: 0.0076,
     name: "Nigeria to Ghana",
     active: true,
   },
   {
     from: "NGN",
     to: "KES",
-    rate: 0.088,
     name: "Nigeria to Kenya",
     active: true,
   },
   {
     from: "NGN",
     to: "ZAR",
-    rate: 0.012,
     name: "Nigeria to South Africa",
     active: true,
   },
   {
     from: "NGN",
     to: "USD",
-    rate: 0.00065,
     name: "Nigeria to USA",
     active: true,
   },
   {
     from: "NGN",
     to: "GBP",
-    rate: 0.00052,
     name: "Nigeria to UK",
     active: true,
   },
-  { from: "NGN", to: "EUR", rate: 0.0006, name: "Nigeria to EU", active: true },
+  { from: "NGN", to: "EUR", name: "Nigeria to EU", active: true },
   {
     from: "NGN",
     to: "XOF",
-    rate: 0.39,
     name: "Nigeria to West Africa (CFA)",
     active: true,
   },
@@ -286,15 +287,22 @@ export const crossBorderRemittanceRouter = router({
             message: "Corridor temporarily suspended",
           });
 
+        // Live rate — quote hard-fails without a fresh rate (no corridor table).
+        const liveRate = await getLiveFxRate(input.fromCurrency, input.toCurrency);
+        const rate = liveRate.rate;
+
         const fee = Math.max(500, Math.round(input.amount * 0.02));
-        const convertedAmount = (input.amount - fee) * corridor.rate;
+        const convertedAmount = (input.amount - fee) * rate;
 
         return {
           fromAmount: input.amount,
           fromCurrency: input.fromCurrency,
           toAmount: Math.round(convertedAmount * 100) / 100,
           toCurrency: input.toCurrency,
-          rate: corridor.rate,
+          rate,
+          rateSource: liveRate.source,
+          rateDate: liveRate.rateDate,
+          rateFetchedAt: liveRate.fetchedAt,
           fee,
           corridorName: corridor.name,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
@@ -354,6 +362,11 @@ export const crossBorderRemittanceRouter = router({
             message: "Corridor not available",
           });
 
+        // Live rate fetched BEFORE any float movement — send hard-fails
+        // without a fresh rate (no fabricated conversion against real float).
+        const liveRate = await getLiveFxRate("NGN", input.toCurrency);
+        const rate = liveRate.rate;
+
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -370,7 +383,7 @@ export const crossBorderRemittanceRouter = router({
 
         const fee = Math.max(500, Math.round(input.amount * 0.02));
         const commission = Math.round(fee * 0.2);
-        const convertedAmount = (input.amount - fee) * corridor.rate;
+        const convertedAmount = (input.amount - fee) * rate;
         const ref = `REM-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
@@ -392,7 +405,10 @@ export const crossBorderRemittanceRouter = router({
               remittanceType: "cross_border",
               toCurrency: input.toCurrency,
               convertedAmount,
-              rate: corridor.rate,
+              rate,
+              rateSource: liveRate.source,
+              rateDate: liveRate.rateDate,
+              rateFetchedAt: liveRate.fetchedAt,
               purpose: input.purpose,
               recipientBankCode: input.recipientBankCode,
             },
@@ -429,7 +445,9 @@ export const crossBorderRemittanceRouter = router({
           commission,
           convertedAmount,
           toCurrency: input.toCurrency,
-          rate: corridor.rate,
+          rate,
+          rateSource: liveRate.source,
+          rateDate: liveRate.rateDate,
           status: "success",
           transactionId: tx.id,
         };
@@ -444,7 +462,35 @@ export const crossBorderRemittanceRouter = router({
     }),
 
   listCorridors: protectedProcedure.query(async () => {
-    return { corridors: CORRIDORS.filter(c => c.active) };
+    const corridors = await Promise.all(
+      CORRIDORS.filter(c => c.active).map(async c => {
+        try {
+          const live = await getLiveFxRate(c.from, c.to);
+          return {
+            ...c,
+            currentRate: live.rate,
+            rateSource: live.source,
+            rateDate: live.rateDate,
+            rateFetchedAt: live.fetchedAt,
+            rateAvailable: true,
+          };
+        } catch (err) {
+          // Feed down → fail loud for the whole list; uncovered currencies
+          // are reported explicitly per corridor (never a fabricated rate).
+          if (err instanceof TRPCError && err.code === "SERVICE_UNAVAILABLE")
+            throw err;
+          return {
+            ...c,
+            currentRate: null,
+            rateSource: null,
+            rateDate: null,
+            rateFetchedAt: null,
+            rateAvailable: false,
+          };
+        }
+      })
+    );
+    return { corridors };
   }),
 
   getHistory: protectedProcedure

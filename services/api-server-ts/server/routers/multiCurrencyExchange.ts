@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentPushSubscriptions } from "../../drizzle/schema";
+import { transactions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
@@ -17,6 +17,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { getFxRateSnapshot } from "../lib/fxRateProvider";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -26,6 +27,11 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
   refunded: [],
 };
+
+// FX rates come from the live Frankfurter/ECB reference feed via
+// ../lib/fxRateProvider (timeout + cached with fetched-at + staleness guard).
+// Previously getRates/convert/getHistory/getCorridors silently returned
+// agent_push_subscriptions rows and getStats returned hardcoded numbers.
 
 const getRates = protectedProcedure
   .input(
@@ -37,20 +43,32 @@ const getRates = protectedProcedure
   )
   .query(async ({ input }) => {
     try {
-      const db = (await getDb())!;
+      const snapshot = await getFxRateSnapshot();
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(agentPushSubscriptions)
-        .orderBy(desc(agentPushSubscriptions.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(agentPushSubscriptions)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
+      let rates = Object.entries(snapshot.rates)
+        .filter(([currency]) => currency !== snapshot.base)
+        .map(([currency, rate]) => ({
+          pair: `${snapshot.base}-${currency}`,
+          fromCurrency: snapshot.base,
+          toCurrency: currency,
+          rate,
+          inverseRate: Math.round((1 / rate) * 10000) / 10000,
+          updatedAt: new Date(snapshot.fetchedAt).toISOString(),
+          rateSource: "frankfurter/ecb" as const,
+          rateDate: snapshot.date,
+        }))
+        .sort((a, b) => a.pair.localeCompare(b.pair));
+      if (input.search) {
+        const s = input.search.toUpperCase();
+        rates = rates.filter(r => r.pair.includes(s));
+      }
+      return {
+        items: rates.slice(offset, offset + lim),
+        total: rates.length,
+        page: input.page ?? 1,
+        limit: lim,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -68,30 +86,16 @@ const convert = protectedProcedure
       search: z.string().optional(),
     })
   )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(agentPushSubscriptions)
-        .orderBy(desc(agentPushSubscriptions.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(agentPushSubscriptions)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .query(async () => {
+    // Fail loud: this service build has no FX conversion procedure — the
+    // previous implementation silently returned push-subscription rows.
+    // Real conversions (live ECB rate + ledger posting) are executed by the
+    // primary API server's multiCurrencyExchange.convert mutation.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "FX conversion is not implemented in this service build — use the primary API server's multiCurrencyExchange.convert mutation",
+    });
   });
 const getHistory = protectedProcedure
   .input(
@@ -106,15 +110,23 @@ const getHistory = protectedProcedure
       const db = (await getDb())!;
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
+      const conditions = [sql`${transactions.type} = 'FX Exchange'`];
+      if (input.search) {
+        conditions.push(
+          sql`${transactions.ref} ILIKE ${"%" + input.search + "%"}`
+        );
+      }
       const rows = await db
         .select()
-        .from(agentPushSubscriptions)
-        .orderBy(desc(agentPushSubscriptions.id))
+        .from(transactions)
+        .where(and(...conditions))
+        .orderBy(desc(transactions.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
-        .from(agentPushSubscriptions)
+        .from(transactions)
+        .where(and(...conditions))
         .limit(100);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
@@ -139,21 +151,34 @@ const getStats = publicProcedure
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(agentPushSubscriptions)
-        .limit(100);
-      const recent = await db
-        .select()
-        .from(agentPushSubscriptions)
-        .orderBy(desc(agentPushSubscriptions.id))
-        .limit(5);
+      const snapshot = await getFxRateSnapshot();
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const [agg] = await db
+        .select({
+          dailyVolume: sql<string>`coalesce(sum(amount::numeric), 0)`,
+          exchangesToday: count(),
+        })
+        .from(transactions)
+        .where(
+          and(
+            sql`${transactions.type} = 'FX Exchange'`,
+            gte(transactions.createdAt, dayStart)
+          )
+        );
+      const currencies = Object.keys(snapshot.rates).sort();
+      const corridors = currencies
+        .filter(c => c !== snapshot.base)
+        .map(c => `${snapshot.base}-${c}`);
       return {
-        supportedCurrencies: 15,
-        activePairs: 42,
-        corridors: ["NGN-USD", "NGN-GBP", "NGN-EUR", "USD-GBP", "EUR-GBP"],
-        dailyVolume: 125000000,
-        lastRateUpdate: new Date().toISOString(),
+        supportedCurrencies: currencies.length,
+        activePairs: corridors.length,
+        corridors,
+        dailyVolume: Number(agg?.dailyVolume ?? 0),
+        exchangesToday: Number(agg?.exchangesToday ?? 0),
+        rateSource: "frankfurter/ecb",
+        rateDate: snapshot.date,
+        lastRateUpdate: new Date(snapshot.fetchedAt).toISOString(),
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -174,20 +199,31 @@ const getCorridors = protectedProcedure
   )
   .query(async ({ input }) => {
     try {
-      const db = (await getDb())!;
+      const snapshot = await getFxRateSnapshot();
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(agentPushSubscriptions)
-        .orderBy(desc(agentPushSubscriptions.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(agentPushSubscriptions)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
+      let corridors = Object.entries(snapshot.rates)
+        .filter(([currency]) => currency !== snapshot.base)
+        .map(([currency, rate]) => ({
+          pair: `${snapshot.base}-${currency}`,
+          fromCurrency: snapshot.base,
+          toCurrency: currency,
+          rate,
+          rateSource: "frankfurter/ecb" as const,
+          rateDate: snapshot.date,
+          updatedAt: new Date(snapshot.fetchedAt).toISOString(),
+        }))
+        .sort((a, b) => a.pair.localeCompare(b.pair));
+      if (input.search) {
+        const s = input.search.toUpperCase();
+        corridors = corridors.filter(c => c.pair.includes(s));
+      }
+      return {
+        items: corridors.slice(offset, offset + lim),
+        total: corridors.length,
+        page: input.page ?? 1,
+        limit: lim,
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -217,35 +253,14 @@ const setSpread = protectedProcedure
       "Executed multiCurrencyExchange mutation"
     );
 
-    try {
-      const db = (await getDb())!;
-      const [existing] = await db
-        .select()
-        .from(agentPushSubscriptions)
-        .where(eq(agentPushSubscriptions.id, input.id))
-        .limit(100);
-      if (!existing)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "setSpread: record not found",
-        });
-      if (input.data) {
-        const [updated] = await db
-          .update(agentPushSubscriptions)
-          .set(input.data)
-          .where(eq(agentPushSubscriptions.id, input.id))
-          .returning();
-        return { success: true, ...updated, message: "Record updated" };
-      }
-      return { success: true, ...existing, message: "No changes applied" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    // Fail loud: no spread store is wired in this service build — previously
+    // this returned success while writing arbitrary fields into
+    // agent_push_subscriptions (the wrong table entirely).
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "FX spread management is not implemented in this service build — spread was NOT persisted",
+    });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

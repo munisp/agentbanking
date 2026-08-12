@@ -15,27 +15,22 @@ interface NettingRun {
   duration_ms?: number;
 }
 
-const MOCK_RUNS: NettingRun[] = [
-  { id: "net-001", run_date: "2024-11-29 09:00", status: "completed", participants: 142, gross_obligations: 48500000, net_obligations: 12300000, efficiency_rate: 74.6, duration_ms: 1840 },
-  { id: "net-002", run_date: "2024-11-28 09:00", status: "completed", participants: 138, gross_obligations: 51200000, net_obligations: 14100000, efficiency_rate: 72.5, duration_ms: 1720 },
-  { id: "net-003", run_date: "2024-11-27 09:00", status: "completed", participants: 145, gross_obligations: 43800000, net_obligations: 10200000, efficiency_rate: 76.7, duration_ms: 1610 },
-  { id: "net-004", run_date: "2024-11-26 09:00", status: "failed", participants: 0, gross_obligations: 0, net_obligations: 0, efficiency_rate: 0 },
-];
-
 const NettingEngine: React.FC = () => {
   const [runs, setRuns] = useState<NettingRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
 
   useEffect(() => { fetchRuns(); }, []);
 
   const fetchRuns = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/settlement/api/v1/netting/runs`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setRuns(Array.isArray(d.runs) ? d.runs : MOCK_RUNS); }
-      else { setRuns(MOCK_RUNS); }
-    } catch { setRuns(MOCK_RUNS); }
+      if (res.ok) { const d = await res.json(); setRuns(Array.isArray(d.runs) ? d.runs : []); }
+      else { setError("Failed to load netting runs."); }
+    } catch { setError("Failed to load netting runs."); }
     finally { setLoading(false); }
   };
 
@@ -46,7 +41,7 @@ const NettingEngine: React.FC = () => {
       await fetch(`${CORE_URL}/settlement/api/v1/netting/trigger`, { method: "POST", headers: getTenantHeadersFromStorage() });
       fetchRuns();
       alert("Netting run triggered. Results will appear when complete.");
-    } catch { alert("Netting run queued (demo mode)"); }
+    } catch { alert("Failed to queue netting run. Please try again."); }
     finally { setTriggering(false); }
   };
 
@@ -55,6 +50,13 @@ const NettingEngine: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchRuns()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

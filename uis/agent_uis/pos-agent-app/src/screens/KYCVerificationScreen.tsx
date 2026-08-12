@@ -315,7 +315,6 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
   // --- UI Rendering ---
 
   const renderDocumentItem = ({ item }: { item: Document }) => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
     const isUploaded = item.status === 'uploaded' || item.status === 'verified';
     const statusColor =

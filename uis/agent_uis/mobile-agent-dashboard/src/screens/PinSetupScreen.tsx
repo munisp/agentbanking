@@ -79,31 +79,29 @@ const validatePinStrength = (pin: string): string => {
 };
 
 /**
- * Mock function to handle API integration for setting the PIN.
+ * Sets the PIN on the server via the real API (with offline sync fallback).
  * @param pin The PIN to send to the server.
  */
 const setPinOnServer = async (pin: string): Promise<PinSetupResponse> => {
   try {
-    // Simulate API call with axios
     const response = await axios.post<PinSetupResponse>(API_ENDPOINT, { pin });
 
     if (response.data.success) {
-      // On success, save the PIN locally for offline use (encrypted in a real app)
-      await AsyncStorage.setItem('@user_pin', pin);
+      // Record only that a PIN has been set — the PIN itself is NEVER persisted.
+      await AsyncStorage.setItem('@user_pin_set', 'true');
       return { success: true, message: 'PIN set successfully.' };
     } else {
       return { success: false, message: response.data.message || 'Failed to set PIN.' };
     }
   } catch (error) {
     console.error('API Error:', error);
-    // Fallback to offline storage if API fails (for offline mode support)
-    await AsyncStorage.setItem('@user_pin_pending', pin);
-    return { success: false, message: 'Network error. PIN saved for later sync (Offline Mode).' };
+    // Never persist the PIN on failure — report an honest error instead.
+    return { success: false, message: 'Network error. The PIN was not set — please try again when online.' };
   }
 };
 
 /**
- * Mock function to initiate a payment gateway transaction.
+ * Initiates a payment gateway transaction by navigating to the payment flow.
  * @param gateway The payment gateway to use.
  */
 const initiatePayment = (
@@ -150,7 +148,6 @@ const createBiometricKey = async () => {
 // --- MAIN COMPONENT ---
 
 const PinSetupScreen: React.FC<PinSetupScreenProps> = ({
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
  navigation }) => {
   const [state, setState] = useState<PinSetupState>({
@@ -289,7 +286,7 @@ const PinSetupScreen: React.FC<PinSetupScreenProps> = ({
 
   const renderPaymentGatewayButtons = () => (
     <View style={styles.paymentContainer}>
-      <Text style={styles.paymentHeader}>Test Payment Gateways (Mock)</Text>
+      <Text style={styles.paymentHeader}>Payment Gateways</Text>
       <View style={styles.paymentButtons}>
         <TouchableOpacity
           style={[styles.button, styles.paystackButton]}

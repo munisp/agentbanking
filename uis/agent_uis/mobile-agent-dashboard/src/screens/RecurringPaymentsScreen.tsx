@@ -32,15 +32,16 @@ interface RecurringPayment {
 
 const API_BASE_URL = 'https://api.54agent.io/v1';
 const PRIMARY_COLOR = '#6C63FF';
-const BACKGROUND_COLOR = colors.primary;
+const BACKGROUND_COLOR = PRIMARY_COLOR;
 const CARD_COLOR = '#FFFFFF';
-const TEXT_COLOR = colors.primary;
+const TEXT_COLOR = PRIMARY_COLOR;
 
 const RecurringPaymentsScreen: React.FC = () => {
   const navigation = useNavigation();
   const [payments, setPayments] = useState<RecurringPayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchRecurringPayments = useCallback(async () => {
     try {
@@ -51,49 +52,9 @@ const RecurringPaymentsScreen: React.FC = () => {
       const data = await response.json();
       setPayments(data);
     } catch (error) {
-      // Fallback to mock data for demonstration if API fails
-      setPayments([
-        {
-          id: '1',
-          title: 'Netflix Subscription',
-          amount: 15.99,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-15',
-          isActive: true,
-          recipientName: 'Netflix Inc.',
-          category: 'Entertainment',
-        },
-        {
-          id: '2',
-          title: 'Electricity Bill',
-          amount: 85.50,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-20',
-          isActive: true,
-          recipientName: 'City Power & Light',
-          category: 'Utilities',
-        },
-        {
-          id: '3',
-          title: 'Gym Membership',
-          amount: 45.00,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-05',
-          isActive: false,
-          recipientName: 'FitLife Gym',
-          category: 'Health',
-        },
-        {
-          id: '4',
-          title: 'Internet Service',
-          amount: 60.00,
-          frequency: 'Monthly',
-          nextPaymentDate: '2026-04-10',
-          isActive: true,
-          recipientName: 'FastNet Fiber',
-          category: 'Utilities',
-        },
-      ]);
+      // Honest failure: never substitute fabricated recurring payments.
+      setPayments([]);
+      setLoadError('Could not load recurring payments. Pull to retry.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -105,7 +66,6 @@ const RecurringPaymentsScreen: React.FC = () => {
   }, [fetchRecurringPayments]);
 
   const onRefresh = () => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
     setIsRefreshing(true);
     fetchRecurringPayments();
@@ -129,11 +89,8 @@ const RecurringPaymentsScreen: React.FC = () => {
         prev.map((p) => (p.id === id ? { ...p, isActive: !currentStatus } : p))
       );
     } catch (error) {
-      // Optimistic update for demo purposes if API fails
-      setPayments((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, isActive: !currentStatus } : p))
-      );
-      Alert.alert('Status Updated', `Payment has been ${!currentStatus ? 'enabled' : 'disabled'}.`);
+      // Honest failure: the server did not apply the change — do not claim success.
+      Alert.alert('Update Failed', 'Could not update the payment status. Please try again.');
     }
   };
 
@@ -212,7 +169,7 @@ const RecurringPaymentsScreen: React.FC = () => {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No recurring payments found.</Text>
+            <Text style={styles.emptyText}>{loadError ?? 'No recurring payments found.'}</Text>
           </View>
         }
       />

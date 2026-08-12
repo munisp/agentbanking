@@ -1,46 +1,34 @@
 """
 Router for background-check service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
 
-NOTE: These stub handlers previously returned {"status": "ok"} for every
-endpoint, fabricating successful background-check operations. They now fail
-closed with HTTP 501 until real handlers are wired. The authoritative
-implementations live in this service's main.py.
+The real implementation lives in the standalone service (services/background-check/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/background-check", tags=["background-check"])
 
-_NOT_IMPLEMENTED_DETAIL = (
-    "Not implemented in gateway router; use the background-check "
-    "service endpoints directly"
+_UNAVAILABLE = (
+    "background-check endpoints are not served by this gateway router. "
+    "Use the standalone background-check service."
 )
+
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "background-check", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/api/v1/background-check/initiate")
-async def initiate_background_check():
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
 
-@router.get("/api/v1/background-check/{check_id}/status")
-async def get_check_status(check_id: str):
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
-
-@router.get("/api/v1/background-check/{check_id}/results")
-async def get_check_results(check_id: str):
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
-
-@router.post("/api/v1/background-check/{check_id}/retry")
-async def retry_background_check(check_id: str):
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
-
-@router.delete("/api/v1/background-check/{check_id}")
-async def delete_background_check(check_id: str):
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
-
-@router.get("/api/v1/background-check/agent/{agent_id}")
-async def get_agent_background_checks(agent_id: str):
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED_DETAIL)
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

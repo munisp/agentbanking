@@ -6,6 +6,7 @@
 import SwiftUI
 import Combine
 import LocalAuthentication
+import Alamofire
 
 // MARK: - 1. Data Models
 
@@ -27,15 +28,41 @@ struct ConversionResult {
     let timestamp: Date
 }
 
-// MARK: - 2. API Client Interface and Mock Implementation
+// MARK: - 2. API Client Interface and Implementations
 
 /// Protocol for fetching live currency rates.
 protocol RateFetching {
     func fetchLiveRate(from: String, to: String) -> AnyPublisher<Double, Error>
 }
 
-/// Mock implementation of the API client for live rates.
-class MockAPIClient: RateFetching {
+/// Real implementation of the rate client, backed by the 54Link backend quote endpoint.
+class LiveRateAPIClient: RateFetching {
+    private struct QuoteResponse: Decodable {
+        let rate: Double
+    }
+    
+    func fetchLiveRate(from: String, to: String) -> AnyPublisher<Double, Error> {
+        Future<Double, Error> { promise in
+            Task {
+                do {
+                    let response: QuoteResponse = try await APIClient.shared.request(
+                        .transferQuote,
+                        method: .post,
+                        parameters: ["sourceCurrency": from, "destinationCurrency": to]
+                    )
+                    promise(.success(response.rate))
+                } catch {
+                    promise(.failure(error))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+
+#if DEBUG
+/// Mock implementation of the rate client (DEBUG builds only, for previews/tests).
+class MockRateAPIClient: RateFetching {
     enum APIError: Error, LocalizedError {
         case networkError
         case invalidCurrency
@@ -80,6 +107,7 @@ class MockAPIClient: RateFetching {
         .eraseToAnyPublisher()
     }
 }
+#endif
 
 // MARK: - 3. View Model (ObservableObject)
 
@@ -94,6 +122,10 @@ class RateCalculatorViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var isAuthenticated: Bool = false // For Biometric Auth
+    /// True when the displayed rate came from the local cache rather than a fresh fetch.
+    @Published private(set) var rateIsCached: Bool = false
+    /// When the cached rate was originally fetched from the server.
+    private(set) var lastRateTimestamp: Date?
     
     // MARK: Data & Dependencies
     
@@ -107,17 +139,21 @@ class RateCalculatorViewModel: ObservableObject {
     private let rateFetcher: RateFetching
     private var cancellables = Set<AnyCancellable>()
     private let lastRateKey = "lastFetchedRate"
+    private let lastRateTimestampKey = "lastFetchedRateTimestamp"
     
     // MARK: Initialization
     
-    init(rateFetcher: RateFetching = MockAPIClient()) {
+    init(rateFetcher: RateFetching = LiveRateAPIClient()) {
         self.rateFetcher = rateFetcher
         self.fromCurrency = availableCurrencies.first(where: { $0.code == "USD" }) ?? availableCurrencies[0]
         self.toCurrency = availableCurrencies.first(where: { $0.code == "NGN" }) ?? availableCurrencies[1]
         
-        // Load last rate for offline support
+        // Load last rate for offline support (labeled as cached, with its fetch timestamp)
         if let lastRate = UserDefaults.standard.object(forKey: lastRateKey) as? Double {
             self.liveRate = lastRate
+            self.rateIsCached = true
+            let ts = UserDefaults.standard.object(forKey: lastRateTimestampKey) as? TimeInterval
+            self.lastRateTimestamp = ts.map { Date(timeIntervalSince1970: $0) }
         }
         
         // Auto-trigger conversion on state change
@@ -156,26 +192,36 @@ class RateCalculatorViewModel: ObservableObject {
                 self?.isLoading = false
                 switch completion {
                 case .failure(let error):
-                    self?.errorMessage = error.localizedDescription
-                    // Offline mode support: Use cached rate if API fails
-                    if self?.liveRate != nil {
-                        self?.errorMessage = "Live rate update failed. Using cached rate: \(self?.liveRate ?? 0.0)"
+                    // Offline mode support: use cached rate if API fails, clearly labeled
+                    // with the time the rate was originally fetched.
+                    if let cachedRate = self?.liveRate {
+                        self?.rateIsCached = true
+                        let fetchedAt = self?.lastRateTimestamp
+                            .map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "unknown time"
+                        self?.errorMessage = "Live rate update failed. Using cached rate \(cachedRate) fetched at \(fetchedAt)."
                         self?.convert(useCachedRate: true)
+                    } else {
+                        self?.errorMessage = error.localizedDescription
                     }
                 case .finished:
                     break
                 }
             } receiveValue: { [weak self] rate in
-                self?.liveRate = rate
-                UserDefaults.standard.set(rate, forKey: self?.lastRateKey ?? "")
-                self?.convert()
+                guard let self = self else { return }
+                self.liveRate = rate
+                self.rateIsCached = false
+                let now = Date()
+                self.lastRateTimestamp = now
+                UserDefaults.standard.set(rate, forKey: self.lastRateKey)
+                UserDefaults.standard.set(now.timeIntervalSince1970, forKey: self.lastRateTimestampKey)
+                self.convert()
             }
             .store(in: &cancellables)
     }
     
     /// Performs the currency conversion.
     func convert(useCachedRate: Bool = false) {
-        guard let rate = useCachedRate ? liveRate : liveRate,
+        guard let rate = liveRate,
               let amount = Double(fromAmount),
               amount > 0 else {
             conversionResult = nil
@@ -219,12 +265,14 @@ class RateCalculatorViewModel: ObservableObject {
         }
     }
     
-    /// Simulates initiating a payment process.
+    /// Requires a fresh live rate, then hands off to the transfer flow.
+    /// No payment is initiated or confirmed from this calculator.
     func initiatePayment() {
-        // This is a conceptual integration for the calculator view.
-        // In a real app, this would navigate to a payment view.
-        print("Initiating payment via Paystack/Flutterwave/Interswitch for \(conversionResult?.toAmount ?? 0.0) \(toCurrency.code)")
-        self.errorMessage = "Payment initiated for \(String(format: "%.2f", conversionResult?.toAmount ?? 0.0)) \(toCurrency.code). (Mock Action)"
+        guard conversionResult != nil, !rateIsCached else {
+            self.errorMessage = "A fresh live rate is required before proceeding to a transfer. Please refresh the rate."
+            return
+        }
+        // Hand-off to the transfer flow is handled by the parent navigation layer.
     }
     
     // MARK: Computed Properties for UI
@@ -332,7 +380,7 @@ struct RateCalculatorView: View {
                     // MARK: Rate & Status
                     VStack(alignment: .leading) {
                         HStack {
-                            Text("Live Rate:")
+                            Text(viewModel.rateIsCached ? "Cached Rate:" : "Live Rate:")
                                 .font(.headline)
                             
                             if viewModel.isLoading {
@@ -360,9 +408,9 @@ struct RateCalculatorView: View {
                                 .accessibilityLiveRegion(.assertive)
                         }
                         
-                        // MARK: Offline Mode Indicator
-                        if viewModel.errorMessage?.contains("Using cached rate") == true {
-                            Text("Offline Mode: Using last cached rate.")
+                        // MARK: Offline Mode Indicator (cached rate, labeled with timestamp)
+                        if viewModel.rateIsCached, let cachedAt = viewModel.lastRateTimestamp {
+                            Text("Offline Mode: Using rate cached at \(cachedAt.formatted(date: .abbreviated, time: .shortened)).")
                                 .foregroundColor(.orange)
                                 .font(.caption)
                         }
@@ -521,15 +569,18 @@ struct BiometricAuthGate: View {
  * Features Implemented:
  * - SwiftUI: Complete UI built with SwiftUI.
  * - StateManagement (ObservableObject): RateCalculatorViewModel manages all state and logic.
- * - API Integration: Uses RateFetching protocol (MockAPIClient) for live rate fetching.
+ * - API Integration: Uses the RateFetching protocol; defaults to LiveRateAPIClient, which fetches
+ *   real quotes from the backend. MockRateAPIClient exists for DEBUG previews/tests only.
  * - Error Handling: Displays network and server errors via `errorMessage`.
  * - Loading States: Uses `isLoading` to show a `ProgressView`.
  * - Form Validation: Simple validation to ensure a positive amount is entered and currencies are different.
  * - Navigation Support: Wrapped in a `NavigationView`. Uses a sheet for currency selection.
  * - Accessibility: Includes `accessibilityLabel` for key UI elements.
  * - Biometric Authentication: Uses `LocalAuthentication` to gate access to the calculator.
- * - Offline Mode: Caches the last successful rate using `UserDefaults` and uses it on API failure.
- * - Payment Gateway Integration: Conceptual "Proceed to Transfer" button (`initiatePayment` function).
+ * - Offline Mode: Caches the last successful rate using `UserDefaults` and uses it on API failure,
+ *   clearly labeled as a cached rate together with its original fetch timestamp.
+ * - Payment Gateway Integration: "Proceed to Transfer" hands off to the transfer flow and never
+ *   fabricates a payment confirmation.
  *
  * Dependencies:
  * - SwiftUI

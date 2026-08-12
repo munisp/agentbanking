@@ -5,12 +5,9 @@ export default function FinanceAdminDashboard() {
   const { transactions, metrics, loading } = useDashboardData();
 
   const totalRevenue = metrics.total_volume;
-  const successTxns = transactions.filter(
-    (t) => t.status?.toLowerCase() === "success",
-  );
-  console.log("Successful Transactions:", successTxns);
-  const transactionFees = totalRevenue * 0.01; // Assume 1% fee
-  const netProfit = totalRevenue * 0.65; // Assume 65% profit margin
+  // Fee and profit-margin figures are not provided by the API — render "—"
+  // instead of deriving them from assumed constants.
+  const recentTransactions = transactions.slice(0, 5);
 
   return (
     <div className="p-8">
@@ -38,12 +35,10 @@ export default function FinanceAdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Transaction Fees</p>
-              <p className="text-2xl font-bold mt-2">
-                {loading
-                  ? "..."
-                  : `₦${(transactionFees / 1000000).toFixed(1)}M`}
+              <p className="text-2xl font-bold mt-2">{loading ? "..." : "—"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Not available
               </p>
-              <p className="text-xs text-green-600 mt-1">1% of revenue</p>
             </div>
             <CreditCard className="h-8 w-8 text-blue-500" />
           </div>
@@ -53,10 +48,10 @@ export default function FinanceAdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Net Profit</p>
-              <p className="text-2xl font-bold mt-2">
-                {loading ? "..." : `₦${(netProfit / 1000000).toFixed(1)}M`}
+              <p className="text-2xl font-bold mt-2">{loading ? "..." : "—"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Not available
               </p>
-              <p className="text-xs text-green-600 mt-1">65% margin</p>
             </div>
             <Wallet className="h-8 w-8 text-orange-500" />
           </div>
@@ -65,9 +60,13 @@ export default function FinanceAdminDashboard() {
         <div className="bg-card border rounded-lg p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Net Profit</p>
-              <p className="text-2xl font-bold mt-2">₦81.7M</p>
-              <p className="text-xs text-green-600 mt-1">+22.4% growth</p>
+              <p className="text-sm text-muted-foreground">
+                Total Transactions
+              </p>
+              <p className="text-2xl font-bold mt-2">
+                {loading ? "..." : metrics.total_count.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">All time</p>
             </div>
             <TrendingUp className="h-8 w-8 text-purple-500" />
           </div>
@@ -78,46 +77,53 @@ export default function FinanceAdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-card border rounded-lg p-6">
           <h3 className="font-semibold mb-4">Pending Invoices</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b">
-              <div>
-                <p className="text-sm font-medium">
-                  BPMGD - January Subscription
-                </p>
-                <p className="text-xs text-muted-foreground">Due in 5 days</p>
-              </div>
-              <span className="font-bold">₦2.5M</span>
-            </div>
-            <div className="flex justify-between items-center py-2 border-b">
-              <div>
-                <p className="text-sm font-medium">FirstBank - API Usage</p>
-                <p className="text-xs text-muted-foreground">Due in 12 days</p>
-              </div>
-              <span className="font-bold">₦1.8M</span>
-            </div>
-          </div>
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            Invoice data is not available — no invoicing source is connected.
+          </p>
         </div>
 
         <div className="bg-card border rounded-lg p-6">
           <h3 className="font-semibold mb-4">Recent Transactions</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b">
-              <div>
-                <p className="text-sm font-medium">Payment Received</p>
-                <p className="text-xs text-muted-foreground">
-                  UBA - Monthly Fee
-                </p>
-              </div>
-              <span className="text-green-600 font-bold">+₦3.2M</span>
+          {loading ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Loading transactions…
+            </p>
+          ) : recentTransactions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              No recent transactions.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {recentTransactions.map((t, i) => {
+                const amount = Number(t.amount ?? NaN);
+                const label =
+                  t.description ||
+                  t.narration ||
+                  t.reference ||
+                  t.tx_ref ||
+                  t.type ||
+                  "Transaction";
+                return (
+                  <div
+                    key={t.id ?? t.reference ?? i}
+                    className="flex justify-between items-center py-2 border-b"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.status ?? "—"}
+                      </p>
+                    </div>
+                    <span className="font-bold">
+                      {Number.isFinite(amount)
+                        ? `₦${amount.toLocaleString()}`
+                        : "—"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            <div className="flex justify-between items-center py-2 border-b">
-              <div>
-                <p className="text-sm font-medium">Infrastructure Cost</p>
-                <p className="text-xs text-muted-foreground">AWS Services</p>
-              </div>
-              <span className="text-red-600 font-bold">-₦850K</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

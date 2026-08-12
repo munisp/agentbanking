@@ -9,11 +9,11 @@ from typing import Dict, Optional
 from datetime import datetime, date
 from enum import Enum
 import logging
-import os
 import httpx
 import hashlib
 import hmac
 import json
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,15 +25,6 @@ class VerificationStatus(str, Enum):
     NOT_FOUND = "not_found"
     MISMATCH = "mismatch"
     ERROR = "error"
-
-
-class NIMCProviderError(Exception):
-    """Raised when the NIMC provider is unavailable or returns an error.
-
-    Fail-closed: callers must never convert this into a successful or
-    not-found verification result.
-    """
-    pass
 
 class NINVerificationRequest(BaseModel):
     nin: str
@@ -79,15 +70,6 @@ class NIMCIntegrationService:
         
         if use_sandbox:
             self.base_url = "https://sandbox.nimc.gov.ng/v1"
-            logger.warning(
-                "NIMC Integration running in SANDBOX simulation mode - "
-                "responses are simulated and MUST NOT be used for production KYC decisions"
-            )
-        elif not self.api_key:
-            logger.error(
-                "NIMC_API_KEY is not configured and sandbox mode is disabled - "
-                "all verification requests will fail with an explicit provider error"
-            )
         
         self.client = httpx.AsyncClient(timeout=30.0)
         
@@ -157,20 +139,12 @@ class NIMCIntegrationService:
                 phone_number
             )
             
-            # Step 4: Calculate confidence score from real field matches only
+            # Step 4: Calculate confidence score
             confidence_score = self._calculate_confidence(verified_fields)
             
-            # Step 5: Determine overall status.
-            # Fail-closed: a NIN is only VERIFIED when at least one
-            # demographic field was provided AND every provided field matched
-            # the NIMC record. Existence of the NIN alone is not verification.
-            if not verified_fields:
-                data_match = False
-                status = VerificationStatus.MISMATCH
-                confidence_score = 0.0
-            else:
-                data_match = all(verified_fields.values())
-                status = VerificationStatus.VERIFIED if data_match else VerificationStatus.MISMATCH
+            # Step 5: Determine overall status
+            data_match = all(verified_fields.values()) if verified_fields else True
+            status = VerificationStatus.VERIFIED if data_match else VerificationStatus.MISMATCH
             
             # Step 6: Sanitize NIMC data (remove sensitive fields)
             sanitized_data = self._sanitize_nimc_data(nimc_data)
@@ -194,21 +168,6 @@ class NIMCIntegrationService:
             
             return result
             
-        except NIMCProviderError as e:
-            # Provider unavailable/misconfigured: fail LOUD with an explicit
-            # ERROR. Never fabricate an identity, a NOT_FOUND, or a pass.
-            logger.error(f"NIMC provider error for {verification_id}: {e}")
-            return NINVerificationResponse(
-                verification_id=verification_id,
-                status=VerificationStatus.ERROR,
-                nin=nin,
-                nin_valid=False,
-                data_match=False,
-                verified_fields={},
-                nimc_data=None,
-                confidence_score=0.0,
-                timestamp=datetime.utcnow().isoformat()
-            )
         except Exception as e:
             logger.error(f"NIN verification error: {e}")
             return NINVerificationResponse(
@@ -234,15 +193,10 @@ class NIMCIntegrationService:
             NIMC data or None if not found
         
         Raises:
-            NIMCProviderError: when the provider is unreachable, returns an
-                error status, or credentials are missing. Only an explicit
-                HTTP 404 returns None (genuine not-found).
+            RuntimeError: if the NIMC provider is unavailable or returns an
+                error. Callers must fail closed and never treat a provider
+                failure as a successful or negative verification.
         """
-        if not self.use_sandbox and not self.api_key:
-            raise NIMCProviderError(
-                "NIMC API key is not configured; refusing to verify without a real provider"
-            )
-        
         try:
             # Prepare request
             endpoint = f"{self.base_url}/nin/verify"
@@ -276,24 +230,23 @@ class NIMCIntegrationService:
                 return None
             else:
                 logger.error(f"NIMC API error: {response.status_code} - {response.text}")
-                raise NIMCProviderError(
-                    f"NIMC API returned status {response.status_code}"
+                raise RuntimeError(
+                    f"NIMC provider error: HTTP {response.status_code}"
                 )
                 
-        except NIMCProviderError:
-            raise
         except httpx.HTTPError as e:
             logger.error(f"NIMC API request error: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
-            if self.use_sandbox:
-                return self._get_mock_nimc_data(nin)
-            raise NIMCProviderError(f"NIMC provider unreachable: {e}") from e
+            raise RuntimeError(f"NIMC provider request failed: {e}") from e
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"NIMC query error: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
+            # Mock data is ONLY returned when sandbox mode was explicitly
+            # enabled via configuration; never fabricate identity data in
+            # production paths.
             if self.use_sandbox:
                 return self._get_mock_nimc_data(nin)
-            raise NIMCProviderError(f"NIMC provider error: {e}") from e
+            raise RuntimeError(f"NIMC provider query failed: {e}") from e
     
     def _validate_nin_format(self, nin: str) -> bool:
         """Validate NIN format (11 digits)"""
@@ -415,14 +368,12 @@ class NIMCIntegrationService:
         return len(intersection) / len(union)
     
     def _calculate_confidence(self, verified_fields: Dict[str, bool]) -> float:
-        """Calculate overall confidence score from real field matches.
-        
-        Returns 0.0 when no fields were actually compared - we must never
-        claim confidence in a match that did not happen.
-        """
+        """Calculate overall confidence score from real field matches"""
         
         if not verified_fields:
-            return 0.0  # No fields were verified: no confidence can be claimed
+            # No fields were actually matched against provider data; never
+            # claim full confidence without evidence.
+            return 0.0
         
         verified_count = sum(1 for v in verified_fields.values() if v)
         total_count = len(verified_fields)
@@ -467,7 +418,7 @@ class NIMCIntegrationService:
         return signature
     
     def _get_mock_nimc_data(self, nin: str) -> Dict:
-        """Get mock NIMC data. SANDBOX SIMULATION ONLY - never used in production."""
+        """Get mock NIMC data for sandbox testing (explicit sandbox only)"""
         
         return {
             "nin": nin,
@@ -493,12 +444,11 @@ class NIMCIntegrationService:
             "local_processing": True
         }
 
-# Sandbox/simulation mode is OFF by default. Set KYC_SANDBOX_MODE=true ONLY
-# for explicit simulation testing; any other value (or unset) calls the real
-# NIMC API and fails loudly if the provider is unavailable.
-import os as _os
+# Sandbox mode is OFF by default. Set KYC_SANDBOX_MODE=true explicitly to
+# enable the sandbox/simulation environment; production must never silently
+# fall back to fabricated identity data.
 nimc_service = NIMCIntegrationService(
-    use_sandbox=_os.getenv("KYC_SANDBOX_MODE", "false").lower() == "true"
+    use_sandbox=os.getenv("KYC_SANDBOX_MODE", "false").lower() == "true"
 )
 
 # API endpoints

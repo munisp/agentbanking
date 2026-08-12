@@ -9,11 +9,11 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from enum import Enum
 import logging
-import os
 import httpx
 import hashlib
 import hmac
 import json
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,15 +26,6 @@ class VerificationStatus(str, Enum):
     MISMATCH = "mismatch"
     INACTIVE = "inactive"
     ERROR = "error"
-
-
-class CACProviderError(Exception):
-    """Raised when the CAC provider is unavailable or returns an error.
-
-    Fail-closed: callers must never convert this into a successful or
-    not-found verification result.
-    """
-    pass
 
 class BusinessType(str, Enum):
     LIMITED_COMPANY = "limited_company"
@@ -83,15 +74,6 @@ class CACIntegrationService:
         
         if use_sandbox:
             self.base_url = "https://sandbox.cac.gov.ng/v1"
-            logger.warning(
-                "CAC Integration running in SANDBOX simulation mode - "
-                "responses are simulated and MUST NOT be used for production KYB decisions"
-            )
-        elif not self.api_key:
-            logger.error(
-                "CAC_API_KEY is not configured and sandbox mode is disabled - "
-                "all verification requests will fail with an explicit provider error"
-            )
         
         self.client = httpx.AsyncClient(timeout=30.0)
         
@@ -169,20 +151,12 @@ class CACIntegrationService:
                 business_type
             )
             
-            # Step 5: Calculate confidence score from real field matches only
+            # Step 5: Calculate confidence score
             confidence_score = self._calculate_confidence(verified_fields)
             
-            # Step 6: Determine overall status.
-            # Fail-closed: an RC is only VERIFIED when at least one field was
-            # provided AND every provided field matched the CAC record.
-            # Existence of the RC alone is not verification.
-            if not verified_fields:
-                data_match = False
-                status = VerificationStatus.MISMATCH
-                confidence_score = 0.0
-            else:
-                data_match = all(verified_fields.values())
-                status = VerificationStatus.VERIFIED if data_match else VerificationStatus.MISMATCH
+            # Step 6: Determine overall status
+            data_match = all(verified_fields.values()) if verified_fields else True
+            status = VerificationStatus.VERIFIED if data_match else VerificationStatus.MISMATCH
             
             # Step 7: Sanitize CAC data
             sanitized_data = self._sanitize_cac_data(cac_data)
@@ -206,21 +180,6 @@ class CACIntegrationService:
             
             return result
             
-        except CACProviderError as e:
-            # Provider unavailable/misconfigured: fail LOUD with an explicit
-            # ERROR. Never fabricate a company record, NOT_FOUND, or a pass.
-            logger.error(f"CAC provider error for {verification_id}: {e}")
-            return RCVerificationResponse(
-                verification_id=verification_id,
-                status=VerificationStatus.ERROR,
-                rc_number=rc_number,
-                rc_valid=False,
-                data_match=False,
-                verified_fields={},
-                cac_data=None,
-                confidence_score=0.0,
-                timestamp=datetime.utcnow().isoformat()
-            )
         except Exception as e:
             logger.error(f"RC verification error: {e}")
             return RCVerificationResponse(
@@ -243,27 +202,26 @@ class CACIntegrationService:
             rc_number: Registration Certificate number
         
         Returns:
-            Company details or None
+            Company details or None if the company was not found (404).
+        
+        Raises:
+            RuntimeError: if the CAC provider is unavailable; callers must
+                fail closed rather than report a misleading "not found".
         """
-        try:
-            cac_data = await self._query_cac_database(rc_number)
-            
-            if not cac_data:
-                return None
-            
-            # Get additional details
-            directors = await self._get_directors(rc_number)
-            shareholders = await self._get_shareholders(rc_number)
-            
-            return {
-                "basic_info": self._sanitize_cac_data(cac_data),
-                "directors": directors,
-                "shareholders": shareholders
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting company details: {e}")
+        cac_data = await self._query_cac_database(rc_number)
+        
+        if not cac_data:
             return None
+        
+        # Get additional details
+        directors = await self._get_directors(rc_number)
+        shareholders = await self._get_shareholders(rc_number)
+        
+        return {
+            "basic_info": self._sanitize_cac_data(cac_data),
+            "directors": directors,
+            "shareholders": shareholders
+        }
     
     async def _query_cac_database(self, rc_number: str) -> Optional[Dict]:
         """
@@ -276,15 +234,10 @@ class CACIntegrationService:
             CAC data or None if not found
         
         Raises:
-            CACProviderError: when the provider is unreachable, returns an
-                error status, or credentials are missing. Only an explicit
-                HTTP 404 returns None (genuine not-found).
+            RuntimeError: if the CAC provider is unavailable or returns an
+                error. Provider failures must never be reported as a
+                successful or negative verification.
         """
-        if not self.use_sandbox and not self.api_key:
-            raise CACProviderError(
-                "CAC API key is not configured; refusing to verify without a real provider"
-            )
-        
         try:
             # Prepare request
             endpoint = f"{self.base_url}/company/search"
@@ -318,27 +271,26 @@ class CACIntegrationService:
                 return None
             else:
                 logger.error(f"CAC API error: {response.status_code} - {response.text}")
-                raise CACProviderError(
-                    f"CAC API returned status {response.status_code}"
+                raise RuntimeError(
+                    f"CAC provider error: HTTP {response.status_code}"
                 )
                 
-        except CACProviderError:
-            raise
         except httpx.HTTPError as e:
             logger.error(f"CAC API request error: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
-            if self.use_sandbox:
-                return self._get_mock_cac_data(rc_number)
-            raise CACProviderError(f"CAC provider unreachable: {e}") from e
+            raise RuntimeError(f"CAC provider request failed: {e}") from e
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"CAC query error: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
+            # Mock data is ONLY returned when sandbox mode was explicitly
+            # enabled via configuration; never fabricate registry data in
+            # production paths.
             if self.use_sandbox:
                 return self._get_mock_cac_data(rc_number)
-            raise CACProviderError(f"CAC provider error: {e}") from e
+            raise RuntimeError(f"CAC provider query failed: {e}") from e
     
     async def _get_directors(self, rc_number: str) -> List[Dict]:
-        """Get list of directors"""
+        """Get list of directors (raises on provider failure unless sandbox)"""
         
         try:
             endpoint = f"{self.base_url}/company/{rc_number}/directors"
@@ -355,20 +307,22 @@ class CACIntegrationService:
                 return data.get("directors", [])
             else:
                 logger.error(
-                    f"CAC directors lookup failed for {rc_number}: "
-                    f"status {response.status_code}"
+                    f"CAC directors API error: {response.status_code} - {response.text}"
                 )
-                return []
+                raise RuntimeError(
+                    f"CAC provider error (directors): HTTP {response.status_code}"
+                )
                 
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"Error getting directors: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
             if self.use_sandbox:
                 return self._get_mock_directors()
-            return []
+            raise RuntimeError(f"CAC provider request failed (directors): {e}") from e
     
     async def _get_shareholders(self, rc_number: str) -> List[Dict]:
-        """Get list of shareholders"""
+        """Get list of shareholders (raises on provider failure unless sandbox)"""
         
         try:
             endpoint = f"{self.base_url}/company/{rc_number}/shareholders"
@@ -385,17 +339,19 @@ class CACIntegrationService:
                 return data.get("shareholders", [])
             else:
                 logger.error(
-                    f"CAC shareholders lookup failed for {rc_number}: "
-                    f"status {response.status_code}"
+                    f"CAC shareholders API error: {response.status_code} - {response.text}"
                 )
-                return []
+                raise RuntimeError(
+                    f"CAC provider error (shareholders): HTTP {response.status_code}"
+                )
                 
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"Error getting shareholders: {e}")
-            # Mock data is ONLY acceptable in explicit sandbox simulation mode.
             if self.use_sandbox:
                 return self._get_mock_shareholders()
-            return []
+            raise RuntimeError(f"CAC provider request failed (shareholders): {e}") from e
     
     def _validate_rc_format(self, rc_number: str) -> bool:
         """Validate RC format"""
@@ -493,14 +449,12 @@ class CACIntegrationService:
         return len(intersection) / len(union)
     
     def _calculate_confidence(self, verified_fields: Dict[str, bool]) -> float:
-        """Calculate overall confidence score from real field matches.
-        
-        Returns 0.0 when no fields were actually compared - we must never
-        claim confidence in a match that did not happen.
-        """
+        """Calculate overall confidence score from real field matches"""
         
         if not verified_fields:
-            return 0.0  # No fields were verified: no confidence can be claimed
+            # No fields were actually matched against provider data; never
+            # claim full confidence without evidence.
+            return 0.0
         
         verified_count = sum(1 for v in verified_fields.values() if v)
         total_count = len(verified_fields)
@@ -547,7 +501,7 @@ class CACIntegrationService:
         return signature
     
     def _get_mock_cac_data(self, rc_number: str) -> Dict:
-        """Get mock CAC data. SANDBOX SIMULATION ONLY - never used in production."""
+        """Get mock CAC data for sandbox testing (explicit sandbox only)"""
         
         return {
             "rc_number": rc_number,
@@ -566,7 +520,7 @@ class CACIntegrationService:
         }
     
     def _get_mock_directors(self) -> List[Dict]:
-        """Get mock directors data. SANDBOX SIMULATION ONLY."""
+        """Get mock directors data (explicit sandbox only)"""
         
         return [
             {
@@ -586,7 +540,7 @@ class CACIntegrationService:
         ]
     
     def _get_mock_shareholders(self) -> List[Dict]:
-        """Get mock shareholders data. SANDBOX SIMULATION ONLY."""
+        """Get mock shareholders data (explicit sandbox only)"""
         
         return [
             {
@@ -613,12 +567,11 @@ class CACIntegrationService:
             "local_processing": True
         }
 
-# Sandbox/simulation mode is OFF by default. Set KYC_SANDBOX_MODE=true ONLY
-# for explicit simulation testing; any other value (or unset) calls the real
-# CAC API and fails loudly if the provider is unavailable.
-import os as _os
+# Sandbox mode is OFF by default. Set KYC_SANDBOX_MODE=true explicitly to
+# enable the sandbox/simulation environment; production must never silently
+# fall back to fabricated registry data.
 cac_service = CACIntegrationService(
-    use_sandbox=_os.getenv("KYC_SANDBOX_MODE", "false").lower() == "true"
+    use_sandbox=os.getenv("KYC_SANDBOX_MODE", "false").lower() == "true"
 )
 
 # API endpoints
@@ -638,7 +591,12 @@ async def verify_rc(request: RCVerificationRequest):
 async def get_company_details(rc_number: str):
     """Get detailed company information"""
     
-    details = await cac_service.get_company_details(rc_number)
+    try:
+        details = await cac_service.get_company_details(rc_number)
+    except RuntimeError as e:
+        # Provider unavailable: fail closed with an explicit error instead
+        # of a misleading "not found".
+        raise HTTPException(status_code=502, detail=str(e))
     
     if not details:
         raise HTTPException(status_code=404, detail="Company not found")

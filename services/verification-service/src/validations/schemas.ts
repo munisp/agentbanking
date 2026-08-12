@@ -25,6 +25,7 @@ export const EnvSchema = z.object({
   KYC_FLOW_BASE_URL: z.string(),
   SHIELD_VERIFICATION_BASE_URL: z.string(),
   SHIELD_VERIFICATION_API_KEY: z.string(),
+  SHIELD_API_INSECURE_TLS: z.string().optional(),
   KYC_FLOW_API_KEY: z.string(),
 });
 

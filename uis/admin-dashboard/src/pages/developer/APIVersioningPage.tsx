@@ -16,34 +16,6 @@ interface APIVersion {
   breakingChanges: string[];
 }
 
-const MOCK_VERSIONS: APIVersion[] = [
-  {
-    id: "v3", version: "v3", status: "active",
-    releaseDate: "2024-07-01", deprecationDate: null, sunsetDate: null,
-    endpointCount: 84, migrationGuide: "https://docs.54agent.ng/api/v3/migration",
-    breakingChanges: [
-      "Unified /payment-hub endpoints replace split /bills and /transfers",
-      "Pagination now uses cursor-based instead of offset",
-      "Webhook payloads include new 'meta.version' field",
-    ],
-  },
-  {
-    id: "v2", version: "v2", status: "deprecated",
-    releaseDate: "2023-01-15", deprecationDate: "2024-07-01", sunsetDate: "2025-01-15",
-    endpointCount: 62, migrationGuide: "https://docs.54agent.ng/api/v2/migration",
-    breakingChanges: [
-      "Agent onboarding endpoint path changed from /onboard to /agents",
-      "Transaction response now returns 'amount_ngn' instead of 'amount'",
-    ],
-  },
-  {
-    id: "v1", version: "v1", status: "sunset",
-    releaseDate: "2022-03-01", deprecationDate: "2023-01-15", sunsetDate: "2024-01-15",
-    endpointCount: 38, migrationGuide: "https://docs.54agent.ng/api/v1/migration",
-    breakingChanges: [],
-  },
-];
-
 const STATUS_CONFIG: Record<APIVersion["status"], { label: string; bg: string; text: string; icon: React.FC<{className?: string}> }> = {
   active: { label: "Active", bg: "bg-green-100", text: "text-green-700", icon: CheckCircle },
   deprecated: { label: "Deprecated", bg: "bg-amber-100", text: "text-amber-700", icon: AlertTriangle },
@@ -61,6 +33,7 @@ const COMPARE_KEYS: Array<{ label: string; key: keyof APIVersion }> = [
 const APIVersioningPage: React.FC = () => {
   const [versions, setVersions] = useState<APIVersion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [compareA, setCompareA] = useState("v3");
   const [compareB, setCompareB] = useState("v2");
 
@@ -68,11 +41,12 @@ const APIVersioningPage: React.FC = () => {
 
   const fetchVersions = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/versions`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setVersions(Array.isArray(d.versions) ? d.versions : MOCK_VERSIONS); }
-      else { setVersions(MOCK_VERSIONS); }
-    } catch { setVersions(MOCK_VERSIONS); }
+      if (res.ok) { const d = await res.json(); setVersions(Array.isArray(d.versions) ? d.versions : []); }
+      else { setError("Failed to load API versions."); }
+    } catch { setError("Failed to load API versions."); }
     finally { setLoading(false); }
   };
 
@@ -88,6 +62,13 @@ const APIVersioningPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchVersions()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

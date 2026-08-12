@@ -20,16 +20,6 @@ interface GlobalConfig {
   kycRequired: boolean;
 }
 
-const MOCK_TENANTS: Tenant[] = [
-  { id: "t-001", name: "QuickCash NG", status: "active", plan: "Enterprise", agentsCount: 4820, mrr: 12400000, lastActivity: "2 mins ago" },
-  { id: "t-002", name: "PayEasy Africa", status: "active", plan: "Growth", agentsCount: 1230, mrr: 3200000, lastActivity: "1 hr ago" },
-  { id: "t-003", name: "NairaLink", status: "suspended", plan: "Starter", agentsCount: 210, mrr: 0, lastActivity: "3 days ago" },
-  { id: "t-004", name: "CashPoint Ltd", status: "active", plan: "Growth", agentsCount: 890, mrr: 2100000, lastActivity: "25 mins ago" },
-  { id: "t-005", name: "Zonal Finance", status: "active", plan: "Starter", agentsCount: 145, mrr: 480000, lastActivity: "4 hrs ago" },
-];
-
-const MOCK_CONFIG: GlobalConfig = { maintenanceMode: false, registrationOpen: true, kycRequired: true };
-
 const PLAN_STYLE: Record<string, string> = {
   Starter: "bg-gray-100 text-gray-600",
   Growth: "bg-blue-100 text-blue-700",
@@ -38,25 +28,28 @@ const PLAN_STYLE: Record<string, string> = {
 
 const SuperAdminPortal: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [config, setConfig] = useState<GlobalConfig>(MOCK_CONFIG);
+  const [config, setConfig] = useState<GlobalConfig | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/portals/api/v1/superadmin/overview`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setTenants(d.tenants ?? MOCK_TENANTS);
-        setConfig(d.config ?? MOCK_CONFIG);
-      } else { setTenants(MOCK_TENANTS); }
-    } catch { setTenants(MOCK_TENANTS); }
+        setTenants(d.tenants ?? []);
+        setConfig(d.config ?? null);
+      } else { setError("Failed to load superadmin overview."); }
+    } catch { setError("Failed to load superadmin overview."); }
     finally { setLoading(false); }
   };
 
   const toggleConfig = async (key: keyof GlobalConfig) => {
+    if (!config) return;
     const updated = { ...config, [key]: !config[key] };
     setConfig(updated);
     try {
@@ -75,11 +68,18 @@ const SuperAdminPortal: React.FC = () => {
         method: "POST", headers: getTenantHeadersFromStorage(),
       });
       fetchAll();
-    } catch { alert("Action failed (demo mode)"); }
+    } catch { alert("Action failed. Please try again."); }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchAll()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <ShieldAlert className="w-7 h-7 text-red-600" />
         <div>
@@ -144,7 +144,8 @@ const SuperAdminPortal: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="font-semibold text-gray-800 flex items-center gap-2 mb-4"><ToggleRight className="w-4 h-4 text-indigo-500" /> Global System Config</h2>
           <div className="space-y-4">
-            {(Object.keys(config) as (keyof GlobalConfig)[]).map(key => (
+            {!config && <p className="text-sm text-gray-500">No configuration data available.</p>}
+            {config && (Object.keys(config) as (keyof GlobalConfig)[]).map(key => (
               <div key={key} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl">
                 <span className="text-sm text-gray-700 capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
                 <button onClick={() => toggleConfig(key)}

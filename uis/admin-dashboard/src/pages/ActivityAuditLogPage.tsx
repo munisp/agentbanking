@@ -6,12 +6,10 @@ import { trpc } from "@/lib/trpc";
 // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageErrorBoundary } from "@/components/ErrorBoundary";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { useState, useMemo } from "react";
 import {
   Search,
   Download,
-  Filter,
   Clock,
   User,
   Shield,
@@ -31,7 +29,6 @@ function AuditLogContent() {
     isLoading,
     isError,
     error,
-    refetch,
   } = trpc.activityAuditLog.list.useQuery(undefined, {
     retry: 1,
   });
@@ -40,9 +37,10 @@ function AuditLogContent() {
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
 
   const auditLogs = useMemo(
-    () => ((liveData as any[]) ?? []) as any[],
+    () => (Array.isArray(liveData) ? (liveData as any[]) : []),
     [liveData]
   );
+  const hasData = auditLogs.length > 0;
 
   const filtered = useMemo(() => {
     return auditLogs.filter(log => {
@@ -69,7 +67,21 @@ function AuditLogContent() {
     return <Activity className="h-4 w-4 text-muted-foreground" />;
   };
 
-  const canExport = !isLoading && !isError && filtered.length > 0;
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-6 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+          <h2 className="text-lg font-semibold text-red-700 dark:text-red-400">
+            Failed to load audit log
+          </h2>
+          <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+            {error?.message || "An unexpected error occurred."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -81,15 +93,15 @@ function AuditLogContent() {
           </p>
         </div>
         <button
-          disabled={!canExport}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-md border hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={filtered.length === 0}
           title={
-            canExport
-              ? "Export the filtered audit trail"
-              : "No audit data available to export"
+            filtered.length === 0
+              ? "No audit data available to export"
+              : "Export audit log as CSV"
           }
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md border hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onClick={() => {
-            if (!canExport) return;
+            if (filtered.length === 0) return;
             const csv = [
               "Timestamp,Actor,Role,Action,Resource,ID,Details,IP,Status",
               ...filtered.map(
@@ -108,24 +120,6 @@ function AuditLogContent() {
           <Download className="h-4 w-4" /> Export CSV
         </button>
       </div>
-
-      {isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 p-6 text-center space-y-3">
-          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto" />
-          <p className="font-medium text-red-700 dark:text-red-400">
-            Unable to load the audit trail
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {(error as any)?.message ?? "The audit log service is unavailable."}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-sm"
-          >
-            Retry
-          </button>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -194,7 +188,7 @@ function AuditLogContent() {
               <stat.icon className="h-4 w-4" /> {stat.label}
             </div>
             <div className="text-2xl font-bold">
-              {isLoading || isError ? "—" : stat.value}
+              {isLoading ? "…" : stat.value}
             </div>
           </div>
         ))}
@@ -216,19 +210,23 @@ function AuditLogContent() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr className="border-t">
-                <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                  Loading audit trail…
+              <tr>
+                <td
+                  colSpan={7}
+                  className="p-6 text-center text-muted-foreground"
+                >
+                  Loading audit log…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
-              <tr className="border-t">
-                <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                  {isError
-                    ? "Audit trail unavailable."
-                    : auditLogs.length === 0
-                      ? "No audit events recorded yet."
-                      : "No audit events match the current filters."}
+              <tr>
+                <td
+                  colSpan={7}
+                  className="p-6 text-center text-muted-foreground"
+                >
+                  {hasData
+                    ? "No log entries match the current filters."
+                    : "No audit log entries available."}
                 </td>
               </tr>
             ) : (
@@ -237,9 +235,7 @@ function AuditLogContent() {
                   <td className="p-3 whitespace-nowrap">
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {log.timestamp
-                        ? new Date(log.timestamp).toLocaleTimeString()
-                        : "—"}
+                      {new Date(log.timestamp).toLocaleTimeString()}
                     </div>
                   </td>
                   <td className="p-3">

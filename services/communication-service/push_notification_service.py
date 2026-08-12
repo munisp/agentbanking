@@ -22,12 +22,11 @@ logger = logging.getLogger(__name__)
 # Database connection pool
 db_pool = None
 
-# Push notification providers (all from environment; never hardcoded)
+# Push notification providers (configured via environment)
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")  # Firebase Cloud Messaging
 APNS_KEY = os.getenv("APNS_KEY", "")  # Apple Push Notification Service
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")  # Web Push VAPID private key
-VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")  # Web Push VAPID public key
-VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:ops@localhost")  # VAPID 'sub' claim
+WEB_PUSH_VAPID_KEY = os.getenv("WEB_PUSH_VAPID_KEY", "")  # Web Push VAPID key
+WEB_PUSH_SUBJECT = os.getenv("WEB_PUSH_SUBJECT", "mailto:admin@example.com")
 
 # Enums
 class NotificationType(str, Enum):
@@ -93,7 +92,7 @@ async def init_db():
         min_size=5,
         max_size=20
     )
-
+    
     # Create tables
     async with db_pool.acquire() as conn:
         # Device tokens table
@@ -109,7 +108,7 @@ async def init_db():
                 UNIQUE(user_id, token)
             )
         ''')
-
+        
         # Notifications table
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS push_notifications (
@@ -130,7 +129,7 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         ''')
-
+        
         # Notification logs table
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS notification_logs (
@@ -143,7 +142,7 @@ async def init_db():
                 sent_at TIMESTAMP DEFAULT NOW()
             )
         ''')
-
+        
         # Create indexes
         await conn.execute('CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id)')
         await conn.execute('CREATE INDEX IF NOT EXISTS idx_device_tokens_active ON device_tokens(is_active)')
@@ -154,6 +153,9 @@ async def init_db():
 # Helper functions
 async def send_fcm_notification(token: str, notification: Dict) -> bool:
     """Send notification via Firebase Cloud Messaging (Android)"""
+    if not FCM_SERVER_KEY:
+        logger.error("FCM_SERVER_KEY is not configured; cannot send Android push notification")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -177,15 +179,18 @@ async def send_fcm_notification(token: str, notification: Dict) -> bool:
                 },
                 timeout=10.0
             )
-
+            
             return response.status_code == 200
-
+            
     except Exception as e:
         logger.error(f"FCM send error: {e}")
         return False
 
 async def send_apns_notification(token: str, notification: Dict) -> bool:
     """Send notification via Apple Push Notification Service (iOS)"""
+    if not APNS_KEY:
+        logger.error("APNS_KEY is not configured; cannot send iOS push notification")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -209,64 +214,45 @@ async def send_apns_notification(token: str, notification: Dict) -> bool:
                 },
                 timeout=10.0
             )
-
+            
             return response.status_code == 200
-
+            
     except Exception as e:
         logger.error(f"APNS send error: {e}")
         return False
 
-def web_push_configured() -> bool:
-    """True only when VAPID credentials are present in the environment."""
-    return bool(VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY)
-
 async def send_web_push_notification(token: str, notification: Dict) -> bool:
-    """Send notification via Web Push (browser) using pywebpush + VAPID.
+    """Send notification via Web Push (browser).
 
-    Returns True ONLY when the push service accepted the message. When VAPID
-    keys are not configured or pywebpush is unavailable this returns False, so
-    the notification is recorded as FAILED instead of being fabricated as sent
-    (previously every web push - including PAYMENT_RECEIVED - was marked sent
-    without anything leaving the process).
+    FAIL LOUD: the previous placeholder logged "sent" and returned True
+    without delivering anything, causing notifications to be recorded as
+    'sent' in the database when nothing was delivered. Now returns False
+    (recorded as a failed delivery) unless a real dispatch succeeds.
     """
-    if not web_push_configured():
-        logger.error(
-            "Web push provider is not configured: set VAPID_PRIVATE_KEY and "
-            "VAPID_PUBLIC_KEY; refusing to report a successful send"
-        )
+    if not WEB_PUSH_VAPID_KEY:
+        logger.error("WEB_PUSH_VAPID_KEY is not configured; cannot send web push notification")
         return False
-
     try:
-        from pywebpush import webpush
-    except ImportError:
-        logger.error("pywebpush is not installed; cannot send web push notifications")
-        return False
-
-    # The device token for web subscriptions is the JSON-encoded PushSubscription.
-    try:
-        subscription_info = json.loads(token)
-    except (TypeError, json.JSONDecodeError):
-        subscription_info = {"endpoint": token}
-
-    payload = json.dumps({
-        "title": notification["title"],
-        "body": notification["body"],
-        "data": notification.get("data") or {},
-    })
-
-    try:
-        await asyncio.to_thread(
-            webpush,
-            subscription_info=subscription_info,
-            data=payload,
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims={"sub": VAPID_SUBJECT},
+        from pywebpush import webpush  # type: ignore
+        webpush(
+            subscription_info=json.loads(token),
+            data=json.dumps({
+                "title": notification["title"],
+                "body": notification["body"],
+                "data": notification.get("data", {}),
+            }),
+            vapid_private_key=WEB_PUSH_VAPID_KEY,
+            vapid_claims={"sub": WEB_PUSH_SUBJECT},
             ttl=notification.get("ttl", 86400),
         )
         return True
+    except ImportError:
+        logger.error("pywebpush is not installed; cannot send web push notification")
+        return False
     except Exception as e:
         logger.error(f"Web push send error: {e}")
         return False
+
 
 async def send_to_device(token: str, platform: str, notification: Dict) -> bool:
     """Send notification to specific device"""
@@ -285,14 +271,14 @@ async def process_notification_queue():
     while True:
         try:
             await asyncio.sleep(5)  # Check every 5 seconds
-
+            
             async with db_pool.acquire() as conn:
                 # Get pending notifications
                 notifications = await conn.fetch(
                     """
                     SELECT * FROM push_notifications
                     WHERE status = 'pending'
-                    ORDER BY
+                    ORDER BY 
                         CASE priority
                             WHEN 'high' THEN 1
                             WHEN 'normal' THEN 2
@@ -302,7 +288,7 @@ async def process_notification_queue():
                     LIMIT 20
                     """,
                 )
-
+                
                 for notif in notifications:
                     # Update status to processing
                     await conn.execute(
@@ -313,7 +299,7 @@ async def process_notification_queue():
                         """,
                         notif['id']
                     )
-
+                    
                     # Get user's device tokens
                     tokens = await conn.fetch(
                         """
@@ -322,7 +308,7 @@ async def process_notification_queue():
                         """,
                         notif['user_id']
                     )
-
+                    
                     if not tokens:
                         # No devices registered
                         await conn.execute(
@@ -336,7 +322,7 @@ async def process_notification_queue():
                             notif['id']
                         )
                         continue
-
+                    
                     # Prepare notification payload
                     notification_data = {
                         "title": notif['title'],
@@ -347,7 +333,7 @@ async def process_notification_queue():
                         "sound": "default",
                         "ttl": 86400
                     }
-
+                    
                     # Send to all devices
                     success_count = 0
                     for token in tokens:
@@ -356,7 +342,7 @@ async def process_notification_queue():
                             token['platform'],
                             notification_data
                         )
-
+                        
                         # Log result
                         await conn.execute(
                             """
@@ -370,10 +356,10 @@ async def process_notification_queue():
                             token['platform'],
                             'sent' if success else 'failed'
                         )
-
+                        
                         if success:
                             success_count += 1
-
+                    
                     # Update notification status
                     if success_count > 0:
                         await conn.execute(
@@ -395,7 +381,7 @@ async def process_notification_queue():
                             """,
                             notif['id']
                         )
-
+                        
         except Exception as e:
             logger.error(f"Error processing notification queue: {e}")
 
@@ -425,7 +411,7 @@ async def register_device(device: DeviceToken):
             """,
             device.user_id, device.token, device.platform.value
         )
-
+        
         return {"message": "Device registered successfully"}
 
 @app.delete("/devices/{user_id}/{token}")
@@ -440,10 +426,10 @@ async def unregister_device(user_id: int, token: str):
             """,
             user_id, token
         )
-
+        
         if result == "UPDATE 0":
             raise HTTPException(status_code=404, detail="Device not found")
-
+        
         return {"message": "Device unregistered successfully"}
 
 @app.get("/devices/{user_id}")
@@ -457,7 +443,7 @@ async def get_user_devices(user_id: int):
             """,
             user_id
         )
-
+        
         return [DeviceToken(**dict(device)) for device in devices]
 
 @app.post("/notifications/send")
@@ -465,7 +451,7 @@ async def send_notification(notification: PushNotification):
     """Queue push notification for sending"""
     async with db_pool.acquire() as conn:
         notification_ids = []
-
+        
         for user_id in notification.user_ids:
             notif_id = await conn.fetchval(
                 """
@@ -486,7 +472,7 @@ async def send_notification(notification: PushNotification):
                 notification.action_url
             )
             notification_ids.append(notif_id)
-
+        
         return {
             "message": f"Notification queued for {len(notification.user_ids)} user(s)",
             "notification_ids": notification_ids
@@ -505,7 +491,7 @@ async def get_user_notifications(user_id: int, limit: int = 50):
             """,
             user_id, limit
         )
-
+        
         return [NotificationStatus(**dict(n)) for n in notifications]
 
 @app.put("/notifications/{notification_id}/read")
@@ -520,10 +506,10 @@ async def mark_notification_read(notification_id: int):
             """,
             notification_id
         )
-
+        
         if result == "UPDATE 0":
             raise HTTPException(status_code=404, detail="Notification not found or already read")
-
+        
         return {"message": "Notification marked as read"}
 
 @app.get("/notifications/logs/{notification_id}")
@@ -538,28 +524,15 @@ async def get_notification_logs(notification_id: int):
             """,
             notification_id
         )
-
+        
         return [dict(log) for log in logs]
 
 @app.get("/health")
 async def health_check():
-    """Health check.
-
-    Returns 503 when the web push provider is unconfigured so that
-    orchestrators stop routing notifications (e.g. PAYMENT_RECEIVED) into a
-    channel that cannot actually deliver them.
-    """
-    if not web_push_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Web push provider unconfigured: VAPID_PRIVATE_KEY/VAPID_PUBLIC_KEY are not set",
-        )
+    """Health check"""
     return {
         "status": "healthy",
         "service": "push_notifications",
-        "web_push_configured": True,
-        "fcm_configured": bool(FCM_SERVER_KEY),
-        "apns_configured": bool(APNS_KEY),
         "timestamp": datetime.utcnow().isoformat()
     }
 

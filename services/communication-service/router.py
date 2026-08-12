@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List
 from datetime import datetime
 
@@ -34,37 +35,87 @@ def _create_log_entry(db: Session, communication_id: int, event: str, details: s
     db.refresh(log)
     return log
 
-def _send_send(db: Session, communication: models.Communication):
+# Provider endpoints are configured via environment. When a channel has no
+# provider configured, sending FAILS LOUDLY instead of fabricating delivery.
+EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "")
+SMS_GATEWAY_URL = os.getenv("SMS_GATEWAY_URL", "")
+PUSH_NOTIFICATION_SERVICE_URL = os.getenv("PUSH_NOTIFICATION_SERVICE_URL", "")
+PROVIDER_TIMEOUT = float(os.getenv("COMMUNICATION_PROVIDER_TIMEOUT", "15"))
+
+
+def _dispatch_to_provider(communication: "models.Communication") -> str:
+    """Dispatch a communication to its real channel provider.
+
+    Returns a short description of the dispatch result. Raises RuntimeError
+    when no provider is configured or the provider rejects the message, so
+    callers record a real failure instead of a fake 'sent'.
     """
-    Sends the process of sending a communication via an external provider.
-    In a real application, this would involve calling an external API (e.g., SendGrid, Twilio).
+    import json as _json
+
+    import httpx
+
+    comm_type = communication.type.value
+    if comm_type == "email":
+        if not EMAIL_SERVICE_URL:
+            raise RuntimeError("EMAIL_SERVICE_URL is not configured")
+        url = f"{EMAIL_SERVICE_URL}/api/v1/send"
+        payload = {
+            "to": communication.recipient,
+            "subject": getattr(communication, "subject", None) or "Notification",
+            "body": communication.body,
+        }
+    elif comm_type == "sms":
+        if not SMS_GATEWAY_URL:
+            raise RuntimeError("SMS_GATEWAY_URL is not configured")
+        url = f"{SMS_GATEWAY_URL}/api/v1/sms-gateway/send"
+        payload = {"recipient": communication.recipient, "message": communication.body}
+    elif comm_type in ("push", "push_notification"):
+        if not PUSH_NOTIFICATION_SERVICE_URL:
+            raise RuntimeError("PUSH_NOTIFICATION_SERVICE_URL is not configured")
+        url = f"{PUSH_NOTIFICATION_SERVICE_URL}/notifications/send"
+        payload = {
+            "user_ids": [communication.recipient],
+            "title": getattr(communication, "subject", None) or "Notification",
+            "body": communication.body,
+        }
+    else:
+        raise RuntimeError(f"No provider configured for communication type '{comm_type}'")
+
+    with httpx.Client(timeout=PROVIDER_TIMEOUT) as client:
+        resp = client.post(url, json=payload)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Provider rejected {comm_type} send: HTTP {resp.status_code}: {resp.text[:200]}")
+    return f"Dispatched via {url} (HTTP {resp.status_code})"
+
+
+def _send_send(db: Session, communication: models.Communication):
+    """Send a communication via its configured external provider.
+
+    FAIL LOUD: the previous implementation marked every communication SENT
+    and logged a fake 'delivery_success' via a dummy provider. Now the
+    message is only marked SENT after a real provider accepts it; otherwise
+    the communication is marked FAILED and an error is raised.
     """
     logger.info(f"Attempting to send {communication.type.value} to {communication.recipient}...")
-    
-    # Send success
+
+    dispatch_result = _dispatch_to_provider(communication)
+
     communication.status = models.CommunicationStatus.SENT
     communication.sent_at = datetime.utcnow()
     db.add(communication)
     db.commit()
     db.refresh(communication)
-    
+
     _create_log_entry(
-        db, 
-        communication.id, 
-        "attempted_send", 
-        f"Successfully sent sending via dummy provider. New status: {communication.status.value}"
+        db,
+        communication.id,
+        "attempted_send",
+        f"Provider accepted message. New status: {communication.status.value}. {dispatch_result}",
     )
-    
-    # Send delivery success log
-    _create_log_entry(
-        db, 
-        communication.id, 
-        "delivery_success", 
-        "Communication marked as delivered by dummy provider."
-    )
-    
-    logger.info(f"Communication ID {communication.id} successfully 'sent'.")
+
+    logger.info(f"Communication ID {communication.id} accepted by provider.")
     return communication
+
 
 # --- CRUD Endpoints ---
 
@@ -241,7 +292,7 @@ def send_communication(
         _create_log_entry(db, db_communication.id, "send_failed", str(e))
         
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Failed to send communication: {e}"
         )
 

@@ -1,19 +1,20 @@
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
-from shared.middleware import apply_middleware, ErrorResponse
-from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
 """
 Demand Forecasting Service
-LSTM and Prophet-based demand prediction for inventory management
+Statistical demand prediction (moving average + linear trend + weekly
+seasonality) over real sales history for inventory management.
+
+NOTE: This service does NOT use LSTM or Prophet. Forecasts are a transparent
+statistical heuristic computed from real sales_history rows; products with no
+sales history return an explicit empty forecast with zero confidence rather
+than an invented prediction.
+
 Port: 8030
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
-apply_middleware(app)
-setup_logging("demand-forecasting-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -24,7 +25,15 @@ import numpy as np
 import json
 
 import os
+
 app = FastAPI(title="Demand Forecasting Service", version="1.0.0")
+
+from shared.middleware import apply_middleware, ErrorResponse
+from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
+
+apply_middleware(app)
+setup_logging("demand-forecasting-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,6 +63,7 @@ class ForecastResponse(BaseModel):
     seasonality_detected: bool
     recommended_reorder_quantity: int
     recommended_reorder_date: str
+    forecast_method: str = "moving_average_trend"
 
 class BulkForecastRequest(BaseModel):
     agent_id: str
@@ -65,19 +75,19 @@ def detect_seasonality(sales_data: List[float], period: int = 7) -> bool:
     """Detect if sales data has seasonal patterns"""
     if len(sales_data) < period * 2:
         return False
-    
+
     # Simple autocorrelation check
     data = np.array(sales_data)
     mean = np.mean(data)
     var = np.var(data)
-    
+
     if var == 0:
         return False
-    
+
     # Calculate autocorrelation at lag=period
     n = len(data)
     autocorr = np.sum((data[:n-period] - mean) * (data[period:] - mean)) / (n * var)
-    
+
     # If autocorrelation > 0.3, consider it seasonal
     return abs(autocorr) > 0.3
 
@@ -85,13 +95,13 @@ def calculate_trend(sales_data: List[float]) -> str:
     """Calculate trend direction"""
     if len(sales_data) < 2:
         return "stable"
-    
+
     # Simple linear regression slope
     x = np.arange(len(sales_data))
     y = np.array(sales_data)
-    
+
     slope = np.polyfit(x, y, 1)[0]
-    
+
     if slope > 0.1:
         return "increasing"
     elif slope < -0.1:
@@ -99,36 +109,37 @@ def calculate_trend(sales_data: List[float]) -> str:
     else:
         return "stable"
 
-def forecast_lstm_simple(sales_data: List[float], days: int, seasonality: bool) -> List[Dict[str, Any]]:
+def forecast_moving_average(sales_data: List[float], days: int, seasonality: bool) -> List[Dict[str, Any]]:
     """
-    Simplified LSTM-inspired forecasting
-    In production, this would use actual LSTM models
+    Statistical forecast: trailing moving average + linear trend slope with an
+    optional weekly seasonal factor. Deterministic heuristic over real sales
+    history — this is NOT a neural network (no LSTM/Prophet is involved).
     """
     if len(sales_data) == 0:
         return []
-    
+
     # Calculate moving average
     window = min(7, len(sales_data))
     if len(sales_data) >= window:
         recent_avg = np.mean(sales_data[-window:])
     else:
         recent_avg = np.mean(sales_data)
-    
+
     # Calculate trend
     trend_slope = 0
     if len(sales_data) >= 2:
         x = np.arange(len(sales_data))
         y = np.array(sales_data)
         trend_slope = np.polyfit(x, y, 1)[0]
-    
+
     # Generate forecast
     forecast = []
     base_date = datetime.now()
-    
+
     for day in range(1, days + 1):
         # Base prediction from moving average
         prediction = recent_avg + (trend_slope * day)
-        
+
         # Add seasonality if detected (weekly pattern)
         if seasonality and len(sales_data) >= 7:
             day_of_week = (base_date + timedelta(days=day)).weekday()
@@ -137,12 +148,12 @@ def forecast_lstm_simple(sales_data: List[float], days: int, seasonality: bool) 
             if same_day_sales:
                 seasonal_factor = np.mean(same_day_sales) / recent_avg if recent_avg > 0 else 1.0
                 prediction *= seasonal_factor
-        
+
         # Add some variance (confidence interval)
         std_dev = np.std(sales_data) if len(sales_data) > 1 else prediction * 0.1
         lower_bound = max(0, prediction - std_dev)
         upper_bound = prediction + std_dev
-        
+
         forecast.append({
             "date": (base_date + timedelta(days=day)).strftime("%Y-%m-%d"),
             "predicted_demand": round(prediction, 2),
@@ -150,25 +161,25 @@ def forecast_lstm_simple(sales_data: List[float], days: int, seasonality: bool) 
             "upper_bound": round(upper_bound, 2),
             "confidence": round(max(0, 1 - (std_dev / prediction if prediction > 0 else 1)), 2)
         })
-    
+
     return forecast
 
 def calculate_reorder_recommendation(forecast: List[Dict[str, Any]], current_stock: int, reorder_level: int) -> Dict[str, Any]:
     """Calculate when and how much to reorder"""
     cumulative_demand = 0
     reorder_date = None
-    
+
     for day_forecast in forecast:
         cumulative_demand += day_forecast['predicted_demand']
         if current_stock - cumulative_demand <= reorder_level and not reorder_date:
             reorder_date = day_forecast['date']
             break
-    
+
     # Calculate recommended order quantity (cover next 30 days + safety stock)
     total_forecast_demand = sum(f['predicted_demand'] for f in forecast)
     safety_stock = reorder_level * 1.5  # 150% of reorder level
     recommended_quantity = int(total_forecast_demand + safety_stock - current_stock)
-    
+
     return {
         "reorder_date": reorder_date if reorder_date else forecast[-1]['date'],
         "recommended_quantity": max(0, recommended_quantity)
@@ -179,7 +190,7 @@ def calculate_reorder_recommendation(forecast: List[Dict[str, Any]], current_sto
 async def init_db():
     """Initialize database tables"""
     global db_pool, redis_client
-    
+
     try:
         db_pool = await asyncpg.create_pool(
             host=os.getenv('DB_HOST', 'localhost'),
@@ -190,9 +201,9 @@ async def init_db():
             min_size=10,
             max_size=20
         )
-        
+
         redis_client = await redis.from_url("redis://localhost:6379", decode_responses=True)
-        
+
         async with db_pool.acquire() as conn:
             # Sales history table
             await conn.execute("""
@@ -205,7 +216,7 @@ async def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             # Demand forecasts table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS demand_forecasts (
@@ -219,7 +230,7 @@ async def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             print("✅ Demand Forecasting tables initialized")
     except Exception as e:
         print(f"❌ Database initialization error: {e}")
@@ -239,7 +250,8 @@ async def shutdown():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "Demand Forecasting", "port": 8030}
+    return {"status": "healthy", "service": "Demand Forecasting", "port": 8030,
+            "forecast_method": "moving_average_trend"}
 
 @app.post("/api/forecast/product", response_model=ForecastResponse)
 async def forecast_product_demand(request: ForecastRequest):
@@ -253,17 +265,18 @@ async def forecast_product_demand(request: ForecastRequest):
                 WHERE product_id = $1
             """
             params = [request.product_id]
-            
+
             if request.agent_id:
                 query += " AND agent_id = $2"
                 params.append(request.agent_id)
-            
+
             query += " GROUP BY sale_date ORDER BY sale_date DESC LIMIT 90"
-            
+
             sales_data = await conn.fetch(query, *params)
-            
+
             if not sales_data:
-                # No historical data, return conservative forecast
+                # No historical data — explicit zero-confidence empty forecast,
+                # never an invented prediction.
                 return ForecastResponse(
                     product_id=request.product_id,
                     agent_id=request.agent_id,
@@ -274,52 +287,53 @@ async def forecast_product_demand(request: ForecastRequest):
                     recommended_reorder_quantity=0,
                     recommended_reorder_date=(datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
                 )
-            
+
             # Extract quantities
             quantities = [float(row['total_quantity']) for row in reversed(sales_data)]
-            
+
             # Detect seasonality
             has_seasonality = detect_seasonality(quantities) if request.include_seasonality else False
-            
+
             # Calculate trend
             trend = calculate_trend(quantities)
-            
+
             # Generate forecast
-            forecast = forecast_lstm_simple(quantities, request.forecast_days, has_seasonality)
-            
-            # Calculate confidence
+            forecast = forecast_moving_average(quantities, request.forecast_days, has_seasonality)
+
+            # Data-depth heuristic confidence (how much history backs the forecast)
             if len(quantities) >= 30:
                 confidence = 0.9
             elif len(quantities) >= 14:
                 confidence = 0.7
             else:
                 confidence = 0.5
-            
+
             # Get current stock and reorder level
             product_info = await conn.fetchrow("""
                 SELECT available_quantity, reorder_level
                 FROM inventory_products
                 WHERE id = $1
             """, request.product_id)
-            
+
             current_stock = product_info['available_quantity'] if product_info else 0
             reorder_level = product_info['reorder_level'] if product_info else 10
-            
+
             # Calculate reorder recommendation
             reorder_rec = calculate_reorder_recommendation(forecast, current_stock, reorder_level)
-            
+
             # Save forecast
             await conn.execute("""
-                INSERT INTO demand_forecasts 
+                INSERT INTO demand_forecasts
                 (product_id, agent_id, forecast_data, confidence, trend, seasonality_detected)
                 VALUES ($1, $2, $3, $4, $5, $6)
-            """, request.product_id, request.agent_id, json.dumps(forecast), 
+            """, request.product_id, request.agent_id, json.dumps(forecast),
                 confidence, trend, has_seasonality)
-            
+
             # Cache forecast
-            cache_key = f"forecast:{request.product_id}:{request.agent_id or 'all'}"
-            await redis_client.setex(cache_key, 3600, json.dumps(forecast))
-            
+            if redis_client is not None:
+                cache_key = f"forecast:{request.product_id}:{request.agent_id or 'all'}"
+                await redis_client.setex(cache_key, 3600, json.dumps(forecast))
+
             return ForecastResponse(
                 product_id=request.product_id,
                 agent_id=request.agent_id,
@@ -330,7 +344,7 @@ async def forecast_product_demand(request: ForecastRequest):
                 recommended_reorder_quantity=reorder_rec['recommended_quantity'],
                 recommended_reorder_date=reorder_rec['reorder_date']
             )
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -346,9 +360,9 @@ async def forecast_agent_inventory(request: BulkForecastRequest):
                 JOIN sales_history s ON p.id = s.product_id
                 WHERE s.agent_id = $1
             """, request.agent_id)
-            
+
             forecasts = []
-            
+
             for product in products:
                 # Generate forecast for each product
                 forecast_req = ForecastRequest(
@@ -356,9 +370,9 @@ async def forecast_agent_inventory(request: BulkForecastRequest):
                     agent_id=request.agent_id,
                     forecast_days=request.forecast_days
                 )
-                
+
                 forecast_result = await forecast_product_demand(forecast_req)
-                
+
                 forecasts.append({
                     "product_id": str(product['id']),
                     "product_name": product['name'],
@@ -373,14 +387,14 @@ async def forecast_agent_inventory(request: BulkForecastRequest):
                         "recommended_reorder_date": forecast_result.recommended_reorder_date
                     }
                 })
-            
+
             return {
                 "agent_id": request.agent_id,
                 "forecast_days": request.forecast_days,
                 "products": forecasts,
                 "total_products": len(forecasts)
             }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -395,28 +409,28 @@ async def get_forecast_analytics():
                 FROM demand_forecasts
                 WHERE trend = 'increasing' AND created_at >= CURRENT_DATE - INTERVAL '7 days'
             """)
-            
+
             # Products with decreasing demand
             decreasing = await conn.fetchval("""
                 SELECT COUNT(DISTINCT product_id)
                 FROM demand_forecasts
                 WHERE trend = 'decreasing' AND created_at >= CURRENT_DATE - INTERVAL '7 days'
             """)
-            
+
             # Average confidence
             avg_confidence = await conn.fetchval("""
                 SELECT AVG(confidence)
                 FROM demand_forecasts
                 WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
             """)
-            
+
             # Products with seasonality
             seasonal = await conn.fetchval("""
                 SELECT COUNT(DISTINCT product_id)
                 FROM demand_forecasts
                 WHERE seasonality_detected = true AND created_at >= CURRENT_DATE - INTERVAL '7 days'
             """)
-            
+
             return {
                 "last_7_days": {
                     "products_with_increasing_demand": increasing or 0,
@@ -425,7 +439,7 @@ async def get_forecast_analytics():
                     "average_forecast_confidence": round(float(avg_confidence or 0), 2)
                 }
             }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

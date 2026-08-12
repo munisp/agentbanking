@@ -678,7 +678,9 @@ export default function Monitoring() {
               </p>
             </div>
             <div className="text-right">
-              <div className="text-4xl font-bold">{overallUptime}%</div>
+              <div className="text-4xl font-bold">
+                {overallUptime === "—" ? "—" : `${overallUptime}%`}
+              </div>
               <div className="opacity-80 text-sm">availability</div>
               <button
                 onClick={loadSmokeResults}

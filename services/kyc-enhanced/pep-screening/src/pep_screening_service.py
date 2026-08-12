@@ -9,6 +9,12 @@ Features:
 - Family and associates screening
 - Ongoing monitoring
 - Risk scoring
+
+FAIL CLOSED: provider clients perform real authenticated HTTP calls to the
+configured upstream screening API. When credentials/base URL are missing or
+the upstream call fails, ScreeningUnavailableError is raised so callers can
+force manual review - no canned PEP/sanctions/adverse-media matches are ever
+returned.
 """
 
 import asyncio
@@ -18,10 +24,17 @@ from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import aiohttp
-import json
 
 
 logger = logging.getLogger(__name__)
+
+
+class ScreeningUnavailableError(RuntimeError):
+    """Raised when no real screening provider is configured or reachable.
+
+    Callers must treat this as screening_unavailable and force manual
+    review; it must never be converted into a clear/pass screening result.
+    """
 
 
 class PEPCategory(Enum):
@@ -107,13 +120,52 @@ class ScreeningResult:
     provider: ScreeningProvider
 
 
-class WorldCheckClient:
-    """World-Check (Refinitiv) API client"""
+class _BaseScreeningClient:
+    """Shared real-HTTP behaviour for screening provider clients."""
+
+    base_url: str = ""
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        headers: Dict[str, str],
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        url = f"{self.base_url.rstrip('/')}{path}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(method, url, headers=headers, json=payload) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        raise ScreeningUnavailableError(
+                            f"Screening provider call to {url} failed with status {resp.status}: {body[:200]}"
+                        )
+                    return await resp.json()
+        except aiohttp.ClientError as exc:
+            raise ScreeningUnavailableError(
+                f"Screening provider call to {url} failed: {exc}"
+            ) from exc
+
+
+class WorldCheckClient(_BaseScreeningClient):
+    """World-Check (Refinitiv) API client (real HTTP calls)."""
     
-    def __init__(self, api_key: str, api_secret: str) -> None:
+    def __init__(self, api_key: str, api_secret: str, base_url: str = "https://api.refinitiv.com/permid/worldcheck") -> None:
+        if not api_key or not api_secret:
+            raise ScreeningUnavailableError(
+                "World-Check credentials are not configured; PEP screening is unavailable."
+            )
         self.api_key = api_key
         self.api_secret = api_secret
-        self.base_url = "https://api.refinitiv.com/permid/worldcheck"
+        self.base_url = base_url
+    
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "X-Api-Secret": self.api_secret,
+            "Content-Type": "application/json",
+        }
     
     async def screen_individual(
         self,
@@ -122,7 +174,7 @@ class WorldCheckClient:
         nationality: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Screen individual against World-Check database
+        Screen individual against World-Check database (real API call).
         
         Args:
             full_name: Full name
@@ -130,128 +182,100 @@ class WorldCheckClient:
             nationality: Nationality/country code
             
         Returns:
-            Screening results
+            Screening results from the upstream API
         """
         logger.info(f"Screening {full_name} with World-Check")
         
-        # Simulate API call
-        await asyncio.sleep(1.0)
-        
-        # Production response from upstream API
-        return {
-            "results": [
-                {
-                    "match_strength": "STRONG",
-                    "entity_id": "WC-12345",
-                    "name": full_name,
-                    "category": "PEP",
-                    "subcategory": "Government Minister",
-                    "position": "Minister of Finance",
-                    "country": "Nigeria",
-                    "date_of_birth": date_of_birth,
-                    "is_current": True,
-                    "risk_level": "HIGH"
-                }
-            ],
-            "total_matches": 1
-        }
+        return await self._request(
+            "POST",
+            "/screening/individual",
+            headers=self._headers(),
+            payload={
+                "name": full_name,
+                "date_of_birth": date_of_birth,
+                "nationality": nationality,
+            },
+        )
     
     async def get_adverse_media(
         self,
         entity_id: str
     ) -> List[Dict[str, Any]]:
-        """Get adverse media for entity"""
+        """Get adverse media for entity (real API call)."""
         logger.info(f"Fetching adverse media for {entity_id}")
         
-        await asyncio.sleep(0.5)
-        
-        return [
-            {
-                "article_id": "AM-67890",
-                "title": "Investigation into financial irregularities",
-                "summary": "Authorities investigating alleged financial misconduct...",
-                "source": "Reuters",
-                "publication_date": "2024-06-15",
-                "url": "https://reuters.com/article/...",
-                "categories": ["corruption", "financial_crime"],
-                "severity": "HIGH"
-            }
-        ]
+        result = await self._request(
+            "GET",
+            f"/entities/{entity_id}/adverse-media",
+            headers=self._headers(),
+        )
+        return result.get("articles", [])
 
 
-class DowJonesClient:
-    """Dow Jones Risk & Compliance API client"""
+class DowJonesClient(_BaseScreeningClient):
+    """Dow Jones Risk & Compliance API client (real HTTP calls)."""
     
-    def __init__(self, api_key: str, api_secret: str) -> None:
+    def __init__(self, api_key: str, api_secret: str, base_url: str = "https://api.dowjones.com/risk") -> None:
+        if not api_key or not api_secret:
+            raise ScreeningUnavailableError(
+                "Dow Jones credentials are not configured; PEP screening is unavailable."
+            )
         self.api_key = api_key
         self.api_secret = api_secret
-        self.base_url = "https://api.dowjones.com/risk"
+        self.base_url = base_url
     
     async def screen_person(
         self,
         full_name: str,
         country: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Screen person against Dow Jones database"""
+        """Screen person against Dow Jones database (real API call)."""
         logger.info(f"Screening {full_name} with Dow Jones")
         
-        await asyncio.sleep(1.0)
-        
-        return {
-            "matches": [
-                {
-                    "confidence": 0.95,
-                    "person_id": "DJ-54321",
-                    "name": full_name,
-                    "pep_tier": 1,  # Tier 1 = highest risk
-                    "position": "Senior Government Official",
-                    "country": country,
-                    "risk_score": 85
-                }
-            ]
-        }
+        return await self._request(
+            "POST",
+            "/screening/person",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "X-Api-Secret": self.api_secret,
+                "Content-Type": "application/json",
+            },
+            payload={"name": full_name, "country": country},
+        )
 
 
-class ComplyAdvantageClient:
-    """ComplyAdvantage API client"""
+class ComplyAdvantageClient(_BaseScreeningClient):
+    """ComplyAdvantage API client (real HTTP calls)."""
     
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, base_url: str = "https://api.complyadvantage.com") -> None:
+        if not api_key:
+            raise ScreeningUnavailableError(
+                "ComplyAdvantage API key is not configured; PEP screening is unavailable."
+            )
         self.api_key = api_key
-        self.base_url = "https://api.complyadvantage.com"
+        self.base_url = base_url
     
     async def search(
         self,
         search_term: str,
         fuzziness: float = 0.8
     ) -> Dict[str, Any]:
-        """Search ComplyAdvantage database"""
+        """Search ComplyAdvantage database (real API call)."""
         logger.info(f"Searching ComplyAdvantage for {search_term}")
         
-        await asyncio.sleep(1.0)
-        
-        return {
-            "data": [
-                {
-                    "id": "CA-98765",
-                    "name": search_term,
-                    "match_score": 0.92,
-                    "types": ["pep", "adverse-media"],
-                    "fields": {
-                        "position": "Government Official",
-                        "country": "Nigeria"
-                    },
-                    "media": [
-                        {
-                            "title": "Corruption allegations surface",
-                            "snippet": "New allegations of corruption...",
-                            "date": "2024-07-20",
-                            "url": "https://news.com/article"
-                        }
-                    ]
-                }
-            ],
-            "total": 1
-        }
+        return await self._request(
+            "POST",
+            "/searches",
+            headers={
+                "Authorization": f"Token {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            payload={
+                "search_term": search_term,
+                "fuzziness": fuzziness,
+                "filters": {"types": ["pep", "sanction", "adverse-media"]},
+            },
+        )
 
 
 class PEPScreeningService:
@@ -265,6 +289,9 @@ class PEPScreeningService:
     - Family and associates
     - Ongoing monitoring
     - Risk scoring
+    
+    FAIL CLOSED: when the selected provider is not configured, screening
+    raises ScreeningUnavailableError so onboarding forces manual review.
     """
     
     def __init__(
@@ -275,23 +302,29 @@ class PEPScreeningService:
         comply_advantage_config: Optional[Dict[str, str]] = None
     ) -> None:
         self.provider = provider
+        self.world_check: Optional[WorldCheckClient] = None
+        self.dow_jones: Optional[DowJonesClient] = None
+        self.comply_advantage: Optional[ComplyAdvantageClient] = None
         
-        # Initialize provider clients
+        # Initialize provider clients only when real credentials are supplied.
         if provider == ScreeningProvider.WORLD_CHECK and world_check_config:
             self.world_check = WorldCheckClient(
                 api_key=world_check_config.get("api_key", ""),
-                api_secret=world_check_config.get("api_secret", "")
+                api_secret=world_check_config.get("api_secret", ""),
+                base_url=world_check_config.get("base_url", "https://api.refinitiv.com/permid/worldcheck"),
             )
         
         if provider == ScreeningProvider.DOW_JONES and dow_jones_config:
             self.dow_jones = DowJonesClient(
                 api_key=dow_jones_config.get("api_key", ""),
-                api_secret=dow_jones_config.get("api_secret", "")
+                api_secret=dow_jones_config.get("api_secret", ""),
+                base_url=dow_jones_config.get("base_url", "https://api.dowjones.com/risk"),
             )
         
         if provider == ScreeningProvider.COMPLY_ADVANTAGE and comply_advantage_config:
             self.comply_advantage = ComplyAdvantageClient(
-                api_key=comply_advantage_config.get("api_key", "")
+                api_key=comply_advantage_config.get("api_key", ""),
+                base_url=comply_advantage_config.get("base_url", "https://api.complyadvantage.com"),
             )
     
     async def screen_individual(
@@ -314,6 +347,10 @@ class PEPScreeningService:
             
         Returns:
             Complete screening result
+            
+        Raises:
+            ScreeningUnavailableError: when no real provider is configured or
+                the upstream call fails. Callers must force manual review.
         """
         logger.info(f"Screening individual: {full_name}")
         
@@ -322,8 +359,12 @@ class PEPScreeningService:
         family_associates = []
         sanctions_matches = []
         
-        # Step 1: PEP screening
+        # Step 1: PEP screening against the configured provider.
         if self.provider == ScreeningProvider.WORLD_CHECK:
+            if not self.world_check:
+                raise ScreeningUnavailableError(
+                    "World-Check client is not configured; PEP screening is unavailable."
+                )
             wc_result = await self.world_check.screen_individual(
                 full_name, date_of_birth, nationality
             )
@@ -365,6 +406,10 @@ class PEPScreeningService:
                         ))
         
         elif self.provider == ScreeningProvider.DOW_JONES:
+            if not self.dow_jones:
+                raise ScreeningUnavailableError(
+                    "Dow Jones client is not configured; PEP screening is unavailable."
+                )
             dj_result = await self.dow_jones.screen_person(full_name, nationality)
             
             for match in dj_result.get("matches", []):
@@ -388,6 +433,10 @@ class PEPScreeningService:
                 pep_records.append(pep_record)
         
         elif self.provider == ScreeningProvider.COMPLY_ADVANTAGE:
+            if not self.comply_advantage:
+                raise ScreeningUnavailableError(
+                    "ComplyAdvantage client is not configured; PEP screening is unavailable."
+                )
             ca_result = await self.comply_advantage.search(full_name)
             
             for match in ca_result.get("data", []):
@@ -425,6 +474,11 @@ class PEPScreeningService:
                             severity=RiskLevel.MEDIUM,
                             relevance_score=0.80
                         ))
+        
+        else:
+            raise ScreeningUnavailableError(
+                f"Screening provider {self.provider.value} is not configured; PEP screening is unavailable."
+            )
         
         # Calculate overall risk
         is_pep = len(pep_records) > 0
@@ -604,7 +658,11 @@ class PEPScreeningService:
 
 # Example usage
 async def example_usage() -> None:
-    """Example usage of PEP screening service"""
+    """Example usage of PEP screening service.
+    
+    Requires real provider credentials; raises ScreeningUnavailableError
+    otherwise (fail closed -> manual review).
+    """
     
     # Initialize service
     service = PEPScreeningService(
@@ -615,14 +673,18 @@ async def example_usage() -> None:
         }
     )
     
-    # Screen individual
-    result = await service.screen_individual(
-        full_name="John Doe",
-        date_of_birth="1970-01-15",
-        nationality="NG",
-        include_family=True,
-        include_adverse_media=True
-    )
+    try:
+        # Screen individual
+        result = await service.screen_individual(
+            full_name="John Doe",
+            date_of_birth="1970-01-15",
+            nationality="NG",
+            include_family=True,
+            include_adverse_media=True
+        )
+    except ScreeningUnavailableError as exc:
+        print(f"Screening unavailable (fail closed -> manual review): {exc}")
+        return
     
     print(f"PEP Status: {result.is_pep}")
     print(f"Risk Level: {result.overall_risk_level.value}")
@@ -649,4 +711,3 @@ async def example_usage() -> None:
 
 if __name__ == "__main__":
     asyncio.run(example_usage())
-

@@ -11,53 +11,18 @@ export default function ComplianceCertManager() {
   const { data: liveData, isLoading } =
     // @ts-ignore Sprint 85
     trpc.complianceCertManager.list.useQuery(undefined, { retry: 1 });
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
+  // Render only real backend data — never fabricated rows.
+  const rows: any[] = (liveData as any[]) ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
   >("overview");
 
-  const kpis = [
-    { label: "Active Certs", value: "2,341" },
-    { label: "Expiring Soon", value: "45" },
-    { label: "Revoked", value: "12" },
-    { label: "Renewal Rate", value: "98.2%" },
-  ];
+  const kpis: { label: string; value: string }[] = []; // KPIs require real aggregates; none shown until the backend provides them.
 
   const columns = ["Certificate", "Type", "Agent", "Expires", "Status"];
 
-  const filtered = mockData.filter(
+  const filtered = rows.filter(
     // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
@@ -176,6 +141,9 @@ export default function ComplianceCertManager() {
                 ))}
               </tbody>
             </table>
+            {filtered.length === 0 && (
+              <p className="text-center text-slate-400 py-8">No data available.</p>
+            )}
           </div>
         </div>
       </div>

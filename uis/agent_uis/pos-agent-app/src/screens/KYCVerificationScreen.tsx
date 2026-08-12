@@ -83,27 +83,57 @@ const api = axios.create({
   },
 });
 
-// --- Biometrics Stub ---
+// --- Biometrics (real device biometrics via react-native-biometrics) ---
+// The library is loaded defensively so the screen still compiles in builds
+// where it is not linked; in that case biometrics are reported unavailable
+// and the flow never pretends an authentication succeeded.
+let ReactNativeBiometrics: any = null;
+try {
+  ReactNativeBiometrics = require('react-native-biometrics').default;
+} catch (e) {
+  ReactNativeBiometrics = null;
+}
+
 const BiometricsService = {
   isSupported: async (): Promise<boolean> => {
-    // In a real app, this would call Biometrics.isSensorAvailable()
-    return new Promise(resolve => setTimeout(() => resolve(true), 500));
+    if (!ReactNativeBiometrics) return false;
+    try {
+      const { available } = await ReactNativeBiometrics.isSensorAvailable();
+      return !!available;
+    } catch {
+      return false;
+    }
   },
   authenticate: async (prompt: string): Promise<boolean> => {
-    // In a real app, this would call Biometrics.simplePrompt({ promptMessage: prompt })
-    Alert.alert('Biometric Auth', `Authenticating with: ${prompt}`);
-    return new Promise(resolve => setTimeout(() => resolve(true), 1000));
+    if (!ReactNativeBiometrics) return false;
+    try {
+      const { success } = await ReactNativeBiometrics.simplePrompt({
+        promptMessage: prompt,
+        fallbackPromptMessage: 'Use device passcode',
+      });
+      return !!success;
+    } catch {
+      return false;
+    }
   },
 };
 
-// --- Payment Gateway Stub ---
+// --- Payment Gateway (real backend initiation) ---
 const PaymentService = {
-  // A simple stub for initiating a payment (e.g., a small verification fee)
+  // Initiates a real payment via the backend and returns the server-issued
+  // reference. Throws on failure — no transaction ID is ever fabricated.
   initiatePayment: async (amount: number, currency: string, email: string): Promise<string> => {
-    console.log(`Initiating ${currency} ${amount} payment for ${email}`);
-    // In a real app, this would involve calling the Paystack/Flutterwave SDK
-    // For this example, we'll simulate a successful transaction ID
-    return new Promise(resolve => setTimeout(() => resolve(`TXN-${Date.now()}`), 1500));
+    const response = await api.post('/payments/initiate', {
+      amount,
+      currency,
+      email,
+      purpose: 'kyc_verification_fee',
+    });
+    const reference = response.data?.reference || response.data?.data?.reference || response.data?.transactionId;
+    if (!reference) {
+      throw new Error('The server did not return a payment reference.');
+    }
+    return reference;
   },
 };
 
@@ -217,20 +247,19 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
         type: document.fileType,
       } as any); // 'as any' is used because FormData expects a Blob/File, but RN uses a custom object
 
-      // 2. API Call (Stubbed)
-      // In a real app, this would be a POST request to upload the file
-      // const response = await api.post('/upload', formData, {
-      //   headers: { 'Content-Type': 'multipart/form-data' },
-      // });
+      // 2. Real API call: multipart upload of the captured document bytes.
+      const response = await api.post('/kyc/documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
 
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate network delay
-
-      // 3. Update state on success
+      // 3. Update state from the server response. Upload success means the
+      //    document is submitted — 'verified' is decided by the backend only.
+      const serverStatus = response.data?.status === 'verified' ? 'verified' : 'uploaded';
       setState(s => ({
         ...s,
         isLoading: false,
         documents: s.documents.map(doc =>
-          doc.id === document.id ? { ...doc, status: 'verified' } : doc
+          doc.id === document.id ? { ...doc, status: serverStatus } : doc
         ),
       }));
       Alert.alert('Success', `${document.name} uploaded and submitted for verification.`);
@@ -262,10 +291,11 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
         }
       }
 
-      // 2. Final KYC Submission API Call (Stubbed)
-      // This would typically submit all document references for final processing
-      // const response = await api.post('/submit-kyc', { documentReferences: documents.map(d => d.fileName) });
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Simulate processing time
+      // 2. Final KYC submission: the backend begins compliance processing and
+      //    returns the authoritative verification status.
+      await api.post('/kyc/submit', {
+        documentReferences: documents.map(d => d.fileName),
+      });
 
       // 3. Payment Gateway Integration (Stubbed - e.g., for a small verification fee)
       const transactionId = await PaymentService.initiatePayment(100, 'NGN', 'user@example.com');
@@ -285,7 +315,6 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = () => {
   // --- UI Rendering ---
 
   const renderDocumentItem = ({ item }: { item: Document }) => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
     const isUploaded = item.status === 'uploaded' || item.status === 'verified';
     const statusColor =

@@ -9,9 +9,9 @@ import SwiftUI
 import Combine
 import LocalAuthentication
 
-// MARK: - Mock API Client and Models
+// MARK: - Security API (real backend client)
 
-/// Mock structure for API response data related to security settings.
+/// Security settings as returned by the backend.
 struct SecuritySettings: Codable {
     var isTwoFactorEnabled: Bool
     var isBiometricEnabled: Bool
@@ -19,7 +19,7 @@ struct SecuritySettings: Codable {
     var trustedDevices: [Device]
 }
 
-/// Mock structure for a trusted device.
+/// A trusted device registered on the account.
 struct Device: Identifiable, Codable {
     let id: String
     let name: String
@@ -27,86 +27,138 @@ struct Device: Identifiable, Codable {
     let isCurrent: Bool
 }
 
-/// Mock API Client to simulate network operations.
-class APIClient {
-    enum APIError: Error, LocalizedError {
-        case networkError
-        case invalidResponse
-        case serverError(String)
-        
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "Could not connect to the network."
-            case .invalidResponse: return "Received an invalid response from the server."
-            case .serverError(let message): return message
-            }
+enum SecurityAPIError: Error, LocalizedError {
+    case networkError
+    case invalidResponse
+    case serverError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError: return "Could not connect to the network."
+        case .invalidResponse: return "Received an invalid response from the server."
+        case .serverError(let message): return message
         }
     }
-    
-    /// Simulates fetching security settings.
-    func fetchSecuritySettings() -> AnyPublisher<SecuritySettings, APIError> {
-        // Simulate network delay
-        return Future { promise in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                // Mock cached data for offline support
-                if let cachedData = UserDefaults.standard.data(forKey: "cachedSecuritySettings"),
-                   let settings = try? JSONDecoder().decode(SecuritySettings.self, from: cachedData) {
+}
+
+/// Interface for the security settings backend, allowing DEBUG-only mocks.
+protocol SecurityAPI {
+    func fetchSecuritySettings() -> AnyPublisher<SecuritySettings, SecurityAPIError>
+    func updateSetting(key: String, value: Bool) -> AnyPublisher<Void, SecurityAPIError>
+    func logoutDevice(id: String) -> AnyPublisher<Void, SecurityAPIError>
+    func setPin(pin: String) -> AnyPublisher<Void, SecurityAPIError>
+}
+
+/// Real security client backed by the 54Link backend security endpoints.
+/// Security state (2FA, PIN, trusted devices) is only ever what the server
+/// reports — never a fabricated default.
+class LiveSecurityAPIClient: SecurityAPI {
+    private struct EmptyResponse: Decodable {}
+
+    func fetchSecuritySettings() -> AnyPublisher<SecuritySettings, SecurityAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let settings: SecuritySettings = try await APIClient.shared.request(.securitySettings)
                     promise(.success(settings))
-                    return
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
                 }
-                
-                // Mock initial data
-                let mockSettings = SecuritySettings(
-                    isTwoFactorEnabled: true,
-                    isBiometricEnabled: false,
-                    isPinSet: true,
-                    trustedDevices: [
-                        Device(id: "1", name: "iPhone 15 Pro (Current)", lastUsed: Date(), isCurrent: true),
-                        Device(id: "2", name: "MacBook Pro M3", lastUsed: Calendar.current.date(byAdding: .day, value: -5, to: Date())!, isCurrent: false)
-                    ]
-                )
-                promise(.success(mockSettings))
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates updating a security setting.
-    func updateSetting(key: String, value: Bool) -> AnyPublisher<Void, APIError> {
-        return Future { promise in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                // Simulate a successful update
-                promise(.success(()))
+
+    func updateSetting(key: String, value: Bool) -> AnyPublisher<Void, SecurityAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let _: EmptyResponse = try await APIClient.shared.request(
+                        .securitySetting(key),
+                        method: .put,
+                        parameters: ["value": value]
+                    )
+                    promise(.success(()))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates logging out a device.
-    func logoutDevice(id: String) -> AnyPublisher<Void, APIError> {
-        return Future { promise in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                // Simulate a successful logout
-                promise(.success(()))
+
+    func logoutDevice(id: String) -> AnyPublisher<Void, SecurityAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let _: EmptyResponse = try await APIClient.shared.request(
+                        .securityDeviceLogout(id),
+                        method: .post
+                    )
+                    promise(.success(()))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates setting a new PIN.
-    func setPin(pin: String) -> AnyPublisher<Void, APIError> {
-        // Simple validation
-        guard pin.count == 4 else {
-            return Fail(error: APIError.serverError("PIN must be 4 digits.")).eraseToAnyPublisher()
+
+    func setPin(pin: String) -> AnyPublisher<Void, SecurityAPIError> {
+        guard pin.count == 4, pin.allSatisfy({ $0.isNumber }) else {
+            return Fail(error: SecurityAPIError.serverError("PIN must be 4 digits.")).eraseToAnyPublisher()
         }
         return Future { promise in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                promise(.success(()))
+            Task {
+                do {
+                    let _: EmptyResponse = try await APIClient.shared.request(
+                        .securityPin,
+                        method: .post,
+                        parameters: ["pin": pin]
+                    )
+                    promise(.success(()))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
 }
+
+#if DEBUG
+/// Mock security client (DEBUG builds only, for previews/tests).
+class MockSecurityAPIClient: SecurityAPI {
+    func fetchSecuritySettings() -> AnyPublisher<SecuritySettings, SecurityAPIError> {
+        Future { promise in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                let settings = SecuritySettings(
+                    isTwoFactorEnabled: true,
+                    isBiometricEnabled: false,
+                    isPinSet: true,
+                    trustedDevices: [
+                        Device(id: "1", name: "iPhone 15 Pro (Current)", lastUsed: Date(), isCurrent: true)
+                    ]
+                )
+                promise(.success(settings))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    func updateSetting(key: String, value: Bool) -> AnyPublisher<Void, SecurityAPIError> {
+        Just(()).setFailureType(to: SecurityAPIError.self).eraseToAnyPublisher()
+    }
+
+    func logoutDevice(id: String) -> AnyPublisher<Void, SecurityAPIError> {
+        Just(()).setFailureType(to: SecurityAPIError.self).eraseToAnyPublisher()
+    }
+
+    func setPin(pin: String) -> AnyPublisher<Void, SecurityAPIError> {
+        Just(()).setFailureType(to: SecurityAPIError.self).eraseToAnyPublisher()
+    }
+}
+#endif
 
 // MARK: - ViewModel
 
@@ -120,11 +172,12 @@ final class SecurityViewModel: ObservableObject {
     @Published var confirmPin: String = ""
     @Published var pinValidationMessage: String?
     
-    private var apiClient = APIClient()
+    private var apiClient: SecurityAPI
     private var cancellables = Set<AnyCancellable>()
     private let context = LAContext()
-    
-    init() {
+
+    init(apiClient: SecurityAPI = LiveSecurityAPIClient()) {
+        self.apiClient = apiClient
         fetchSettings()
     }
     

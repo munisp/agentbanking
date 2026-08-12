@@ -8,56 +8,72 @@
 import SwiftUI
 import LocalAuthentication
 
-// MARK: - 1. API Client Mock
+// MARK: - 1. Biometric Preference API (real backend client)
 
-/// A mock API client to simulate network operations.
-/// In a real application, this would handle secure communication with the backend.
-class APIClient {
-    static let shared = APIClient()
-    
-    enum APIError: Error {
-        case networkError
-        case serverError(String)
-    }
-    
-    /// Simulates registering the user's biometric preference on the server.
+enum BiometricAPIError: Error {
+    case networkError
+    case serverError(String)
+}
+
+/// Interface for persisting the biometric preference, allowing DEBUG-only mocks.
+protocol BiometricAPI {
+    /// Registers the user's biometric preference on the server. Returns true
+    /// only when the server confirms the preference was stored.
+    func registerBiometricPreference(isEnabled: Bool) async throws -> Bool
+    func getCachedBiometricSetting() -> Bool
+    func saveBiometricSettingToCache(isEnabled: Bool)
+}
+
+/// Real biometric-preference client backed by the 54agent backend.
+class LiveBiometricAPIClient: BiometricAPI {
+    static let shared = LiveBiometricAPIClient()
+    private init() {}
+
+    private struct EmptyResponse: Decodable {}
+
     func registerBiometricPreference(isEnabled: Bool) async throws -> Bool {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        // Simulate a successful response
+        let endpoint: APIEndpoint = isEnabled ? .biometricRegister : .securitySetting("isBiometricEnabled")
         if isEnabled {
-            print("API: Biometric preference set to enabled.")
+            let _: EmptyResponse = try await APIClient.shared.request(
+                endpoint,
+                method: .post
+            )
         } else {
-            print("API: Biometric preference set to disabled.")
+            let _: EmptyResponse = try await APIClient.shared.request(
+                endpoint,
+                method: .put,
+                parameters: ["value": false]
+            )
         }
-        
-        // Simulate payment gateway integration update
-        await updatePaymentGatewaySettings(isEnabled: isEnabled)
-        
         return true
     }
-    
-    /// Simulates updating payment gateway settings (Paystack, Flutterwave, Interswitch)
-    /// to use biometrics for transaction confirmation.
-    private func updatePaymentGatewaySettings(isEnabled: Bool) async {
-        // This is a placeholder for actual SDK/API calls to payment providers.
-        // In a real app, this would involve secure token exchange and configuration.
-        print("API: Updating Paystack/Flutterwave/Interswitch settings for biometric use: \(isEnabled)")
-    }
-    
-    /// Simulates fetching a cached setting for offline mode.
+
     func getCachedBiometricSetting() -> Bool {
-        // Placeholder for local caching logic (e.g., using UserDefaults or CoreData)
         return UserDefaults.standard.bool(forKey: "isBiometricEnabledCache")
     }
-    
-    /// Simulates saving a setting for offline mode.
+
     func saveBiometricSettingToCache(isEnabled: Bool) {
         UserDefaults.standard.set(isEnabled, forKey: "isBiometricEnabledCache")
-        print("Local Cache: Biometric setting saved: \(isEnabled)")
     }
 }
+
+#if DEBUG
+/// Mock biometric client (DEBUG builds only, for previews/tests).
+class MockBiometricAPIClient: BiometricAPI {
+    func registerBiometricPreference(isEnabled: Bool) async throws -> Bool {
+        try await Task.sleep(nanoseconds: 500_000_000)
+        return true
+    }
+
+    func getCachedBiometricSetting() -> Bool {
+        UserDefaults.standard.bool(forKey: "isBiometricEnabledCache")
+    }
+
+    func saveBiometricSettingToCache(isEnabled: Bool) {
+        UserDefaults.standard.set(isEnabled, forKey: "isBiometricEnabledCache")
+    }
+}
+#endif
 
 // MARK: - 2. View Model
 
@@ -76,11 +92,11 @@ final class BiometricAuthViewModel: ObservableObject {
     // MARK: Private Properties
     
     private let context = LAContext()
-    private let api: APIClient
-    
+    private let api: BiometricAPI
+
     // MARK: Initialization
-    
-    init(api: APIClient = .shared) {
+
+    init(api: BiometricAPI = LiveBiometricAPIClient.shared) {
         self.api = api
         self.isBiometricEnabled = api.getCachedBiometricSetting()
         self.checkBiometricCapability()
@@ -154,7 +170,7 @@ final class BiometricAuthViewModel: ObservableObject {
                 // Revert state if API call fails but no error is thrown
                 self.errorMessage = "Failed to update preference on the server."
             }
-        } catch let error as APIClient.APIError {
+        } catch let error as BiometricAPIError {
             self.errorMessage = switch error {
             case .networkError: "Network error. Please check your connection."
             case .serverError(let msg): "Server error: \(msg)"
@@ -273,7 +289,7 @@ struct BiometricAuthView: View {
                 // MARK: - Skip Button
                 Button {
                     Task { await viewModel.skipButtonTapped() }
-                    dismiss() // Mock navigation away
+                    dismiss()
                 } label: {
                     Text("Skip for Now")
                         .font(.subheadline)
@@ -315,12 +331,11 @@ struct BiometricAuthView: View {
  - SwiftUI View and Layout: Clean, modern UI following HIG.
  - State Management: BiometricAuthViewModel (ObservableObject) manages all view state, loading, and errors.
  - Biometric Integration: Uses LocalAuthentication (LAContext) to check capability and perform authentication.
- - API Integration (Mock): APIClient simulates server communication for registering preferences.
+ - API Integration: Registers the biometric preference with the 54agent backend (success only on server confirmation); mocks are DEBUG-only.
  - Error/Loading States: Displays ProgressView during loading and clear error messages.
- - Navigation: Includes a "Continue" or "Skip" button for flow control (mocked with dismiss()).
+ - Navigation: Includes a "Continue" or "Skip" button for flow control.
  - Accessibility: Proper labels and traits are included for screen readers.
- - Offline Support: ViewModel initializes state from a local cache (UserDefaults mock).
- - Payment Gateway Integration (Mock): APIClient includes a placeholder for updating payment gateway settings (Paystack, Flutterwave, Interswitch) upon successful biometric setup.
+ - Offline Support: ViewModel initializes state from a local cache (UserDefaults).
  
  Dependencies:
  - SwiftUI

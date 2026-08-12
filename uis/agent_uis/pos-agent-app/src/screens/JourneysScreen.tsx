@@ -20,32 +20,7 @@ type Journey = {
   status: 'active' | 'completed';
 };
 
-const MOCK_JOURNEYS: Journey[] = [
-  {
-    id: '1',
-    title: 'Onboarding Journey',
-    description: 'Complete your agent profile and first transaction',
-    steps: 5,
-    completed: 3,
-    status: 'active',
-  },
-  {
-    id: '2',
-    title: 'Gold Agent Path',
-    description: 'Reach Gold tier with 500 transactions',
-    steps: 10,
-    completed: 7,
-    status: 'active',
-  },
-  {
-    id: '3',
-    title: 'Compliance Certification',
-    description: 'Complete AML/KYC training modules',
-    steps: 3,
-    completed: 3,
-    status: 'completed',
-  },
-];
+
 
 export default function JourneysScreen() {
   const navigation = useNavigation();
@@ -53,10 +28,11 @@ export default function JourneysScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // No backend journeys endpoint exists yet — the screen shows an honest
+  // empty state instead of fabricated journey progress.
   const load = async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
-    await new Promise(r => setTimeout(r, 400));
-    setJourneys(MOCK_JOURNEYS);
+    setJourneys([]);
     setLoading(false);
     setRefreshing(false);
   };
@@ -100,6 +76,9 @@ export default function JourneysScreen() {
           keyExtractor={i => i.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No journeys available yet.</Text>
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -133,4 +112,5 @@ const styles = StyleSheet.create({
   progressTrack: { height: 6, backgroundColor: '#e5e7eb', borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
   progressFill: { height: '100%', borderRadius: 3 },
   stepCount: { fontSize: 12, color: '#9ca3af' },
+  emptyText: { textAlign: 'center', marginTop: 60, fontSize: 14, color: '#6b7280' },
 });

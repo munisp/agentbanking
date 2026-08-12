@@ -213,11 +213,13 @@ enum APIEndpoint {
     case virtualIBANs
     case transactions
     case transaction(String)
+    case transactionReceipt(String)
     
     // Transfers
     case transferQuote
     case transferInitiate
     case transferStatus(String)
+    case transferTracking(String)
     case transferHistory
     
     // Beneficiaries
@@ -233,6 +235,31 @@ enum APIEndpoint {
     case profile
     case updateProfile
     case changePassword
+
+    // Payment Methods
+    case paymentMethods
+    case paymentMethod(String)
+    case tokenizeCard
+    case verifyBankAccount
+
+    // Security
+    case securitySettings
+    case securitySetting(String)
+    case securityDeviceLogout(String)
+    case securityPin
+
+    // Support
+    case supportFAQs
+    case supportContact
+
+    // App Settings & generic payment initiation
+    case appSettings
+    case appSetting(String)
+    case paymentInitiate
+
+    // KYC
+    case kycDocuments
+    case kycStatus
     
     // Payment Systems
     case papssTransfer
@@ -257,11 +284,13 @@ enum APIEndpoint {
         case .virtualIBANs: return "/wallet/virtual-ibans"
         case .transactions: return "/wallet/transactions"
         case .transaction(let id): return "/wallet/transactions/\(id)"
+        case .transactionReceipt(let id): return "/wallet/transactions/\(id)/receipt"
         
         // Transfers
         case .transferQuote: return "/transfers/quote"
         case .transferInitiate: return "/transfers/initiate"
         case .transferStatus(let id): return "/transfers/\(id)/status"
+        case .transferTracking(let id): return "/transfers/\(id)/tracking"
         case .transferHistory: return "/transfers/history"
         
         // Beneficiaries
@@ -277,6 +306,31 @@ enum APIEndpoint {
         case .profile: return "/profile"
         case .updateProfile: return "/profile/update"
         case .changePassword: return "/profile/change-password"
+
+        // Payment Methods
+        case .paymentMethods: return "/payment-methods"
+        case .paymentMethod(let id): return "/payment-methods/\(id)"
+        case .tokenizeCard: return "/payments/tokenize-card"
+        case .verifyBankAccount: return "/payments/verify-bank-account"
+
+        // Security
+        case .securitySettings: return "/security/settings"
+        case .securitySetting(let key): return "/security/settings/\(key)"
+        case .securityDeviceLogout(let id): return "/security/devices/\(id)/logout"
+        case .securityPin: return "/security/pin"
+
+        // Support
+        case .supportFAQs: return "/support/faqs"
+        case .supportContact: return "/support/contact"
+
+        // App Settings & generic payment initiation
+        case .appSettings: return "/settings"
+        case .appSetting(let key): return "/settings/\(key)"
+        case .paymentInitiate: return "/payments/initiate"
+
+        // KYC
+        case .kycDocuments: return "/kyc/documents"
+        case .kycStatus: return "/kyc/status"
         
         // Payment Systems
         case .papssTransfer: return "/payments/papss/transfer"

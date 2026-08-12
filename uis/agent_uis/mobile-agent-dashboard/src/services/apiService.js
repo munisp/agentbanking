@@ -1520,6 +1520,18 @@ export const loyaltyApi = {
 // -------------------------------------------------------------------
 
 export const remittanceApi = {
+  getExchangeRate: async (from, to) => {
+    const response = await fetch(
+      `${CORE_BANKING_BASE}/payment-hub/api/v1/transfers/exchange-rates?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      { headers: await authHeaders() },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.message || data?.detail || "Failed to fetch exchange rate");
+    }
+    return data;
+  },
+
   initiateTransfer: async (payload) => {
     const headers = await authHeaders();
     const tenantName =

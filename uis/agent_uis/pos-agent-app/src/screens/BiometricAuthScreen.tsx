@@ -91,7 +91,6 @@ const registerBiometricKey = async (publicKey: string): Promise<boolean> => {
 // --- Component ---
 
 const BiometricAuthScreen: React.FC<BiometricAuthScreenProps> = () => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
   const navigation = useNavigation<BiometricAuthScreenProps['navigation']>();
   const rnBiometrics = new ReactNativeBiometrics();
@@ -272,8 +271,8 @@ const BiometricAuthScreen: React.FC<BiometricAuthScreenProps> = () => {
         <Text style={styles.docHeader}>Documentation</Text>
         <Text style={styles.docText}>
           This screen handles biometric authentication using react-native-biometrics.
-          It integrates with a mock API via axios, uses AsyncStorage for offline token storage,
-          and includes placeholders for Paystack and Flutterwave payment integrations.
+          Biometric signatures are verified by the real backend API; AsyncStorage is used
+          for token storage. Payment integrations are handled on their own screens.
           State is managed via React hooks, and navigation uses React Navigation.
         </Text>
       </View>

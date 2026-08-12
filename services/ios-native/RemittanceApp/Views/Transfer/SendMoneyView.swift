@@ -1,4 +1,5 @@
 import SwiftUI
+import Alamofire
 
 struct SendMoneyView: View {
     @Environment(\.dismiss) var dismiss
@@ -533,7 +534,8 @@ struct SendMoneyView: View {
     
     var isAmountValid: Bool {
         guard let amountValue = Double(amount) else { return false }
-        return amountValue > 0 && !purpose.isEmpty
+        // A live rate quote is required before proceeding to review.
+        return amountValue > 0 && !purpose.isEmpty && viewModel.exchangeRate != nil
     }
     
     // MARK: - Methods
@@ -708,32 +710,95 @@ struct BeneficiaryPickerView: View {
     }
 }
 
+// MARK: - Transfer API DTOs
+
+private struct SMVQuoteRequest: Encodable {
+    let sourceCurrency: String
+    let destinationCurrency: String
+    let amount: Double
+}
+
+private struct SMVQuoteResponse: Decodable {
+    let rate: Double
+    let transferFee: Double?
+    let exchangeFee: Double?
+}
+
+private struct SMVInitiateRequest: Encodable {
+    let beneficiaryId: String
+    let amount: Double
+    let sourceCurrency: String
+    let destinationCurrency: String
+    let paymentSystem: String
+    let purpose: String
+}
+
+private struct SMVInitiateResponse: Decodable {
+    let transferId: String
+    let status: String?
+}
+
+private func smvJsonParameters<T: Encodable>(_ value: T) throws -> [String: Any] {
+    let data = try JSONEncoder().encode(value)
+    return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+}
+
 // MARK: - ViewModel
 
 @MainActor
 class SendMoneyViewModel: ObservableObject {
     @Published var beneficiaries: [Beneficiary] = []
     @Published var exchangeRate: Double?
-    @Published var transferFee: Double = 2.50
-    @Published var exchangeFee: Double = 1.00
+    @Published var transferFee: Double = 0
+    @Published var exchangeFee: Double = 0
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var transferId: String?
     
+    /// Loads beneficiaries from the backend. Errors surface to the user; no fake
+    /// beneficiaries are ever shown.
     func loadBeneficiaries() async {
         isLoading = true
-        // Simulate API call
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        beneficiaries = Beneficiary.mockBeneficiaries
-        isLoading = false
+        defer { isLoading = false }
+        do {
+            let response: [Beneficiary] = try await APIClient.shared.request(.beneficiaries)
+            beneficiaries = response
+        } catch {
+            errorMessage = "Could not load beneficiaries: \(error.localizedDescription)"
+        }
     }
     
+    /// Fetches a live exchange rate quote from the backend. On failure the rate is
+    /// cleared so the flow cannot proceed on a stale or fabricated quote.
     func getExchangeRate(from: String, to: String) async {
-        // Simulate API call
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        exchangeRate = 0.0013 // Mock rate
+        guard from != to else {
+            exchangeRate = 1.0
+            transferFee = 0
+            exchangeFee = 0
+            return
+        }
+        do {
+            let quoteRequest = SMVQuoteRequest(
+                sourceCurrency: from,
+                destinationCurrency: to,
+                amount: 0
+            )
+            let response: SMVQuoteResponse = try await APIClient.shared.request(
+                .transferQuote,
+                method: .post,
+                parameters: smvJsonParameters(quoteRequest)
+            )
+            exchangeRate = response.rate
+            transferFee = response.transferFee ?? 0
+            exchangeFee = response.exchangeFee ?? 0
+        } catch {
+            exchangeRate = nil
+            errorMessage = "Could not fetch a live exchange rate: \(error.localizedDescription)"
+        }
     }
     
+    /// Initiates the transfer via the backend. The success screen is only reached with a
+    /// server-issued transferId; failures surface an honest error and no receipt is shown.
     func initiateTransfer(
         beneficiaryId: String,
         amount: Double,
@@ -743,27 +808,45 @@ class SendMoneyViewModel: ObservableObject {
         purpose: String
     ) async {
         isLoading = true
-        // Simulate API call
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        transferId = "TXN\(Int.random(in: 100000...999999))"
-        isLoading = false
+        defer { isLoading = false }
+        errorMessage = nil
+        transferId = nil
+        
+        guard exchangeRate != nil else {
+            errorMessage = "No live exchange rate available. Please go back and refresh the rate."
+            return
+        }
+        
+        let transferRequest = SMVInitiateRequest(
+            beneficiaryId: beneficiaryId,
+            amount: amount,
+            sourceCurrency: sourceCurrency,
+            destinationCurrency: destinationCurrency,
+            paymentSystem: paymentSystem,
+            purpose: purpose
+        )
+        
+        do {
+            let response: SMVInitiateResponse = try await APIClient.shared.request(
+                .transferInitiate,
+                method: .post,
+                parameters: smvJsonParameters(transferRequest)
+            )
+            transferId = response.transferId
+        } catch {
+            errorMessage = "Transfer failed: \(error.localizedDescription). No money has been sent."
+        }
     }
 }
 
 // MARK: - Models
 
-struct Beneficiary: Identifiable {
+struct Beneficiary: Identifiable, Codable {
     let id: String
     let name: String
     let accountNumber: String
     let bankName: String
     let country: String
-    
-    static let mockBeneficiaries = [
-        Beneficiary(id: "1", name: "John Doe", accountNumber: "1234567890", bankName: "GTBank", country: "Nigeria"),
-        Beneficiary(id: "2", name: "Jane Smith", accountNumber: "0987654321", bankName: "Access Bank", country: "Nigeria"),
-        Beneficiary(id: "3", name: "Bob Johnson", accountNumber: "5555555555", bankName: "First Bank", country: "Nigeria")
-    ]
 }
 
 #Preview {

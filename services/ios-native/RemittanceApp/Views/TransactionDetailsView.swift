@@ -73,7 +73,7 @@ enum APIError: Error, LocalizedError {
     }
 }
 
-// MARK: - 2. API Client Interface (Mocked)
+// MARK: - 2. API Client Interface
 
 /// Protocol for the transaction API client.
 protocol TransactionAPIClientProtocol {
@@ -81,17 +81,47 @@ protocol TransactionAPIClientProtocol {
     func generateReceipt(id: String) async throws -> URL
 }
 
-/// Mock implementation of the API client for development.
+/// Real API client backed by the 54agent backend transaction endpoints.
+class LiveTransactionAPIClient: TransactionAPIClientProtocol {
+    private struct ReceiptResponse: Decodable {
+        let receiptUrl: String
+    }
+
+    func fetchTransactionDetails(id: String) async throws -> Transaction {
+        do {
+            return try await APIClient.shared.request(.transaction(id))
+        } catch {
+            throw APIError.serverError
+        }
+    }
+
+    func generateReceipt(id: String) async throws -> URL {
+        let response: ReceiptResponse
+        do {
+            response = try await APIClient.shared.request(
+                .transactionReceipt(id),
+                method: .post
+            )
+        } catch {
+            throw APIError.serverError
+        }
+        guard let url = URL(string: response.receiptUrl) else {
+            throw APIError.decodingError
+        }
+        return url
+    }
+}
+
+#if DEBUG
+/// Mock implementation of the API client (DEBUG builds only, for previews/tests).
 class MockTransactionAPIClient: TransactionAPIClientProtocol {
     func fetchTransactionDetails(id: String) async throws -> Transaction {
-        // Simulate network delay
         try await Task.sleep(nanoseconds: 1_000_000_000)
 
         if id == "error" {
             throw APIError.serverError
         }
 
-        // Mock data for a successful transaction
         return Transaction(
             id: id,
             senderName: "Aisha Bello",
@@ -104,20 +134,19 @@ class MockTransactionAPIClient: TransactionAPIClientProtocol {
             fee: 5.00,
             status: .completed,
             date: Date().addingTimeInterval(-86400 * 2), // 2 days ago
-            reference: "TXN-20251103-12345",
+            reference: "TXN-DEBUG-12345",
             paymentMethod: "Card ending in 4242",
-            receiptUrl: "https://mock-receipt-url.com/\(id)",
+            receiptUrl: nil,
             gateway: .paystack
         )
     }
 
     func generateReceipt(id: String) async throws -> URL {
-        // Simulate receipt generation and return a mock URL
         try await Task.sleep(nanoseconds: 500_000_000)
-        // In a real app, this would be a secure URL to a PDF or file
-        return URL(string: "file:///mock/receipt/path/\(id).pdf")!
+        throw APIError.serverError // no real receipt exists in DEBUG previews
     }
 }
+#endif
 
 // MARK: - 3. View Model (StateManagement)
 
@@ -134,7 +163,7 @@ class TransactionDetailsViewModel: ObservableObject {
     private let localAuthContext = LAContext()
 
     /// Dependency injection for API client and transaction ID.
-    init(transactionId: String, api: TransactionAPIClientProtocol = MockTransactionAPIClient()) {
+    init(transactionId: String, api: TransactionAPIClientProtocol = LiveTransactionAPIClient()) {
         self.transactionId = transactionId
         self.api = api
     }
@@ -162,27 +191,30 @@ class TransactionDetailsViewModel: ObservableObject {
     }
 
     /// Handles the receipt download process, including biometric authentication.
+    /// Falls back to the device passcode when biometrics are unavailable — the
+    /// download is never performed without the user authenticating.
     func downloadReceipt() async {
         guard transaction != nil else { return }
 
-        // 1. Biometric Authentication Check
         let reason = "Securely download your transaction receipt."
-        let canEvaluate = localAuthContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        let policy: LAPolicy = localAuthContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+            ? .deviceOwnerAuthenticationWithBiometrics
+            : .deviceOwnerAuthentication
 
-        if canEvaluate {
-            do {
-                let success = try await localAuthContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason)
-                if success {
-                    await performReceiptDownload()
-                } else {
-                    self.error = .biometricAuthFailed
-                }
-            } catch {
+        guard localAuthContext.canEvaluatePolicy(policy, error: nil) else {
+            self.error = .biometricAuthFailed
+            return
+        }
+
+        do {
+            let success = try await localAuthContext.evaluatePolicy(policy, localizedReason: reason)
+            if success {
+                await performReceiptDownload()
+            } else {
                 self.error = .biometricAuthFailed
             }
-        } else {
-            // Fallback to PIN/Password or skip if biometrics not available
-            await performReceiptDownload()
+        } catch {
+            self.error = .biometricAuthFailed
         }
     }
 
@@ -194,8 +226,6 @@ class TransactionDetailsViewModel: ObservableObject {
         do {
             let url = try await api.generateReceipt(id: transaction.id)
             self.receiptURL = url
-            // In a real app, you would save the file to the device's documents directory here.
-            print("Receipt downloaded to mock URL: \(url.absoluteString)")
         } catch let apiError as APIError {
             self.error = apiError
         } catch {

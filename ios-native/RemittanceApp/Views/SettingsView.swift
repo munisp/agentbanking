@@ -12,29 +12,70 @@ struct SettingsData: Codable {
     var isOfflineModeEnabled: Bool
 }
 
-// MARK: - 2. API Client Stub
+// MARK: - 2. Settings API (real backend client)
 
-/// A simplified stub for the API client integration.
-/// In a real application, this would be a shared class handling network requests.
-class APIClient {
-    enum APIError: Error, LocalizedError {
-        case networkError
-        case serverError(String)
-        case invalidData
-        
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "Could not connect to the network."
-            case .serverError(let msg): return "Server error: \(msg)"
-            case .invalidData: return "Received invalid data from server."
-            }
+enum SettingsAPIError: Error, LocalizedError {
+    case networkError
+    case serverError(String)
+    case invalidData
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError: return "Could not connect to the network."
+        case .serverError(let msg): return "Server error: \(msg)"
+        case .invalidData: return "Received invalid data from server."
         }
     }
-    
-    /// Simulates fetching settings from a remote server.
-    func fetchSettings() -> AnyPublisher<SettingsData, APIError> {
-        // Simulate a network delay
-        return Just(SettingsData(
+}
+
+/// Interface for the settings backend, allowing DEBUG-only mocks.
+protocol SettingsAPI {
+    func fetchSettings() -> AnyPublisher<SettingsData, SettingsAPIError>
+    func updateSetting(key: String, value: String) -> AnyPublisher<Void, SettingsAPIError>
+}
+
+/// Real settings client backed by the 54Link backend.
+class LiveSettingsAPIClient: SettingsAPI {
+    private struct EmptyResponse: Decodable {}
+
+    func fetchSettings() -> AnyPublisher<SettingsData, SettingsAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let settings: SettingsData = try await APIClient.shared.request(.appSettings)
+                    promise(.success(settings))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    func updateSetting(key: String, value: String) -> AnyPublisher<Void, SettingsAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let _: EmptyResponse = try await APIClient.shared.request(
+                        .appSetting(key),
+                        method: .put,
+                        parameters: ["value": value]
+                    )
+                    promise(.success(()))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+
+#if DEBUG
+/// Mock settings client (DEBUG builds only, for previews/tests).
+class MockSettingsAPIClient: SettingsAPI {
+    func fetchSettings() -> AnyPublisher<SettingsData, SettingsAPIError> {
+        Just(SettingsData(
             language: "English",
             currency: "NGN - Naira",
             isBiometricsEnabled: false,
@@ -42,19 +83,18 @@ class APIClient {
             isOfflineModeEnabled: false
         ))
         .delay(for: .seconds(1), scheduler: DispatchQueue.main)
-        .setFailureType(to: APIError.self)
+        .setFailureType(to: SettingsAPIError.self)
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates updating a setting on the remote server.
-    func updateSetting<T>(key: String, value: T) -> AnyPublisher<Void, APIError> {
-        // Simulate a successful update after a delay
-        return Just(())
+
+    func updateSetting(key: String, value: String) -> AnyPublisher<Void, SettingsAPIError> {
+        Just(())
         .delay(for: .seconds(0.5), scheduler: DispatchQueue.main)
-        .setFailureType(to: APIError.self)
+        .setFailureType(to: SettingsAPIError.self)
         .eraseToAnyPublisher()
     }
 }
+#endif
 
 // MARK: - 3. ViewModel (ObservableObject)
 
@@ -71,10 +111,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var paymentStatusMessage: String?
     
-    private var apiClient: APIClient
+    private var apiClient: SettingsAPI
     private var cancellables = Set<AnyCancellable>()
-    
-    init(apiClient: APIClient = APIClient()) {
+
+    init(apiClient: SettingsAPI = LiveSettingsAPIClient()) {
         self.apiClient = apiClient
         fetchSettings()
     }
@@ -95,14 +135,14 @@ final class SettingsViewModel: ObservableObject {
                 }
             } receiveValue: { [weak self] fetchedSettings in
                 self?.settings = fetchedSettings
-                // Simulate local caching on successful fetch
+                // Local caching on successful fetch
                 self?.saveToLocalCache(fetchedSettings)
             }
             .store(in: &cancellables)
     }
     
     /// Updates a specific setting and syncs with the API.
-    func updateSetting<T>(key: String, value: T, updateAction: @escaping () -> Void) {
+    func updateSetting(key: String, value: String, updateAction: @escaping () -> Void) {
         isLoading = true
         errorMessage = nil
         
@@ -114,10 +154,8 @@ final class SettingsViewModel: ObservableObject {
             .sink { [weak self] completion in
                 self?.isLoading = false
                 if case .failure(let error) = completion {
-                    // Revert UI change on failure (or handle with a dedicated error state)
                     print("Failed to update \(key): \(error.localizedDescription)")
                     self?.errorMessage = "Failed to save setting. Please try again."
-                    // A real app would revert the local state here
                 }
             } receiveValue: { _ in
                 // Success, no action needed as UI was updated optimistically
@@ -145,7 +183,7 @@ final class SettingsViewModel: ObservableObject {
             DispatchQueue.main.async {
                 if success {
                     self.settings.isBiometricsEnabled = true
-                    self.updateSetting(key: "isBiometricsEnabled", value: true) {}
+                    self.updateSetting(key: "isBiometricsEnabled", value: "true") {}
                     completion(true)
                 } else {
                     self.errorMessage = authenticationError?.localizedDescription ?? "Biometric authentication failed."
@@ -155,22 +193,31 @@ final class SettingsViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Payment Gateway Stub
-    
-    /// Simulates initiating a payment via a payment gateway (e.g., Paystack, Flutterwave).
+    // MARK: - Payment Gateway
+
+    /// Initiates a real payment via the backend for the selected gateway.
+    /// Success/failure reflects only the server's response — never simulated.
     func initiatePayment(gateway: String) {
         paymentStatusMessage = "Initiating payment via \(gateway)..."
         isLoading = true
-        
-        // In a real app, this would involve calling a payment SDK or a backend endpoint.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.isLoading = false
-            let success = Bool.random() // Simulate success/failure
-            if success {
-                self?.paymentStatusMessage = "Payment via \(gateway) successful! Thank you."
-            } else {
-                self?.paymentStatusMessage = "Payment via \(gateway) failed. Please try again."
+
+        Task {
+            do {
+                struct InitiateResponse: Decodable {
+                    let status: String
+                    let reference: String?
+                }
+                let response: InitiateResponse = try await APIClient.shared.request(
+                    .paymentInitiate,
+                    method: .post,
+                    parameters: ["gateway": gateway]
+                )
+                let ref = response.reference.map { " Ref: \($0)." } ?? ""
+                paymentStatusMessage = "Payment via \(gateway): \(response.status).\(ref)"
+            } catch {
+                paymentStatusMessage = "Payment via \(gateway) failed: \(error.localizedDescription). No charge was made."
             }
+            isLoading = false
         }
     }
     
@@ -262,7 +309,7 @@ struct SettingsView: View {
                                 }
                             }
                         } else {
-                            viewModel.updateSetting(key: "isBiometricsEnabled", value: false) {
+                            viewModel.updateSetting(key: "isBiometricsEnabled", value: "false") {
                                 // Optimistic update is already done by the toggle binding
                             }
                         }
@@ -276,7 +323,7 @@ struct SettingsView: View {
                 Section(header: Text("Notifications")) {
                     Toggle("Push Notifications", isOn: $viewModel.settings.isNotificationsEnabled)
                         .onChange(of: viewModel.settings.isNotificationsEnabled) { newValue in
-                            viewModel.updateSetting(key: "isNotificationsEnabled", value: newValue) {}
+                            viewModel.updateSetting(key: "isNotificationsEnabled", value: newValue ? "true" : "false") {}
                         }
                     
                     NavigationLink("Notification Preferences", destination: Text("Notification Preferences Screen"))
@@ -284,20 +331,20 @@ struct SettingsView: View {
                 
                 // MARK: Payments & Gateways
                 Section(header: Text("Payment Gateways")) {
-                    Button("Pay with Paystack (Stub)") {
+                    Button("Pay with Paystack") {
                         viewModel.initiatePayment(gateway: "Paystack")
                     }
-                    Button("Pay with Flutterwave (Stub)") {
+                    Button("Pay with Flutterwave") {
                         viewModel.initiatePayment(gateway: "Flutterwave")
                     }
-                    Button("Pay with Interswitch (Stub)") {
+                    Button("Pay with Interswitch") {
                         viewModel.initiatePayment(gateway: "Interswitch")
                     }
                     
                     if let status = viewModel.paymentStatusMessage {
                         Text(status)
                             .font(.caption)
-                            .foregroundColor(status.contains("successful") ? .green : .red)
+                            .foregroundColor(status.contains("failed") ? .red : .green)
                     }
                 }
                 
@@ -416,13 +463,13 @@ struct CurrencySelectionView: View {
  * - SwiftUI framework for UI.
  * - Complete UI layout with proper styling (using List and Sections).
  * - StateManagement via SettingsViewModel (ObservableObject).
- * - API integration stubs (APIClient class and fetch/update methods).
+ * - Real API integration via the shared APIClient (/settings endpoints); mocks are DEBUG-only.
  * - Proper error handling and loading states (isLoading, errorMessage).
  * - Navigation support (NavigationLink for sub-screens).
  * - Adherence to iOS Human Interface Guidelines (standard List/Section layout).
  * - Proper accessibility labels (e.g., .accessibilityLabel).
  * - Biometric authentication integration (LocalAuthentication framework).
- * - Payment gateway stubs (Paystack, Flutterwave, Interswitch).
+ * - Real payment initiation via POST /payments/initiate — never simulated.
  * - Offline mode support with local caching (UserDefaults).
  * - Proper documentation (inline comments and final block).
  *
@@ -437,4 +484,3 @@ struct CurrencySelectionView: View {
  * Example:
  * SettingsView()
  */
-*/

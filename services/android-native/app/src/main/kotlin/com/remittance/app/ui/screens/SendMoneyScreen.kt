@@ -25,6 +25,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.*
+import com.pos54agent.app.BuildConfig
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Query
+import java.io.IOException
 
 // Data classes for FX transparency
 data class ExchangeRate(
@@ -54,6 +62,45 @@ data class DeliveryEstimate(
     val available: Boolean
 )
 
+// --- Live transfer API (Retrofit, real backend — no fabricated rates/fees) ---
+data class ExchangeRateResponse(val success: Boolean, val data: ExchangeRateData?)
+data class ExchangeRateData(val from: String, val to: String, val rate: Double, val timestamp: String? = null)
+data class QuoteRequest(val sourceCurrency: String, val destinationCurrency: String, val amount: Double, val transferSpeed: String = "standard")
+data class QuoteResponse(val success: Boolean, val data: QuoteData?)
+data class QuoteData(val quoteId: String, val rate: Double, val fee: Double, val totalAmount: Double, val expiresAt: String? = null)
+data class InitiateTransferRequest(
+    val quoteId: String,
+    val recipientName: String,
+    val recipientReference: String,
+    val recipientType: String,
+    val deliveryMethod: String,
+    val note: String? = null
+)
+data class InitiateTransferResponse(val success: Boolean, val data: TransferData?)
+data class TransferData(val id: String, val reference: String, val status: String)
+
+interface TransferApi {
+    @GET("transfers/exchange-rates")
+    suspend fun getExchangeRate(@Query("from") from: String, @Query("to") to: String): ExchangeRateResponse
+
+    @POST("transfers/quote")
+    suspend fun getQuote(@Body request: QuoteRequest): QuoteResponse
+
+    @POST("transfers/initiate")
+    suspend fun initiateTransfer(@Body request: InitiateTransferRequest): InitiateTransferResponse
+}
+
+/** Minimal provider against the configured backend base URL. */
+object TransferApiProvider {
+    val api: TransferApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(TransferApi::class.java)
+    }
+}
+
 // Currency data
 val CURRENCY_FLAGS = mapOf(
     "GBP" to "\uD83C\uDDEC\uD83C\uDDE7", "USD" to "\uD83C\uDDFA\uD83C\uDDF8",
@@ -67,13 +114,6 @@ val CURRENCY_SYMBOLS = mapOf(
 
 val SOURCE_CURRENCIES = listOf("GBP", "USD", "EUR", "NGN")
 val DESTINATION_CURRENCIES = listOf("NGN", "GHS", "KES", "USD", "GBP")
-
-val MOCK_RATES = mapOf(
-    "GBP" to mapOf("NGN" to 1950.50, "GHS" to 15.20, "KES" to 165.30, "USD" to 1.27),
-    "USD" to mapOf("NGN" to 1535.00, "GHS" to 11.95, "KES" to 130.20, "GBP" to 0.79),
-    "EUR" to mapOf("NGN" to 1680.25, "GHS" to 13.10, "KES" to 142.50, "GBP" to 0.86),
-    "NGN" to mapOf("GHS" to 0.0078, "KES" to 0.085, "USD" to 0.00065, "GBP" to 0.00051)
-)
 
 val DELIVERY_METHODS = mapOf(
     "NGN" to listOf(
@@ -125,22 +165,37 @@ fun SendMoneyScreen(
         amountValue * rate
     }
     
-    // Calculate fee breakdown
-    val feeBreakdown = remember(amount, sourceCurrency, destinationCurrency, deliveryMethod) {
-        val amountValue = amount.toDoubleOrNull() ?: 0.0
-        if (amountValue <= 0) null
-        else {
-            val corridor = "$sourceCurrency-$destinationCurrency"
-            val (fixed, percentage) = when (corridor) {
-                "GBP-NGN" -> Pair(0.99, 0.5)
-                "USD-NGN" -> Pair(2.99, 0.5)
-                "EUR-NGN" -> Pair(1.99, 0.5)
-                else -> Pair(50.0, 1.5)
+    // Server-issued quote state: fees come from the backend, never a local table.
+    var feeBreakdown by remember { mutableStateOf<FeeBreakdown?>(null) }
+    var activeQuoteId by remember { mutableStateOf<String?>(null) }
+    var quoteError by remember { mutableStateOf<String?>(null) }
+    var rateError by remember { mutableStateOf<String?>(null) }
+
+    // Fetch a fresh server quote whenever the amount/corridor changes.
+    LaunchedEffect(amount, sourceCurrency, destinationCurrency) {
+        feeBreakdown = null
+        activeQuoteId = null
+        quoteError = null
+        val amountValue = amount.toDoubleOrNull() ?: return@LaunchedEffect
+        if (amountValue <= 0) return@LaunchedEffect
+        try {
+            val response = TransferApiProvider.api.getQuote(
+                QuoteRequest(sourceCurrency, destinationCurrency, amountValue)
+            )
+            val q = response.data
+            if (response.success && q != null) {
+                activeQuoteId = q.quoteId
+                feeBreakdown = FeeBreakdown(
+                    transferFee = q.fee,
+                    networkFee = 0.0,
+                    totalFees = q.fee,
+                    feePercentage = if (amountValue > 0) (q.fee / amountValue) * 100 else 0.0
+                )
+            } else {
+                quoteError = "Fees unavailable for this corridor right now."
             }
-            val transferFee = fixed + (amountValue * percentage / 100)
-            val networkFee = if (deliveryMethod == "cash_pickup") 2.00 else 0.0
-            val totalFees = transferFee + networkFee
-            FeeBreakdown(transferFee, networkFee, totalFees, (totalFees / amountValue) * 100)
+        } catch (e: Exception) {
+            quoteError = "Could not fetch fees: ${e.message ?: "network error"}"
         }
     }
     
@@ -149,22 +204,40 @@ fun SendMoneyScreen(
         DELIVERY_METHODS[destinationCurrency] ?: DELIVERY_METHODS["default"]!!
     }
     
-    // Fetch exchange rate
+    // Fetch the real exchange rate from the backend; failures are surfaced
+    // honestly and the rate is cleared (never substituted with a fake one).
     fun fetchExchangeRate() {
         if (rateLock != null) return
         isLoadingRate = true
+        rateError = null
         scope.launch {
-            delay(500)
-            val rate = MOCK_RATES[sourceCurrency]?.get(destinationCurrency) ?: 1.0
-            exchangeRate = ExchangeRate(sourceCurrency, destinationCurrency, rate, "Just now", "Market Rate")
+            try {
+                val response = TransferApiProvider.api.getExchangeRate(sourceCurrency, destinationCurrency)
+                val data = response.data
+                if (response.success && data != null) {
+                    exchangeRate = ExchangeRate(
+                        sourceCurrency, destinationCurrency, data.rate,
+                        data.timestamp ?: "", "54Link"
+                    )
+                } else {
+                    exchangeRate = null
+                    rateError = "Rate unavailable for $sourceCurrency → $destinationCurrency."
+                }
+            } catch (e: Exception) {
+                exchangeRate = null
+                rateError = "Could not fetch the rate: ${e.message ?: "network error"}"
+            }
             isLoadingRate = false
             rateRefreshCountdown = 30
         }
     }
     
     fun lockRate() {
+        // Locking a rate binds the current server-issued quote (by quoteId) —
+        // the rate/fee honoured at submission is the one the server quoted.
+        val quoteId = activeQuoteId ?: return
         exchangeRate?.let { rate ->
-            rateLock = RateLock("lock_${System.currentTimeMillis()}", rate.rate, System.currentTimeMillis() + 600000)
+            rateLock = RateLock(quoteId, rate.rate, System.currentTimeMillis() + 600000)
         }
     }
     
@@ -174,18 +247,49 @@ fun SendMoneyScreen(
     }
     
     fun submitTransfer() {
+        if (!isOnline) {
+            // Honest offline behaviour: the transfer is NOT sent and nothing is queued.
+            errorMessage = "You are offline. The transfer was not sent — please try again when you're back online."
+            return
+        }
         isSubmitting = true
+        errorMessage = null
         scope.launch {
-            delay(1500)
-            if (!isOnline) {
-                pendingCount++
-                successMessage = "Transfer queued. Will sync when online."
-            } else {
-                successMessage = "Transfer successful! Ref: TXN${System.currentTimeMillis()}"
+            try {
+                val amountValue = amount.toDoubleOrNull()
+                    ?: throw IllegalArgumentException("Enter a valid amount.")
+                // Bind the transfer to a server-issued quote (locked or fresh).
+                val quoteId = rateLock?.id ?: activeQuoteId ?: run {
+                    val q = TransferApiProvider.api.getQuote(
+                        QuoteRequest(sourceCurrency, destinationCurrency, amountValue)
+                    )
+                    if (!q.success || q.data == null) throw IOException("Could not obtain a transfer quote.")
+                    q.data.quoteId
+                }
+                val response = TransferApiProvider.api.initiateTransfer(
+                    InitiateTransferRequest(
+                        quoteId = quoteId,
+                        recipientName = recipientName,
+                        recipientReference = recipient,
+                        recipientType = recipientType,
+                        deliveryMethod = deliveryMethod,
+                        note = note.ifBlank { null }
+                    )
+                )
+                val data = response.data
+                if (response.success && data != null) {
+                    // Server-issued reference only — never fabricated.
+                    successMessage = "Transfer ${data.status}. Ref: ${data.reference}"
+                    isSubmitting = false
+                    delay(2000)
+                    onNavigateBack()
+                } else {
+                    errorMessage = "The server did not accept the transfer. No money was sent."
+                }
+            } catch (e: Exception) {
+                errorMessage = "Transfer failed: ${e.message ?: "network error"}. No money was sent."
             }
             isSubmitting = false
-            delay(2000)
-            onNavigateBack()
         }
     }
     
@@ -398,6 +502,10 @@ private fun AmountStep(amount: String, onAmountChange: (String) -> Unit, sourceC
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("1 $sourceCurrency = ${exchangeRate?.rate?.let { String.format("%.4f", it) } ?: "---"} $destinationCurrency", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                rateError?.let {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (rateLock != null) OutlinedButton(onClick = onUnlockRate, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Unlock") }
@@ -408,9 +516,11 @@ private fun AmountStep(amount: String, onAmountChange: (String) -> Unit, sourceC
                     Column(modifier = Modifier.padding(top = 12.dp)) {
                         Text("7-Day Rate History", style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
-                            listOf(0.98, 0.99, 1.01, 0.97, 1.02, 0.99, 1.0).forEach { multiplier -> Box(modifier = Modifier.weight(1f).height((multiplier * 50).dp).clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))) }
-                        }
+                        Text(
+                            "Rate history is currently unavailable.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -430,6 +540,10 @@ private fun AmountStep(amount: String, onAmountChange: (String) -> Unit, sourceC
             }
         }
         
+        quoteError?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
         // Delivery method
         Text("Delivery Method", style = MaterialTheme.typography.titleMedium)
         deliveryEstimates.forEach { estimate ->
@@ -500,7 +614,7 @@ private fun ConfirmStep(amount: String, sourceCurrency: String, destinationCurre
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text("You're currently offline", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                        Text("This transfer will be queued and processed when you're back online.", style = MaterialTheme.typography.bodySmall)
+                        Text("Transfers cannot be sent while offline — please reconnect first.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

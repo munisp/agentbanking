@@ -40,20 +40,6 @@ const DELIVERY_METHODS = {
   default: [{ value: "bank_transfer", label: "Bank Transfer", time: "1 - 2 business days" }],
 };
 
-const MOCK_EXCHANGE_RATES = {
-  GBP: { NGN: 1950.5, GHS: 15.2, USD: 1.27 },
-  USD: { NGN: 1535.0, GHS: 11.95, GBP: 0.79 },
-  EUR: { NGN: 1680.25, GHS: 13.1, GBP: 0.86 },
-  NGN: { GHS: 0.0078, USD: 0.00065, GBP: 0.00051 },
-};
-
-const FEE_STRUCTURE = {
-  "GBP-NGN": { fixed: 0.99, percentage: 0.5, margin: 0.3 },
-  "USD-NGN": { fixed: 2.99, percentage: 0.5, margin: 0.4 },
-  "EUR-NGN": { fixed: 1.99, percentage: 0.5, margin: 0.35 },
-  default: { fixed: 50, percentage: 1.5, margin: 0.5 },
-};
-
 export default function SendRemittanceScreen() {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
@@ -81,35 +67,48 @@ export default function SendRemittanceScreen() {
     [sourceAccounts, sourceAccountNumber],
   );
 
-  const exchangeRate = useMemo(() => {
-    if (!currency || !destinationCurrency) return null;
-    if (currency === destinationCurrency) return { rate: 1 };
-    const rate = MOCK_EXCHANGE_RATES[currency]?.[destinationCurrency];
-    return rate ? { rate } : null;
+  const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState("");
+
+  // Fetch the real exchange rate from the backend whenever the currency pair
+  // changes. Rates and fees are NEVER fabricated locally.
+  useEffect(() => {
+    let cancelled = false;
+    setQuote(null);
+    setQuoteError("");
+    if (!currency || !destinationCurrency) return;
+    if (currency === destinationCurrency) {
+      setQuote({ rate: 1 });
+      return;
+    }
+    remittanceApi
+      .getExchangeRate(currency, destinationCurrency)
+      .then((data) => {
+        if (cancelled) return;
+        const rate = data?.data?.rate ?? data?.rate;
+        if (typeof rate === "number") {
+          setQuote({ rate });
+        } else {
+          setQuoteError("Exchange rate unavailable for this currency pair.");
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setQuoteError(err.message || "Could not fetch the exchange rate.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [currency, destinationCurrency]);
 
-  const feeBreakdown = useMemo(() => {
-    const parsedAmount = parseFloat(amount || "0");
-    if (!parsedAmount || parsedAmount <= 0) return null;
-    const key = `${currency}-${destinationCurrency}`;
-    const fee = FEE_STRUCTURE[key] || FEE_STRUCTURE.default;
-    const transferFee = fee.fixed + (parsedAmount * fee.percentage) / 100;
-    const networkFee = (parsedAmount * fee.margin) / 100;
-    const totalFees = transferFee + networkFee;
-    return {
-      transferFee: transferFee.toFixed(2),
-      networkFee: networkFee.toFixed(2),
-      totalFees: totalFees.toFixed(2),
-      feePercentage: ((totalFees / parsedAmount) * 100).toFixed(2),
-    };
-  }, [amount, currency, destinationCurrency]);
+  const exchangeRate = quote;
 
+  // Indicative recipient amount before fees. The exact fees and final amount
+  // are computed and confirmed by the server when the transfer is initiated.
   const receivedAmount = useMemo(() => {
     const parsedAmount = parseFloat(amount || "0");
     if (!parsedAmount || !exchangeRate?.rate) return "0.00";
-    const fee = parseFloat(feeBreakdown?.totalFees || "0");
-    return (Math.max(parsedAmount - fee, 0) * exchangeRate.rate).toFixed(2);
-  }, [amount, exchangeRate, feeBreakdown]);
+    return (parsedAmount * exchangeRate.rate).toFixed(2);
+  }, [amount, exchangeRate]);
 
   const deliveryMethods = DELIVERY_METHODS[destinationCurrency] || DELIVERY_METHODS.default;
 
@@ -379,7 +378,7 @@ export default function SendRemittanceScreen() {
               {Number(amount || 0) > 0 && exchangeRate && (
                 <Card style={styles.infoCard}>
                   <Card.Content>
-                    <Text style={styles.infoTitle}>Recipient gets</Text>
+                    <Text style={styles.infoTitle}>Recipient gets (indicative, before fees)</Text>
                     <Text style={styles.infoValue}>
                       {CURRENCY_SYMBOLS[destinationCurrency] || ""}
                       {receivedAmount}
@@ -388,16 +387,24 @@ export default function SendRemittanceScreen() {
                 </Card>
               )}
 
-              {feeBreakdown && (
+              {!!quoteError && (
                 <Card style={styles.infoCard}>
                   <Card.Content>
-                    <Text style={styles.infoTitle}>Fee Breakdown</Text>
-                    <Text>Transfer fee: {CURRENCY_SYMBOLS[currency] || ""}{feeBreakdown.transferFee}</Text>
-                    <Text>Network fee: {CURRENCY_SYMBOLS[currency] || ""}{feeBreakdown.networkFee}</Text>
-                    <Text style={styles.totalFees}>Total fees: {CURRENCY_SYMBOLS[currency] || ""}{feeBreakdown.totalFees}</Text>
+                    <Text style={styles.infoTitle}>Exchange Rate</Text>
+                    <Text>{quoteError}</Text>
                   </Card.Content>
                 </Card>
               )}
+
+              <Card style={styles.infoCard}>
+                <Card.Content>
+                  <Text style={styles.infoTitle}>Fees</Text>
+                  <Text>
+                    Fees and the final payout amount are calculated and confirmed by the
+                    server before the transfer is sent.
+                  </Text>
+                </Card.Content>
+              </Card>
 
               <Text style={styles.sectionHint}>Delivery Method</Text>
               <SegmentedButtons
@@ -429,7 +436,7 @@ export default function SendRemittanceScreen() {
                     {Number(amount || 0).toFixed(2)} {currency}
                   </Text>
                   <Text style={styles.summaryArrow}>↓</Text>
-                  <Text style={styles.summaryHead}>Recipient gets</Text>
+                  <Text style={styles.summaryHead}>Recipient gets (indicative, before fees)</Text>
                   <Text style={styles.summaryValue}>
                     {CURRENCY_SYMBOLS[destinationCurrency] || ""}
                     {receivedAmount} {destinationCurrency}
@@ -446,19 +453,16 @@ export default function SendRemittanceScreen() {
                 </Card.Content>
               </Card>
 
-              {feeBreakdown && (
-                <Card style={styles.infoCard}>
-                  <Card.Content>
-                    <Text style={styles.infoTitle}>Total Costs</Text>
-                    <Text>Amount to send: {CURRENCY_SYMBOLS[currency] || ""}{Number(amount || 0).toFixed(2)}</Text>
-                    <Text>Fees: {CURRENCY_SYMBOLS[currency] || ""}{feeBreakdown.totalFees}</Text>
-                    <Text style={styles.totalFees}>
-                      Total to pay: {CURRENCY_SYMBOLS[currency] || ""}
-                      {(Number(amount || 0) + Number(feeBreakdown.totalFees)).toFixed(2)}
-                    </Text>
-                  </Card.Content>
-                </Card>
-              )}
+              <Card style={styles.infoCard}>
+                <Card.Content>
+                  <Text style={styles.infoTitle}>Total Costs</Text>
+                  <Text>Amount to send: {CURRENCY_SYMBOLS[currency] || ""}{Number(amount || 0).toFixed(2)}</Text>
+                  <Text>
+                    Applicable fees and the total to pay are confirmed by the server on
+                    submission.
+                  </Text>
+                </Card.Content>
+              </Card>
             </>
           )}
 

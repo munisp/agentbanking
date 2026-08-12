@@ -174,7 +174,9 @@ const BeneficiaryManagementScreen: React.FC<Props> = ({ navigation }) => {
     const newBeneficiary: Beneficiary = {
       ...formData,
       id: editingBeneficiary ? editingBeneficiary.id : Date.now().toString(), // Simple ID generation
-      isVerified: true, // Mock verification
+      // Verification is decided by the backend only — a newly saved beneficiary
+      // starts unverified (pending) until the server confirms it.
+      isVerified: editingBeneficiary ? editingBeneficiary.isVerified : false,
     };
 
     try {
@@ -208,7 +210,6 @@ const BeneficiaryManagementScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleEdit = (beneficiary: Beneficiary) => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
     setEditingBeneficiary(beneficiary);
     setFormData({

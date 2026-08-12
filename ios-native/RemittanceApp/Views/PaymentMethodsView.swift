@@ -8,6 +8,7 @@
 import SwiftUI
 import Combine
 import LocalAuthentication // For Biometric Authentication
+import Alamofire
 
 // MARK: - 1. Data Models
 
@@ -34,6 +35,8 @@ struct PaymentMethod: Identifiable, Codable {
         let expiryMonth: Int
         let expiryYear: Int
         let isDefault: Bool
+        /// Server-issued gateway token — the raw PAN is never stored locally.
+        let gatewayToken: String
     }
 
     struct BankAccountDetails: Codable {
@@ -41,6 +44,8 @@ struct PaymentMethod: Identifiable, Codable {
         let accountNumber: String // Last 4 digits
         let accountName: String
         let isDefault: Bool
+        /// Server-issued verification/token reference.
+        let gatewayToken: String
     }
 }
 
@@ -71,68 +76,151 @@ enum ErrorType: Error, Equatable {
     }
 }
 
-// MARK: - 2. Mock API Client
+// MARK: - 2. Payment Methods API (real backend client)
 
-/// Mock API Client for simulating backend interactions (fetching, adding, deleting payment methods).
-class APIClient {
-    // A mock store for payment methods
+/// Interface for the payment-methods backend, allowing DEBUG-only mocks for previews/tests.
+protocol PaymentMethodsAPI {
+    func fetchPaymentMethods() async throws -> [PaymentMethod]
+    /// Persists a new tokenized payment method and returns the server-created record
+    /// (server-issued id). Never trust locally-generated ids for saved instruments.
+    func addPaymentMethod(_ method: PaymentMethod) async throws -> PaymentMethod
+    func deletePaymentMethod(id: String) async throws
+}
+
+/// Real API client backed by the 54Link backend payment-methods endpoints.
+class LivePaymentMethodsAPIClient: PaymentMethodsAPI {
+    func fetchPaymentMethods() async throws -> [PaymentMethod] {
+        try await APIClient.shared.request(.paymentMethods)
+    }
+
+    func addPaymentMethod(_ method: PaymentMethod) async throws -> PaymentMethod {
+        struct AddResponse: Decodable {
+            let paymentMethod: PaymentMethod
+        }
+        let parameters: Parameters
+        switch method.details {
+        case .card(let card):
+            parameters = [
+                "type": method.type.rawValue,
+                "last4": card.last4,
+                "brand": card.brand,
+                "expiryMonth": card.expiryMonth,
+                "expiryYear": card.expiryYear,
+                "gatewayToken": card.gatewayToken
+            ]
+        case .bankAccount(let account):
+            parameters = [
+                "type": method.type.rawValue,
+                "bankName": account.bankName,
+                "accountNumber": account.accountNumber,
+                "accountName": account.accountName,
+                "gatewayToken": account.gatewayToken
+            ]
+        }
+        let response: AddResponse = try await APIClient.shared.request(
+            .paymentMethods,
+            method: .post,
+            parameters: parameters
+        )
+        return response.paymentMethod
+    }
+
+    func deletePaymentMethod(id: String) async throws {
+        let _: EmptyResponse = try await APIClient.shared.request(
+            .paymentMethod(id),
+            method: .delete
+        )
+    }
+}
+
+/// Empty success body for endpoints that return 200/204 with no payload of interest.
+private struct EmptyResponse: Decodable {}
+
+#if DEBUG
+/// Mock API client (DEBUG builds only, for previews/tests).
+class MockPaymentMethodsAPIClient: PaymentMethodsAPI {
     private var mockMethods: [PaymentMethod] = [
-        PaymentMethod(id: "card_1", type: .card, details: .card(PaymentMethod.CardDetails(last4: "4242", brand: "Visa", expiryMonth: 12, expiryYear: 2028, isDefault: true))),
-        PaymentMethod(id: "bank_1", type: .bankAccount, details: .bankAccount(PaymentMethod.BankAccountDetails(bankName: "First Bank", accountNumber: "0123", accountName: "John Doe", isDefault: false))),
-        PaymentMethod(id: "card_2", type: .card, details: .card(PaymentMethod.CardDetails(last4: "0001", brand: "Mastercard", expiryMonth: 05, expiryYear: 2026, isDefault: false)))
+        PaymentMethod(id: "card_1", type: .card, details: .card(PaymentMethod.CardDetails(last4: "4242", brand: "Visa", expiryMonth: 12, expiryYear: 2028, isDefault: true, gatewayToken: "tok_debug_1"))),
+        PaymentMethod(id: "bank_1", type: .bankAccount, details: .bankAccount(PaymentMethod.BankAccountDetails(bankName: "First Bank", accountNumber: "0123", accountName: "John Doe", isDefault: false, gatewayToken: "tok_debug_2")))
     ]
 
-    /// Simulates fetching payment methods from the backend.
     func fetchPaymentMethods() async throws -> [PaymentMethod] {
-        // Simulate network delay
         try await Task.sleep(for: .seconds(1.5))
-
-        // Simulate a potential network error 10% of the time
-        if Int.random(in: 1...10) == 1 {
-            throw ErrorType.networkError("The server is currently unreachable.")
-        }
-
         return mockMethods
     }
 
-    /// Simulates adding a new payment method.
-    func addPaymentMethod(_ method: PaymentMethod) async throws {
+    func addPaymentMethod(_ method: PaymentMethod) async throws -> PaymentMethod {
         try await Task.sleep(for: .seconds(1.0))
         mockMethods.append(method)
+        return method
     }
 
-    /// Simulates deleting a payment method.
     func deletePaymentMethod(id: String) async throws {
         try await Task.sleep(for: .seconds(0.5))
         mockMethods.removeAll { $0.id == id }
     }
 }
+#endif
 
-// MARK: - 3. Mock Payment Gateway Client
+// MARK: - 3. Payment Gateway Client (real backend tokenization)
 
-/// Mock client for integrating with payment gateways (Paystack, Flutterwave, Interswitch).
-class PaymentGatewayClient {
-    /// Simulates tokenizing card details via a payment gateway.
+/// Interface for card tokenization / bank account verification.
+protocol PaymentGatewayAPI {
+    /// Tokenizes raw card details. The PAN is sent only to the backend
+    /// tokenization endpoint; the returned gateway token is what gets stored.
+    func tokenizeCard(cardNumber: String, expiry: String, cvv: String) async throws -> String
+    /// Verifies a bank account and returns the verified account holder name.
+    func verifyBankAccount(accountNumber: String, bankName: String) async throws -> String
+}
+
+/// Real gateway client — tokenization/verification is performed server-side by the
+/// 54Link backend, which integrates with Paystack/Flutterwave/Interswitch.
+class LivePaymentGatewayClient: PaymentGatewayAPI {
+    private struct TokenizeResponse: Decodable { let token: String }
+    private struct VerifyResponse: Decodable { let accountName: String }
+
+    func tokenizeCard(cardNumber: String, expiry: String, cvv: String) async throws -> String {
+        guard cardNumber.count >= 16, cvv.count >= 3 else {
+            throw ErrorType.paymentGatewayError("Invalid card details provided.")
+        }
+        let response: TokenizeResponse = try await APIClient.shared.request(
+            .tokenizeCard,
+            method: .post,
+            parameters: ["cardNumber": cardNumber, "expiry": expiry, "cvv": cvv]
+        )
+        return response.token
+    }
+
+    func verifyBankAccount(accountNumber: String, bankName: String) async throws -> String {
+        guard accountNumber.count >= 10, !bankName.isEmpty else {
+            throw ErrorType.paymentGatewayError("Invalid bank account details provided.")
+        }
+        let response: VerifyResponse = try await APIClient.shared.request(
+            .verifyBankAccount,
+            method: .post,
+            parameters: ["accountNumber": accountNumber, "bankName": bankName]
+        )
+        return response.accountName
+    }
+}
+
+#if DEBUG
+/// Mock gateway client (DEBUG builds only, for previews/tests).
+class MockPaymentGatewayClient: PaymentGatewayAPI {
     func tokenizeCard(cardNumber: String, expiry: String, cvv: String) async throws -> String {
         try await Task.sleep(for: .seconds(1.0))
-
-        // Simple validation
         if cardNumber.count < 16 || cvv.count < 3 {
             throw ErrorType.paymentGatewayError("Invalid card details provided.")
         }
-
-        // Simulate a successful tokenization
-        return "tok_\(UUID().uuidString)"
+        return "tok_debug_\(UUID().uuidString)"
     }
 
-    /// Simulates verifying a bank account via a payment gateway.
-    func verifyBankAccount(accountNumber: String, bankCode: String) async throws -> String {
+    func verifyBankAccount(accountNumber: String, bankName: String) async throws -> String {
         try await Task.sleep(for: .seconds(1.0))
-
-        // Simulate a successful verification
-        return "verified_account_\(UUID().uuidString)"
+        return "DEBUG ACCOUNT"
     }
 }
+#endif
 
 // MARK: - 4. Local Cache Manager (Offline Support)
 
@@ -165,13 +253,13 @@ class PaymentMethodsViewModel: ObservableObject {
     @Published var error: ErrorType?
     @Published var showingAddMethodSheet: Bool = false
 
-    private let apiClient: APIClient
-    private let gatewayClient: PaymentGatewayClient
+    private let apiClient: PaymentMethodsAPI
+    private let gatewayClient: PaymentGatewayAPI
     private let cacheManager: LocalCacheManager
     private let context = LAContext()
 
-    init(apiClient: APIClient = APIClient(),
-         gatewayClient: PaymentGatewayClient = PaymentGatewayClient(),
+    init(apiClient: PaymentMethodsAPI = LivePaymentMethodsAPIClient(),
+         gatewayClient: PaymentGatewayAPI = LivePaymentGatewayClient(),
          cacheManager: LocalCacheManager = LocalCacheManager()) {
         self.apiClient = apiClient
         self.gatewayClient = gatewayClient
@@ -213,39 +301,70 @@ class PaymentMethodsViewModel: ObservableObject {
         }
     }
 
-    /// Adds a new payment method after tokenization/verification.
-    func addNewPaymentMethod(type: PaymentMethod.PaymentMethodType, details: Any) async {
-        // Simplified logic for demonstration
-        let newMethod: PaymentMethod
-        
+    /// Adds a new payment method after real tokenization/verification of the
+    /// user-supplied form details. The persisted record is the one returned by
+    /// the server (server-issued id); nothing is fabricated locally.
+    func addNewPaymentMethod(type: PaymentMethod.PaymentMethodType,
+                             cardNumber: String = "",
+                             expiry: String = "",
+                             cvv: String = "",
+                             bankName: String = "",
+                             accountNumber: String = "") async {
         do {
-            // Simulate gateway interaction based on type
+            let newMethod: PaymentMethod
             switch type {
             case .card:
-                // In a real app, you'd get card details from a form and tokenize them
-                let token = try await gatewayClient.tokenizeCard(cardNumber: "4242424242424242", expiry: "12/28", cvv: "123")
-                print("Card tokenized: \(token)")
-                let cardDetails = PaymentMethod.CardDetails(last4: "9999", brand: "Paystack Card", expiryMonth: 10, expiryYear: 2029, isDefault: false)
-                newMethod = PaymentMethod(id: "card_\(UUID().uuidString)", type: .card, details: .card(cardDetails))
+                let token = try await gatewayClient.tokenizeCard(cardNumber: cardNumber, expiry: expiry, cvv: cvv)
+                let parts = expiry.split(separator: "/")
+                guard parts.count == 2,
+                      let month = Int(parts[0]),
+                      let year = Int(parts[1]) else {
+                    throw ErrorType.validationError("Expiry must be in MM/YY format.")
+                }
+                let fullYear = year < 100 ? 2000 + year : year
+                let cardDetails = PaymentMethod.CardDetails(
+                    last4: String(cardNumber.suffix(4)),
+                    brand: PaymentMethodsViewModel.detectCardBrand(cardNumber),
+                    expiryMonth: month,
+                    expiryYear: fullYear,
+                    isDefault: false,
+                    gatewayToken: token
+                )
+                newMethod = PaymentMethod(id: "", type: .card, details: .card(cardDetails))
             case .bankAccount:
-                // In a real app, you'd get account details from a form and verify them
-                let verificationId = try await gatewayClient.verifyBankAccount(accountNumber: "0011223344", bankCode: "044")
-                print("Bank account verified: \(verificationId)")
-                let bankDetails = PaymentMethod.BankAccountDetails(bankName: "Flutterwave Bank", accountNumber: "4444", accountName: "Jane Doe", isDefault: false)
-                newMethod = PaymentMethod(id: "bank_\(UUID().uuidString)", type: .bankAccount, details: .bankAccount(bankDetails))
+                let accountName = try await gatewayClient.verifyBankAccount(accountNumber: accountNumber, bankName: bankName)
+                let bankDetails = PaymentMethod.BankAccountDetails(
+                    bankName: bankName,
+                    accountNumber: String(accountNumber.suffix(4)),
+                    accountName: accountName,
+                    isDefault: false,
+                    gatewayToken: accountName
+                )
+                newMethod = PaymentMethod(id: "", type: .bankAccount, details: .bankAccount(bankDetails))
             }
-            
-            // Add to backend
-            try await apiClient.addPaymentMethod(newMethod)
-            self.paymentMethods.append(newMethod)
+
+            // Persist on the backend; use the server-created record (real id).
+            let saved = try await apiClient.addPaymentMethod(newMethod)
+            self.paymentMethods.append(saved)
             self.cacheManager.save(self.paymentMethods)
             self.showingAddMethodSheet = false
             self.error = nil
-            
+
         } catch let gatewayError as ErrorType {
             self.error = gatewayError
         } catch {
             self.error = ErrorType.unknown(error.localizedDescription)
+        }
+    }
+
+    /// Best-effort card brand detection from the PAN (display purposes only).
+    static func detectCardBrand(_ cardNumber: String) -> String {
+        switch cardNumber.first {
+        case "4": return "Visa"
+        case "5": return "Mastercard"
+        case "3": return "Amex"
+        case "6": return "Discover"
+        default: return "Card"
         }
     }
 
@@ -266,15 +385,20 @@ class PaymentMethodsViewModel: ObservableObject {
     // MARK: - Biometric Authentication
 
     /// Performs biometric authentication (Face ID/Touch ID).
+    /// When biometrics are unavailable, falls back to the device passcode —
+    /// a sensitive action is never silently allowed without authentication.
     func authenticateForSensitiveAction(completion: @escaping (Bool) -> Void) {
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else {
-            // Biometrics not available, proceed with fallback (e.g., PIN/Password)
-            completion(true)
+        let policy: LAPolicy = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+            ? .deviceOwnerAuthenticationWithBiometrics
+            : .deviceOwnerAuthentication
+        guard context.canEvaluatePolicy(policy, error: nil) else {
+            self.error = ErrorType.biometricAuthFailed
+            completion(false)
             return
         }
 
         let reason = "To confirm your identity for managing payment methods."
-        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, authenticationError in
+        context.evaluatePolicy(policy, localizedReason: reason) { success, authenticationError in
             DispatchQueue.main.async {
                 if success {
                     completion(true)
@@ -567,9 +691,15 @@ struct AddPaymentMethodView: View {
 
     private func saveMethod() async {
         isLoading = true
-        // NOTE: In a real app, the actual details from the form would be passed to the gateway client.
-        // The viewModel.addNewPaymentMethod uses mock data for simplicity, but the structure is correct.
-        await viewModel.addNewPaymentMethod(type: selectedType, details: "Form data")
+        // Real form data is tokenized/verified and persisted server-side.
+        await viewModel.addNewPaymentMethod(
+            type: selectedType,
+            cardNumber: cardNumber,
+            expiry: expiry,
+            cvv: cvv,
+            bankName: bankName,
+            accountNumber: accountNumber
+        )
         isLoading = false
     }
 }

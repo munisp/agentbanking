@@ -1,50 +1,34 @@
 """
 Router for reporting-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
 
-WARNING (mockware remediation): these endpoints were auto-generated stubs that
-returned fabricated {"status": "ok"} responses and referenced undefined names
-(ReportRequest/ReportType/Query/Optional), so they could not even be imported.
-The REAL reporting API lives in services/reporting-service/main.py under
-/api/v1/reports/*. This stub must never shadow it; until this router is
-removed from every registration site, all endpoints fail loudly with
-501 Not Implemented instead of fabricating success.
+The real implementation lives in the standalone service (services/reporting-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/reporting-service", tags=["reporting-service"])
 
-_STUB_DETAIL = (
-    "reporting-service stub endpoint disabled: use the real reporting API in "
-    "services/reporting-service/main.py (/api/v1/reports/*)"
+_UNAVAILABLE = (
+    "reporting-service endpoints are not served by this gateway router. "
+    "Use the standalone reporting-service service."
 )
 
 
-def _not_implemented():
-    raise HTTPException(status_code=501, detail=_STUB_DETAIL)
-
-
-@router.post("/reports/generate")
-async def generate_report():
-    _not_implemented()
-
-
-@router.get("/reports/{report_id}")
-async def get_report(report_id: str):
-    _not_implemented()
-
-
-@router.get("/reports")
-async def list_reports():
-    _not_implemented()
-
-
-@router.delete("/reports/{report_id}")
-async def delete_report(report_id: str):
-    _not_implemented()
-
-
 @router.get("/health")
-async def health():
-    return {"status": "ok", "note": "stub router only; real reporting API is in main.py at /api/v1/reports/*"}
+async def health_check():
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "reporting-service", "detail": _UNAVAILABLE},
+    )
+
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

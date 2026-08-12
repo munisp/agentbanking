@@ -35,7 +35,7 @@ import {
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 import { enforcePermission } from "../_core/permify";
-import { getLivePairRate } from "../lib/fxRateFeed";
+import { getLiveFxRate } from "../lib/fxRates";
 
 const CORRIDORS = {
   "NG-GH": {
@@ -80,27 +80,25 @@ const CORRIDORS = {
   },
 } as const;
 
-// Corridor FX rates are resolved live from the Frankfurter/ECB feed via
-// fxRateFeed (Redis + DB cached, staleness-guarded). No hardcoded rates.
-
 export const crossBorderRemittanceRouter = router({
   getCorridors: protectedProcedure.query(async () => {
-    return {
-      corridors: await Promise.all(
-        Object.entries(CORRIDORS).map(async ([id, c]) => {
-          const fx = await getLivePairRate(c.source, c.destination).catch(
-            () => null
-          );
-          return {
-            id,
-            ...c,
-            currentRate: fx?.rate ?? null,
-            rateAvailable: fx !== null,
-            rateFetchedAt: fx?.fetchedAt ?? null,
-          };
-        })
-      ),
-    };
+    const corridors = await Promise.all(
+      Object.entries(CORRIDORS).map(async ([id, c]) => {
+        // Live rate when available; null when the feed cannot supply one —
+        // never a fabricated number.
+        let currentRate: number | null = null;
+        let rateFetchedAt: string | null = null;
+        try {
+          const live = await getLiveFxRate(c.source, c.destination);
+          currentRate = live.rate;
+          rateFetchedAt = live.fetchedAt;
+        } catch {
+          currentRate = null;
+        }
+        return { id, ...c, currentRate, rateFetchedAt };
+      })
+    );
+    return { corridors };
   }),
 
   quote: protectedProcedure
@@ -133,9 +131,11 @@ export const crossBorderRemittanceRouter = router({
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
       const netAmount = input.amountNGN - fee;
-      // Hard-fail when no fresh live rate exists — never quote on fake rates.
-      const fx = await getLivePairRate(corridor.source, corridor.destination);
-      const rate = fx.rate;
+      // Hard-fail without a fresh live rate — never quote at a fabricated rate
+      const { rate, fetchedAt: rateFetchedAt } = await getLiveFxRate(
+        corridor.source,
+        corridor.destination
+      );
       const receivedAmount = Math.round(netAmount * rate * 100) / 100;
 
       return {
@@ -144,8 +144,7 @@ export const crossBorderRemittanceRouter = router({
         fee,
         netAmount,
         exchangeRate: rate,
-        rateFetchedAt: fx.fetchedAt,
-        rateSource: fx.source,
+        rateFetchedAt,
         receivedAmount,
         receivedCurrency: corridor.destination,
         estimatedMinutes: corridor.estimatedMinutes,
@@ -193,9 +192,11 @@ export const crossBorderRemittanceRouter = router({
         corridor.minFee,
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
-      // Hard-fail when no fresh live rate exists — never send at fake rates.
-      const fx = await getLivePairRate(corridor.source, corridor.destination);
-      const rate = fx.rate;
+      // Hard-fail before any float debit / GL posting without a fresh live rate
+      const { rate, fetchedAt: rateFetchedAt } = await getLiveFxRate(
+        corridor.source,
+        corridor.destination
+      );
       const receivedAmount =
         Math.round((input.amountNGN - fee) * rate * 100) / 100;
 
@@ -271,7 +272,7 @@ export const crossBorderRemittanceRouter = router({
                 receivedAmount,
                 receivedCurrency: corridor.destination,
                 exchangeRate: rate,
-                rateFetchedAt: fx.fetchedAt,
+                exchangeRateFetchedAt: rateFetchedAt,
                 purpose: input.purpose,
                 recipientWallet: input.recipientWallet,
               },
@@ -354,32 +355,15 @@ export const crossBorderRemittanceRouter = router({
         { agentCode: session.agentCode }
       ).catch(() => {});
 
-      // TigerBeetle dual-ledger — if the sidecar is down the transaction is
-      // explicitly marked pending_ledger (visible to callers), never plain success.
-      const tbResult = await tbCreateTransfer({
+      // TigerBeetle dual-ledger
+      tbCreateTransfer({
         debitAccountId: "2001",
         creditAccountId: "1001",
         amount: Math.round(input.amountNGN * 100),
         ref,
         txType: "cross_border_remittance",
         agentCode: session.agentCode,
-      }).catch(() => null);
-      let ledgerStatus = "pending";
-      if (!tbResult) {
-        ledgerStatus = "pending_ledger";
-        try {
-          const db = (await getDb())!;
-          await db
-            .update(transactions)
-            .set({ status: "pending_ledger" })
-            .where(eq(transactions.id, txRecord.id));
-        } catch (e) {
-          console.error(
-            `[XBDR] Failed to mark ${ref} pending_ledger:`,
-            (e as Error).message
-          );
-        }
-      }
+      }).catch(() => {});
 
       // Fluvio + Dapr + Redis + Lakehouse
       publishTxToFluvio({
@@ -411,8 +395,7 @@ export const crossBorderRemittanceRouter = router({
 
       return {
         reference: ref,
-        status: ledgerStatus,
-        ledgerPosted: Boolean(tbResult),
+        status: "pending",
         transactionId: txRecord.id,
         corridorId: input.corridorId,
         sendAmount: input.amountNGN,

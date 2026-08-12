@@ -7,68 +7,115 @@
 
 import SwiftUI
 import Combine
+import UIKit
 import LocalAuthentication // For Biometric Authentication
 
-// MARK: - API Client Stub
+// MARK: - KYC API (real backend client)
 
-/// A stub for the API client to handle KYC-related network operations.
-/// In a real application, this would be a shared service class.
-class APIClient {
-    enum APIError: Error, LocalizedError {
-        case networkError
-        case serverError(String)
-        case invalidData
-        
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "Could not connect to the network."
-            case .serverError(let message): return message
-            case .invalidData: return "Received invalid data from the server."
-            }
+enum KYCAPIError: Error, LocalizedError {
+    case networkError
+    case serverError(String)
+    case invalidData
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError: return "Could not connect to the network."
+        case .serverError(let message): return message
+        case .invalidData: return "Received invalid data from the server."
         }
     }
-    
-    /// Simulates uploading a document and selfie to the server.
-    func uploadKYCDocuments(document: Data, selfie: Data) -> AnyPublisher<String, APIError> {
-        return Future<String, APIError> { promise in
-            // Simulate network delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                // Simulate success
-                print("APIClient: Documents uploaded successfully.")
-                promise(.success("VerificationPending"))
-                
-                // To simulate failure, uncomment the line below:
-                // promise(.failure(.serverError("Document image quality too low.")))
+}
+
+/// Interface for KYC network operations, allowing DEBUG-only mocks.
+protocol KYCAPI {
+    /// Uploads the real captured document and selfie bytes. Returns the
+    /// server-reported verification status — never a local assumption.
+    func uploadKYCDocuments(document: Data, selfie: Data) -> AnyPublisher<String, KYCAPIError>
+    func fetchVerificationStatus() -> AnyPublisher<KYCVerificationStatus, KYCAPIError>
+    func initiatePaymentGateway(gateway: PaymentGateway) -> AnyPublisher<Bool, KYCAPIError>
+}
+
+/// Real KYC client backed by the 54agent backend.
+class LiveKYCAPIClient: KYCAPI {
+    private struct UploadResponse: Decodable { let status: String }
+    private struct StatusResponse: Decodable { let status: String }
+    private struct PaymentResponse: Decodable { let status: String }
+
+    func uploadKYCDocuments(document: Data, selfie: Data) -> AnyPublisher<String, KYCAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let response: UploadResponse = try await APIClient.shared.upload(.kycDocuments) { form in
+                        form.append(document, withName: "document", fileName: "document.jpg", mimeType: "image/jpeg")
+                        form.append(selfie, withName: "selfie", fileName: "selfie.jpg", mimeType: "image/jpeg")
+                    }
+                    promise(.success(response.status))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates fetching the current verification status.
-    func fetchVerificationStatus() -> AnyPublisher<KYCVerificationStatus, APIError> {
-        return Future<KYCVerificationStatus, APIError> { promise in
-            // Simulate network delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                // In a real app, this would fetch the actual status
-                let status: KYCVerificationStatus = .pending // Assume pending after initial upload
-                print("APIClient: Fetched status: \(status)")
-                promise(.success(status))
+
+    func fetchVerificationStatus() -> AnyPublisher<KYCVerificationStatus, KYCAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let response: StatusResponse = try await APIClient.shared.request(.kycStatus)
+                    guard let status = KYCVerificationStatus(rawValue: response.status) else {
+                        promise(.failure(.invalidData))
+                        return
+                    }
+                    promise(.success(status))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates integrating with a payment gateway (e.g., for a small verification fee).
-    func initiatePaymentGateway(gateway: PaymentGateway) -> AnyPublisher<Bool, APIError> {
-        return Future<Bool, APIError> { promise in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                print("APIClient: Initiated payment via \(gateway.rawValue)")
-                promise(.success(true))
+
+    func initiatePaymentGateway(gateway: PaymentGateway) -> AnyPublisher<Bool, KYCAPIError> {
+        Future { promise in
+            Task {
+                do {
+                    let response: PaymentResponse = try await APIClient.shared.request(
+                        .paymentInitiate,
+                        method: .post,
+                        parameters: ["gateway": gateway.rawValue, "purpose": "kyc_verification_fee"]
+                    )
+                    promise(.success(response.status.lowercased() == "initiated" || response.status.lowercased() == "success"))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
 }
+
+#if DEBUG
+/// Mock KYC client (DEBUG builds only, for previews/tests).
+class MockKYCAPIClient: KYCAPI {
+    func uploadKYCDocuments(document: Data, selfie: Data) -> AnyPublisher<String, KYCAPIError> {
+        Future { promise in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                promise(.success(KYCVerificationStatus.pending.rawValue))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    func fetchVerificationStatus() -> AnyPublisher<KYCVerificationStatus, KYCAPIError> {
+        Just(.pending).setFailureType(to: KYCAPIError.self).eraseToAnyPublisher()
+    }
+
+    func initiatePaymentGateway(gateway: PaymentGateway) -> AnyPublisher<Bool, KYCAPIError> {
+        Just(true).setFailureType(to: KYCAPIError.self).eraseToAnyPublisher()
+    }
+}
+#endif
 
 // MARK: - Model and Enums
 
@@ -117,9 +164,9 @@ final class KYCVerificationViewModel: ObservableObject {
     @Published var verificationStatus: KYCVerificationStatus = .notStarted
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
-    @Published var isOffline: Bool = false // Simulate offline mode
+    @Published var isOffline: Bool = false
     
-    // Document and Selfie Data (Simulated)
+    // Document and Selfie Data (real captured images)
     @Published var documentData: Data?
     @Published var selfieData: Data?
     
@@ -128,23 +175,19 @@ final class KYCVerificationViewModel: ObservableObject {
     
     // MARK: Private Properties
     
-    private let apiClient: APIClient
+    private let apiClient: KYCAPI
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: Initialization
     
-    init(apiClient: APIClient = APIClient()) {
+    init(apiClient: KYCAPI = LiveKYCAPIClient()) {
         self.apiClient = apiClient
         // Check for cached status on initialization (Offline Mode Support)
         loadCachedStatus()
-        // Simulate network status check
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.isOffline = Bool.random() // Randomly simulate offline status
-            if self.isOffline {
-                self.errorMessage = "You are currently offline. Status may be outdated."
-            } else if self.verificationStatus == .notStarted {
-                self.fetchStatus()
-            }
+        // Fetch the authoritative status from the server; network failures
+        // surface as honest errors rather than simulated connectivity.
+        if self.verificationStatus == .notStarted {
+            self.fetchStatus()
         }
     }
     
@@ -194,9 +237,9 @@ final class KYCVerificationViewModel: ObservableObject {
                 self?.isLoading = false
                 switch completion {
                 case .failure(let error):
-                    self?.errorMessage = error.localizedDescription
-                    self?.verificationStatus = .rejected // Assume rejection on submission failure
-                    self?.saveStatus()
+                    // An upload failure is a transport error, NOT a verification
+                    // rejection — the compliance status is left untouched.
+                    self?.errorMessage = "Upload failed: \(error.localizedDescription). Your verification status is unchanged."
                 case .finished:
                     break
                 }
@@ -237,7 +280,7 @@ final class KYCVerificationViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    /// Simulates initiating a payment via the selected gateway.
+    /// Initiates a real verification-fee payment via the selected gateway.
     func initiatePayment() {
         guard !isOffline else {
             errorMessage = "Cannot initiate payment while offline."
@@ -318,9 +361,62 @@ final class KYCVerificationViewModel: ObservableObject {
 
 // MARK: - Subviews
 
-/// A view to simulate document selection/capture.
+/// UIKit image picker bridge — captures REAL document/selfie images from the
+/// camera or photo library. No fabricated image bytes are ever produced.
+struct ImagePicker: UIViewControllerRepresentable {
+    enum Source {
+        case camera
+        case photoLibrary
+
+        var uiKitSource: UIImagePickerController.SourceType {
+            switch self {
+            case .camera: return UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+            case .photoLibrary: return .photoLibrary
+            }
+        }
+    }
+
+    let source: Source
+    let onImagePicked: (Data) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = source.uiKitSource
+        picker.delegate = context.coordinator
+        if source.uiKitSource == .camera {
+            picker.cameraDevice = .front
+        }
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePicker
+        init(_ parent: ImagePicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage,
+               let data = image.jpegData(compressionQuality: 0.8) {
+                parent.onImagePicked(data)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+/// Real document capture view — presents the device photo library.
 struct DocumentUploadView: View {
     @ObservedObject var viewModel: KYCVerificationViewModel
+    @State private var showPicker = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -335,11 +431,14 @@ struct DocumentUploadView: View {
                 .accessibilityLabel(viewModel.documentData == nil ? "Document upload required" : "Document uploaded")
             
             Button(viewModel.documentData == nil ? "Select Document" : "Change Document") {
-                // In a real app, this would launch a UIImagePickerController or Camera
-                // Simulate document selection
-                viewModel.documentData = Data("Simulated Document Data".utf8)
+                showPicker = true
             }
             .buttonStyle(.borderedProminent)
+            .sheet(isPresented: $showPicker) {
+                ImagePicker(source: .photoLibrary) { data in
+                    viewModel.documentData = data
+                }
+            }
             
             if viewModel.documentData != nil {
                 Text("Document selected successfully.")
@@ -350,9 +449,11 @@ struct DocumentUploadView: View {
     }
 }
 
-/// A view to simulate selfie capture.
+/// Real selfie capture view — presents the front camera (falls back to the
+/// photo library on devices without a camera, e.g. simulator).
 struct SelfieCaptureView: View {
     @ObservedObject var viewModel: KYCVerificationViewModel
+    @State private var showPicker = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -367,11 +468,14 @@ struct SelfieCaptureView: View {
                 .accessibilityLabel(viewModel.selfieData == nil ? "Selfie capture required" : "Selfie captured")
             
             Button(viewModel.selfieData == nil ? "Capture Selfie" : "Retake Selfie") {
-                // In a real app, this would launch the camera
-                // Simulate selfie capture
-                viewModel.selfieData = Data("Simulated Selfie Data".utf8)
+                showPicker = true
             }
             .buttonStyle(.borderedProminent)
+            .sheet(isPresented: $showPicker) {
+                ImagePicker(source: .camera) { data in
+                    viewModel.selfieData = data
+                }
+            }
             
             if viewModel.selfieData != nil {
                 Text("Selfie captured successfully.")
@@ -408,7 +512,7 @@ struct SubmissionView: View {
             .background(Color(.systemGray6))
             .cornerRadius(10)
             
-            // Payment Gateway Integration Stub
+            // Payment Gateway Integration
             VStack(alignment: .leading) {
                 Text("Select Verification Fee Payment Gateway (Optional)")
                     .font(.headline)
@@ -656,15 +760,10 @@ struct KYCVerificationView: View {
                 self.isBiometricallyAuthenticated = true
                 self.biometricError = nil
             } else {
-                // Fallback to allowing access without biometrics for a production-ready view,
-                // but keep the authentication view for a better UX.
-                // For this task, we'll allow a simple retry or proceed without it.
-                // In a real app, a PIN/Password fallback would be implemented here.
+                // Authentication failed: stay on the gated screen and surface the
+                // error. Access is NEVER granted after a failed authentication.
                 self.biometricError = error
-                // For simplicity in this generated code, we'll allow bypass after failure.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    self.isBiometricallyAuthenticated = true
-                }
+                self.isBiometricallyAuthenticated = false
             }
         }
     }

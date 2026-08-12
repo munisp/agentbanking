@@ -1,8 +1,10 @@
 import logging
+import os
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -36,42 +38,62 @@ class BankNotFound(ServiceException):
         super().__init__(f"Bank with code '{bank_code}' not found.", status_code=404)
 
 class NIBSSAPIError(ServiceException):
-    """Raised when the mock NIBSS API returns an error."""
+    """Raised when the NIBSS API returns an error or is unreachable."""
     def __init__(self, message: str, status_code: int = 503) -> None:
         super().__init__(f"NIBSS API Error: {message}", status_code=status_code)
+
+class NIBSSNotConfigured(NIBSSAPIError):
+    """Raised when no real NIBSS provider is configured and simulation mode is off."""
+    def __init__(self) -> None:
+        super().__init__(
+            "NIBSS provider is not configured. Set NIBSS_BASE_URL and NIBSS_API_KEY "
+            "for a real NIBSS endpoint, or explicitly set NIBSS_SIMULATION_MODE=true "
+            "outside production.",
+            status_code=503,
+        )
 
 # --- 2. Logging Setup ---
 
 logger = logging.getLogger(__name__)
 logger.setLevel(settings.LOG_LEVEL)
 
-# --- 3. Mock NIBSS Client (Simulating External API) ---
+# --- 3. NIBSS Clients ---
 
-class MockNIBSSClient:
+class RealNIBSSClient:
     """
-    A mock client to simulate interaction with the external NIBSS API.
-    In a real application, this would use 'requests' to call the actual NIBSS endpoints.
+    HTTP client for the NIBSS API (NIP name enquiry / funds transfer).
+
+    Calls the NIBSS endpoints configured via NIBSS_BASE_URL using the
+    NIBSS_API_KEY/NIBSS_SECRET credentials. Every provider or transport
+    failure is raised as NIBSSAPIError; this client never fabricates
+    account names, BVNs, session ids, or response codes.
     """
     def __init__(self) -> None:
-        logger.info(f"Initialized Mock NIBSS Client. Base URL: {settings.NIBSS_BASE_URL}")
+        self.base_url = settings.NIBSS_BASE_URL.rstrip("/")
+        self.timeout = float(os.getenv("NIBSS_TIMEOUT_SECONDS", "15"))
+        logger.info(f"Initialized NIBSS HTTP client. Base URL: {self.base_url}")
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "APIKey": settings.NIBSS_API_KEY,
+            "Authorization": f"Bearer {settings.NIBSS_SECRET}",
+            "Content-Type": "application/json",
+        }
 
     def name_enquiry(self, request: NameEnquiryRequest) -> NameEnquiryResponse:
-        """Simulates a Name Enquiry call."""
-        logger.info(f"Mock NIBSS: Performing Name Enquiry for account {request.account_number} at bank {request.bank_code}")
-        
-        # Simple mock logic
-        if request.account_number.endswith("000"):
-            # Simulate a successful response
-            return NameEnquiryResponse(
-                account_number=request.account_number,
-                bank_code=request.bank_code,
-                account_name="JOHN DOE",
-                bvn="12345678901",
-                response_code="00",
-                response_message="Successful Name Enquiry"
-            )
-        elif request.account_number.endswith("404"):
-            # Simulate account not found
+        """Performs a real NIBSS Name Enquiry call."""
+        logger.info(f"NIBSS: Name Enquiry for account {request.account_number} at bank {request.bank_code}")
+        url = f"{self.base_url}/name-enquiry"
+        payload = {
+            "account_number": request.account_number,
+            "bank_code": request.bank_code,
+        }
+        try:
+            resp = httpx.post(url, json=payload, headers=self._headers(), timeout=self.timeout)
+        except httpx.HTTPError as e:
+            raise NIBSSAPIError(f"Name enquiry request failed: {e}", status_code=503)
+
+        if resp.status_code == 404:
             return NameEnquiryResponse(
                 account_number=request.account_number,
                 bank_code=request.bank_code,
@@ -80,27 +102,126 @@ class MockNIBSSClient:
                 response_code="404",
                 response_message="Account Not Found"
             )
-        else:
-            # Simulate a general NIBSS error
-            raise NIBSSAPIError("General NIBSS Name Enquiry failure.", status_code=503)
+        if resp.status_code != 200:
+            raise NIBSSAPIError(f"Name enquiry failed with HTTP {resp.status_code}.", status_code=503)
+
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise NIBSSAPIError(f"Name enquiry returned a malformed response: {e}", status_code=503)
+
+        return NameEnquiryResponse(
+            account_number=request.account_number,
+            bank_code=request.bank_code,
+            account_name=data.get("account_name", ""),
+            bvn=data.get("bvn"),
+            response_code=str(data.get("response_code", "")),
+            response_message=data.get("response_message", ""),
+        )
 
     def fund_transfer(self, transaction: Transaction) -> Tuple[Optional[str], str, str]:
         """
-        Simulates a NIBSS Instant Payment (NIP) fund transfer.
+        Initiates a real NIBSS Instant Payment (NIP) fund transfer.
         Returns: (nibss_session_id, response_code, response_message)
         """
-        logger.info(f"Mock NIBSS: Initiating NIP for ref {transaction.transaction_ref} with amount {transaction.amount}")
-        
-        # Simple mock logic based on amount
+        logger.info(f"NIBSS: Initiating NIP for ref {transaction.transaction_ref} with amount {transaction.amount}")
+        url = f"{self.base_url}/fund-transfer"
+        payload = {
+            "transaction_ref": transaction.transaction_ref,
+            "source_account_number": transaction.source_account_number,
+            "destination_account_number": transaction.destination_account_number,
+            "destination_bank_code": transaction.destination_bank_code,
+            "amount": str(transaction.amount),
+            "narration": transaction.narration,
+        }
+        try:
+            resp = httpx.post(url, json=payload, headers=self._headers(), timeout=self.timeout)
+        except httpx.HTTPError as e:
+            raise NIBSSAPIError(f"Fund transfer request failed: {e}", status_code=503)
+
+        if resp.status_code != 200:
+            raise NIBSSAPIError(f"Fund transfer failed with HTTP {resp.status_code}.", status_code=503)
+
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise NIBSSAPIError(f"Fund transfer returned a malformed response: {e}", status_code=503)
+
+        return (
+            data.get("session_id") or data.get("nibss_session_id"),
+            str(data.get("response_code", "")),
+            data.get("response_message", ""),
+        )
+
+
+class MockNIBSSClient:
+    """
+    Simulated NIBSS client for local development ONLY.
+
+    Only used when NIBSS_SIMULATION_MODE=true is explicitly set AND
+    ENVIRONMENT is not production (enforced at import time below).
+    Never wired in production.
+    """
+    def __init__(self) -> None:
+        logger.warning("Initialized SIMULATED NIBSS client (NIBSS_SIMULATION_MODE=true).")
+
+    def name_enquiry(self, request: NameEnquiryRequest) -> NameEnquiryResponse:
+        """Simulates a Name Enquiry call (clearly marked simulated data)."""
+        logger.info(f"Simulated NIBSS: Name Enquiry for account {request.account_number} at bank {request.bank_code}")
+        if request.account_number.endswith("404"):
+            return NameEnquiryResponse(
+                account_number=request.account_number,
+                bank_code=request.bank_code,
+                account_name="",
+                bvn=None,
+                response_code="404",
+                response_message="Account Not Found"
+            )
+        return NameEnquiryResponse(
+            account_number=request.account_number,
+            bank_code=request.bank_code,
+            account_name="SIMULATED ACCOUNT HOLDER",
+            bvn=None,
+            response_code="00",
+            response_message="SIMULATED Name Enquiry (NIBSS_SIMULATION_MODE)"
+        )
+
+    def fund_transfer(self, transaction: Transaction) -> Tuple[Optional[str], str, str]:
+        """Simulates a NIP fund transfer (never in production)."""
+        logger.info(f"Simulated NIBSS: NIP for ref {transaction.transaction_ref}")
         if transaction.amount > 1000000:
-            # Simulate a failure due to limit
-            return None, "99", "Transaction amount exceeds limit."
-        elif transaction.amount == 100:
-            # Simulate a successful transaction
-            return str(uuid.uuid4()), "00", "Transaction successful."
-        else:
-            # Simulate a pending/timeout scenario
-            return None, "90", "Transaction is pending or timed out."
+            return None, "99", "SIMULATED failure: amount exceeds limit."
+        return str(uuid.uuid4()), "00", "SIMULATED success (NIBSS_SIMULATION_MODE)"
+
+
+# --- Client selection / simulation-mode guard ---
+
+_SIMULATION_MODE = os.getenv("NIBSS_SIMULATION_MODE", "false").strip().lower() == "true"
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+
+if _SIMULATION_MODE and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "NIBSS_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production. "
+        "Refusing to start with a simulated NIBSS client."
+    )
+
+
+def _nibss_credentials_configured() -> bool:
+    return bool(
+        settings.NIBSS_API_KEY
+        and settings.NIBSS_API_KEY != "your_nibss_api_key"
+        and settings.NIBSS_BASE_URL
+        and "example.com" not in settings.NIBSS_BASE_URL
+    )
+
+
+def _build_nibss_client():
+    """Builds the NIBSS client: simulated only when explicitly gated, else real, else fail closed."""
+    if _SIMULATION_MODE:
+        return MockNIBSSClient()
+    if not _nibss_credentials_configured():
+        raise NIBSSNotConfigured()
+    return RealNIBSSClient()
 
 # --- 4. Service Layer Implementation ---
 
@@ -111,7 +232,15 @@ class NIBSSService:
     """
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.nibss_client = MockNIBSSClient()
+        self._nibss_client = None
+
+    @property
+    def nibss_client(self):
+        """Lazily builds the NIBSS client so read-only operations fail closed
+        only when a NIBSS call is actually required."""
+        if self._nibss_client is None:
+            self._nibss_client = _build_nibss_client()
+        return self._nibss_client
 
     # --- Bank Operations ---
 
@@ -135,7 +264,7 @@ class NIBSSService:
         # 1. Validate bank code exists locally
         self.get_bank_by_code(request.bank_code)
         
-        # 2. Call mock NIBSS API
+        # 2. Call NIBSS API (real client, or gated simulator)
         response = self.nibss_client.name_enquiry(request)
         
         # 3. Save enquiry result to database
@@ -190,7 +319,7 @@ class NIBSSService:
             if response_code == "00":
                 new_transaction.status = TransactionStatus.SUCCESS
             elif response_code == "90":
-                # Keep PENDING for a real-world async process, but for this sync mock, we'll mark it TIMEOUT
+                # NIBSS timeout/pending: keep as TIMEOUT for async requery
                 new_transaction.status = TransactionStatus.TIMEOUT
             else:
                 new_transaction.status = TransactionStatus.FAILED

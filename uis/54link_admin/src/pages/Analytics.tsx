@@ -1,6 +1,6 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-// import { developerPlatformService } from "@/services/developerPlatform";
+import { developerPlatformService } from "@/services/developerPlatform";
 import type { PlatformOverview } from "@/types/developerPlatform";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,39 +8,32 @@ import { useEffect, useState } from "react";
 export default function AnalyticsDashboard() {
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Use mock data for now
+    let cancelled = false;
     setLoading(true);
-    setTimeout(() => {
-      setOverview({
-        period: "month",
-        date_range: { start: "2026-01-01", end: "2026-01-29" },
-        metrics: {
-          total_api_calls: 100000,
-          successful_calls: 98000,
-          failed_calls: 2000,
-          average_latency_ms: 120,
-          uptime_percentage: 99.95,
-          active_developers: 140,
-          new_developers: 10,
-          active_apps: 80,
-          new_apps: 5,
-          total_installations: 1200,
-          new_installations: 50,
-          gmv: 5000000,
-          platform_revenue: 250000,
-        },
-        growth: { api_calls: 0, developers: 0, apps: 0, revenue: 0 },
-        top_performers: {
-          most_popular_apps: [],
-          highest_revenue_apps: [],
-          most_active_developers: [],
-        },
+    setError(null);
+    developerPlatformService
+      .getPlatformOverview({ period: "month" })
+      .then((data) => {
+        if (cancelled) return;
+        setOverview(data);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOverview(null);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load platform analytics.",
+        );
+        setLoading(false);
       });
-      setLoading(false);
-    }, 500);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) return <div className="p-6">Loading analytics...</div>;

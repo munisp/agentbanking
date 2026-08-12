@@ -1,5 +1,11 @@
-// COMMENTED OUT: Not using API calls for now - using mock data
-// import apiClient from '../api';
+/**
+ * Platform-admin onboarding service for 54link platform-level admins.
+ *
+ * Client-side format validation only. Server-side verification of BVN, NIN,
+ * phone, and email requires a backend verification endpoint that is not wired
+ * for this surface, and there is no backend onboarding submission endpoint.
+ * Submission therefore fails closed instead of fabricating a success response.
+ */
 
 /**
  * v2.perm `platform` entity roles — for 54link platform-level admins.
@@ -111,17 +117,17 @@ class OnboardingService {
   }
 
   /**
-   * Submit onboarding data
-   * Uses mock data for now, but has placeholder for API call
+   * Submit onboarding data.
+   *
+   * Runs client-side format validation, then fails closed: there is no
+   * backend onboarding endpoint configured for this admin surface, so the
+   * previous implementation's fabricated "submitted successfully" response
+   * (which also marked onboarding complete without any server round-trip)
+   * has been removed. Callers surface the thrown error to the operator.
    */
   async submitOnboarding(data: OnboardingData): Promise<OnboardingResponse> {
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Mock: Final validation before submission
     const validationErrors: ValidationError[] = [];
 
-    // Validate all fields
     const phoneValidation = await this.validatePhoneNumberAsync(data.phone);
     if (!phoneValidation.valid) {
       validationErrors.push({
@@ -154,28 +160,6 @@ class OnboardingService {
       });
     }
 
-    // Mock: Check if BVN and NIN match (they should be for the same person)
-    // This is a simplified check - in reality, this would be done server-side
-    const bvnCleaned = data.bvn.replace(/\D/g, "");
-    const ninCleaned = data.nin.replace(/\D/g, "");
-
-    // Mock: If both are valid format but don't match certain patterns, warn
-    // (In reality, this would check against a database)
-    if (bvnCleaned.length === 11 && ninCleaned.length === 11) {
-      // Mock scenario: BVN and NIN don't match the same person
-      const mockMismatchBVN = "12345678901";
-      const mockMismatchNIN = "98765432109";
-
-      if (bvnCleaned === mockMismatchBVN && ninCleaned !== mockMismatchNIN) {
-        validationErrors.push({
-          field: "bvn",
-          message:
-            "BVN and NIN do not match. Please ensure both belong to the same person",
-        });
-      }
-    }
-
-    // If there are validation errors, return them
     if (validationErrors.length > 0) {
       return {
         success: false,
@@ -184,31 +168,9 @@ class OnboardingService {
       };
     }
 
-    // Store data locally
-    this.setOnboardingData(data);
-
-    // Mock API call - replace with actual API call when ready
-    // TODO: Replace this mock with actual API call
-    // const response = await apiClient.post<OnboardingResponse>(
-    //   '/admin/onboarding',
-    //   data
-    // );
-    // return response.data;
-
-    // Store data locally
-    this.setOnboardingData(data);
-
-    // Mock successful response
-    const response = {
-      success: true,
-      message: "Onboarding data submitted successfully",
-      data,
-    };
-
-    // Mark onboarding as complete
-    this.setOnboardingComplete();
-
-    return response;
+    throw new Error(
+      "Admin onboarding submission is unavailable: no backend onboarding endpoint is configured. Your data was not submitted.",
+    );
   }
 
   /**
@@ -240,78 +202,17 @@ class OnboardingService {
   }
 
   /**
-   * Mock API validation for phone number
-   * Simulates server-side validation with network delay
+   * Async phone validation. Client-side format check only — no server-side
+   * verification endpoint is wired, so results are reported as unverified
+   * instead of simulating network delay and fabricated server verdicts.
    */
   async validatePhoneNumberAsync(phone: string): Promise<ValidationResponse> {
-    // First do client-side validation
     const clientValidation = this.validatePhoneNumber(phone);
     if (!clientValidation.valid) {
       return clientValidation;
     }
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const cleaned = phone.replace(/\D/g, "");
-
-    // Mock invalid phone numbers that would fail server validation
-    const invalidPhones = [
-      "08000000000", // All zeros
-      "08011111111", // All ones
-      "08012345678", // Mock: This number is already registered
-      "08123456789", // Mock: This number is blocked
-    ];
-
-    if (invalidPhones.includes(cleaned)) {
-      if (cleaned === "08012345678") {
-        return {
-          valid: false,
-          error: "This phone number is already registered with another account",
-          verified: true,
-        };
-      }
-      if (cleaned === "08123456789") {
-        return {
-          valid: false,
-          error: "This phone number has been blocked. Please contact support",
-          verified: true,
-        };
-      }
-      return {
-        valid: false,
-        error: "Invalid phone number format. Please check and try again",
-        verified: true,
-      };
-    }
-
-    // Mock: Check if phone starts with valid Nigerian prefixes
-    const validPrefixes = [
-      "080",
-      "081",
-      "082",
-      "083",
-      "070",
-      "071",
-      "090",
-      "091",
-    ];
-    const prefix = cleaned.substring(0, 3);
-
-    if (!validPrefixes.includes(prefix)) {
-      return {
-        valid: false,
-        error:
-          "Invalid phone number prefix. Please use a valid Nigerian mobile number",
-        verified: true,
-      };
-    }
-
-    // Valid phone number
-    return {
-      valid: true,
-      verified: true,
-    };
+    return { valid: true, verified: false };
   }
 
   /**
@@ -333,67 +234,17 @@ class OnboardingService {
   }
 
   /**
-   * Mock API validation for BVN
-   * Simulates server-side validation with network delay
+   * Async BVN validation. Client-side format check only — no server-side
+   * verification endpoint is wired, so results are reported as unverified
+   * instead of fabricating checksum/registration verdicts.
    */
   async validateBVNAsync(bvn: string): Promise<ValidationResponse> {
-    // First do client-side validation
     const clientValidation = this.validateBVN(bvn);
     if (!clientValidation.valid) {
       return clientValidation;
     }
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const cleaned = bvn.replace(/\D/g, "");
-
-    // Mock invalid BVNs that would fail server validation
-    const invalidBVNs = [
-      "00000000000", // All zeros
-      "11111111111", // All ones
-      "22222222222", // All twos
-      "12345678901", // Sequential - invalid checksum
-      "98765432109", // Reverse sequential - invalid checksum
-    ];
-
-    if (invalidBVNs.includes(cleaned)) {
-      return {
-        valid: false,
-        error: "Invalid BVN. The provided BVN does not exist or is invalid",
-        verified: true,
-      };
-    }
-
-    // Mock: Check BVN checksum (simplified validation)
-    // Real BVNs have a checksum algorithm, but we'll simulate with a simple check
-    const digits = cleaned.split("").map(Number);
-    const sum = digits.reduce((acc, digit) => acc + digit, 0);
-
-    // Mock: If sum is too low or too high, it's likely invalid
-    if (sum < 20 || sum > 90) {
-      return {
-        valid: false,
-        error: "Invalid BVN format. Please verify your BVN and try again",
-        verified: true,
-      };
-    }
-
-    // Mock: Some BVNs are already registered
-    const registeredBVNs = ["12345678901", "98765432109"];
-    if (registeredBVNs.includes(cleaned)) {
-      return {
-        valid: false,
-        error: "This BVN is already registered with another account",
-        verified: true,
-      };
-    }
-
-    // Valid BVN
-    return {
-      valid: true,
-      verified: true,
-    };
+    return { valid: true, verified: false };
   }
 
   /**
@@ -415,73 +266,21 @@ class OnboardingService {
   }
 
   /**
-   * Mock API validation for NIN
-   * Simulates server-side validation with network delay
+   * Async NIN validation. Client-side format check only — no server-side
+   * verification endpoint is wired, so results are reported as unverified
+   * instead of fabricating existence/registration verdicts.
    */
   async validateNINAsync(nin: string): Promise<ValidationResponse> {
-    // First do client-side validation
     const clientValidation = this.validateNIN(nin);
     if (!clientValidation.valid) {
       return clientValidation;
     }
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-
-    const cleaned = nin.replace(/\D/g, "");
-
-    // Mock invalid NINs that would fail server validation
-    const invalidNINs = [
-      "00000000000", // All zeros
-      "11111111111", // All ones
-      "22222222222", // All twos
-      "12345678901", // Sequential - invalid format
-      "98765432109", // Reverse sequential - invalid format
-    ];
-
-    if (invalidNINs.includes(cleaned)) {
-      return {
-        valid: false,
-        error: "Invalid NIN. The provided NIN does not exist or is invalid",
-        verified: true,
-      };
-    }
-
-    // Mock: Check NIN format (NINs typically start with specific patterns)
-    // Real NINs have specific validation rules, but we'll simulate
-    const firstDigit = cleaned[0];
-
-    // Mock: NINs typically don't start with 0
-    if (firstDigit === "0") {
-      return {
-        valid: false,
-        error: "Invalid NIN format. Please verify your NIN and try again",
-        verified: true,
-      };
-    }
-
-    // Mock: Some NINs are already registered
-    const registeredNINs = ["12345678901", "98765432109"];
-    if (registeredNINs.includes(cleaned)) {
-      return {
-        valid: false,
-        error: "This NIN is already registered with another account",
-        verified: true,
-      };
-    }
-
-    // Mock: Check if NIN matches BVN (they should match for the same person)
-    // This would be checked during final submission, not during individual field validation
-
-    // Valid NIN
-    return {
-      valid: true,
-      verified: true,
-    };
+    return { valid: true, verified: false };
   }
 
   /**
-   * Mock validation for email format
+   * Validate email format - Client-side validation
    */
   validateEmail(email: string): { valid: boolean; error?: string } {
     if (!email.trim()) {
@@ -511,50 +310,17 @@ class OnboardingService {
   }
 
   /**
-   * Mock API validation for email
-   * Simulates server-side validation with network delay
+   * Async email validation. Client-side format check only — no server-side
+   * verification endpoint is wired, so results are reported as unverified
+   * instead of fabricating registration/disposable-domain verdicts.
    */
   async validateEmailAsync(email: string): Promise<ValidationResponse> {
-    // First do client-side validation
     const clientValidation = this.validateEmail(email);
     if (!clientValidation.valid) {
       return clientValidation;
     }
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    // Mock: Check if email is already registered
-    const registeredEmails = ["test@example.com", "admin@test.com"];
-    if (registeredEmails.includes(email.toLowerCase())) {
-      return {
-        valid: false,
-        error: "This email address is already registered",
-        verified: true,
-      };
-    }
-
-    // Mock: Check for disposable email domains
-    const disposableDomains = [
-      "tempmail.com",
-      "throwaway.email",
-      "10minutemail.com",
-    ];
-    const domain = email.split("@")[1]?.toLowerCase();
-    if (domain && disposableDomains.includes(domain)) {
-      return {
-        valid: false,
-        error:
-          "Disposable email addresses are not allowed. Please use a permanent email address",
-        verified: true,
-      };
-    }
-
-    // Valid email
-    return {
-      valid: true,
-      verified: true,
-    };
+    return { valid: true, verified: false };
   }
 
   /**

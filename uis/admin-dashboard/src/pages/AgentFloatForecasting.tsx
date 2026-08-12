@@ -47,97 +47,6 @@ type AgentForecast = {
   lastReplenished?: string;
 };
 
-const MOCK_AGENTS: AgentForecast[] = [
-  {
-    id: "AGT-001",
-    name: "Adebayo Ogundimu",
-    currentFloat: 450000,
-    predictedNeed: 820000,
-    shortfall: 370000,
-    risk: "high",
-    location: "Lagos - Ikeja",
-    avgDailyVolume: 780000,
-    lastReplenished: "2 days ago",
-  },
-  {
-    id: "AGT-002",
-    name: "Chioma Eze",
-    currentFloat: 280000,
-    predictedNeed: 650000,
-    shortfall: 370000,
-    risk: "critical",
-    location: "Abuja - Wuse",
-    avgDailyVolume: 620000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-003",
-    name: "Ibrahim Musa",
-    currentFloat: 1200000,
-    predictedNeed: 900000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kano - Nassarawa",
-    avgDailyVolume: 850000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-004",
-    name: "Fatima Bello",
-    currentFloat: 520000,
-    predictedNeed: 750000,
-    shortfall: 230000,
-    risk: "medium",
-    location: "Port Harcourt",
-    avgDailyVolume: 710000,
-    lastReplenished: "4 days ago",
-  },
-  {
-    id: "AGT-005",
-    name: "Emeka Nwosu",
-    currentFloat: 180000,
-    predictedNeed: 600000,
-    shortfall: 420000,
-    risk: "critical",
-    location: "Enugu - New Haven",
-    avgDailyVolume: 580000,
-    lastReplenished: "5 days ago",
-  },
-  {
-    id: "AGT-006",
-    name: "Aisha Yusuf",
-    currentFloat: 890000,
-    predictedNeed: 700000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kaduna - Barnawa",
-    avgDailyVolume: 660000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-007",
-    name: "Oluwaseun Adeyemi",
-    currentFloat: 340000,
-    predictedNeed: 580000,
-    shortfall: 240000,
-    risk: "high",
-    location: "Ibadan - Bodija",
-    avgDailyVolume: 540000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-008",
-    name: "Grace Okafor",
-    currentFloat: 670000,
-    predictedNeed: 620000,
-    shortfall: 0,
-    risk: "low",
-    location: "Benin City",
-    avgDailyVolume: 600000,
-    lastReplenished: "2 days ago",
-  },
-];
-
 export default function AgentFloatForecasting() {
   const [selectedPeriod, setSelectedPeriod] = useState("7d");
   const [replenishDialogOpen, setReplenishDialogOpen] = useState(false);
@@ -189,10 +98,15 @@ export default function AgentFloatForecasting() {
 
   const handleConfirmReplenish = () => {
     if (!selectedAgent) return;
-    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount: 50000 });
+    triggerReplenishment.mutate({
+      agentId: selectedAgent.id,
+      amount: Number(replenishAmount),
+    });
   };
 
-  const agents = forecast.data?.forecasts ?? MOCK_AGENTS;
+  const agents =
+    (forecast.data?.forecasts as unknown as AgentForecast[] | undefined) ?? [];
+  const hasForecast = agents.length > 0;
 
   return (
     <DashboardLayout>
@@ -218,6 +132,23 @@ export default function AgentFloatForecasting() {
           </div>
         </div>
 
+        {forecast.isError && (
+          <Card className="border-red-500/50 bg-red-500/10">
+            <CardContent className="py-4 flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-500" />
+              <div>
+                <div className="font-medium text-red-500">
+                  Failed to load float forecasts
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {(forecast.error as any)?.message ||
+                    "An unexpected error occurred. Replenishment actions are disabled."}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
@@ -228,11 +159,13 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ₦{(stats.data?.totalFloat ?? 2450000000).toLocaleString()}
+                {stats.data?.totalFloat != null
+                  ? `₦${stats.data.totalFloat.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-green-500 flex items-center gap-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
-                +12.3% from last week
+                {stats.data ? "Live data" : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -244,10 +177,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-500">
-                {stats.data?.stockoutRisk ?? 47}
+                {stats.data?.stockoutRisk ?? "—"}
               </div>
               <p className="text-xs text-muted-foreground">
-                of {stats.data?.agentsMonitored ?? 1250} active agents
+                {stats.data?.agentsMonitored != null
+                  ? `of ${stats.data.agentsMonitored} active agents`
+                  : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -259,9 +194,13 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                ₦{(stats.data?.predictedDemand7d ?? 85000000).toLocaleString()}
+                {stats.data?.predictedDemand7d != null
+                  ? `₦${stats.data.predictedDemand7d.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">Across 23 agents</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.data ? "Across monitored agents" : "No data available"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -272,7 +211,9 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                {stats.data?.avgAccuracy ?? 94.7}%
+                {stats.data?.avgAccuracy != null
+                  ? `${stats.data.avgAccuracy}%`
+                  : "—"}
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
@@ -291,7 +232,16 @@ export default function AgentFloatForecasting() {
                     amount: 50000,
                   })
                 }
-                disabled={triggerReplenishment.isPending}
+                disabled={
+                  triggerReplenishment.isPending ||
+                  !hasForecast ||
+                  forecast.isError
+                }
+                title={
+                  !hasForecast
+                    ? "No live forecast data — replenishment disabled"
+                    : undefined
+                }
               >
                 {triggerReplenishment.isPending
                   ? "Processing..."
@@ -313,8 +263,28 @@ export default function AgentFloatForecasting() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(forecast.data?.forecasts as unknown as AgentForecast[]).map(
-                    (agent: any) => (
+                  {forecast.isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        Loading forecasts…
+                      </td>
+                    </tr>
+                  ) : !hasForecast ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        {forecast.isError
+                          ? "Forecasts unavailable due to an error."
+                          : "No float forecasts available."}
+                      </td>
+                    </tr>
+                  ) : (
+                    agents.map((agent: any) => (
                       <tr key={agent.id} className="border-b hover:bg-muted/50">
                         <td className="py-3 px-2">
                           <div className="font-medium">{agent.name}</div>
@@ -365,7 +335,7 @@ export default function AgentFloatForecasting() {
                           )}
                         </td>
                       </tr>
-                    )
+                    ))
                   )}
                 </tbody>
               </table>
@@ -414,28 +384,34 @@ export default function AgentFloatForecasting() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Training Data Points</span>
-                <span className="font-medium">2.4M transactions</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Features Used</span>
-                <span className="font-medium">
-                  Transaction volume, day-of-week, location, seasonality
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Model Type</span>
-                <span className="font-medium">LSTM + XGBoost Ensemble</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Last Retrained</span>
-                <span className="font-medium">2 hours ago</span>
-              </div>
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm">Next Retrain</span>
-                <span className="font-medium">In 22 hours</span>
-              </div>
+              {stats.data ? (
+                <>
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm">Model Accuracy (30d MAPE)</span>
+                    <span className="font-medium">
+                      {stats.data.avgAccuracy != null
+                        ? `${stats.data.avgAccuracy}%`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm">Agents Monitored</span>
+                    <span className="font-medium">
+                      {stats.data.agentsMonitored ?? "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm">Agents Below Threshold</span>
+                    <span className="font-medium">
+                      {stats.data.stockoutRisk ?? "—"}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  Model insights are not available.
+                </p>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -443,58 +419,9 @@ export default function AgentFloatForecasting() {
               <CardTitle className="text-lg">Replenishment History</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {[
-                {
-                  date: "Today 09:15",
-                  agents: 12,
-                  amount: 15600000,
-                  status: "completed",
-                },
-                {
-                  date: "Yesterday 18:30",
-                  agents: 8,
-                  amount: 9200000,
-                  status: "completed",
-                },
-                {
-                  date: "Yesterday 09:00",
-                  agents: 15,
-                  amount: 21400000,
-                  status: "completed",
-                },
-                {
-                  date: "Apr 19, 14:45",
-                  agents: 5,
-                  amount: 6800000,
-                  status: "completed",
-                },
-                {
-                  date: "Apr 19, 09:00",
-                  agents: 18,
-                  amount: 24100000,
-                  status: "completed",
-                },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  className="flex justify-between items-center py-2 border-b last:border-0"
-                >
-                  <div>
-                    <div className="text-sm font-medium">{item.date}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.agents} agents replenished
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-medium">
-                      ₦{item.amount.toLocaleString()}
-                    </div>
-                    <Badge variant="outline" className="text-green-500">
-                      {item.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                Replenishment history is not available.
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -666,7 +593,7 @@ export default function AgentFloatForecasting() {
                           <SelectItem value="platform-pool">
                             <span className="flex items-center gap-2">
                               <Building2 className="h-3 w-3" /> Platform Float
-                              Pool (₦2.45B available)
+                              Pool
                             </span>
                           </SelectItem>
                           <SelectItem value="bank-transfer">
@@ -810,9 +737,9 @@ export default function AgentFloatForecasting() {
 
                   <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
                     <strong>Audit Trail:</strong> This action will be logged
-                    under your admin account (Dev Admin) with timestamp, agent
-                    ID, amount, and source. The agent will receive an SMS and
-                    push notification upon fund arrival.
+                    under your admin account with timestamp, agent ID, amount,
+                    and source. The agent will receive an SMS and push
+                    notification upon fund arrival.
                   </div>
                 </div>
               )}

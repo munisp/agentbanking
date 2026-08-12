@@ -186,36 +186,19 @@ This is an automated alert from 54link-dev Admin Dashboard
 }
 
 /**
- * Send email notification via backend API
- * In production, this would call a tRPC endpoint that uses SendGrid/AWS SES
+ * Send email notification via a backend email endpoint.
+ *
+ * Fails loudly: no backend email endpoint is wired for this admin surface.
+ * The previous implementation logged to the console and returned `true`,
+ * fabricating successful delivery, which has been removed.
  */
 export async function sendEmailNotification(
-  alert: Alert,
-  recipients: string[]
+  _alert: Alert,
+  _recipients: string[]
 ): Promise<boolean> {
-  try {
-    const htmlContent = generateAlertEmailHTML(alert);
-    const textContent = generateAlertEmailText(alert);
-
-    // TODO: Replace with actual tRPC call
-    // await trpc.notification.sendEmail.mutate({
-    //   to: recipients,
-    //   subject: `[${alert.severity.toUpperCase()}] ${alert.title}`,
-    //   html: htmlContent,
-    //   text: textContent,
-    // });
-
-    // Mock implementation for demo
-    console.log('Email notification would be sent to:', recipients);
-    console.log('Subject:', `[${alert.severity.toUpperCase()}] ${alert.title}`);
-    console.log('HTML length:', htmlContent.length);
-    console.log('Text length:', textContent.length);
-
-    return true;
-  } catch (error) {
-    console.error('Failed to send email notification:', error);
-    return false;
-  }
+  throw new Error(
+    "Email notification delivery is unavailable: no backend email endpoint is configured for alert notifications."
+  );
 }
 
 /**
@@ -229,10 +212,10 @@ export async function sendBatchEmailNotifications(
   let failed = 0;
 
   for (const alert of alerts) {
-    const result = await sendEmailNotification(alert, recipients);
-    if (result) {
+    try {
+      await sendEmailNotification(alert, recipients);
       success++;
-    } else {
+    } catch {
       failed++;
     }
   }

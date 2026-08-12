@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // ...existing code...
+import { developerPlatformService } from "@/services/developerPlatform";
 import type {
     Organization,
 } from "@/types/developerPlatform";
@@ -15,58 +16,20 @@ export default function OrganizationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Use mock data for now
-    setLoading(true);
-    setTimeout(() => {
-      setOrganizations([
-        {
-          id: "org-1",
-          name: "Acme Corp",
-          legal_name: "Acme Corporation",
-          country: "NG",
-          kyb_status: "verified",
-          tier_level: "enterprise",
-          total_developers: 1,
-          total_apps: 2,
-          monthly_revenue: 100000,
-          status: "active",
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      setLoading(false);
-    }, 500);
-  }, []); // Fixed: removed undefined 'filters' and 'page' from dependencies
+    loadOrganizations();
+  }, []);
 
   const loadOrganizations = async () => {
     try {
       setLoading(true);
       setError(null);
-      // Use mock data for now
-      setTimeout(() => {
-        setOrganizations([
-          {
-            id: "org-1",
-            name: "Acme Corp",
-            legal_name: "Acme Corporation",
-            country: "NG",
-            kyb_status: "verified",
-            tier_level: "enterprise",
-            total_developers: 1,
-            total_apps: 2,
-            monthly_revenue: 100000,
-            status: "active",
-            created_at: new Date().toISOString(),
-          },
-        ]);
-        setLoading(false);
-      }, 500);
-      // Uncomment when ready to use real API:
-      // const response = await developerPlatformService.listOrganizations();
-      // setOrganizations(response.organizations);
+      const response = await developerPlatformService.listOrganizations();
+      setOrganizations(response.organizations);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load organizations";
       setError(message);
+    } finally {
       setLoading(false);
     }
   };

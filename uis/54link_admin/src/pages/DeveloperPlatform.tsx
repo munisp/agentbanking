@@ -12,6 +12,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // ...existing code...
+import { developerPlatformService } from "@/services/developerPlatform";
 import type {
   MarketplaceStats,
   PlatformOverview,
@@ -46,109 +47,19 @@ export default function DeveloperPlatformDashboard() {
       setLoading(true);
       setError(null);
 
-      // Use mock data for now
-      setTimeout(() => {
-        setPlatformOverview({
-          period: "month",
-          date_range: {
-            start: "2026-01-01",
-            end: "2026-01-29",
-          },
-          metrics: {
-            total_api_calls: 5000000,
-            successful_calls: 4950000,
-            failed_calls: 50000,
-            average_latency_ms: 120,
-            uptime_percentage: 99.95,
-            active_developers: 140,
-            new_developers: 10,
-            active_apps: 280,
-            new_apps: 5,
-            total_installations: 12000,
-            new_installations: 200,
-            gmv: 500000000,
-            platform_revenue: 25000000,
-          },
-          growth: {
-            api_calls: 5,
-            developers: 2,
-            apps: 1,
-            revenue: 8.2,
-          },
-          top_performers: {
-            most_popular_apps: [],
-            highest_revenue_apps: [],
-            most_active_developers: [],
-          },
-        });
-        setMarketplaceStats({
-          total_apps: 320,
-          published_apps: 250,
-          pending_review: 12,
-          featured_apps: 5,
-          total_installations: 12000,
-          active_installations: 11000,
-          total_developers: 150,
-          active_developers: 140,
-          categories: [
-            { category: "Payments", app_count: 80, installations: 4000 },
-            { category: "Lending", app_count: 50, installations: 2500 },
-            { category: "KYC/Compliance", app_count: 30, installations: 1800 },
-            { category: "Analytics", app_count: 40, installations: 2000 },
-            { category: "Utilities", app_count: 20, installations: 700 },
-          ],
-          top_apps: [
-            {
-              app_id: "app1",
-              name: "PayLink",
-              installations: 1800,
-              rating: 4.8,
-            },
-            {
-              app_id: "app2",
-              name: "QuickLoan",
-              installations: 1500,
-              rating: 4.6,
-            },
-            {
-              app_id: "app3",
-              name: "KYCPro",
-              installations: 1200,
-              rating: 4.7,
-            },
-            {
-              app_id: "app4",
-              name: "Insight360",
-              installations: 1100,
-              rating: 4.5,
-            },
-            {
-              app_id: "app5",
-              name: "UtilityHub",
-              installations: 900,
-              rating: 4.4,
-            },
-          ],
-          revenue: {
-            monthly_gmv: 500000000,
-            platform_fees: 25000000,
-            growth_percentage: 8.2,
-          },
-        });
-        setLoading(false);
-      }, 500);
-
-      // Uncomment when ready to use real API:
-      // const overview = await developerPlatformService.getPlatformOverview({
-      //   period: "month",
-      // });
-      // setPlatformOverview(overview);
+      const [overview, stats] = await Promise.all([
+        developerPlatformService.getPlatformOverview({ period: "month" }),
+        developerPlatformService.getMarketplaceStats(),
+      ]);
+      setPlatformOverview(overview);
+      setMarketplaceStats(stats);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load dashboard data";
       setError(message);
       console.error("Error loading dashboard:", err);
       toast.error(message);
+    } finally {
       setLoading(false);
     }
   };
@@ -336,11 +247,10 @@ export default function DeveloperPlatformDashboard() {
             </CardContent>
           </Card>
 
-          {/* Demo Marketplace Apps Data */}
           {marketplaceStats && (
             <Card>
               <CardHeader>
-                <CardTitle>Marketplace Overview (Demo Data)</CardTitle>
+                <CardTitle>Marketplace Overview</CardTitle>
                 <CardDescription>
                   Key marketplace app stats and top apps
                 </CardDescription>

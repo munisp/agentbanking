@@ -146,61 +146,70 @@ describe('OnboardingService', () => {
     it('rejects invalid format without hitting async validation', async () => {
       const result = await onboardingService.validatePhoneNumberAsync('abc');
       expect(result.valid).toBe(false);
-    }, 10000);
+    });
 
-    it('rejects already-registered phone number', async () => {
+    it('accepts valid format and reports it as unverified (no server verification wired)', async () => {
       const result = await onboardingService.validatePhoneNumberAsync('08012345678');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('already registered');
-    }, 10000);
-
-    it('rejects blocked phone number', async () => {
-      const result = await onboardingService.validatePhoneNumberAsync('08123456789');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('blocked');
-    }, 10000);
+      expect(result.valid).toBe(true);
+      expect(result.verified).toBe(false);
+    });
   });
 
   describe('validateBVNAsync', () => {
     it('rejects invalid format without async call', async () => {
       const result = await onboardingService.validateBVNAsync('123');
       expect(result.valid).toBe(false);
-    }, 10000);
+    });
 
-    it('rejects all-zero BVN', async () => {
-      const result = await onboardingService.validateBVNAsync('00000000000');
-      expect(result.valid).toBe(false);
-    }, 10000);
+    it('accepts 11-digit BVN and reports it as unverified', async () => {
+      const result = await onboardingService.validateBVNAsync('22345678901');
+      expect(result.valid).toBe(true);
+      expect(result.verified).toBe(false);
+    });
   });
 
   describe('validateNINAsync', () => {
-    it('rejects NIN starting with 0', async () => {
+    it('accepts 11-digit NIN and reports it as unverified', async () => {
       const result = await onboardingService.validateNINAsync('01234567890');
-      expect(result.valid).toBe(false);
-    }, 10000);
+      expect(result.valid).toBe(true);
+      expect(result.verified).toBe(false);
+    });
 
-    it('rejects all-zero NIN', async () => {
-      const result = await onboardingService.validateNINAsync('00000000000');
+    it('rejects NIN with invalid length', async () => {
+      const result = await onboardingService.validateNINAsync('0123456789');
       expect(result.valid).toBe(false);
-    }, 10000);
+    });
   });
 
   describe('validateEmailAsync', () => {
-    it('rejects already-registered emails', async () => {
+    it('accepts valid email and reports it as unverified', async () => {
       const result = await onboardingService.validateEmailAsync('test@example.com');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('already registered');
-    }, 10000);
-
-    it('rejects disposable email domains', async () => {
-      const result = await onboardingService.validateEmailAsync('user@tempmail.com');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Disposable');
-    }, 10000);
+      expect(result.valid).toBe(true);
+      expect(result.verified).toBe(false);
+    });
 
     it('rejects invalid email format without async validation', async () => {
       const result = await onboardingService.validateEmailAsync('not-an-email');
       expect(result.valid).toBe(false);
-    }, 10000);
+    });
+  });
+
+  describe('submitOnboarding', () => {
+    const validData = {
+      name: 'John Doe', email: 'john@54link.com', phone: '08099887766',
+      address: '1 Lagos St', city: 'Lagos', state: 'Lagos', country: 'NG',
+      bvn: '22345678901', nin: '23456789012', platform_role: 'support_agent' as const,
+    };
+
+    it('returns validation errors for invalid fields', async () => {
+      const response = await onboardingService.submitOnboarding({ ...validData, bvn: '123' });
+      expect(response.success).toBe(false);
+      expect(response.errors?.some((error) => error.field === 'bvn')).toBe(true);
+    });
+
+    it('fails closed instead of fabricating success when no backend endpoint is configured', async () => {
+      await expect(onboardingService.submitOnboarding(validData)).rejects.toThrow(/unavailable/);
+      expect(onboardingService.isOnboardingComplete()).toBe(false);
+    });
   });
 });

@@ -47,36 +47,6 @@ export function useRealTimeData<T>(
 }
 
 /**
- * Generate realistic random variations for metrics
- */
-export function generateVariation(
-  baseValue: number,
-  variationPercent: number = 2
-): number {
-  const variation = baseValue * (variationPercent / 100);
-  const change = (Math.random() - 0.5) * 2 * variation;
-  return Math.round(baseValue + change);
-}
-
-/**
- * Generate realistic growth trend (mostly positive with occasional dips)
- */
-export function generateGrowthTrend(
-  baseValue: number,
-  growthRate: number = 0.5
-): number {
-  // 80% chance of growth, 20% chance of slight decline
-  const isGrowth = Math.random() > 0.2;
-  const maxChange = baseValue * (growthRate / 100);
-  
-  if (isGrowth) {
-    return Math.round(baseValue + Math.random() * maxChange);
-  } else {
-    return Math.round(baseValue - Math.random() * maxChange * 0.3);
-  }
-}
-
-/**
  * Animate number changes with smooth transitions
  */
 export function useAnimatedCounter(targetValue: number, duration: number = 1000) {

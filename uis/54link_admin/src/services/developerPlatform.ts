@@ -189,35 +189,8 @@ class DeveloperPlatformService {
   // ============================================
 
   async listAppsPendingReview(): Promise<Types.PendingReviewResponse> {
-    // Return mock data instead of making an API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          apps: [
-            {
-              app_id: "data-brick-1",
-              name: "Data Brick",
-              developer_id: "dev-1",
-              developer_name: "Jane Doe",
-              organization_name: "Acme Corp",
-              category: "Finance",
-              version: "1.0.0",
-              submitted_at: new Date().toISOString(),
-              days_in_review: 2,
-              priority: "normal",
-              review_status: {
-                security_scan: "pending",
-                compliance_check: "pending",
-                functionality_test: "pending",
-                documentation_review: "pending",
-              },
-            },
-          ],
-          total: 1,
-          average_review_time_days: 2,
-        });
-      }, 300);
-    });
+    const response = await this.api.get("/api/v1/admin/apps/pending-review");
+    return response.data;
   }
 
   async getAppReviewDetails(appId: string): Promise<Types.AppReviewDetails> {

@@ -21,6 +21,13 @@ Environment:
   AT_API_KEY, AT_USERNAME, AT_SENDER_ID, AT_ENVIRONMENT
   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (failover)
   KAFKA_BROKER, REDIS_URL
+
+Production safety:
+  - AT_ENVIRONMENT defaults to "production" (live api.africastalking.com).
+  - In production, the service REFUSES TO START without AT_API_KEY and
+    AT_USERNAME — a missing API key must never silently degrade OTP/SMS
+    delivery.
+  - Without an API key (sandbox/dev only), sends return success=False.
 """
 
 import os
@@ -63,9 +70,11 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 AT_API_KEY = os.getenv("AT_API_KEY", "")
-AT_USERNAME = os.getenv("AT_USERNAME", "sandbox")
+AT_USERNAME = os.getenv("AT_USERNAME", "")
 AT_SENDER_ID = os.getenv("AT_SENDER_ID", "54agent")
-AT_ENVIRONMENT = os.getenv("AT_ENVIRONMENT", "sandbox")
+# Default to the LIVE environment: a service that silently targets sandbox in
+# production delivers no OTPs. Sandbox must be opted into explicitly.
+AT_ENVIRONMENT = os.getenv("AT_ENVIRONMENT", "production").lower()
 AT_BASE_URL = (
     "https://api.sandbox.africastalking.com"
     if AT_ENVIRONMENT == "sandbox"
@@ -74,6 +83,26 @@ AT_BASE_URL = (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("at-sms-sender")
+
+
+def validate_startup_config():
+    """Fail fast when production is missing required provider credentials."""
+    if AT_ENVIRONMENT != "sandbox":
+        missing = []
+        if not AT_API_KEY:
+            missing.append("AT_API_KEY")
+        if not AT_USERNAME:
+            missing.append("AT_USERNAME")
+        if missing:
+            raise SystemExit(
+                f"[AT-SMS-Sender] FATAL: {', '.join(missing)} must be set when "
+                f"AT_ENVIRONMENT={AT_ENVIRONMENT!r}. Refusing to start without a "
+                "working SMS provider — OTP and transactional SMS would be lost."
+            )
+    elif not AT_API_KEY:
+        logger.warning(
+            "[AT-SMS-Sender] AT_API_KEY not set (sandbox mode) — sends will return success=False"
+        )
 
 # ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -260,16 +289,16 @@ class ATSMSClient:
         timestamp = datetime.utcnow().isoformat() + "Z"
 
         if not self.api_key:
-            # Console fallback
-            msg_id = f"console_{hashlib.md5(f'{phone}{timestamp}'.encode()).hexdigest()[:12]}"
-            logger.info(f"[CONSOLE] SMS to {phone}: {request.message[:80]}...")
-            rate_limiter.record(request.sender_id)
+            # No provider configured — NEVER report success. A fabricated
+            # message id here means OTPs silently never arrive.
+            logger.error(
+                f"[AT] AT_API_KEY not configured — refusing to send SMS to {phone} "
+                "and NOT reporting success"
+            )
             return SMSResult(
-                success=True,
-                message_id=msg_id,
-                status="Sent",
-                cost="NGN 0.00",
-                provider="console",
+                success=False,
+                error="SMS provider not configured (AT_API_KEY missing)",
+                provider="africastalking",
                 timestamp=timestamp,
             )
 
@@ -302,16 +331,24 @@ class ATSMSClient:
                 if recipients:
                     r = recipients[0]
                     msg_id = r.get("messageId", "")
+                    status = r.get("status", "")
+                    if status.lower() in ("failed", "rejected") or not msg_id:
+                        return SMSResult(
+                            success=False,
+                            error=f"AT rejected message: {r}",
+                            provider="africastalking",
+                            timestamp=timestamp,
+                        )
                     rate_limiter.record(request.sender_id)
                     self.delivery_logs[msg_id] = DeliveryStatus(
                         message_id=msg_id,
                         phone=phone,
-                        status=r.get("status", "Sent"),
+                        status=status or "Sent",
                     )
                     return SMSResult(
                         success=True,
                         message_id=msg_id,
-                        status=r.get("status", "Sent"),
+                        status=status or "Sent",
                         cost=r.get("cost", ""),
                         provider="africastalking",
                         timestamp=timestamp,
@@ -342,7 +379,7 @@ class ATSMSClient:
     def get_balance(self) -> dict:
         """Check AT SMS balance."""
         if not self.api_key:
-            return {"balance": "sandbox", "currency": "NGN"}
+            return {"error": "SMS provider not configured (AT_API_KEY missing)"}
         try:
             import requests as http_requests
             url = f"{self.base_url}/version1/user?username={self.username}"
@@ -372,29 +409,34 @@ except ImportError:
 client = ATSMSClient()
 
 def create_app():
+    if Flask is None:
+        raise RuntimeError("Flask not installed. Run: pip install flask")
+
+    # Refuse to serve in production without a working SMS provider.
+    validate_startup_config()
+
     app = Flask(__name__)
-# ─── Security Hardening (CVE-2024-34069, CVE-2026-27205) ─────────────────────
-import os as _os
-_flask_env = _os.getenv("FLASK_ENV", _os.getenv("APP_ENV", "production")).lower()
-if _flask_env != "development":
-    app.config["DEBUG"] = False
-    app.config["TESTING"] = False
-    _os.environ["WERKZEUG_DEBUG_PIN"] = "off"
-app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SECRET_KEY"] = _os.getenv("FLASK_SECRET_KEY", _os.urandom(32).hex())
 
-@app.after_request
-def _add_security_headers(response):
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers.pop("Server", None)
-    return response
-# ─────────────────────────────────────────────────────────────────────────────
+    # ─── Security Hardening (CVE-2024-34069, CVE-2026-27205) ─────────────────
+    _flask_env = os.getenv("FLASK_ENV", os.getenv("APP_ENV", "production")).lower()
+    if _flask_env != "development":
+        app.config["DEBUG"] = False
+        app.config["TESTING"] = False
+        os.environ["WERKZEUG_DEBUG_PIN"] = "off"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", os.urandom(32).hex())
 
+    @app.after_request
+    def _add_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers.pop("Server", None)
+        return response
+    # ─────────────────────────────────────────────────────────────────────────
 
     @app.route("/sms/send", methods=["POST"])
     def send_sms():

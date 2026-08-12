@@ -16,15 +16,24 @@ USSD Flow:
 
 	*347*54# → Main Menu → 1.CashIn 2.CashOut 3.Transfer 4.Airtime 5.Balance 6.MiniStatement
 	Each selection → amount → confirm → receipt via SMS
+
+Backend integration (REQUIRED — this gateway never fabricates financial data):
+
+	LEDGER_API_URL       — wallet/ledger API for balances and mini statements
+	TRANSACTION_API_URL  — transaction engine for execution (real references)
+	AUTH_API_URL         — auth service for PIN verification
 */
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -79,6 +88,152 @@ type USSDSession struct {
 	StepHistory    []string        `json:"stepHistory"`
 	Carrier        string          `json:"carrier,omitempty"`
 	NetworkType    string          `json:"networkType,omitempty"` // 2G, 3G, etc.
+}
+
+// ── Backend Service Clients ──────────────────────────────────────────────────
+//
+// All balances, statements, PIN verification and transaction execution are
+// delegated to real backend services. This gateway NEVER fabricates financial
+// data and only reports success with a real backend-issued reference.
+
+var (
+	ledgerAPIURL = strings.TrimRight(os.Getenv("LEDGER_API_URL"), "/")
+	txAPIURL     = strings.TrimRight(os.Getenv("TRANSACTION_API_URL"), "/")
+	authAPIURL   = strings.TrimRight(os.Getenv("AUTH_API_URL"), "/")
+	backendHTTP  = &http.Client{Timeout: 8 * time.Second}
+)
+
+// BalanceInfo is the real balance snapshot returned by the ledger/wallet API.
+type BalanceInfo struct {
+	Balance    float64 `json:"balance"`
+	Float      float64 `json:"float"`
+	Commission float64 `json:"commission"`
+	Currency   string  `json:"currency"`
+}
+
+func fetchBalance(phone string) (*BalanceInfo, error) {
+	if ledgerAPIURL == "" {
+		return nil, errors.New("LEDGER_API_URL not configured")
+	}
+	resp, err := backendHTTP.Get(fmt.Sprintf("%s/api/v1/agents/balance?phone=%s", ledgerAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ledger API returned status %d", resp.StatusCode)
+	}
+	var info BalanceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+	if info.Currency == "" {
+		info.Currency = "NGN"
+	}
+	return &info, nil
+}
+
+// StatementEntry is a single real transaction line from the ledger API.
+type StatementEntry struct {
+	Date        string  `json:"date"`
+	Type        string  `json:"type"`
+	Amount      float64 `json:"amount"`
+	Currency    string  `json:"currency"`
+	Description string  `json:"description"`
+}
+
+func fetchMiniStatement(phone string) ([]StatementEntry, error) {
+	if ledgerAPIURL == "" {
+		return nil, errors.New("LEDGER_API_URL not configured")
+	}
+	resp, err := backendHTTP.Get(fmt.Sprintf("%s/api/v1/agents/mini-statement?phone=%s&limit=5", ledgerAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ledger API returned status %d", resp.StatusCode)
+	}
+	var body struct {
+		Transactions []StatementEntry `json:"transactions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Transactions, nil
+}
+
+// verifyAgentPIN verifies the collected PIN against the auth service.
+func verifyAgentPIN(phone, pin string) error {
+	if authAPIURL == "" {
+		return errors.New("AUTH_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{"phone": phone, "pin": pin})
+	resp, err := backendHTTP.Post(authAPIURL+"/api/v1/auth/verify-pin", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("auth service returned status %d", resp.StatusCode)
+	}
+	var result struct {
+		Valid bool `json:"valid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.Valid {
+		return errors.New("invalid PIN")
+	}
+	return nil
+}
+
+// ExecutionResult is the real outcome returned by the transaction engine.
+type ExecutionResult struct {
+	Reference  string  `json:"reference"`
+	Status     string  `json:"status"`
+	Fee        float64 `json:"fee"`
+	Commission float64 `json:"commission"`
+	Error      string  `json:"error"`
+}
+
+// executeTransaction posts the confirmed transaction to the transaction engine.
+// The USSD session ID is used as the idempotency key so carrier retries can
+// never double-execute a money movement.
+func executeTransaction(s *USSDSession) (*ExecutionResult, error) {
+	if txAPIURL == "" {
+		return nil, errors.New("TRANSACTION_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":       string(s.TxType),
+		"amount":     s.Amount,
+		"agentPhone": s.PhoneNumber,
+		"recipient":  s.Recipient,
+		"channel":    "ussd",
+	})
+	req, err := http.NewRequest(http.MethodPost, txAPIURL+"/api/v1/transactions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", s.ID)
+	resp, err := backendHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result ExecutionResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("transaction engine returned unreadable response (status %d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.Reference == "" {
+		if result.Error != "" {
+			return nil, errors.New(result.Error)
+		}
+		return nil, fmt.Errorf("transaction engine returned status %d without a reference", resp.StatusCode)
+	}
+	return &result, nil
 }
 
 // ── Session Store ────────────────────────────────────────────────────────────
@@ -262,23 +417,49 @@ func handleMainMenu(store *SessionStore, s *USSDSession, input string) USSDRespo
 		return continueResponse(s.ID, "Buy Airtime\nEnter phone number:")
 	case "5":
 		s.TxType = TxBalance
-		// Simulate balance check
+		info, err := fetchBalance(s.PhoneNumber)
+		if err != nil {
+			log.Printf("[USSD] balance lookup failed (session=%s): %v", s.ID, err)
+			s.State = StateCancelled
+			return endResponse(s.ID, "Balance service unavailable. Please try again later.")
+		}
 		txRef := fmt.Sprintf("BAL-%s", uuid.New().String()[:8])
 		store.Complete(s.ID, txRef, 0, TxBalance)
 		return endResponse(s.ID, fmt.Sprintf(
-			"Balance: NGN 125,000.00\nFloat: NGN 500,000.00\nCommission Today: NGN 3,450.00\nRef: %s", txRef))
+			"Balance: %s %s\nFloat: %s %s\nCommission Today: %s %s",
+			info.Currency, formatAmount(info.Balance),
+			info.Currency, formatAmount(info.Float),
+			info.Currency, formatAmount(info.Commission)))
 	case "6":
 		s.TxType = TxMiniStmt
+		entries, err := fetchMiniStatement(s.PhoneNumber)
+		if err != nil {
+			log.Printf("[USSD] mini statement lookup failed (session=%s): %v", s.ID, err)
+			s.State = StateCancelled
+			return endResponse(s.ID, "Statement service unavailable. Please try again later.")
+		}
 		txRef := fmt.Sprintf("STMT-%s", uuid.New().String()[:8])
 		store.Complete(s.ID, txRef, 0, TxMiniStmt)
-		return endResponse(s.ID,
-			"Last 5 Transactions:\n"+
-				"1. CashIn NGN5,000 ✓\n"+
-				"2. CashOut NGN2,000 ✓\n"+
-				"3. Transfer NGN10,000 ✓\n"+
-				"4. Airtime NGN500 ✓\n"+
-				"5. CashIn NGN8,000 ✓\n"+
-				fmt.Sprintf("Ref: %s", txRef))
+		if len(entries) == 0 {
+			return endResponse(s.ID, "No recent transactions.")
+		}
+		var sb strings.Builder
+		sb.WriteString("Last Transactions:\n")
+		for i, e := range entries {
+			if i >= 5 {
+				break
+			}
+			label := e.Description
+			if label == "" {
+				label = txTypeLabel(TransactionType(e.Type))
+			}
+			currency := e.Currency
+			if currency == "" {
+				currency = "NGN"
+			}
+			fmt.Fprintf(&sb, "%d. %s %s %s\n", i+1, label, currency, formatAmount(e.Amount))
+		}
+		return endResponse(s.ID, strings.TrimRight(sb.String(), "\n"))
 	default:
 		return continueResponse(s.ID, "Invalid option. Please select 1-6:")
 	}
@@ -338,27 +519,42 @@ func handleEnterPIN(store *SessionStore, s *USSDSession, input string) USSDRespo
 func handleConfirm(store *SessionStore, s *USSDSession, input string) USSDResponse {
 	switch input {
 	case "1":
-		// Process transaction
-		txRef := fmt.Sprintf("USSD-%s-%s", strings.ToUpper(string(s.TxType)[:3]), uuid.New().String()[:8])
-		fee := calculateFee(s.TxType, s.Amount)
-		commission := calculateCommission(s.TxType, s.Amount)
-		store.Complete(s.ID, txRef, s.Amount, s.TxType)
+		// Verify PIN against the auth service before any money movement.
+		if err := verifyAgentPIN(s.PhoneNumber, s.PIN); err != nil {
+			log.Printf("[USSD] PIN verification failed (session=%s): %v", s.ID, err)
+			s.State = StateCancelled
+			return endResponse(s.ID, "Transaction rejected: PIN verification failed.")
+		}
 
-		receipt := fmt.Sprintf(
+		// Execute against the transaction engine — only a real backend
+		// reference may be shown to the customer as a confirmation.
+		result, err := executeTransaction(s)
+		if err != nil {
+			log.Printf("[USSD] transaction execution failed (session=%s, type=%s, amount=%.2f): %v",
+				s.ID, s.TxType, s.Amount, err)
+			s.State = StateCancelled
+			return endResponse(s.ID, fmt.Sprintf(
+				"%s could not be completed. No funds were moved. Please try again later.",
+				txTypeLabel(s.TxType)))
+		}
+
+		store.Complete(s.ID, result.Reference, s.Amount, s.TxType)
+
+		if s.Recipient != "" {
+			return endResponse(s.ID, fmt.Sprintf(
+				"%s Successful!\nTo: %s\nAmount: NGN %s\nFee: NGN %s\nRef: %s\nTime: %s",
+				txTypeLabel(s.TxType), s.Recipient,
+				formatAmount(s.Amount), formatAmount(result.Fee), result.Reference,
+				time.Now().Format("15:04 02/01/2006")))
+		}
+		return endResponse(s.ID, fmt.Sprintf(
 			"%s Successful!\nAmount: NGN %s\nFee: NGN %s\nCommission: NGN %s\nRef: %s\nTime: %s",
 			txTypeLabel(s.TxType),
 			formatAmount(s.Amount),
-			formatAmount(fee),
-			formatAmount(commission),
-			txRef,
-			time.Now().Format("15:04 02/01/2006"))
-		if s.Recipient != "" {
-			receipt = fmt.Sprintf("%s Successful!\nTo: %s\nAmount: NGN %s\nFee: NGN %s\nRef: %s\nTime: %s",
-				txTypeLabel(s.TxType), s.Recipient,
-				formatAmount(s.Amount), formatAmount(fee), txRef,
-				time.Now().Format("15:04 02/01/2006"))
-		}
-		return endResponse(s.ID, receipt)
+			formatAmount(result.Fee),
+			formatAmount(result.Commission),
+			result.Reference,
+			time.Now().Format("15:04 02/01/2006")))
 	case "2":
 		s.State = StateCancelled
 		return endResponse(s.ID, "Transaction cancelled.")
@@ -428,6 +624,11 @@ func calculateCommission(txType TransactionType, amount float64) float64 {
 
 func main() {
 	store := NewSessionStore()
+
+	if ledgerAPIURL == "" || txAPIURL == "" || authAPIURL == "" {
+		log.Printf("[ussd-gateway] WARNING: backend URLs incomplete (LEDGER_API_URL=%t TRANSACTION_API_URL=%t AUTH_API_URL=%t) — affected operations will fail closed",
+			ledgerAPIURL != "", txAPIURL != "", authAPIURL != "")
+	}
 
 	// Cleanup expired sessions every 30s
 	go func() {

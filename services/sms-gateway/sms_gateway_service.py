@@ -41,6 +41,17 @@ class Config:
     SMS_API_KEY = os.getenv("SMS_API_KEY", "")
     SMS_SENDER_ID = os.getenv("SMS_SENDER_ID", "AgentBank")
     SMS_WEBHOOK_SECRET = os.getenv("SMS_WEBHOOK_SECRET", "")
+
+    # Africa's Talking provider settings (username must NEVER be hardcoded
+    # against the live api.africastalking.com endpoint)
+    AT_USERNAME = os.getenv("AT_USERNAME", "")
+    AT_ENVIRONMENT = os.getenv("AT_ENVIRONMENT", "production")
+    APP_ENV = os.getenv("APP_ENV", "production")
+
+    # Twilio provider settings (failover)
+    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+    TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
     
     # Security settings
     MAX_PIN_ATTEMPTS = int(os.getenv("MAX_PIN_ATTEMPTS", "3"))
@@ -60,6 +71,28 @@ config = Config()
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     global redis_client, http_client, db_pool
+
+    # Fail fast in production without a working SMS provider — otherwise
+    # OTPs (e.g. for transfers >= NGN 50,000) silently never arrive.
+    if config.APP_ENV.lower() not in ("development", "dev", "test", "local", "sandbox"):
+        if config.SMS_PROVIDER == "africas_talking":
+            missing = []
+            if not config.SMS_API_KEY:
+                missing.append("SMS_API_KEY")
+            if not config.AT_USERNAME:
+                missing.append("AT_USERNAME")
+            if missing:
+                raise RuntimeError(
+                    f"FATAL: {', '.join(missing)} must be set for the Africa's Talking "
+                    f"SMS provider in {config.APP_ENV} — refusing to start. OTP and "
+                    "transactional SMS would otherwise be silently lost."
+                )
+        elif config.SMS_PROVIDER == "twilio":
+            if not (config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN and config.TWILIO_FROM_NUMBER):
+                raise RuntimeError(
+                    "FATAL: TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER must be "
+                    f"set for the Twilio SMS provider in {config.APP_ENV} — refusing to start."
+                )
     
     # Initialize Redis
     try:
@@ -875,31 +908,76 @@ class SMSSender:
     
     @staticmethod
     async def _send_africas_talking(recipient: str, message: str) -> Dict[str, Any]:
-        """Send via Africa's Talking"""
+        """Send via Africa's Talking.
+
+        Uses the env-configured username (NEVER hardcoded "sandbox" against the
+        live endpoint). Success is reported only on a real provider 201 with an
+        accepted recipient status and a real provider message id.
+        """
+        if not config.AT_USERNAME:
+            logger.error("AT_USERNAME not configured — refusing to send via Africa's Talking")
+            return {"success": False, "error": "AT_USERNAME not configured"}
+
+        base_url = (
+            "https://api.sandbox.africastalking.com"
+            if config.AT_ENVIRONMENT.lower() == "sandbox"
+            else "https://api.africastalking.com"
+        )
         try:
             response = await http_client.post(
-                "https://api.africastalking.com/version1/messaging",
+                f"{base_url}/version1/messaging",
                 headers={
                     "apiKey": config.SMS_API_KEY,
                     "Content-Type": "application/x-www-form-urlencoded"
                 },
                 data={
-                    "username": "sandbox",  # Use actual username in production
+                    "username": config.AT_USERNAME,
                     "to": recipient,
                     "message": message,
                     "from": config.SMS_SENDER_ID
                 }
             )
-            return {"success": response.status_code == 201, "response": response.json()}
+            data = response.json()
+            if response.status_code == 201:
+                recipients = data.get("SMSMessageData", {}).get("Recipients", [])
+                if recipients:
+                    first = recipients[0]
+                    status = str(first.get("status", "")).lower()
+                    message_id = first.get("messageId", "")
+                    if status not in ("failed", "rejected") and message_id:
+                        return {"success": True, "message_id": message_id, "response": data}
+            return {"success": False, "error": f"Africa's Talking rejected message: {data}"}
         except Exception as e:
             logger.error(f"Africa's Talking SMS error: {e}")
             return {"success": False, "error": str(e)}
-    
+
     @staticmethod
     async def _send_twilio(recipient: str, message: str) -> Dict[str, Any]:
-        """Send via Twilio"""
-        # Twilio implementation would go here
-        return {"success": False, "error": "Twilio not implemented"}
+        """Send via the real Twilio Messages API.
+
+        Success is reported only on a real Twilio 201 with a real message SID.
+        """
+        if not (config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN and config.TWILIO_FROM_NUMBER):
+            logger.error("Twilio provider not configured (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER)")
+            return {"success": False, "error": "Twilio provider not configured"}
+        try:
+            response = await http_client.post(
+                f"https://api.twilio.com/2010-04-01/Accounts/{config.TWILIO_ACCOUNT_SID}/Messages.json",
+                auth=(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN),
+                data={
+                    "From": config.TWILIO_FROM_NUMBER,
+                    "To": recipient,
+                    "Body": message,
+                }
+            )
+            data = response.json()
+            sid = data.get("sid")
+            if response.status_code == 201 and sid and data.get("status") not in ("failed", "undelivered"):
+                return {"success": True, "message_id": sid, "response": data}
+            return {"success": False, "error": f"Twilio rejected message: {data}"}
+        except Exception as e:
+            logger.error(f"Twilio SMS error: {e}")
+            return {"success": False, "error": str(e)}
 
 
 # ============================================================================
@@ -949,9 +1027,14 @@ command_executor = SMSCommandExecutor()
 
 
 def verify_webhook_signature(request: Request, body: bytes) -> bool:
-    """Verify webhook signature from SMS provider"""
+    """Verify webhook signature from SMS provider.
+
+    Fails closed: without a configured secret the webhook is rejected, because
+    accepting unsigned "inbound SMS" would let anyone forge banking commands.
+    """
     if not config.SMS_WEBHOOK_SECRET:
-        return True  # Skip verification if no secret configured
+        logger.error("SMS_WEBHOOK_SECRET not configured — rejecting webhook (fail closed)")
+        return False
     
     signature = request.headers.get("X-SMS-Signature", "")
     if not signature:

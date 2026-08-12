@@ -1,13 +1,21 @@
 // USSD Receipt Printer Service — Sprint 76
 // Auto-generates thermal receipts for completed *384# USSD transactions
 // Connects to Kafka for transaction events, Redis for template cache
+//
+// Printer integration (REQUIRED for /api/receipt/print):
+//   PRINTER_TRANSPORT  — transport type ("network" supported)
+//   PRINTER_ADDRESS    — network address of the thermal printer (host:port)
+// Receipts are only marked "printed" after the content has been written to
+// the physical device. Without a configured printer the endpoint returns 503.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,8 +64,53 @@ type Receipt struct {
 	TxID        string `json:"txId"`
 	Content     string `json:"content"`
 	PrintStatus string `json:"printStatus"`
+	PrintError  string `json:"printError,omitempty"`
 	CreatedAt   int64  `json:"createdAt"`
 	PrintedAt   int64  `json:"printedAt,omitempty"`
+}
+
+// PrinterConfig describes the physical receipt printer transport.
+type PrinterConfig struct {
+	Transport string // "network" supported
+	Address   string // host:port of the network-attached printer (e.g. 192.168.1.50:9100)
+}
+
+func loadPrinterConfig() PrinterConfig {
+	return PrinterConfig{
+		Transport: strings.ToLower(getEnv("PRINTER_TRANSPORT", "")),
+		Address:   getEnv("PRINTER_ADDRESS", ""),
+	}
+}
+
+// printToDevice writes ESC/POS receipt content to the physical printer.
+// Returns an error when no printer is configured or the device rejects the job.
+func printToDevice(cfg PrinterConfig, content string) error {
+	switch cfg.Transport {
+	case "":
+		return errors.New("no printer configured (set PRINTER_TRANSPORT and PRINTER_ADDRESS)")
+	case "network":
+		if cfg.Address == "" {
+			return errors.New("PRINTER_ADDRESS not configured")
+		}
+		conn, err := net.DialTimeout("tcp", cfg.Address, 5*time.Second)
+		if err != nil {
+			return fmt.Errorf("printer connection failed: %w", err)
+		}
+		defer conn.Close()
+		if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			return fmt.Errorf("printer setup failed: %w", err)
+		}
+		// ESC @ (initialize) + content + feed + GS V (partial cut)
+		payload := append([]byte{0x1B, 0x40}, []byte(content)...)
+		payload = append(payload, []byte("\n\n\n")...)
+		payload = append(payload, 0x1D, 0x56, 0x41, 0x03)
+		if _, err := conn.Write(payload); err != nil {
+			return fmt.Errorf("printer write failed: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported printer transport %q", cfg.Transport)
+	}
 }
 
 type ReceiptService struct {
@@ -66,6 +119,7 @@ type ReceiptService struct {
 	templates map[string]*ReceiptTemplate
 	kafkaAddr string
 	redisAddr string
+	printer   PrinterConfig
 }
 
 func NewReceiptService() *ReceiptService {
@@ -74,6 +128,7 @@ func NewReceiptService() *ReceiptService {
 		templates: make(map[string]*ReceiptTemplate),
 		kafkaAddr: getEnv("KAFKA_BROKER", "localhost:9092"),
 		redisAddr: getEnv("REDIS_URL", "localhost:6379"),
+		printer:   loadPrinterConfig(),
 	}
 	svc.loadDefaultTemplates()
 	return svc
@@ -169,10 +224,15 @@ func main() {
 	svc := NewReceiptService()
 	mux := http.NewServeMux()
 
+	if svc.printer.Transport == "" {
+		log.Printf("[%s] WARNING: no printer configured (PRINTER_TRANSPORT/PRINTER_ADDRESS unset) — /api/receipt/print will return 503", ServiceName)
+	}
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"service": ServiceName, "version": ServiceVersion, "status": "healthy",
 			"templates": len(svc.templates), "receipts": len(svc.receipts),
+			"printerConfigured": svc.printer.Transport != "",
 		})
 	})
 
@@ -200,12 +260,37 @@ func main() {
 			ReceiptID string `json:"receiptId"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		svc.mu.Lock()
-		if rcp, ok := svc.receipts[req.ReceiptID]; ok {
-			rcp.PrintStatus = "printed"
-			rcp.PrintedAt = time.Now().UnixMilli()
+
+		svc.mu.RLock()
+		rcp, ok := svc.receipts[req.ReceiptID]
+		svc.mu.RUnlock()
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "receipt not found"})
+			return
 		}
+
+		// Send to the physical printer — only mark "printed" on a real
+		// successful device write.
+		if err := printToDevice(svc.printer, rcp.Content); err != nil {
+			log.Printf("[%s] print failed for receipt %s: %v", ServiceName, req.ReceiptID, err)
+			svc.mu.Lock()
+			rcp.PrintStatus = "failed"
+			rcp.PrintError = err.Error()
+			svc.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"status": "failed", "error": err.Error()})
+			return
+		}
+
+		svc.mu.Lock()
+		rcp.PrintStatus = "printed"
+		rcp.PrintedAt = time.Now().UnixMilli()
+		rcp.PrintError = ""
 		svc.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "printed"})
 	})
 
@@ -220,7 +305,7 @@ func main() {
 	})
 
 	port := getEnv("PORT", DefaultPort)
-	log.Printf("[%s] v%s listening on :%s (kafka=%s redis=%s)", ServiceName, ServiceVersion, port, svc.kafkaAddr, svc.redisAddr)
+	log.Printf("[%s] v%s listening on :%s (kafka=%s redis=%s printer=%s/%s)", ServiceName, ServiceVersion, port, svc.kafkaAddr, svc.redisAddr, svc.printer.Transport, svc.printer.Address)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 

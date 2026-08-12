@@ -1,5 +1,8 @@
+import json
 import logging
+import os
 from typing import List, Optional
+from urllib import request as urlrequest
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundTasks
@@ -18,23 +21,55 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+# --- Meta WhatsApp Business Cloud API Client ---
+#
+# Messages are only marked SENT when the Meta Graph API returns a real
+# message id. DELIVERED/READ statuses are only ever applied from real
+# delivery webhooks — never simulated locally.
+
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v18.0")
+WHATSAPP_TIMEOUT = 15  # seconds
+
 # --- Utility Functions (External API Interaction) ---
 
 def send_send_message(message_id: UUID, content: str, recipient: str):
     """
-    Sends the asynchronous process of sending a message via an external WhatsApp API.
-    In a real application, this would involve an HTTP request to the WhatsApp API.
-    """
-    logger.info(f"Simulating external API call to send message {message_id} to {recipient}")
-    # Call WhatsApp Business API
-    import time
+    Sends a message via the Meta WhatsApp Business Cloud API.
 
-    
-    # In a real scenario, the API would return an external_message_id and a status
-    external_id = f"ext-{message_id}"
-    
-    # Process response
-    logger.info(f"Message {message_id} successfully sent to external API. External ID: {external_id}")
+    Returns the REAL external message id assigned by Meta. Raises
+    RuntimeError when the API is unconfigured or rejects the send.
+    """
+    if not (WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID):
+        raise RuntimeError(
+            "WhatsApp Business API not configured "
+            "(WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID missing)"
+        )
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "text",
+        "text": {"body": content},
+    }
+    req = urlrequest.Request(url, data=json.dumps(payload).encode())
+    req.add_header("Authorization", f"Bearer {WHATSAPP_ACCESS_TOKEN}")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with urlrequest.urlopen(req, timeout=WHATSAPP_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"WhatsApp API send failed: {exc}") from exc
+
+    messages = data.get("messages") or []
+    if not messages or not messages[0].get("id"):
+        raise RuntimeError(f"WhatsApp API returned no message id: {data}")
+
+    external_id = messages[0]["id"]
+    logger.info(f"Message {message_id} sent via WhatsApp API. External ID: {external_id}")
     return external_id
 
 def update_message_status_in_db(db: Session, message_id: UUID, new_status: schemas.MessageStatus, external_id: Optional[str] = None):
@@ -69,20 +104,17 @@ def process_message_send(db: Session, message_id: UUID, content: str, recipient:
     """
     Handles the full lifecycle of sending a message after it's created in the DB.
     This function runs in the background.
+
+    The message is marked SENT only with the real Meta message id. DELIVERED
+    and READ statuses are applied exclusively by the inbound webhook handler
+    when Meta sends real delivery receipts.
     """
     try:
-        # 1. Send the message via WhatsApp Business API
+        # 1. Send the message via the real WhatsApp Business API
         external_id = send_send_message(message_id, content, recipient)
-        
-        # 2. Update status to SENT (or DELIVERED/FAILED based on real API response)
-        # For this simulation, we'll assume it's immediately SENT to the API
+
+        # 2. Update status to SENT with the real external id
         update_message_status_in_db(db, message_id, schemas.MessageStatus.SENT, external_id)
-        
-        # 3. Process delivery receipt
-        # In a real system, this would be a webhook call from the WhatsApp API
-        import time
-        time.sleep(0.5)
-        update_message_status_in_db(db, message_id, schemas.MessageStatus.DELIVERED)
 
     except Exception as e:
         logger.error(f"Error processing message send for {message_id}: {e}")
@@ -260,29 +292,77 @@ def handle_inbound_webhook(
     db: Session = Depends(get_db)
 ):
     """
-    This endpoint sends receiving a webhook from the WhatsApp API.
-    It handles both incoming messages and status updates (delivered, read, failed).
-    
-    In a real implementation, the payload would be validated and parsed.
+    Handles real Meta WhatsApp webhook payloads:
+
+    - **statuses**: delivery receipts (sent/delivered/read/failed) matched to
+      our messages by the real external message id.
+    - **messages**: inbound customer messages, stored as incoming records.
     """
     logger.info("Received inbound WhatsApp webhook payload.")
-    
-    # Simplified logic for demonstration
-    if "entry" in payload and payload["entry"]:
-        # Assume the payload is a status update for an existing message
-        # In a real scenario, we would parse the payload to find the external_message_id
-        # and the new status, then update the corresponding message in the DB.
-        
-        # For simulation, we'll just log an activity
-        log_entry = models.WhatsAppActivityLog(
-            activity_type=schemas.ActivityType.MESSAGE_RECEIVED,
-            details=f"Inbound webhook received. Payload keys: {list(payload.keys())}"
-        )
-        db.add(log_entry)
-        db.commit()
-        
-        return {"status": "success", "message": "Webhook processed (sent)."}
-    
+
+    # Map Meta delivery statuses to our internal message statuses
+    status_map = {
+        "sent": schemas.MessageStatus.SENT,
+        "delivered": schemas.MessageStatus.DELIVERED,
+        "failed": schemas.MessageStatus.FAILED,
+    }
+    read_status = getattr(schemas.MessageStatus, "READ", None)
+    if read_status is not None:
+        status_map["read"] = read_status
+
+    processed = 0
+
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+
+            # ── Real delivery receipts ────────────────────────────────────
+            for st in value.get("statuses", []) or []:
+                external_id = st.get("id")
+                meta_status = st.get("status")
+                new_status = status_map.get(meta_status)
+                if not external_id or new_status is None:
+                    continue
+                db_message = db.query(models.WhatsAppMessage).filter(
+                    models.WhatsAppMessage.external_message_id == external_id
+                ).first()
+                if db_message is None:
+                    logger.warning(f"Delivery receipt for unknown external id {external_id}")
+                    continue
+                update_message_status_in_db(db, db_message.id, new_status)
+                processed += 1
+
+            # ── Real inbound customer messages ────────────────────────────
+            contacts = {
+                c.get("wa_id"): (c.get("profile") or {}).get("name", "")
+                for c in (value.get("contacts") or [])
+            }
+            metadata = value.get("metadata") or {}
+            for msg in value.get("messages", []) or []:
+                sender = msg.get("from", "")
+                text_body = (msg.get("text") or {}).get("body", "")
+                db_message = models.WhatsAppMessage(
+                    sender_phone_number=sender,
+                    recipient_phone_number=metadata.get("display_phone_number", ""),
+                    content=text_body,
+                    is_incoming=True,
+                    external_message_id=msg.get("id"),
+                )
+                db.add(db_message)
+                db.commit()
+                db.refresh(db_message)
+                log_entry = models.WhatsAppActivityLog(
+                    message_id=db_message.id,
+                    activity_type=schemas.ActivityType.MESSAGE_RECEIVED,
+                    details=f"Inbound message from {sender} ({contacts.get(sender, 'unknown')}): {text_body[:100]}"
+                )
+                db.add(log_entry)
+                db.commit()
+                processed += 1
+
+    if processed:
+        return {"status": "success", "processed": processed}
+
     # Handle verification request (e.g., Facebook challenge)
     if "hub.mode" in payload and payload["hub.mode"] == "subscribe":
         # Return the challenge token to verify the webhook

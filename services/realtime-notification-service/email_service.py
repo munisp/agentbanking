@@ -1,5 +1,12 @@
-"""Email service — send transactional emails via SMTP or console fallback."""
+"""Email service — send transactional emails via SMTP or SendGrid.
 
+No console/print fallback may ever report success: when no provider is
+configured, sends return success=False so callers (e.g. password-reset OTP
+flows) know the email was NOT delivered.
+"""
+
+import json
+import logging
 import os
 import re
 import smtplib
@@ -8,7 +15,10 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List, Optional, Union
+from urllib import request as urlrequest
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,36 +42,89 @@ FROM_ADDRESS = os.getenv("EMAIL_FROM", "noreply@54agent.app")
 _smtp_configured = bool(SMTP_HOST and SMTP_USER and SMTP_PASS)
 _sendgrid_configured = bool(SENDGRID_KEY)
 
+# Startup alert: an unconfigured email provider means OTP/password-reset
+# emails silently vanish.
+if not (_smtp_configured or _sendgrid_configured):
+    logger.warning(
+        "[email] No email provider configured (SMTP_HOST/SMTP_USER/SMTP_PASS or "
+        "SENDGRID_API_KEY) — all sends will return success=False"
+    )
+
 
 # ── Core send functions ────────────────────────────────────────────────────────
 
+def _send_via_smtp(message: EmailMessage, recipients: List[str]) -> dict:
+    """Send via a real SMTP relay. Returns real success/failure only."""
+    message_id = f"msg_{uuid.uuid4().hex[:16]}"
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = message.subject
+        msg["From"] = message.from_addr or FROM_ADDRESS
+        msg["To"] = ", ".join(recipients)
+        if message.text:
+            msg.attach(MIMEText(message.text, "plain"))
+        msg.attach(MIMEText(message.html, "html"))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(FROM_ADDRESS, recipients, msg.as_string())
+        return {"success": True, "message_id": message_id, "provider": "smtp", "timestamp": datetime.utcnow().isoformat()}
+    except Exception as exc:
+        logger.error(f"[email] SMTP send failed: {exc}")
+        return {"success": False, "message_id": message_id, "provider": "smtp", "error": str(exc), "timestamp": datetime.utcnow().isoformat()}
+
+
+def _send_via_sendgrid(message: EmailMessage, recipients: List[str]) -> dict:
+    """Send via the real SendGrid v3 API. Message id from X-Message-Id header."""
+    fallback_id = f"msg_{uuid.uuid4().hex[:16]}"
+    content = [{"type": "text/html", "value": message.html}]
+    if message.text:
+        content.insert(0, {"type": "text/plain", "value": message.text})
+    payload = {
+        "personalizations": [{"to": [{"email": r} for r in recipients]}],
+        "from": {"email": message.from_addr or FROM_ADDRESS},
+        "subject": message.subject,
+        "content": content,
+    }
+    req = urlrequest.Request(
+        "https://api.sendgrid.com/v3/mail/send",
+        data=json.dumps(payload).encode(),
+    )
+    req.add_header("Authorization", f"Bearer {SENDGRID_KEY}")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            provider_id = resp.headers.get("X-Message-Id", fallback_id)
+        return {"success": True, "message_id": provider_id, "provider": "sendgrid", "timestamp": datetime.utcnow().isoformat()}
+    except Exception as exc:
+        logger.error(f"[email] SendGrid send failed: {exc}")
+        return {"success": False, "message_id": fallback_id, "provider": "sendgrid", "error": str(exc), "timestamp": datetime.utcnow().isoformat()}
+
+
 def send_email(message: EmailMessage) -> dict:
-    """Send a single email. Falls back to console log when no SMTP is configured."""
+    """Send a single email via a configured real provider.
+
+    Returns success=False when no provider is configured — the email was NOT
+    delivered and callers must treat it as a failure.
+    """
     message_id = f"msg_{uuid.uuid4().hex[:16]}"
     recipients = message.to if isinstance(message.to, list) else [message.to]
 
     if _smtp_configured:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = message.subject
-            msg["From"] = message.from_addr or FROM_ADDRESS
-            msg["To"] = ", ".join(recipients)
-            if message.text:
-                msg.attach(MIMEText(message.text, "plain"))
-            msg.attach(MIMEText(message.html, "html"))
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(FROM_ADDRESS, recipients, msg.as_string())
-            return {"success": True, "message_id": message_id, "provider": "smtp", "timestamp": datetime.utcnow().isoformat()}
-        except Exception as exc:
-            return {"success": False, "message_id": message_id, "provider": "smtp", "error": str(exc), "timestamp": datetime.utcnow().isoformat()}
+        return _send_via_smtp(message, recipients)
 
-    print(f"[email] to={recipients} subject={message.subject!r} id={message_id}")
+    if _sendgrid_configured:
+        return _send_via_sendgrid(message, recipients)
+
+    logger.error(
+        f"[email] No provider configured — email NOT sent to {recipients} "
+        f"(subject={message.subject!r})"
+    )
     return {
-        "success": True,
-        "message_id": f"console_local-{message_id}",
-        "provider": "console",
+        "success": False,
+        "message_id": message_id,
+        "provider": "none",
+        "error": "no email provider configured (SMTP or SENDGRID_API_KEY required)",
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -87,7 +150,7 @@ def send_batch_email(
 
 def get_provider_status() -> List[dict]:
     return [
-        {"name": "console", "enabled": True, "configured": True, "healthy": True},
+        {"name": "console", "enabled": False, "configured": False, "healthy": False},
         {"name": "smtp", "enabled": _smtp_configured, "configured": _smtp_configured, "healthy": _smtp_configured},
         {"name": "sendgrid", "enabled": _sendgrid_configured, "configured": _sendgrid_configured, "healthy": _sendgrid_configured},
     ]

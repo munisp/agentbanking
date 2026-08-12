@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { biReportDefinitions, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -17,40 +19,27 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateDragdropreportbuilderInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -94,55 +83,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_DRAGDROPREPORTBUILDER = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_DRAGDROPREPORTBUILDER.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_DRAGDROPREPORTBUILDER.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -156,6 +96,63 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishdragDropReportBuilderMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `reporting.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `reporting_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `reporting_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("reporting", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
+
+// FAIL LOUD helper for procedures that have no real backend wired. The
+// previous implementations returned canned success / empty payloads.
+const NOT_WIRED = (what: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${what} is not wired to a real backend in this router; refusing to return a canned response.`,
+  });
 
 export const dragDropReportBuilderRouter = router({
   listReports: protectedProcedure
@@ -207,21 +204,28 @@ export const dragDropReportBuilderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "dragDropReportBuilder",
-        "mutation",
-        "Executed dragDropReportBuilder mutation"
-      );
-
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
         const [report] = await db
@@ -274,6 +278,23 @@ export const dragDropReportBuilderRouter = router({
           status: "success",
           metadata: {},
         });
+
+        // Middleware fan-out (fail-open)
+
+        await publishdragDropReportBuilderMiddleware(
+          "createReport",
+          `${Date.now()}`,
+          { action: "createReport" }
+        ).catch(() => {});
+
+        // Middleware fan-out (fail-open)
+
+        await publishdragDropReportBuilderMiddleware(
+          "updateReport",
+          `${Date.now()}`,
+          { action: "updateReport" }
+        ).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -299,6 +320,13 @@ export const dragDropReportBuilderRouter = router({
           status: "success",
           metadata: {},
         });
+        // Middleware fan-out (fail-open)
+        await publishdragDropReportBuilderMiddleware(
+          "deleteReport",
+          `${Date.now()}`,
+          { action: "deleteReport" }
+        ).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -315,27 +343,80 @@ export const dragDropReportBuilderRouter = router({
       .select({ value: count() })
       .from(biReportDefinitions)
       .limit(100);
+    // Middleware fan-out (fail-open)
+    await publishdragDropReportBuilderMiddleware("getStats", `${Date.now()}`, {
+      action: "getStats",
+    }).catch(() => {});
+
     return { totalReports: Number(total.value) };
   }),
 
-  saveReport: publicProcedure
+  // Was publicProcedure returning a hard-coded { id: "RPT-001", saved: true }
+  // without persisting anything. Now a protected mutation that really saves.
+  saveReport: protectedProcedure
     .input(
       z.object({ name: z.string(), config: z.record(z.string(), z.unknown()) })
     )
     .mutation(async ({ input }) => {
-      return { id: "RPT-001", name: input.name, saved: true };
+      try {
+        const db = (await getDb())!;
+        const [report] = await db
+          .insert(biReportDefinitions)
+          .values({ name: input.name, config: input.config } as any)
+          .returning();
+        await db.insert(auditLog).values({
+          action: "report_saved",
+          resource: "bi_report_definitions",
+          resourceId: String(report.id),
+          status: "success",
+          metadata: { name: input.name },
+        });
+        return { id: report.id, name: report.name, saved: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
     }),
 
   executeReport: protectedProcedure.query(async () => {
-    return { data: [], columns: [], rowCount: 0 };
+    throw NOT_WIRED("Report execution engine");
   }),
 
   exportReport: protectedProcedure.query(async () => {
-    return { url: "/exports/report.pdf", format: "pdf" };
+    throw NOT_WIRED("Report export");
   }),
-  dashboard: protectedProcedure.query(async () => ({
-    reports: [],
-    recentActivity: [],
-    stats: { totalReports: 0, sharedReports: 0 },
-  })),
+
+  // Previously returned canned empty arrays/zero stats. Now backed by real
+  // queries against biReportDefinitions + auditLog.
+  dashboard: protectedProcedure.query(async () => {
+    const db = (await getDb())!;
+    const reports = await db
+      .select()
+      .from(biReportDefinitions)
+      .orderBy(desc(biReportDefinitions.createdAt))
+      .limit(10);
+    const [total] = await db
+      .select({ value: count() })
+      .from(biReportDefinitions)
+      .limit(100);
+    const recentActivity = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.resource, "bi_report_definitions"))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(10);
+    return {
+      reports,
+      recentActivity,
+      stats: {
+        totalReports: Number(total.value),
+        // No sharing feature exists in the schema; zero is the real value.
+        sharedReports: 0,
+      },
+    };
+  }),
 });

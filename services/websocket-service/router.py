@@ -1,51 +1,34 @@
 """
 Router for websocket-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
 
-WARNING (mockware remediation): these endpoints were auto-generated stubs that
-returned fabricated {"status": "ok"} responses and referenced an undefined
-Message model, so they could not even be imported. The real websocket
-connection/send logic lives in this service's main.py. Until this stub is
-removed from every registration site, endpoints fail loudly with
-501 Not Implemented instead of pretending messages were sent.
+The real implementation lives in the standalone service (services/websocket-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/websocket-service", tags=["websocket-service"])
 
-_STUB_DETAIL = "websocket-service stub endpoint disabled: use the real implementation in this service's main.py"
-
-
-def _not_implemented():
-    raise HTTPException(status_code=501, detail=_STUB_DETAIL)
+_UNAVAILABLE = (
+    "websocket-service endpoints are not served by this gateway router. "
+    "Use the standalone websocket-service service."
+)
 
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok", "note": "stub router only; real implementation is in main.py"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "websocket-service", "detail": _UNAVAILABLE},
+    )
 
 
-@router.get("/connections")
-async def list_connections():
-    _not_implemented()
-
-
-@router.get("/connections/{agent_id}")
-async def get_agent_connections(agent_id: str):
-    _not_implemented()
-
-
-@router.post("/send/agent/{agent_id}")
-async def send_to_agent(agent_id: str):
-    _not_implemented()
-
-
-@router.post("/send/broadcast")
-async def broadcast_message():
-    _not_implemented()
-
-
-@router.post("/send/room/{room_id}")
-async def send_to_room(room_id: str):
-    _not_implemented()
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

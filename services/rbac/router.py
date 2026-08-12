@@ -1,70 +1,34 @@
 """
 Router for rbac service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
 
-WARNING (mockware remediation): these endpoints were auto-generated stubs that
-returned fabricated {"status": "ok"} responses and referenced undefined names
-(Item/Dict/Any), so they could not even be imported. Until this stub is
-removed from every registration site, all endpoints fail loudly with
-501 Not Implemented instead of fabricating success.
+The real implementation lives in the standalone service (services/rbac/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/rbac", tags=["rbac"])
 
-_STUB_DETAIL = "rbac stub endpoint disabled: no real handler is implemented in this auto-generated router"
-
-
-def _not_implemented():
-    raise HTTPException(status_code=501, detail=_STUB_DETAIL)
-
-
-@router.get("/")
-async def root():
-    _not_implemented()
+_UNAVAILABLE = (
+    "rbac endpoints are not served by this gateway router. "
+    "Use the standalone rbac service."
+)
 
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok", "note": "stub router only; no real handlers"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "rbac", "detail": _UNAVAILABLE},
+    )
 
 
-@router.post("/items")
-async def create_item():
-    _not_implemented()
-
-
-@router.get("/items")
-async def list_items(skip: int = 0, limit: int = 100):
-    _not_implemented()
-
-
-@router.get("/items/{item_id}")
-async def get_item(item_id: str):
-    _not_implemented()
-
-
-@router.put("/items/{item_id}")
-async def update_item(item_id: str):
-    _not_implemented()
-
-
-@router.delete("/items/{item_id}")
-async def delete_item(item_id: str):
-    _not_implemented()
-
-
-@router.post("/process")
-async def process_data():
-    _not_implemented()
-
-
-@router.get("/search")
-async def search_items(query: str):
-    _not_implemented()
-
-
-@router.get("/stats")
-async def get_statistics():
-    _not_implemented()
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

@@ -114,7 +114,7 @@ const getSchedules = protectedProcedure
       });
     }
   });
-const getStats = publicProcedure
+const getStats = protectedProcedure
   .input(
     z.object({
       page: z.number().min(1).max(10000).optional(),
@@ -136,14 +136,11 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
+      // Previously returned fabricated compliance metrics (score 94.5,
+      // 456 reports, per-framework counts) to unauthenticated callers.
+      // Only totalReports/lastAudit have a real source in this router.
       return {
-        complianceScore: 94.5,
-        totalReports: 456,
-        cbnReports: 120,
-        ndprReports: 85,
-        pciDssReports: 95,
-        amlReports: 100,
-        cftReports: 56,
+        totalReports: Number(total),
         lastAudit: new Date().toISOString(),
       };
     } catch (error) {
@@ -195,62 +192,14 @@ const generateReport = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input, ctx }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    const txAmount =
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0;
-    const fees = calculateFee(txAmount, "transfer");
-    const commission = calculateCommission(fees.fee, "transfer");
-    const tax = calculateTax(fees.fee, "vat");
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(pnlReports)
-          .where(eq(pnlReports.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "generateReport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "generateReport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(pnlReports)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "generateReport completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    // FAIL LOUD: previously inserted arbitrary input.data into pnlReports
+    // and reported "generateReport completed" without generating any report.
+    throw new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message:
+      "Compliance report generation is not wired to a real backend in this router; refusing to return a canned response.",
+  });
   });
 const createSchedule = protectedProcedure
   .input(
@@ -259,55 +208,14 @@ const createSchedule = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(pnlReports)
-          .where(eq(pnlReports.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createSchedule: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createSchedule completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(pnlReports)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "createSchedule completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    // FAIL LOUD: previously inserted arbitrary input.data into pnlReports
+    // and reported "createSchedule completed".
+    throw new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message:
+      "Compliance report scheduling is not wired to a real backend in this router; refusing to return a canned response.",
+  });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

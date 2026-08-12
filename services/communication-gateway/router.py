@@ -72,34 +72,59 @@ async def health_check():
     return {"status": "healthy", "channels": channel_health}
 
 
+async def _dispatch(channel: str, url: str, payload: dict) -> dict:
+    """POST to a channel service and FAIL LOUDLY on any failure.
+
+    The previous implementation returned {"status": "sent"} regardless of the
+    downstream response code, confirming delivery that never happened.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Channel service '{channel}' unreachable: {e}",
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Channel service '{channel}' rejected the message: HTTP {resp.status_code}: {resp.text[:300]}",
+        )
+    try:
+        return resp.json()
+    except ValueError:
+        return {"raw": resp.text[:500]}
+
+
 @router.post("/send")
 async def send_message(req: SendRequest):
     channel = req.channel.lower()
     r = _get_redis()
 
     if channel == "whatsapp":
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{WHATSAPP_SERVICE_URL}/send", json={
-                "recipient": req.recipient, "content": req.content, "message_type": "text"
-            })
-            result = resp.json()
+        result = await _dispatch(channel, f"{WHATSAPP_SERVICE_URL}/send", {
+            "recipient": req.recipient, "content": req.content, "message_type": "text"
+        })
     elif channel == "telegram":
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{TELEGRAM_SERVICE_URL}/send", json={
-                "chat_id": int(req.recipient), "text": req.content
-            })
-            result = resp.json()
+        try:
+            chat_id = int(req.recipient)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Telegram recipient must be a numeric chat_id")
+        result = await _dispatch(channel, f"{TELEGRAM_SERVICE_URL}/send", {
+            "chat_id": chat_id, "text": req.content
+        })
     elif channel == "sms":
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{SMS_GATEWAY_URL}/api/v1/sms-gateway/send", json={
-                "recipient": req.recipient, "message": req.content
-            })
-            result = resp.json()
+        result = await _dispatch(channel, f"{SMS_GATEWAY_URL}/api/v1/sms-gateway/send", {
+            "recipient": req.recipient, "message": req.content
+        })
     elif channel == "ussd":
         raise HTTPException(status_code=400, detail="USSD is pull-based; use /ussd/callback instead")
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported channel: {channel}")
 
+    # Redis bookkeeping happens only after the channel service accepted the
+    # message (any failure above raises before this point).
     if r:
         r.incr(f"gateway:sent:{channel}")
         r.lpush(f"gateway:conversation:{req.recipient}", json.dumps({
@@ -145,4 +170,3 @@ async def get_metrics():
 @router.get("/stats")
 async def get_statistics():
     return await get_metrics()
-

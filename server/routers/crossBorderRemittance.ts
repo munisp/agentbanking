@@ -35,6 +35,7 @@ import {
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 import { enforcePermission } from "../_core/permify";
+import { getFreshRates, getLiveRate } from "../lib/fxRateFeed";
 
 const CORRIDORS = {
   "NG-GH": {
@@ -79,21 +80,18 @@ const CORRIDORS = {
   },
 } as const;
 
-// Simulated FX rates (production: live feed from CBN/Reuters)
-const FX_RATES: Record<string, number> = {
-  "NGN-GHS": 0.0075,
-  "NGN-XOF": 0.37,
-  "NGN-XAF": 0.37,
-  "NGN-KES": 0.085,
-};
-
 export const crossBorderRemittanceRouter = router({
   getCorridors: protectedProcedure.query(async () => {
+    // Live corridor rates from the FX rate feed (fails loud when no fresh
+    // rate is available — corridors are never quoted at hardcoded rates).
+    const ngnRates = await getFreshRates("NGN");
     return {
       corridors: Object.entries(CORRIDORS).map(([id, c]) => ({
         id,
         ...c,
-        currentRate: FX_RATES[`${c.source}-${c.destination}`] || 0,
+        currentRate: ngnRates.rates[c.destination] ?? null,
+        rateFetchedAt: ngnRates.fetchedAt,
+        rateSource: ngnRates.source,
       })),
     };
   }),
@@ -128,7 +126,10 @@ export const crossBorderRemittanceRouter = router({
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
       const netAmount = input.amountNGN - fee;
-      const rate = FX_RATES[`${corridor.source}-${corridor.destination}`] || 0;
+      // Live corridor rate — hard-fails (SERVICE_UNAVAILABLE) when no fresh
+      // rate exists.
+      const liveRate = await getLiveRate(corridor.source, corridor.destination);
+      const rate = liveRate.rate;
       const receivedAmount = Math.round(netAmount * rate * 100) / 100;
 
       return {
@@ -137,6 +138,8 @@ export const crossBorderRemittanceRouter = router({
         fee,
         netAmount,
         exchangeRate: rate,
+        rateSource: liveRate.source,
+        rateFetchedAt: liveRate.fetchedAt,
         receivedAmount,
         receivedCurrency: corridor.destination,
         estimatedMinutes: corridor.estimatedMinutes,
@@ -184,7 +187,9 @@ export const crossBorderRemittanceRouter = router({
         corridor.minFee,
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
-      const rate = FX_RATES[`${corridor.source}-${corridor.destination}`] || 0;
+      // Live corridor rate — the send hard-fails when no fresh rate exists.
+      const liveRate = await getLiveRate(corridor.source, corridor.destination);
+      const rate = liveRate.rate;
       const receivedAmount =
         Math.round((input.amountNGN - fee) * rate * 100) / 100;
 
@@ -260,6 +265,8 @@ export const crossBorderRemittanceRouter = router({
                 receivedAmount,
                 receivedCurrency: corridor.destination,
                 exchangeRate: rate,
+                rateSource: liveRate.source,
+                rateFetchedAt: liveRate.fetchedAt,
                 purpose: input.purpose,
                 recipientWallet: input.recipientWallet,
               },
@@ -342,15 +349,39 @@ export const crossBorderRemittanceRouter = router({
         { agentCode: session.agentCode }
       ).catch(() => {});
 
-      // TigerBeetle dual-ledger
-      tbCreateTransfer({
+      // TigerBeetle dual-ledger — fail-open is not allowed on the ledger
+      // path: when the sidecar is unreachable the remittance is queued with
+      // an explicit pending_ledger status (visible to callers) for replay,
+      // instead of silently reporting success.
+      let ledgerStatus: "posted" | "pending_ledger" = "posted";
+      const tbResult = await tbCreateTransfer({
         debitAccountId: "2001",
         creditAccountId: "1001",
         amount: Math.round(input.amountNGN * 100),
         ref,
         txType: "cross_border_remittance",
         agentCode: session.agentCode,
-      }).catch(() => {});
+      });
+      if (!tbResult) {
+        ledgerStatus = "pending_ledger";
+        console.warn(
+          `[TB] Sidecar unavailable — remittance ${ref} queued with status pending_ledger`
+        );
+        try {
+          const db = (await getDb())!;
+          if (db) {
+            await db
+              .update(transactions)
+              .set({ status: "pending_ledger" })
+              .where(eq(transactions.id, txRecord.id));
+          }
+        } catch (markErr) {
+          console.error(
+            "[TB] Failed to mark remittance pending_ledger:",
+            markErr
+          );
+        }
+      }
 
       // Fluvio + Dapr + Redis + Lakehouse
       publishTxToFluvio({
@@ -382,13 +413,17 @@ export const crossBorderRemittanceRouter = router({
 
       return {
         reference: ref,
-        status: "pending",
+        status: ledgerStatus === "posted" ? "pending" : "pending_ledger",
+        ledgerStatus,
         transactionId: txRecord.id,
         corridorId: input.corridorId,
         sendAmount: input.amountNGN,
         fee,
         receivedAmount,
         receivedCurrency: corridor.destination,
+        exchangeRate: rate,
+        rateSource: liveRate.source,
+        rateFetchedAt: liveRate.fetchedAt,
         recipientName: input.recipientName,
         estimatedMinutes: corridor.estimatedMinutes,
         createdAt: new Date().toISOString(),

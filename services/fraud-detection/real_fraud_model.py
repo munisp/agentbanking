@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Real Fraud Detection Model with Pre-trained Weights
-Production-ready fraud detection using real trained models
+Fraud Detection Model — trained-artifact serving
+
+This module serves fraud predictions ONLY from a versioned, previously
+trained model artifact (joblib bundle produced by an offline training
+pipeline). It never trains on synthetic random data at boot and refuses to
+serve when no artifact is configured or loadable.
 """
 
 import numpy as np
@@ -9,8 +13,9 @@ import pandas as pd
 import pickle
 import joblib
 import logging
+import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass
 import warnings
 warnings.filterwarnings('ignore')
@@ -39,281 +44,56 @@ class FraudDetectionResult:
     timestamp: datetime
 
 class RealFraudDetectionModel:
-    """Production fraud detection model with real trained weights"""
+    """Fraud detection model served exclusively from a trained artifact.
+
+    The artifact (a joblib bundle with models, scalers, feature names and
+    model weights) must be produced by the offline training pipeline and
+    provided via FRAUD_MODEL_ARTIFACT_PATH or the constructor argument.
+    """
     
-    def __init__(self):
+    def __init__(self, model_path: Optional[str] = None):
         self.models = {}
         self.scalers = {}
         self.feature_names = []
         self.model_weights = {}
         self.is_trained = False
+        self.model_version: Optional[str] = None
         
-        # Initialize with real trained models
-        self._initialize_real_models()
+        # Load the trained artifact (refuses to serve without one)
+        self._initialize_real_models(model_path)
         
-    def _initialize_real_models(self):
-        """Initialize models with real trained weights"""
-        logger.info("Initializing real fraud detection models...")
-        
-        # Generate realistic training data for model initialization
-        X_train, y_train = self._generate_realistic_training_data()
-        
-        # Train Random Forest with real data
-        self._train_random_forest(X_train, y_train)
-        
-        # Train XGBoost with real data
-        self._train_xgboost(X_train, y_train)
-        
-        # Train Isolation Forest for anomaly detection
-        self._train_isolation_forest(X_train)
-        
-        # Train ensemble model
-        self._train_ensemble_model(X_train, y_train)
-        
-        self.is_trained = True
-        logger.info("Real fraud detection models initialized successfully")
-    
-    def _generate_realistic_training_data(self) -> Tuple[pd.DataFrame, pd.Series]:
-        """Generate realistic training data for model initialization"""
-        np.random.seed(42)
-        n_samples = 10000
-        
-        # Generate realistic transaction features
-        data = {
-            'amount': np.random.lognormal(mean=5, sigma=2, size=n_samples),
-            'hour': np.random.randint(0, 24, n_samples),
-            'day_of_week': np.random.randint(0, 7, n_samples),
-            'merchant_category': np.random.randint(0, 20, n_samples),
-            'transaction_count_1h': np.random.poisson(lam=2, size=n_samples),
-            'transaction_count_24h': np.random.poisson(lam=15, size=n_samples),
-            'amount_sum_1h': np.random.lognormal(mean=6, sigma=1.5, size=n_samples),
-            'amount_sum_24h': np.random.lognormal(mean=8, sigma=1.8, size=n_samples),
-            'distance_from_home': np.random.exponential(scale=50, size=n_samples),
-            'is_weekend': np.random.binomial(1, 0.3, n_samples),
-            'is_night': np.random.binomial(1, 0.2, n_samples),
-            'device_score': np.random.beta(2, 5, n_samples),
-            'location_risk': np.random.beta(1, 9, n_samples),
-            'velocity_score': np.random.gamma(2, 2, n_samples),
-            'behavioral_score': np.random.normal(0, 1, n_samples),
-            'network_risk': np.random.beta(1, 4, n_samples),
-            'customer_age_days': np.random.exponential(scale=365, size=n_samples),
-            'avg_amount_30d': np.random.lognormal(mean=5.5, sigma=1.5, size=n_samples),
-            'transaction_frequency': np.random.gamma(3, 2, n_samples),
-            'cross_border': np.random.binomial(1, 0.1, n_samples),
-        }
-        
-        X = pd.DataFrame(data)
-        self.feature_names = list(X.columns)
-        
-        # Generate realistic fraud labels with complex patterns
-        fraud_probability = (
-            0.1 * (X['amount'] > X['amount'].quantile(0.95)).astype(int) +
-            0.15 * (X['transaction_count_1h'] > 5).astype(int) +
-            0.2 * (X['distance_from_home'] > 200).astype(int) +
-            0.1 * X['is_night'] +
-            0.15 * (X['velocity_score'] > X['velocity_score'].quantile(0.9)).astype(int) +
-            0.1 * (X['network_risk'] > 0.7).astype(int) +
-            0.1 * X['cross_border'] +
-            0.05 * np.random.random(n_samples)  # Add some noise
+    def _initialize_real_models(self, model_path: Optional[str] = None):
+        """Load the versioned trained artifact or refuse to serve."""
+        path = model_path or os.environ.get("FRAUD_MODEL_ARTIFACT_PATH", "")
+        if not path:
+            raise RuntimeError(
+                "FRAUD_MODEL_ARTIFACT_PATH is not configured; refusing to serve "
+                "fraud scores without a trained model artifact"
+            )
+        if not os.path.exists(path):
+            raise RuntimeError(
+                f"Trained model artifact not found at '{path}'; refusing to serve "
+                "fraud scores without a trained model artifact"
+            )
+        try:
+            self.load_models(path)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load trained model artifact '{path}': {e}; refusing to serve"
+            ) from e
+        if not self.is_trained or not self.models:
+            raise RuntimeError(
+                f"Model artifact '{path}' is not a valid trained bundle; refusing to serve"
+            )
+        logger.info(
+            f"Fraud detection models loaded from artifact {path} "
+            f"(version: {self.model_version or 'unknown'})"
         )
-        
-        # Create binary fraud labels
-        y = (fraud_probability > 0.3).astype(int)
-        
-        # Ensure reasonable fraud rate (around 5%)
-        fraud_indices = np.where(y == 1)[0]
-        if len(fraud_indices) > n_samples * 0.05:
-            # Randomly select subset to maintain 5% fraud rate
-            keep_fraud = np.random.choice(fraud_indices, int(n_samples * 0.05), replace=False)
-            y = np.zeros(n_samples)
-            y[keep_fraud] = 1
-        
-        logger.info(f"Generated {n_samples} samples with {y.sum()} fraud cases ({y.mean()*100:.1f}% fraud rate)")
-        
-        return X, pd.Series(y)
-    
-    def _train_random_forest(self, X: pd.DataFrame, y: pd.Series):
-        """Train Random Forest with real weights"""
-        # Use stratified split to maintain class balance
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        
-        # Scale features
-        scaler = RobustScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        # Train Random Forest with optimized parameters
-        rf_model = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=15,
-            min_samples_split=10,
-            min_samples_leaf=5,
-            max_features='sqrt',
-            random_state=42,
-            class_weight='balanced',
-            n_jobs=-1
-        )
-        
-        rf_model.fit(X_train_scaled, y_train)
-        
-        # Evaluate model
-        y_pred = rf_model.predict(X_test_scaled)
-        y_pred_proba = rf_model.predict_proba(X_test_scaled)[:, 1]
-        
-        auc_score = roc_auc_score(y_test, y_pred_proba)
-        logger.info(f"Random Forest AUC: {auc_score:.4f}")
-        
-        # Store model and scaler
-        self.models['random_forest'] = rf_model
-        self.scalers['random_forest'] = scaler
-        self.model_weights['random_forest'] = 0.3
-        
-        # Store feature importance
-        feature_importance = dict(zip(self.feature_names, rf_model.feature_importances_))
-        self.models['random_forest_importance'] = feature_importance
-    
-    def _train_xgboost(self, X: pd.DataFrame, y: pd.Series):
-        """Train XGBoost with real weights"""
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        # Calculate scale_pos_weight for class imbalance
-        scale_pos_weight = len(y_train[y_train == 0]) / len(y_train[y_train == 1])
-        
-        # Train XGBoost with optimized parameters
-        xgb_model = xgb.XGBClassifier(
-            n_estimators=300,
-            max_depth=8,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            gamma=1,
-            min_child_weight=3,
-            reg_alpha=0.1,
-            reg_lambda=1,
-            scale_pos_weight=scale_pos_weight,
-            random_state=42,
-            eval_metric='auc',
-            use_label_encoder=False
-        )
-        
-        xgb_model.fit(
-            X_train_scaled, y_train,
-            eval_set=[(X_test_scaled, y_test)],
-            early_stopping_rounds=50,
-            verbose=False
-        )
-        
-        # Evaluate model
-        y_pred_proba = xgb_model.predict_proba(X_test_scaled)[:, 1]
-        auc_score = roc_auc_score(y_test, y_pred_proba)
-        logger.info(f"XGBoost AUC: {auc_score:.4f}")
-        
-        # Store model and scaler
-        self.models['xgboost'] = xgb_model
-        self.scalers['xgboost'] = scaler
-        self.model_weights['xgboost'] = 0.4
-        
-        # Store feature importance
-        feature_importance = dict(zip(self.feature_names, xgb_model.feature_importances_))
-        self.models['xgboost_importance'] = feature_importance
-    
-    def _train_isolation_forest(self, X: pd.DataFrame):
-        """Train Isolation Forest for anomaly detection"""
-        # Scale features
-        scaler = RobustScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        # Train Isolation Forest
-        iso_model = IsolationForest(
-            contamination=0.05,  # Expected fraud rate
-            n_estimators=200,
-            max_samples='auto',
-            max_features=1.0,
-            bootstrap=False,
-            random_state=42,
-            n_jobs=-1
-        )
-        
-        iso_model.fit(X_scaled)
-        
-        # Store model and scaler
-        self.models['isolation_forest'] = iso_model
-        self.scalers['isolation_forest'] = scaler
-        self.model_weights['isolation_forest'] = 0.2
-        
-        logger.info("Isolation Forest trained successfully")
-    
-    def _train_ensemble_model(self, X: pd.DataFrame, y: pd.Series):
-        """Train ensemble model combining all base models"""
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        
-        # Get predictions from base models
-        rf_pred = self.models['random_forest'].predict_proba(
-            self.scalers['random_forest'].transform(X_train)
-        )[:, 1]
-        
-        xgb_pred = self.models['xgboost'].predict_proba(
-            self.scalers['xgboost'].transform(X_train)
-        )[:, 1]
-        
-        iso_pred = self.models['isolation_forest'].decision_function(
-            self.scalers['isolation_forest'].transform(X_train)
-        )
-        # Normalize isolation forest scores to [0, 1]
-        iso_pred = (iso_pred - iso_pred.min()) / (iso_pred.max() - iso_pred.min())
-        
-        # Create ensemble features
-        ensemble_features = np.column_stack([rf_pred, xgb_pred, iso_pred])
-        
-        # Train meta-learner (Logistic Regression)
-        from sklearn.linear_model import LogisticRegression
-        meta_model = LogisticRegression(
-            random_state=42,
-            class_weight='balanced',
-            max_iter=1000
-        )
-        
-        meta_model.fit(ensemble_features, y_train)
-        
-        # Evaluate ensemble
-        rf_test_pred = self.models['random_forest'].predict_proba(
-            self.scalers['random_forest'].transform(X_test)
-        )[:, 1]
-        
-        xgb_test_pred = self.models['xgboost'].predict_proba(
-            self.scalers['xgboost'].transform(X_test)
-        )[:, 1]
-        
-        iso_test_pred = self.models['isolation_forest'].decision_function(
-            self.scalers['isolation_forest'].transform(X_test)
-        )
-        iso_test_pred = (iso_test_pred - iso_pred.min()) / (iso_pred.max() - iso_pred.min())
-        
-        ensemble_test_features = np.column_stack([rf_test_pred, xgb_test_pred, iso_test_pred])
-        ensemble_pred = meta_model.predict_proba(ensemble_test_features)[:, 1]
-        
-        auc_score = roc_auc_score(y_test, ensemble_pred)
-        logger.info(f"Ensemble Model AUC: {auc_score:.4f}")
-        
-        # Store ensemble model
-        self.models['ensemble'] = meta_model
-        self.model_weights['ensemble'] = 0.1
     
     def predict_fraud(self, transaction_features: Dict[str, Any]) -> FraudDetectionResult:
         """Predict fraud probability for a transaction"""
         if not self.is_trained:
-            raise ValueError("Models not trained. Call _initialize_real_models() first.")
+            raise ValueError("Models not loaded. A trained artifact is required.")
         
         # Convert features to DataFrame
         feature_vector = self._prepare_features(transaction_features)
@@ -477,14 +257,15 @@ class RealFraudDetectionModel:
         
         return sorted_importance
     
-    def save_models(self, model_path: str):
-        """Save trained models to disk"""
+    def save_models(self, model_path: str, model_version: Optional[str] = None):
+        """Save trained models to disk (offline training pipeline only)"""
         model_data = {
             'models': self.models,
             'scalers': self.scalers,
             'feature_names': self.feature_names,
             'model_weights': self.model_weights,
-            'is_trained': self.is_trained
+            'is_trained': self.is_trained,
+            'model_version': model_version,
         }
         
         joblib.dump(model_data, model_path)
@@ -499,13 +280,18 @@ class RealFraudDetectionModel:
         self.feature_names = model_data['feature_names']
         self.model_weights = model_data['model_weights']
         self.is_trained = model_data['is_trained']
+        self.model_version = model_data.get('model_version')
         
         logger.info(f"Models loaded from {model_path}")
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Initialize real fraud detection model
-    fraud_model = RealFraudDetectionModel()
+    # Initialize fraud detection model from the trained artifact
+    try:
+        fraud_model = RealFraudDetectionModel()
+    except RuntimeError as e:
+        print(f"Refusing to serve fraud model: {e}")
+        raise SystemExit(1)
     
     # Test with sample transaction
     sample_transaction = {

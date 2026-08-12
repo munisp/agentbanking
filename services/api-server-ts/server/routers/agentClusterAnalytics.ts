@@ -389,6 +389,9 @@ export const agentClusterAnalyticsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentClusterAnalytics.optimizeNetwork is not available in this deployment",
+      });
     }),
 });

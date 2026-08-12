@@ -225,27 +225,14 @@ export default function AgentFloatForecasting() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Agent Float Forecasts</CardTitle>
+              {/* Bulk replenish disabled: the backend exposes no endpoint that
+                  computes per-agent amounts, and a hardcoded amount would be
+                  fabricated. Replenish agents individually instead. */}
               <Button
-                onClick={() =>
-                  triggerReplenishment.mutate({
-                    agentId: "all-below-threshold",
-                    amount: 50000,
-                  })
-                }
-                disabled={
-                  triggerReplenishment.isPending ||
-                  !hasForecast ||
-                  forecast.isError
-                }
-                title={
-                  !hasForecast
-                    ? "No live forecast data — replenishment disabled"
-                    : undefined
-                }
+                disabled
+                title="Bulk auto-replenish is unavailable — replenish agents individually with a confirmed amount."
               >
-                {triggerReplenishment.isPending
-                  ? "Processing..."
-                  : "Auto-Replenish All"}
+                Auto-Replenish All
               </Button>
             </div>
           </CardHeader>

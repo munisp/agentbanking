@@ -10,90 +10,10 @@ export default function POSDetailsScreen({
   const { terminal } = route.params;
 
   // Mock analytics data
-  const analyticsData = {
-    today: {
-      transactions: 47,
-      volume: 125000,
-      successRate: 94.5,
-      avgTransactionValue: 2659,
-    },
-    week: {
-      transactions: 312,
-      volume: 847000,
-      successRate: 92.8,
-      avgTransactionValue: 2714,
-    },
-    month: {
-      transactions: 1245,
-      volume: 3250000,
-      successRate: 93.2,
-      avgTransactionValue: 2610,
-    },
-    hourlyTrend: [
-      { hour: "06:00", txns: 2, volume: 5000 },
-      { hour: "08:00", txns: 5, volume: 12500 },
-      { hour: "10:00", txns: 8, volume: 25000 },
-      { hour: "12:00", txns: 12, volume: 35000 },
-      { hour: "14:00", txns: 9, volume: 22000 },
-      { hour: "16:00", txns: 7, volume: 18000 },
-      { hour: "18:00", txns: 4, volume: 7500 },
-    ],
-    transactionsByType: [
-      { type: "purchase", count: 28, percentage: 59.6, avgAmount: 3200 },
-      { type: "withdrawal", count: 12, percentage: 25.5, avgAmount: 5000 },
-      { type: "balance_inquiry", count: 5, percentage: 10.6, avgAmount: 0 },
-      { type: "transfer", count: 2, percentage: 4.3, avgAmount: 15000 },
-    ],
-    performance: {
-      uptime: 99.5,
-      avgResponseTime: 1.8,
-      failedTransactions: 3,
-      networkStrength: 85,
-    },
-  };
+  // Analytics are not available from the backend yet — never fabricated.
+  const analyticsData = null;
 
-  const recentTransactions = [
-    {
-      id: "1",
-      amount: 5000,
-      type: "purchase",
-      time: "10:30 AM",
-      status: "success",
-      card: "****4532",
-    },
-    {
-      id: "2",
-      amount: 3500,
-      type: "purchase",
-      time: "09:15 AM",
-      status: "success",
-      card: "****7821",
-    },
-    {
-      id: "3",
-      amount: 12000,
-      type: "withdrawal",
-      time: "08:45 AM",
-      status: "success",
-      card: "****2341",
-    },
-    {
-      id: "4",
-      amount: 2500,
-      type: "purchase",
-      time: "08:20 AM",
-      status: "failed",
-      card: "****9012",
-    },
-    {
-      id: "5",
-      amount: 8500,
-      type: "transfer",
-      time: "07:55 AM",
-      status: "success",
-      card: "****6734",
-    },
-  ];
+  const recentTransactions: any[] = []; // populated from the backend when available
 
   const getSuccessColor = (rate) => {
     if (rate >= 90) return theme.colors.success;
@@ -149,6 +69,8 @@ export default function POSDetailsScreen({
         </Card.Content>
       </Card>
 
+      {analyticsData ? (
+        <>
       {/* Analytics Overview */}
       <Card style={styles.card}>
         <Card.Content>
@@ -221,7 +143,7 @@ export default function POSDetailsScreen({
         </Card.Content>
       </Card>
 
-      {/* Performance Metrics */}
+        {/* Performance Metrics */}
       <Card style={styles.card}>
         <Card.Content>
           <View style={styles.sectionHeader}>
@@ -297,7 +219,7 @@ export default function POSDetailsScreen({
         </Card.Content>
       </Card>
 
-      {/* Transactions by Type */}
+        {/* Transactions by Type */}
       <Card style={styles.card}>
         <Card.Content>
           <View style={styles.sectionHeader}>
@@ -327,7 +249,7 @@ export default function POSDetailsScreen({
         </Card.Content>
       </Card>
 
-      {/* Hourly Trend */}
+        {/* Hourly Trend */}
       <Card style={styles.card}>
         <Card.Content>
           <View style={styles.sectionHeader}>
@@ -361,6 +283,17 @@ export default function POSDetailsScreen({
         </Card.Content>
       </Card>
 
+        </>
+      ) : (
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="bodyMedium" style={{ textAlign: "center", paddingVertical: 16 }}>
+              Analytics are unavailable — the backend does not provide terminal analytics yet.
+            </Text>
+          </Card.Content>
+        </Card>
+      )}
+
       {/* Recent Transactions */}
       <Card style={styles.card}>
         <Card.Content>
@@ -371,6 +304,11 @@ export default function POSDetailsScreen({
             </Text>
           </View>
 
+          {recentTransactions.length === 0 && (
+            <Text variant="bodyMedium" style={{ textAlign: "center", paddingVertical: 12 }}>
+              No recent transactions available.
+            </Text>
+          )}
           {recentTransactions.map((txn) => (
             <View key={txn.id} style={styles.transactionRow}>
               <View style={styles.transactionLeft}>

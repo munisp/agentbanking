@@ -2,7 +2,7 @@ import { trpc } from "../lib/trpc";
 import { usePosStore } from "../store/posStore";
 import { useState } from "react";
 import { toast } from "sonner";
-import { BG, BORDER, CARD, DISP, MONO, Transaction } from "./POSShell.shared";
+import { BG, BORDER, CARD, DISP, KYC_CHALLENGE_POOL, MONO, Transaction } from "./POSShell.shared";
 
 function DisputeScreen({ onBack }: { onBack: () => void }) {
   const agent = usePosStore(s => s.agent);

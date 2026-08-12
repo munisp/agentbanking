@@ -649,7 +649,10 @@ export const smsReceiptRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return { success: true, switchId: `sw-${Date.now()}` };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "smsReceipt.recordSwitch is not available in this deployment",
+      });
     }),
   requestRefund: protectedProcedure
     .input(

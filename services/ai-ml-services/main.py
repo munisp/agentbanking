@@ -86,10 +86,10 @@ app.add_middleware(
 # Redis-backed storage wrapper class for production use
 class RedisStorage:
     """Redis-backed storage that mimics dict interface"""
-    
+
     def __init__(self):
         self._count_key = "storage:_item_count"
-    
+
     def _get_count(self) -> int:
         try:
             client = get_redis_client()
@@ -97,40 +97,40 @@ class RedisStorage:
             return int(count) if count else 0
         except Exception:
             return 0
-    
+
     def _increment_count(self) -> int:
         try:
             client = get_redis_client()
             return client.incr(self._count_key)
         except Exception:
             return 0
-    
+
     def __len__(self):
         return self._get_count()
-    
+
     def __contains__(self, key):
         return storage_get(key) is not None
-    
+
     def __getitem__(self, key):
         value = storage_get(key)
         if value is None:
             raise KeyError(key)
         return value
-    
+
     def __setitem__(self, key, value):
         storage_set(key, value)
-    
+
     def __delitem__(self, key):
         storage_delete(key)
-    
+
     def get(self, key, default=None):
         value = storage_get(key)
         return value if value is not None else default
-    
+
     def values(self):
         keys = storage_keys("item_*")
         return [storage_get(k) for k in keys if storage_get(k) is not None]
-    
+
     def next_id(self) -> str:
         count = self._increment_count()
         return f"item_{count}"
@@ -264,35 +264,41 @@ async def get_statistics():
         "status": "operational"
     }
 
+CHURN_PREDICTION_URL = os.getenv("CHURN_PREDICTION_URL", "")
+
 @app.get("/api/v1/churn-prediction/agents")
 async def get_churn_predictions():
-    """Return ML-based churn risk predictions for agents."""
-    import random
-    random.seed(42)
-    risk_levels = ["high", "medium", "low"]
-    predictions = [
-        {
-            "agent_id": f"AGT-{1000 + i}",
-            "agent_name": f"Agent {1000 + i}",
-            "churn_probability": round(random.uniform(0.05, 0.95), 3),
-            "risk_level": risk_levels[i % 3],
-            "last_transaction_days": random.randint(1, 60),
-            "avg_monthly_transactions": random.randint(10, 300),
-            "float_utilization": round(random.uniform(0.1, 1.0), 2),
-            "factors": random.sample([
-                "low_transaction_frequency",
-                "float_underutilization",
-                "declining_revenue",
-                "competitor_activity",
-                "support_tickets",
-                "long_inactivity",
-            ], k=random.randint(1, 3)),
-            "recommended_action": "Schedule retention call" if i % 3 == 0 else ("Offer float increase" if i % 3 == 1 else "Monitor"),
-            "predicted_at": datetime.utcnow().isoformat(),
-        }
-        for i in range(20)
-    ]
-    return {"predictions": predictions, "total": len(predictions), "generated_at": datetime.utcnow().isoformat()}
+    """
+    Return ML-based churn risk predictions for agents.
+
+    Predictions come from the churn-prediction service (CHURN_PREDICTION_URL).
+    This coordinator NEVER fabricates predictions: when no churn backend is
+    configured it answers 503, and when the backend is unreachable or returns
+    an error it answers 502.
+    """
+    if not CHURN_PREDICTION_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="churn-prediction backend is not configured "
+                   "(set CHURN_PREDICTION_URL); no predictions available",
+        )
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{CHURN_PREDICTION_URL.rstrip('/')}/api/v1/churn-prediction/agents"
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"churn-prediction backend unreachable: {exc}",
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"churn-prediction backend returned HTTP {resp.status_code}",
+        )
+    return resp.json()
 
 @app.get("/healthz")
 async def healthz():

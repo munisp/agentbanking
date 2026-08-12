@@ -1,1 +1,14 @@
-PLACEHOLDER_WILL_NOT_PUSH
+export type HealthStatus = "healthy" | "degraded" | "down" | "unknown";
+export type ExposureTrend = "up" | "down" | "flat";
+export type SyncState = "healthy" | "warning" | "critical" | "unknown";
+export type ContractState = "draft" | "active" | "review" | "matured" | "delinquent";
+export type CustomerStatus = "Active" | "Pending" | "Review" | "Dormant";
+export type CustomerSegment = string;
+export type CustomerTier = string;
+export type CustomerRisk = string;
+export type WorkflowStage = string;
+export type WorkflowStatus = string;
+export type OperatorActionState = "Pending" | "In progress" | "Done";
+export type OperatorRole = "branch" | "operations" | "treasury" | "compliance";
+export type AuditSeverity = "info" | "warning" | "critical";
+export type ExportStatus = "Ready" | "Queued" | "Failed";

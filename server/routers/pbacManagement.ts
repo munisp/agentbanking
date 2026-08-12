@@ -332,12 +332,10 @@ export const pbacManagementRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishpbacManagementMiddleware("assignRole", `${Date.now()}`, {
-        action: "assignRole",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "pbacManagement.assignRole is not available in this deployment",
+      });
     }),
 
   getAuditLog: protectedProcedure.query(async () => {
@@ -382,14 +380,10 @@ export const pbacManagementRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishpbacManagementMiddleware(
-        "modifyPermissions",
-        `${Date.now()}`,
-        { action: "modifyPermissions" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "pbacManagement.modifyPermissions is not available in this deployment",
+      });
     }),
 
   removeAssignment: protectedProcedure
@@ -397,13 +391,9 @@ export const pbacManagementRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishpbacManagementMiddleware(
-        "removeAssignment",
-        `${Date.now()}`,
-        { action: "removeAssignment" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "pbacManagement.removeAssignment is not available in this deployment",
+      });
     }),
 });

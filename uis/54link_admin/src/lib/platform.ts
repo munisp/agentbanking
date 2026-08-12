@@ -1377,7 +1377,7 @@ export async function updateCustomerCard(cardId: string, payload: Partial<Custom
 }
 
 export async function getCustomerCardEvents(customerId?: string, role?: OperatorRole) {
-  return requestJson<{ asOf: string; items: CustomerCardEventRecord[]; total: number }>("/customer-servicing/card-events", {
+  return requestJson<{ asOf: string; items: CustomerCardEvent[]; total: number }>("/customer-servicing/card-events", {
     query: { customerId },
     role,
   });

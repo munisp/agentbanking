@@ -333,22 +333,10 @@ export const escalationChainsRouter = router({
   acknowledgeEvent: protectedProcedure
     .input(z.object({ eventId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "escalationChains",
-        "mutation",
-        "Executed escalationChains mutation"
-      );
-
-      return { success: true, eventId: input.eventId };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "escalationChains.acknowledgeEvent is not available in this deployment",
+      });
     }),
   listChains: protectedProcedure.query(async () => {
     return {
@@ -376,7 +364,10 @@ export const escalationChainsRouter = router({
   resolveEvent: protectedProcedure
     .input(z.object({ eventId: z.string(), resolution: z.string().optional() }))
     .mutation(async ({ input }) => {
-      return { success: true, eventId: input.eventId };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "escalationChains.resolveEvent is not available in this deployment",
+      });
     }),
   runEscalationCheck: protectedProcedure.mutation(async () => {
     return { triggered: 0, checked: 0 };
@@ -384,7 +375,10 @@ export const escalationChainsRouter = router({
   toggleChain: protectedProcedure
     .input(z.object({ chainId: z.string(), enabled: z.boolean() }))
     .mutation(async ({ input }) => {
-      return { success: true, chainId: input.chainId, enabled: input.enabled };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "escalationChains.toggleChain is not available in this deployment",
+      });
     }),
 });
 

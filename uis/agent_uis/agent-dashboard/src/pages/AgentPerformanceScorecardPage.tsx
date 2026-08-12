@@ -10,17 +10,25 @@ import { Search, TrendingUp, Award, Star } from "lucide-react";
 export default function AgentPerformanceScorecardPage() {
   const [search, setSearch] = useState("");
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
+      setError(null);
       try {
         const res = await fetch(`${CORE_BANKING_URL}/api/v1/agent-performance-scorecard`, { headers: authHeaders() });
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         setData(await res.json());
-      } catch {
+      } catch (e) {
+        // Fail loud: never render zeroed-out scores after a failed fetch.
         setData(null);
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Performance data could not be loaded."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -37,14 +45,27 @@ export default function AgentPerformanceScorecardPage() {
     <div className="p-6 space-y-6">
       <div><h1 className="text-2xl font-bold flex items-center gap-2"><Award className="w-6 h-6" /> Agent Performance Scorecard</h1>
         <p className="text-muted-foreground mt-1">Track agent KPIs, transaction volumes, and commission performance</p></div>
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Performance scorecard could not be loaded: {error}
+        </div>
+      )}
       <div className="grid grid-cols-4 gap-4">
-        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold">{data?.summary?.totalAgents || 0}</p><p className="text-sm text-muted-foreground">Total Agents</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold text-green-600">{data?.summary?.topPerformers || 0}</p><p className="text-sm text-muted-foreground">Top Performers</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold text-yellow-600">{data?.summary?.avgScore || 0}%</p><p className="text-sm text-muted-foreground">Avg Score</p></CardContent></Card>
-        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold">${(data?.summary?.totalCommission || 0).toLocaleString()}</p><p className="text-sm text-muted-foreground">Total Commission</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold">{error ? "—" : (data?.summary?.totalAgents ?? "—")}</p><p className="text-sm text-muted-foreground">Total Agents</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold text-green-600">{error ? "—" : (data?.summary?.topPerformers ?? "—")}</p><p className="text-sm text-muted-foreground">Top Performers</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold text-yellow-600">{error || data?.summary?.avgScore == null ? "—" : `${data.summary.avgScore}%`}</p><p className="text-sm text-muted-foreground">Avg Score</p></CardContent></Card>
+        <Card><CardContent className="pt-4 text-center"><p className="text-2xl font-bold">{error || data?.summary?.totalCommission == null ? "—" : `$${data.summary.totalCommission.toLocaleString()}`}</p><p className="text-sm text-muted-foreground">Total Commission</p></CardContent></Card>
       </div>
       <div className="flex items-center gap-2"><Search className="w-4 h-4" /><Input placeholder="Search agents..." value={search} onChange={e => setSearch(e.target.value)} className="max-w-sm" /></div>
-      {isLoading ? <div className="text-center py-8">Loading...</div> : (
+      {isLoading ? <div className="text-center py-8">Loading...</div> : error ? (
+        <div className="text-center py-8 text-muted-foreground">
+          Agent performance scores are unavailable because the data could not be loaded.
+        </div>
+      ) : agents.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          No agent performance data available.
+        </div>
+      ) : (
         <div className="grid gap-4">
           {agents.map((agent: any, i: number) => (
             <Card key={i}><CardContent className="flex items-center justify-between py-4">

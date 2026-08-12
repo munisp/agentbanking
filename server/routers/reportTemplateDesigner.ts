@@ -167,7 +167,7 @@ export const reportTemplateDesignerRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`${systemConfig.key} LIKE 'report_template_%'`)
+      .where(sql`\${systemConfig.key} LIKE 'report_template_%'`)
       .limit(100);
     return {
       totalTemplates: rows.length,
@@ -191,7 +191,7 @@ export const reportTemplateDesignerRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`${systemConfig.key} LIKE 'report_template_%'`)
+          .where(sql`\${systemConfig.key} LIKE 'report_template_%'`)
           .limit(input?.limit ?? 20);
         return {
           templates: rows.map(r => ({
@@ -340,41 +340,15 @@ export const reportTemplateDesignerRouter = router({
         filters: z.record(z.string(), z.string()).optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        await db.insert(auditLog).values({
-          action: "report_generated",
-          resource: "report_templates",
-          resourceId: input.templateId,
-          status: "success",
-          metadata: {
-            dateFrom: input.dateFrom,
-            dateTo: input.dateTo,
-            filters: input.filters,
-          },
-        });
-        // Middleware fan-out (fail-open)
-        await publishreportTemplateDesignerMiddleware(
-          "generateReport",
-          `${Date.now()}`,
-          { action: "generateReport" }
-        ).catch(() => {});
-
-        return {
-          success: true,
-          reportId: "RPT-" + crypto.randomUUID().toUpperCase(),
-          status: "generating",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      // FAIL LOUD: previously inserted a "report_generated" audit row with
+      // status success and returned a random report id + status "generating"
+      // without generating any report.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Report generation is not wired to a real backend in this router; refusing to return a canned response.",
+      });
     }),
 
   create: protectedProcedure
@@ -382,12 +356,11 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishreportTemplateDesignerMiddleware("create", `${Date.now()}`, {
-        action: "create",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Generic template creation is not wired to a real backend in this router; refusing to return a canned response.",
+      });
     }),
 
   delete: protectedProcedure
@@ -395,21 +368,19 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishreportTemplateDesignerMiddleware("delete", `${Date.now()}`, {
-        action: "delete",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Generic template deletion is not wired to a real backend in this router; refusing to return a canned response.",
+      });
     }),
 
   list: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishreportTemplateDesignerMiddleware("list", `${Date.now()}`, {
-      action: "list",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Generic template listing (use listTemplates) is not wired to a real backend in this router; refusing to return a canned response.",
+      });
   }),
 
   setDefault: protectedProcedure
@@ -417,28 +388,28 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishreportTemplateDesignerMiddleware(
-        "setDefault",
-        `${Date.now()}`,
-        { action: "setDefault" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Default-template selection is not wired to a real backend in this router; refusing to return a canned response.",
+      });
     }),
 
   widgetCatalog: protectedProcedure.query(async () => {
-    // Widget types: kpi, chart, table, gauge, heatmap
-    // Middleware fan-out (fail-open)
-    await publishreportTemplateDesignerMiddleware(
-      "widgetCatalog",
-      `${Date.now()}`,
-      { action: "widgetCatalog" }
-    ).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Widget catalog is not wired to a real backend in this router; refusing to return a canned response.",
+      });
   }),
+
   update: protectedProcedure
     .input(z.object({ id: z.string(), name: z.string().optional() }))
-    .mutation(async ({ input }) => ({ id: input.id, updated: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Generic template update is not wired to a real backend in this router; refusing to return a canned response.",
+      });
+    }),
 });

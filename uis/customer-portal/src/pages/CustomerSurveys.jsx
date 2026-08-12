@@ -1,36 +1,34 @@
 /**
  * Customer Surveys — Post-transaction NPS and CSAT collection
- * Migrated from NGApp — tRPC stubs, no shadcn/ui
+ * Migrated from NGApp — no shadcn/ui
+ *
+ * NOTE: The customer portal has no surveys/feedback API wired to it.
+ * This page fails loud: it renders an honest unavailable state instead of
+ * fabricated rows or hardcoded KPI figures.
  */
 import { useState } from "react";
 
-const listQuery = { data: null, isLoading: false, refetch: () => {} };
-
 export default function CustomerSurveys() {
-  const mockData =
-    listQuery.data ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: ["Chioma Eze","Emeka Obi","Fatima Bello","Adamu Yusuf","Grace Okonkwo","Ibrahim Musa","Joy Nwosu","Kemi Ade","Ladi Bako","Musa Dan"][i],
-      col3: ["active","pending","completed","active","warning","active","completed","pending","active","completed"][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
-
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
+  // No surveys data source is available to this portal.
+  const records = [];
+  const loadError =
+    "Survey data is not available. The surveys service is not connected to this portal.";
+
+  // No KPI aggregates are available without a data source — render "—"
+  // rather than hardcoded figures.
   const kpis = [
-    { label: "NPS Score", value: "+67" },
-    { label: "CSAT Score", value: "4.3/5" },
-    { label: "Responses", value: "8,421" },
-    { label: "Response Rate", value: "34.2%" },
+    { label: "NPS Score", value: "—" },
+    { label: "CSAT Score", value: "—" },
+    { label: "Responses", value: "—" },
+    { label: "Response Rate", value: "—" },
   ];
 
   const columns = ["Survey ID", "Customer", "NPS", "CSAT", "Date"];
 
-  const filtered = mockData.filter(
+  const filtered = records.filter(
     (r) =>
       r.col1.toLowerCase().includes(search.toLowerCase()) ||
       r.col2.toLowerCase().includes(search.toLowerCase())
@@ -47,9 +45,6 @@ export default function CustomerSurveys() {
             </h1>
             <p style={{ color: "#9ca3af", fontSize: "14px", marginTop: "4px" }}>Post-transaction NPS and CSAT collection</p>
           </div>
-          <button style={{ padding: "8px 16px", background: "#2563eb", borderRadius: "8px", border: "none", color: "#fff", fontSize: "14px", cursor: "pointer" }}>
-            New Entry
-          </button>
         </div>
 
         {/* KPI Cards */}
@@ -105,23 +100,14 @@ export default function CustomerSurveys() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
-                  <tr key={row.id} style={{ borderBottom: "1px solid rgba(31,41,55,0.5)" }}>
-                    <td style={{ padding: "12px", fontFamily: "monospace", color: "#60a5fa" }}>{row.col1}</td>
-                    <td style={{ padding: "12px" }}>{row.col2}</td>
-                    <td style={{ padding: "12px" }}>
-                      <span style={{
-                        padding: "2px 8px", borderRadius: "9999px", fontSize: "12px", fontWeight: "500",
-                        background: row.col3 === "active" ? "rgba(34,197,94,0.2)" : row.col3 === "pending" ? "rgba(234,179,8,0.2)" : row.col3 === "warning" ? "rgba(239,68,68,0.2)" : "rgba(59,130,246,0.2)",
-                        color: row.col3 === "active" ? "#4ade80" : row.col3 === "pending" ? "#facc15" : row.col3 === "warning" ? "#f87171" : "#60a5fa",
-                      }}>
-                        {row.col3}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px" }}>{row.col4}</td>
-                    <td style={{ padding: "12px", color: "#9ca3af" }}>{row.col5}</td>
-                  </tr>
-                ))}
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    style={{ padding: "24px", textAlign: "center", color: "#f87171" }}
+                  >
+                    {loadError}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>

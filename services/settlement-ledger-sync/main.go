@@ -6,17 +6,27 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	tb "github.com/tigerbeetle/tigerbeetle-go"
+	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
+
+var errNoPending = errors.New("no pending ledger entries to sync")
 
 type Config struct {
 	Port               string
@@ -24,6 +34,7 @@ type Config struct {
 	TigerBeetleAddr    string
 	TigerBeetleCluster uint32
 	KafkaBrokers       string
+	KafkaRESTProxyURL  string
 	MojaloopHubURL     string
 	MojaloopFSPID      string
 	DaprHTTPPort       string
@@ -36,9 +47,10 @@ func loadConfig() *Config {
 	return &Config{
 		Port:               getEnv("PORT", "9102"),
 		PostgresURL:        getEnv("POSTGRES_URL", ""),
-		TigerBeetleAddr:    getEnv("TIGERBEETLE_ADDR", "tigerbeetle:3000"),
+		TigerBeetleAddr:    getEnv("TB_ADDRESSES", getEnv("TIGERBEETLE_ADDR", "tigerbeetle:3000")),
 		TigerBeetleCluster: 0,
 		KafkaBrokers:       getEnv("KAFKA_BROKERS", "kafka:9092"),
+		KafkaRESTProxyURL:  getEnv("KAFKA_REST_PROXY_URL", ""),
 		MojaloopHubURL:     getEnv("MOJALOOP_HUB_URL", "http://mojaloop-hub:4003"),
 		MojaloopFSPID:      getEnv("MOJALOOP_FSP_ID", "54agent"),
 		DaprHTTPPort:       getEnv("DAPR_HTTP_PORT", "3500"),
@@ -124,6 +136,9 @@ type SettlementBatch struct {
 
 type LedgerSyncEngine struct {
 	config      *Config
+	pg          *pgx.Conn
+	tbClient    tb.Client
+	httpClient  *http.Client
 	mu          sync.RWMutex
 	batches     []SettlementBatch
 	entries     []BillingLedgerEntry
@@ -132,12 +147,27 @@ type LedgerSyncEngine struct {
 	totalSynced int64
 }
 
-func NewLedgerSyncEngine(cfg *Config) *LedgerSyncEngine {
+func NewLedgerSyncEngine(cfg *Config, pg *pgx.Conn, tbClient tb.Client) *LedgerSyncEngine {
 	return &LedgerSyncEngine{
-		config:  cfg,
-		batches: make([]SettlementBatch, 0),
-		entries: make([]BillingLedgerEntry, 0),
+		config:     cfg,
+		pg:         pg,
+		tbClient:   tbClient,
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+		batches:    make([]SettlementBatch, 0),
+		entries:    make([]BillingLedgerEntry, 0),
 	}
+}
+
+// accountRef maps a logical ledger account identifier to a deterministic
+// TigerBeetle Uint128 account ID (same convention as tb-sidecar).
+func accountRef(s string) tbtypes.Uint128 {
+	var result tbtypes.Uint128
+	b := []byte(s)
+	if len(b) > 16 {
+		b = b[:16]
+	}
+	copy(result[:], b)
+	return result
 }
 
 // SyncPendingEntries fetches unsynced billing ledger entries from Postgres,
@@ -146,59 +176,164 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 	log.Println("[LedgerSync] Starting sync cycle")
 
 	// Step 1: Fetch pending entries from billing ledger (PostgreSQL)
-	entries := lse.fetchPendingEntries()
+	entries, err := lse.fetchPendingEntries(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch pending entries: %w", err)
+	}
 	if len(entries) == 0 {
 		log.Println("[LedgerSync] No pending entries to sync")
-		return nil
+		return errNoPending
 	}
 
-	// Step 2: Create TigerBeetle transfers for each entry
+	// Step 2: Create TigerBeetle transfers for each entry. Entries that fail are
+	// marked failed in Postgres and never counted as synced.
+	posted := make([]BillingLedgerEntry, 0, len(entries))
 	for _, entry := range entries {
-		if err := lse.createTigerBeetleTransfer(entry); err != nil {
+		if err := lse.createTigerBeetleTransfer(ctx, entry); err != nil {
 			log.Printf("[LedgerSync] TigerBeetle transfer failed for tx %s: %v", entry.TransactionID, err)
+			if mErr := lse.markEntryFailed(ctx, entry, err); mErr != nil {
+				log.Printf("[LedgerSync] Failed to mark tx %s as failed: %v", entry.TransactionID, mErr)
+			}
 			continue
 		}
+		posted = append(posted, entry)
+	}
+	if len(posted) == 0 {
+		return fmt.Errorf("all %d pending entries failed TigerBeetle posting", len(entries))
 	}
 
-	// Step 3: Batch entries for Mojaloop settlement
-	batch := lse.createSettlementBatch(entries)
+	// Step 3: Batch entries for settlement — StateCommitted is only set here,
+	// after real TigerBeetle postings have been accepted.
+	batch := lse.createSettlementBatch(posted)
 
-	// Step 4: Publish to Kafka for downstream consumers
-	lse.publishSettlementEvent(batch)
+	// Step 4: Publish to Kafka for downstream consumers. A publish failure fails
+	// the cycle loudly; the batch remains committed in TigerBeetle.
+	if err := lse.publishSettlementEvent(ctx, batch); err != nil {
+		return fmt.Errorf("batch %s committed in TigerBeetle but event publish failed: %w", batch.BatchID, err)
+	}
 
-	// Step 5: Update sync state
+	// Step 5: Mark entries synced in Postgres
+	if err := lse.markEntriesSynced(ctx, posted, batch.BatchID); err != nil {
+		return fmt.Errorf("batch %s posted and published but Postgres sync-status update failed: %w", batch.BatchID, err)
+	}
+
+	// Step 6: Update sync state
 	lse.mu.Lock()
 	lse.syncCount++
 	lse.lastSync = time.Now()
-	lse.totalSynced += int64(len(entries))
+	lse.totalSynced += int64(len(posted))
 	lse.batches = append(lse.batches, batch)
 	lse.mu.Unlock()
 
-	log.Printf("[LedgerSync] Synced %d entries in batch %s", len(entries), batch.BatchID)
+	log.Printf("[LedgerSync] Synced %d entries in batch %s", len(posted), batch.BatchID)
 	return nil
 }
 
-func (lse *LedgerSyncEngine) fetchPendingEntries() []BillingLedgerEntry {
-	// In production: SELECT * FROM platform_billing_ledger WHERE sync_status = 'pending' LIMIT 1000
-	return []BillingLedgerEntry{
-		{
-			ID: 1, TransactionID: "TX-2026-001", AgentID: "AGT-001",
-			ClientID: "CLT-001", TransactionType: "cash_in",
-			GrossAmount: 5000000, GrossFee: 50000,
-			PlatformShare: 14000, ClientShare: 36000, AgentCommission: 25000,
-			Currency: "NGN", BillingModel: "revenue_share", ProcessedAt: time.Now(),
-		},
+// fetchPendingEntries queries the billing ledger for entries awaiting sync.
+func (lse *LedgerSyncEngine) fetchPendingEntries(ctx context.Context) ([]BillingLedgerEntry, error) {
+	rows, err := lse.pg.Query(ctx, `
+		SELECT id, transaction_id, agent_id, client_id, transaction_type,
+		       gross_amount, gross_fee, platform_share, client_share, agent_commission,
+		       currency, billing_model, processed_at
+		FROM platform_billing_ledger
+		WHERE sync_status = 'pending'
+		ORDER BY id
+		LIMIT 1000`)
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
+
+	entries := make([]BillingLedgerEntry, 0)
+	for rows.Next() {
+		var e BillingLedgerEntry
+		if err := rows.Scan(&e.ID, &e.TransactionID, &e.AgentID, &e.ClientID, &e.TransactionType,
+			&e.GrossAmount, &e.GrossFee, &e.PlatformShare, &e.ClientShare, &e.AgentCommission,
+			&e.Currency, &e.BillingModel, &e.ProcessedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }
 
-func (lse *LedgerSyncEngine) createTigerBeetleTransfer(entry BillingLedgerEntry) error {
-	// In production: create 3 transfers in TigerBeetle:
-	// 1. Customer → Platform (platformShare)
-	// 2. Customer → Client (clientShare)
-	// 3. Client → Agent (agentCommission)
-	log.Printf("[TigerBeetle] Creating double-entry transfer for tx %s: platform=%d, client=%d, agent=%d",
-		entry.TransactionID, entry.PlatformShare, entry.ClientShare, entry.AgentCommission)
+// createTigerBeetleTransfer posts the double-entry distribution for a billing
+// entry to the TigerBeetle cluster:
+//  1. Customer → Platform (platformShare)
+//  2. Customer → Client (clientShare)
+//  3. Client → Agent (agentCommission)
+func (lse *LedgerSyncEngine) createTigerBeetleTransfer(ctx context.Context, entry BillingLedgerEntry) error {
+	customerAcct := accountRef("customer:" + entry.ClientID)
+	platformAcct := accountRef("platform-revenue")
+	clientAcct := accountRef("client:" + entry.ClientID)
+	agentAcct := accountRef("agent:" + entry.AgentID)
+
+	transfers := make([]tbtypes.Transfer, 0, 3)
+	if entry.PlatformShare > 0 {
+		transfers = append(transfers, tbtypes.Transfer{
+			ID:              tbtypes.ID(),
+			DebitAccountID:  customerAcct,
+			CreditAccountID: platformAcct,
+			Amount:          tbtypes.ToUint128(uint64(entry.PlatformShare)),
+			Ledger:          1,
+			Code:            1,
+		})
+	}
+	if entry.ClientShare > 0 {
+		transfers = append(transfers, tbtypes.Transfer{
+			ID:              tbtypes.ID(),
+			DebitAccountID:  customerAcct,
+			CreditAccountID: clientAcct,
+			Amount:          tbtypes.ToUint128(uint64(entry.ClientShare)),
+			Ledger:          1,
+			Code:            1,
+		})
+	}
+	if entry.AgentCommission > 0 {
+		transfers = append(transfers, tbtypes.Transfer{
+			ID:              tbtypes.ID(),
+			DebitAccountID:  clientAcct,
+			CreditAccountID: agentAcct,
+			Amount:          tbtypes.ToUint128(uint64(entry.AgentCommission)),
+			Ledger:          1,
+			Code:            1,
+		})
+	}
+	if len(transfers) == 0 {
+		return fmt.Errorf("entry %s has no non-zero shares to post", entry.TransactionID)
+	}
+
+	results, err := lse.tbClient.CreateTransfers(transfers)
+	if err != nil {
+		return fmt.Errorf("tigerbeetle cluster unreachable: %w", err)
+	}
+	if len(results) > 0 {
+		return fmt.Errorf("tigerbeetle rejected transfer at index %d: %v", results[0].Index, results[0].Result)
+	}
+
+	log.Printf("[TigerBeetle] Posted %d double-entry transfers for tx %s: platform=%d, client=%d, agent=%d",
+		len(transfers), entry.TransactionID, entry.PlatformShare, entry.ClientShare, entry.AgentCommission)
 	return nil
+}
+
+func (lse *LedgerSyncEngine) markEntryFailed(ctx context.Context, entry BillingLedgerEntry, cause error) error {
+	_, err := lse.pg.Exec(ctx, `
+		UPDATE platform_billing_ledger
+		SET sync_status = 'failed', sync_error = $2
+		WHERE id = $1`, entry.ID, cause.Error())
+	return err
+}
+
+func (lse *LedgerSyncEngine) markEntriesSynced(ctx context.Context, entries []BillingLedgerEntry, batchID string) error {
+	ids := make([]int64, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+	}
+	_, err := lse.pg.Exec(ctx, `
+		UPDATE platform_billing_ledger
+		SET sync_status = 'synced', settlement_batch_id = $2, synced_at = NOW()
+		WHERE id = ANY($1)`, ids, batchID)
+	return err
 }
 
 func (lse *LedgerSyncEngine) createSettlementBatch(entries []BillingLedgerEntry) SettlementBatch {
@@ -223,17 +358,91 @@ func (lse *LedgerSyncEngine) createSettlementBatch(entries []BillingLedgerEntry)
 	}
 }
 
-func (lse *LedgerSyncEngine) publishSettlementEvent(batch SettlementBatch) {
-	// In production: publish to Kafka topic "billing.settlement.committed"
-	log.Printf("[Kafka] Publishing settlement batch %s: %d entries, total=%d",
+// publishSettlementEvent publishes the committed batch to the
+// "billing.settlement.committed" Kafka topic via the Kafka REST proxy.
+func (lse *LedgerSyncEngine) publishSettlementEvent(ctx context.Context, batch SettlementBatch) error {
+	if lse.config.KafkaRESTProxyURL == "" {
+		return errors.New("KAFKA_REST_PROXY_URL not configured — cannot publish settlement event")
+	}
+	payload := map[string]interface{}{
+		"records": []map[string]interface{}{{"key": batch.BatchID, "value": batch}},
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(lse.config.KafkaRESTProxyURL, "/")+"/topics/billing.settlement.committed",
+		bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+	resp, err := lse.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned status %d", resp.StatusCode)
+	}
+	log.Printf("[Kafka] Published settlement batch %s: %d entries, total=%d",
 		batch.BatchID, batch.EntryCount, batch.TotalAmount)
+	return nil
 }
 
-// InitiateMojaloopSettlement triggers interbank settlement via Mojaloop
+// InitiateMojaloopSettlement triggers interbank settlement via Mojaloop by
+// POSTing a real /transfers request to the Mojaloop hub. The batch must already
+// be committed in TigerBeetle.
 func (lse *LedgerSyncEngine) InitiateMojaloopSettlement(batchID string) error {
-	log.Printf("[Mojaloop] Initiating interbank settlement for batch %s via FSP %s",
+	lse.mu.RLock()
+	var batch *SettlementBatch
+	for i := range lse.batches {
+		if lse.batches[i].BatchID == batchID {
+			batch = &lse.batches[i]
+			break
+		}
+	}
+	lse.mu.RUnlock()
+	if batch == nil {
+		return fmt.Errorf("settlement batch %s not found", batchID)
+	}
+	if batch.State != StateCommitted {
+		return fmt.Errorf("settlement batch %s is not committed (state: %s)", batchID, batch.State)
+	}
+
+	transfer := MojaloopTransfer{
+		TransferID: batchID,
+		PayerFSP:   lse.config.MojaloopFSPID,
+		PayeeFSP:   lse.config.MojaloopFSPID,
+		Amount:     strconv.FormatInt(batch.TotalAmount, 10),
+		Currency:   "NGN",
+		Expiration: time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339),
+	}
+	body, _ := json.Marshal(transfer)
+	req, err := http.NewRequest(http.MethodPost,
+		strings.TrimRight(lse.config.MojaloopHubURL, "/")+"/transfers", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/vnd.interoperability.transfers+json;version=1.1")
+	req.Header.Set("FSPIOP-Source", lse.config.MojaloopFSPID)
+	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+
+	resp, err := lse.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("mojaloop hub unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("mojaloop hub returned status %d", resp.StatusCode)
+	}
+
+	now := time.Now()
+	lse.mu.Lock()
+	batch.State = StateSettled
+	batch.SettledAt = &now
+	lse.mu.Unlock()
+
+	log.Printf("[Mojaloop] Interbank settlement initiated for batch %s via FSP %s",
 		batchID, lse.config.MojaloopFSPID)
-	// In production: POST /transfers to Mojaloop Hub with ILP conditions
 	return nil
 }
 
@@ -252,6 +461,9 @@ func (lse *LedgerSyncEngine) StartScheduler(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := lse.SyncPendingEntries(ctx); err != nil {
+				if errors.Is(err, errNoPending) {
+					continue
+				}
 				log.Printf("[Scheduler] Sync error: %v", err)
 			}
 		}
@@ -277,6 +489,10 @@ func (lse *LedgerSyncEngine) handleHealth(w http.ResponseWriter, r *http.Request
 
 func (lse *LedgerSyncEngine) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
 	if err := lse.SyncPendingEntries(r.Context()); err != nil {
+		if errors.Is(err, errNoPending) {
+			http.Error(w, `{"error":"no_pending_entries"}`, http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -296,7 +512,7 @@ func (lse *LedgerSyncEngine) handleSettleBatch(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := lse.InitiateMojaloopSettlement(batchID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "settlement_initiated", "batchId": batchID})
@@ -306,10 +522,28 @@ func main() {
 	cfg := loadConfig()
 	log.Printf("Starting Settlement Ledger Sync on port %s", cfg.Port)
 
-	engine := NewLedgerSyncEngine(cfg)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Refuse to start without Postgres — it is the source of pending ledger entries.
+	if cfg.PostgresURL == "" {
+		log.Fatal("POSTGRES_URL is required; refusing to start without the billing ledger source")
+	}
+	pgConn, err := pgx.Connect(ctx, cfg.PostgresURL)
+	if err != nil {
+		log.Fatalf("Cannot connect to PostgreSQL (%v); refusing to start", err)
+	}
+	defer pgConn.Close(ctx)
+
+	// Refuse to start without a live TigerBeetle cluster connection.
+	addresses := strings.Split(cfg.TigerBeetleAddr, ",")
+	tbClient, err := tb.NewClient(tbtypes.ToUint128(uint64(cfg.TigerBeetleCluster)), addresses)
+	if err != nil {
+		log.Fatalf("Cannot connect to TigerBeetle cluster at %v (%v); refusing to start", addresses, err)
+	}
+	defer tbClient.Close()
+
+	engine := NewLedgerSyncEngine(cfg, pgConn, tbClient)
 
 	go engine.StartScheduler(ctx)
 

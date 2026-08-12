@@ -1,19 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Trophy, TrendingUp, Users, Search, ChevronLeft, ChevronRight, Medal, Star, Zap } from "lucide-react";
 
-const MOCK_AGENTS = [
-  { id: "a1", agentCode: "AG-001", name: "Adebayo Ogundimu", tier: "Platinum", status: "active", txCount: 1840, volume: 9200000, commission: 284000, successRate: 98.2 },
-  { id: "a2", agentCode: "AG-002", name: "Chioma Nwosu", tier: "Platinum", status: "active", txCount: 1720, volume: 8600000, commission: 261000, successRate: 96.5 },
-  { id: "a3", agentCode: "AG-003", name: "Emeka Okafor", tier: "Gold", status: "active", txCount: 1520, volume: 7600000, commission: 228000, successRate: 94.0 },
-  { id: "a4", agentCode: "AG-004", name: "Fatima Ibrahim", tier: "Gold", status: "active", txCount: 1410, volume: 7050000, commission: 211000, successRate: 91.8 },
-  { id: "a5", agentCode: "AG-005", name: "Oluwaseun Bakare", tier: "Gold", status: "active", txCount: 1280, volume: 6400000, commission: 192000, successRate: 89.3 },
-  { id: "a6", agentCode: "AG-006", name: "Amaka Eze", tier: "Silver", status: "active", txCount: 1180, volume: 5900000, commission: 177000, successRate: 87.1 },
-  { id: "a7", agentCode: "AG-007", name: "Chukwuemeka Ike", tier: "Silver", status: "active", txCount: 1090, volume: 5450000, commission: 163000, successRate: 85.6 },
-  { id: "a8", agentCode: "AG-008", name: "Ngozi Obi", tier: "Silver", status: "active", txCount: 920, volume: 4600000, commission: 138000, successRate: 83.2 },
-  { id: "a9", agentCode: "AG-009", name: "Tunde Adeleke", tier: "Bronze", status: "inactive", txCount: 780, volume: 3900000, commission: 117000, successRate: 79.4 },
-  { id: "a10", agentCode: "AG-010", name: "Yetunde Afolabi", tier: "Bronze", status: "active", txCount: 640, volume: 3200000, commission: 96000, successRate: 76.8 },
-];
-
 const TIER_COLORS: Record<string, string> = {
   Platinum: "bg-purple-100 text-purple-700",
   Gold: "bg-amber-100 text-amber-700",
@@ -24,7 +11,9 @@ const TIER_COLORS: Record<string, string> = {
 const fmt = (n: number) => `₦${n.toLocaleString("en-NG")}`;
 
 export default function AgentPerformance() {
-  const [agents] = useState(MOCK_AGENTS);
+  // No live data source is wired to this view — start empty rather than
+  // rendering fabricated agents.
+  const [agents] = useState<any[]>([]);
   const [days, setDays] = useState(30);
   const [sortBy, setSortBy] = useState<"volume" | "txCount" | "commission" | "successRate">("volume");
   const [page, setPage] = useState(1);
@@ -113,7 +102,7 @@ export default function AgentPerformance() {
             </tr></thead>
             <tbody className="divide-y divide-gray-50">
               {paged.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No agents found</td></tr>
+                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No performance data available</td></tr>
               ) : paged.map((a, i) => {
                 const globalRank = (page - 1) * limit + i + 1;
                 return (

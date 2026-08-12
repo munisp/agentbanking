@@ -33,29 +33,6 @@ interface PerfCompare {
   networkAvg: number;
 }
 
-const MOCK_SUMMARY: TeamSummary = { totalAgents: 34, activeToday: 28, transactionsToday: 1420, floatAlerts: 3 };
-
-const MOCK_AGENTS: AgentCard[] = [
-  { id: "ag1", name: "Chuka Obi", location: "Surulere, Lagos", status: "Online", txToday: 87, cashBalance: 320000 },
-  { id: "ag2", name: "Amina Bello", location: "Wuse II, Abuja", status: "Online", txToday: 64, cashBalance: 180000 },
-  { id: "ag3", name: "Emeka Nwosu", location: "Aba, Abia", status: "On-Break", txToday: 31, cashBalance: 95000 },
-  { id: "ag4", name: "Funke Adeyemi", location: "Ibadan, Oyo", status: "Offline", txToday: 0, cashBalance: 410000 },
-  { id: "ag5", name: "Garba Musa", location: "Kano Municipal", status: "Online", txToday: 112, cashBalance: 270000 },
-  { id: "ag6", name: "Ngozi Eze", location: "Enugu", status: "Online", txToday: 58, cashBalance: 145000 },
-];
-
-const MOCK_BREACHES: SLABreach[] = [
-  { id: "s1", agentName: "Emeka Nwosu", issue: "Break >60 min (SLA: 30 min)", breachedAt: "11:42 AM" },
-  { id: "s2", agentName: "Funke Adeyemi", issue: "Zero transactions since login", breachedAt: "09:15 AM" },
-];
-
-const MOCK_PERF: PerfCompare[] = [
-  { metric: "Avg Tx / Agent / Day", myTeam: 51, networkAvg: 43 },
-  { metric: "Float Utilisation %", myTeam: 78, networkAvg: 69 },
-  { metric: "SLA Breach Rate %", myTeam: 4, networkAvg: 9 },
-  { metric: "Customer Satisfaction", myTeam: 4.6, networkAvg: 4.2 },
-];
-
 const STATUS_STYLE: Record<string, string> = {
   Online: "bg-emerald-100 text-emerald-700",
   Offline: "bg-gray-100 text-gray-500",
@@ -69,34 +46,39 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 };
 
 const SupervisorDashboard: React.FC = () => {
-  const [summary, setSummary] = useState<TeamSummary>(MOCK_SUMMARY);
+  const [summary, setSummary] = useState<TeamSummary | null>(null);
   const [agents, setAgents] = useState<AgentCard[]>([]);
   const [breaches, setBreaches] = useState<SLABreach[]>([]);
   const [perf, setPerf] = useState<PerfCompare[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/portals/api/v1/supervisor/team`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setSummary(d.summary ?? MOCK_SUMMARY);
-        setAgents(d.agents ?? MOCK_AGENTS);
-        setBreaches(d.breaches ?? MOCK_BREACHES);
-        setPerf(d.performance ?? MOCK_PERF);
-      } else {
-        setAgents(MOCK_AGENTS); setBreaches(MOCK_BREACHES); setPerf(MOCK_PERF);
-      }
-    } catch {
-      setAgents(MOCK_AGENTS); setBreaches(MOCK_BREACHES); setPerf(MOCK_PERF);
-    } finally { setLoading(false); }
+        setSummary(d.summary ?? null);
+        setAgents(d.agents ?? []);
+        setBreaches(d.breaches ?? []);
+        setPerf(d.performance ?? []);
+      } else { setError("Failed to load team data."); }
+    } catch { setError("Failed to load team data."); } finally { setLoading(false); }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchAll()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Supervisor Dashboard</h1>
@@ -111,10 +93,10 @@ const SupervisorDashboard: React.FC = () => {
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         {[
-          { label: "Agents Under Supervision", value: summary.totalAgents, color: "text-indigo-600" },
-          { label: "Active Today", value: summary.activeToday, color: "text-emerald-600" },
-          { label: "Transactions Today", value: summary.transactionsToday.toLocaleString(), color: "text-blue-600" },
-          { label: "Float Alerts", value: summary.floatAlerts, color: "text-red-500" },
+          { label: "Agents Under Supervision", value: summary ? summary.totalAgents : "—", color: "text-indigo-600" },
+          { label: "Active Today", value: summary ? summary.activeToday : "—", color: "text-emerald-600" },
+          { label: "Transactions Today", value: summary ? summary.transactionsToday.toLocaleString() : "—", color: "text-blue-600" },
+          { label: "Float Alerts", value: summary ? summary.floatAlerts : "—", color: "text-red-500" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-6">
             <p className="text-sm text-gray-500">{label}</p>

@@ -23,36 +23,44 @@ const ICONS: Record<string, React.FC<any>> = {
   POS: MonitorSmartphone, WhatsApp: MessageSquare, NFC: Wifi,
 };
 
-const MOCK_CHANNELS: Channel[] = [
-  { id: "ussd", name: "USSD", txToday: 8420, successRate: 97.8, avgProcessingMs: 1200, revenueToday: 2_105_000, status: "primary", fallbackTo: "Mobile App" },
-  { id: "app", name: "Mobile App", txToday: 6340, successRate: 99.4, avgProcessingMs: 480, revenueToday: 1_585_000, status: "primary" },
-  { id: "web", name: "Web", txToday: 2180, successRate: 98.9, avgProcessingMs: 620, revenueToday: 545_000, status: "primary" },
-  { id: "pos", name: "POS", txToday: 4910, successRate: 96.2, avgProcessingMs: 2100, revenueToday: 1_227_500, status: "primary", fallbackTo: "USSD" },
-  { id: "whatsapp", name: "WhatsApp", txToday: 1240, successRate: 98.1, avgProcessingMs: 750, revenueToday: 310_000, status: "primary" },
-  { id: "nfc", name: "NFC", txToday: 580, successRate: 99.8, avgProcessingMs: 180, revenueToday: 145_000, status: "fallback" },
-];
-
 const STATUS_STYLES: Record<ChannelStatus, string> = {
   primary: "bg-green-100 text-green-700",
   fallback: "bg-blue-100 text-blue-700",
   disabled: "bg-gray-100 text-gray-500",
 };
 
+const mapStatus = (s: any): ChannelStatus =>
+  s === "primary" || s === "fallback" || s === "disabled"
+    ? s
+    : s === "active"
+      ? "primary"
+      : s === "degraded" || s === "inactive"
+        ? "fallback"
+        : "primary";
+
 const MultiChannelPaymentOrchestration: React.FC = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [simulationMode, setSimulationMode] = useState(false);
 
   useEffect(() => { fetchChannels(); }, []);
 
   const fetchChannels = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/api/payment-orchestration/channels`, { headers: getTenantHeadersFromStorage() });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Request failed: ${res.status}`);
+      }
       const data = await res.json();
-      
+      setSimulationMode(Boolean(data?.simulation_mode));
+
       // Handle different response formats
-      let channelsArray: Channel[] = [];
+      let channelsArray: any[] = [];
       if (Array.isArray(data)) {
         channelsArray = data;
       } else if (data?.channels && Array.isArray(data.channels)) {
@@ -60,38 +68,65 @@ const MultiChannelPaymentOrchestration: React.FC = () => {
       } else if (data?.data && Array.isArray(data.data)) {
         channelsArray = data.data;
       }
-      
+
       // Normalize channels with default values
-      const normalizedChannels = channelsArray.map(c => ({
+      const normalizedChannels: Channel[] = channelsArray.map(c => ({
         id: c.id || "",
-        name: c.name || "Unknown",
-        txToday: c.txToday ?? 0,
-        successRate: c.successRate ?? 0,
-        avgProcessingMs: c.avgProcessingMs ?? 0,
-        revenueToday: c.revenueToday ?? 0,
-        status: c.status || "primary" as ChannelStatus,
-        fallbackTo: c.fallbackTo,
+        name: c.name || c.channel || "Unknown",
+        txToday: c.txToday ?? c.tx_today ?? 0,
+        successRate: c.successRate ?? c.success_rate ?? 0,
+        avgProcessingMs: c.avgProcessingMs ?? c.avg_processing_ms ?? 0,
+        revenueToday: c.revenueToday ?? c.revenue_today ?? 0,
+        status: mapStatus(c.status),
+        fallbackTo: c.fallbackTo ?? c.fallback_to,
       }));
-      
-      setChannels(normalizedChannels.length > 0 ? normalizedChannels : MOCK_CHANNELS);
-    } catch {
-      setChannels(MOCK_CHANNELS);
+
+      // Never substitute fabricated channels when the service returns none.
+      setChannels(normalizedChannels);
+    } catch (e) {
+      setChannels([]);
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Payment channel data could not be loaded."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleStatus = (id: string) => {
-    setChannels((prev) => prev.map((c) => {
-      if (c.id !== id) return c;
-      const next: ChannelStatus = c.status === "primary" ? "fallback" : c.status === "fallback" ? "disabled" : "primary";
-      return { ...c, status: next };
-    }));
+  const toggleStatus = async (id: string) => {
+    const channel = channels.find((c) => c.id === id);
+    if (!channel) return;
+    const next: ChannelStatus = channel.status === "primary" ? "fallback" : channel.status === "fallback" ? "disabled" : "primary";
+    setActionError(null);
+    try {
+      const res = await fetch(`${CORE_URL}/api/payment-orchestration/channels/${id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getTenantHeadersFromStorage(),
+        },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Request failed: ${res.status}`);
+      }
+      // Only reflect the change locally after the backend confirmed it.
+      setChannels((prev) => prev.map((c) => (c.id === id ? { ...c, status: next } : c)));
+    } catch (e) {
+      setActionError(
+        `Could not update status for ${channel.name}: ${
+          e instanceof Error ? e.message : "unknown error"
+        }`
+      );
+    }
   };
 
   const totalTx = channels.reduce((a, c) => a + c.txToday, 0);
   const totalRevenue = channels.reduce((a, c) => a + c.revenueToday, 0);
-  const avgSuccess = channels.length ? (channels.reduce((a, c) => a + c.successRate, 0) / channels.length).toFixed(1) : "0";
+  const avgSuccess = channels.length ? (channels.reduce((a, c) => a + c.successRate, 0) / channels.length).toFixed(1) : "—";
 
   return (
     <div className="p-6 space-y-6">
@@ -105,32 +140,54 @@ const MultiChannelPaymentOrchestration: React.FC = () => {
         </button>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          Payment channel data could not be loaded: {error}
+        </div>
+      )}
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          {actionError}
+        </div>
+      )}
+      {simulationMode && !error && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-4 py-3 text-sm">
+          The orchestration service is running in simulation mode — figures shown are simulated, not live.
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6">
           <p className="text-sm text-gray-500">Total Transactions Today</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{totalTx.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{error ? "—" : totalTx.toLocaleString()}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-6">
           <p className="text-sm text-gray-500">Total Revenue Today</p>
-          <p className="text-2xl font-bold text-green-600 mt-1">₦{totalRevenue.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-green-600 mt-1">{error ? "—" : `₦${totalRevenue.toLocaleString()}`}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-6">
           <p className="text-sm text-gray-500">Avg Success Rate</p>
-          <p className="text-2xl font-bold text-blue-600 mt-1">{avgSuccess}%</p>
+          <p className="text-2xl font-bold text-blue-600 mt-1">{error || avgSuccess === "—" ? "—" : `${avgSuccess}%`}</p>
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Transactions by Channel</h2>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={channels} layout="vertical" margin={{ left: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis type="number" tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
-            <Tooltip formatter={(v: number) => [v.toLocaleString(), "Transactions"]} />
-            <Bar dataKey="txToday" fill="#3B82F6" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {error ? (
+          <p className="text-sm text-gray-500 py-8 text-center">Chart unavailable — channel data could not be loaded.</p>
+        ) : channels.length === 0 ? (
+          <p className="text-sm text-gray-500 py-8 text-center">No payment channels returned by the orchestration service.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={channels} layout="vertical" margin={{ left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis type="number" tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
+              <Tooltip formatter={(v: number) => [v.toLocaleString(), "Transactions"]} />
+              <Bar dataKey="txToday" fill="#3B82F6" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6">
@@ -149,25 +206,39 @@ const MultiChannelPaymentOrchestration: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {channels.map((c) => {
-              const Icon = ICONS[c.name] || GitBranch;
-              return (
-                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="py-3 font-medium text-gray-900 flex items-center gap-2"><Icon size={14} className="text-gray-400" />{c.name}</td>
-                  <td className="py-3 text-gray-600">{c.txToday.toLocaleString()}</td>
-                  <td className="py-3">
-                    <span className={`font-medium ${c.successRate >= 99 ? "text-green-600" : c.successRate >= 97 ? "text-amber-600" : "text-red-500"}`}>{c.successRate}%</span>
-                  </td>
-                  <td className="py-3 text-gray-600">{c.avgProcessingMs}ms</td>
-                  <td className="py-3 text-gray-600">₦{c.revenueToday.toLocaleString()}</td>
-                  <td className="py-3 text-gray-500 text-xs">{c.fallbackTo || "—"}</td>
-                  <td className="py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[c.status]}`}>{c.status}</span></td>
-                  <td className="py-3">
-                    <button onClick={() => toggleStatus(c.id)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-100">Toggle</button>
-                  </td>
-                </tr>
-              );
-            })}
+            {error ? (
+              <tr>
+                <td colSpan={8} className="py-8 text-center text-gray-500">
+                  Channel configuration unavailable — the orchestration service could not be reached.
+                </td>
+              </tr>
+            ) : channels.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={8} className="py-8 text-center text-gray-500">
+                  No payment channels returned by the orchestration service.
+                </td>
+              </tr>
+            ) : (
+              channels.map((c) => {
+                const Icon = ICONS[c.name] || GitBranch;
+                return (
+                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-3 font-medium text-gray-900 flex items-center gap-2"><Icon size={14} className="text-gray-400" />{c.name}</td>
+                    <td className="py-3 text-gray-600">{c.txToday.toLocaleString()}</td>
+                    <td className="py-3">
+                      <span className={`font-medium ${c.successRate >= 99 ? "text-green-600" : c.successRate >= 97 ? "text-amber-600" : "text-red-500"}`}>{c.successRate}%</span>
+                    </td>
+                    <td className="py-3 text-gray-600">{c.avgProcessingMs}ms</td>
+                    <td className="py-3 text-gray-600">₦{c.revenueToday.toLocaleString()}</td>
+                    <td className="py-3 text-gray-500 text-xs">{c.fallbackTo || "—"}</td>
+                    <td className="py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[c.status]}`}>{c.status}</span></td>
+                    <td className="py-3">
+                      <button onClick={() => toggleStatus(c.id)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-100">Toggle</button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

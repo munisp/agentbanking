@@ -13,17 +13,24 @@
 //   AT_API_KEY, AT_USERNAME, AT_ENVIRONMENT (sandbox|production)
 //   REDIS_URL, KAFKA_BROKER, POS_API_URL
 //
+// POS_API_URL is REQUIRED for balance inquiries, mini statements, PIN
+// verification and transaction execution. This handler NEVER fabricates
+// financial data and fails closed when the POS API is unreachable.
+//
 // Carrier detection: extracts MCC/MNC from phoneNumber prefix for Nigerian carriers
 // (MTN: +2340803, Airtel: +2340802, Glo: +2340805, 9mobile: +2340809)
 
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -88,6 +95,160 @@ type CarrierInfo struct {
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*USSDSession
+}
+
+// ── POS API Client ───────────────────────────────────────────────────────────
+//
+// All financial data (balances, statements, transaction execution, PIN
+// verification) comes from the POS API. No hardcoded values anywhere.
+
+var (
+	posAPIURL = strings.TrimRight(getEnv("POS_API_URL", ""), "/")
+	posHTTP   = &http.Client{Timeout: 8 * time.Second}
+)
+
+// POSBalance is the real balance snapshot returned by the POS API.
+type POSBalance struct {
+	Balance    float64 `json:"balance"`
+	Float      float64 `json:"float"`
+	Commission float64 `json:"commission"`
+	Loyalty    int     `json:"loyalty"`
+	Currency   string  `json:"currency"`
+}
+
+func fetchPOSBalance(phone string) (*POSBalance, error) {
+	if posAPIURL == "" {
+		return nil, errors.New("POS_API_URL not configured")
+	}
+	resp, err := posHTTP.Get(fmt.Sprintf("%s/api/v1/agents/balance?phone=%s", posAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("POS API returned status %d", resp.StatusCode)
+	}
+	var bal POSBalance
+	if err := json.NewDecoder(resp.Body).Decode(&bal); err != nil {
+		return nil, err
+	}
+	return &bal, nil
+}
+
+// POSStatementEntry is a single real transaction line from the POS API.
+type POSStatementEntry struct {
+	Date        string  `json:"date"`
+	Type        string  `json:"type"`
+	Amount      float64 `json:"amount"`
+	Currency    string  `json:"currency"`
+	Description string  `json:"description"`
+}
+
+func fetchPOSMiniStatement(phone string) ([]POSStatementEntry, error) {
+	if posAPIURL == "" {
+		return nil, errors.New("POS_API_URL not configured")
+	}
+	resp, err := posHTTP.Get(fmt.Sprintf("%s/api/v1/agents/mini-statement?phone=%s&limit=5", posAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("POS API returned status %d", resp.StatusCode)
+	}
+	var body struct {
+		Transactions []POSStatementEntry `json:"transactions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body.Transactions, nil
+}
+
+// verifyPOSPIN verifies the collected PIN against the POS/auth backend.
+func verifyPOSPIN(phone, pin string) error {
+	if posAPIURL == "" {
+		return errors.New("POS_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{"phone": phone, "pin": pin})
+	resp, err := posHTTP.Post(posAPIURL+"/api/v1/auth/verify-pin", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("POS API returned status %d", resp.StatusCode)
+	}
+	var result struct {
+		Valid bool `json:"valid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.Valid {
+		return errors.New("invalid PIN")
+	}
+	return nil
+}
+
+// POSTxResult is the real execution outcome returned by the POS API.
+type POSTxResult struct {
+	Reference string `json:"reference"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+}
+
+// executePOSTransaction posts the confirmed transaction to the POS API.
+// The USSD session ID is sent as the idempotency key so carrier retries can
+// never double-execute a money movement.
+func executePOSTransaction(sess *USSDSession) (*POSTxResult, error) {
+	if posAPIURL == "" {
+		return nil, errors.New("POS_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":       sess.TxData.Type,
+		"amount":     sess.TxData.Amount,
+		"agentPhone": sess.PhoneNumber,
+		"recipient":  sess.TxData.Receiver,
+		"channel":    "ussd",
+	})
+	req, err := http.NewRequest(http.MethodPost, posAPIURL+"/api/v1/transactions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", sess.SessionID)
+	resp, err := posHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result POSTxResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("POS API returned unreadable response (status %d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.Reference == "" {
+		if result.Error != "" {
+			return nil, errors.New(result.Error)
+		}
+		return nil, fmt.Errorf("POS API returned status %d without a reference", resp.StatusCode)
+	}
+	return &result, nil
+}
+
+func txTypeLabel(txType string) string {
+	switch txType {
+	case "cash_in":
+		return "Cash In"
+	case "cash_out":
+		return "Cash Out"
+	case "transfer":
+		return "Transfer"
+	case "balance":
+		return "Balance"
+	default:
+		return txType
+	}
 }
 
 // ── Carrier Detection ────────────────────────────────────────────────────────
@@ -274,12 +435,32 @@ func handleMainMenu(store *SessionStore, sess *USSDSession, input string) string
 		store.Set(sess)
 		return "CON Enter recipient phone number:"
 	case "5":
-		store.Delete(sess.SessionID)
-		return "END Mini Statement:\n" +
-			"1. +500.00 Cash In 27/04\n" +
-			"2. -200.00 Cash Out 27/04\n" +
-			"3. +1000.00 Transfer 26/04\n" +
-			"Balance: NGN 5,300.00"
+		defer store.Delete(sess.SessionID)
+		entries, err := fetchPOSMiniStatement(sess.PhoneNumber)
+		if err != nil {
+			log.Printf("[USSD] mini statement lookup failed (session=%s): %v", sess.SessionID, err)
+			return "END Statement service unavailable. Please try again later."
+		}
+		if len(entries) == 0 {
+			return "END No recent transactions."
+		}
+		var sb strings.Builder
+		sb.WriteString("END Mini Statement:\n")
+		for i, e := range entries {
+			if i >= 5 {
+				break
+			}
+			label := e.Description
+			if label == "" {
+				label = txTypeLabel(e.Type)
+			}
+			currency := e.Currency
+			if currency == "" {
+				currency = "NGN"
+			}
+			fmt.Fprintf(&sb, "%d. %s %s %.2f %s\n", i+1, label, currency, e.Amount, e.Date)
+		}
+		return strings.TrimRight(sb.String(), "\n")
 	case "0":
 		store.Delete(sess.SessionID)
 		return "END Thank you for using 54agent POS. Goodbye!"
@@ -318,12 +499,18 @@ func handleCashOut(store *SessionStore, sess *USSDSession, input string, parts [
 }
 
 func handleBalance(store *SessionStore, sess *USSDSession) string {
-	store.Delete(sess.SessionID)
-	// In production, this would call the POS API to get real balance
-	return "END Your balance:\n" +
-		"Float: NGN 50,000.00\n" +
-		"Commission: NGN 1,250.00\n" +
-		"Loyalty: 450 pts"
+	defer store.Delete(sess.SessionID)
+	bal, err := fetchPOSBalance(sess.PhoneNumber)
+	if err != nil {
+		log.Printf("[USSD] balance lookup failed (session=%s): %v", sess.SessionID, err)
+		return "END Balance service unavailable. Please try again later."
+	}
+	currency := bal.Currency
+	if currency == "" {
+		currency = "NGN"
+	}
+	return fmt.Sprintf("END Your balance:\nFloat: %s %.2f\nCommission: %s %.2f\nLoyalty: %d pts",
+		currency, bal.Float, currency, bal.Commission, bal.Loyalty)
 }
 
 func handleTransfer(store *SessionStore, sess *USSDSession, input string, parts []string) string {
@@ -353,19 +540,38 @@ func handlePINEntry(store *SessionStore, sess *USSDSession, input string) string
 	sess.State = "confirm"
 	store.Set(sess)
 	return fmt.Sprintf("CON Confirm %s of NGN %.2f?\n1. Confirm\n2. Cancel",
-		sess.TxData.Type, sess.TxData.Amount)
+		txTypeLabel(sess.TxData.Type), sess.TxData.Amount)
 }
 
 func handleConfirm(store *SessionStore, sess *USSDSession, input string) string {
 	defer store.Delete(sess.SessionID)
-	if input == "1" {
-		ref := fmt.Sprintf("TXN%d", time.Now().UnixNano()%1000000)
-		sess.TxData.Ref = ref
-		return fmt.Sprintf("END %s successful!\nAmount: NGN %.2f\nRef: %s\nThank you!",
-			strings.Title(strings.ReplaceAll(sess.TxData.Type, "_", " ")),
-			sess.TxData.Amount, ref)
+	if input != "1" {
+		return "END Transaction cancelled."
 	}
-	return "END Transaction cancelled."
+	if sess.TxData == nil {
+		return "END Session error. Please dial again."
+	}
+
+	// Verify PIN against the backend before any money movement.
+	if err := verifyPOSPIN(sess.PhoneNumber, sess.TxData.PIN); err != nil {
+		log.Printf("[USSD] PIN verification failed (session=%s): %v", sess.SessionID, err)
+		return "END Transaction rejected: PIN verification failed."
+	}
+
+	// Execute against the POS API — only a real backend reference may be
+	// shown to the customer as a confirmation.
+	result, err := executePOSTransaction(sess)
+	if err != nil {
+		log.Printf("[USSD] transaction execution failed (session=%s, type=%s, amount=%.2f): %v",
+			sess.SessionID, sess.TxData.Type, sess.TxData.Amount, err)
+		return fmt.Sprintf("END %s could not be completed. No funds were moved. Please try again later.",
+			txTypeLabel(sess.TxData.Type))
+	}
+
+	sess.TxData.Ref = result.Reference
+	return fmt.Sprintf("END %s successful!\nAmount: NGN %.2f\nRef: %s\nThank you!",
+		txTypeLabel(sess.TxData.Type),
+		sess.TxData.Amount, result.Reference)
 }
 
 func parseAmount(s string) float64 {
@@ -436,10 +642,11 @@ func cleanupHandler(w http.ResponseWriter, r *http.Request) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "healthy",
-		"service": "at-ussd-handler",
-		"version": "1.0.0",
-		"env":     getEnv("AT_ENVIRONMENT", "sandbox"),
+		"status":           "healthy",
+		"service":          "at-ussd-handler",
+		"version":          "1.0.0",
+		"env":              getEnv("AT_ENVIRONMENT", "production"),
+		"posApiConfigured": posAPIURL != "",
 	})
 }
 
@@ -454,6 +661,10 @@ func getEnv(key, fallback string) string {
 
 func main() {
 	port := getEnv("PORT", "9010")
+
+	if posAPIURL == "" {
+		log.Printf("[AT-USSD-Handler] WARNING: POS_API_URL not set — all financial operations will fail closed")
+	}
 
 	// Background cleanup every 60s
 	go func() {
@@ -471,7 +682,7 @@ func main() {
 	http.HandleFunc("/ussd/cleanup", cleanupHandler)
 	http.HandleFunc("/health", healthHandler)
 
-	log.Printf("[AT-USSD-Handler] Starting on :%s (env=%s)", port, getEnv("AT_ENVIRONMENT", "sandbox"))
+	log.Printf("[AT-USSD-Handler] Starting on :%s (env=%s)", port, getEnv("AT_ENVIRONMENT", "production"))
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 

@@ -1,12 +1,15 @@
+import csv
+import io
+import json
 import logging
-import random
-import time
+import os
 from datetime import datetime, timedelta
 from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import models, config
@@ -36,40 +39,121 @@ router = APIRouter(prefix="/reports", tags=["Reporting Engine"])
 # Dependency to get the database session
 get_db = config.get_db
 
+# Directory where generated report artifacts are actually persisted.
+REPORT_STORAGE_DIR = os.getenv("REPORT_STORAGE_DIR", "/var/reports")
+
 
 # --- Utility Functions (Business Logic) ---
+def _fetch_report_data(db: Session, template: ReportTemplate, runtime_data: dict = None) -> list:
+    """Fetch report rows by executing the template's data source query.
+
+    Raises RuntimeError when the template has no data source configured; the
+    caller records the instance as FAILED with the real error message.
+    """
+    if not template.data_source_query:
+        raise RuntimeError(
+            f"Template '{template.name}' has no data_source_query configured"
+        )
+    result = db.execute(text(template.data_source_query), runtime_data or {})
+    columns = list(result.keys())
+    return [dict(zip(columns, row)) for row in result.fetchall()]
+
+
+def _render_report(template: ReportTemplate, rows: list, output_format: str, runtime_data: dict = None) -> bytes:
+    """Render the template content with the fetched rows in the requested format."""
+    context = {
+        "rows": rows,
+        "row_count": len(rows),
+        "generated_at": datetime.utcnow().isoformat(),
+        **(runtime_data or {}),
+    }
+    try:
+        from jinja2 import Template
+    except ImportError:
+        raise RuntimeError("Jinja2 is not installed; cannot render report templates")
+    rendered = Template(template.template_content).render(**context)
+
+    fmt = (output_format or "").upper()
+    if fmt == "CSV":
+        buf = io.StringIO()
+        if rows:
+            writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return buf.getvalue().encode("utf-8")
+    if fmt == "JSON":
+        return json.dumps(
+            {
+                "template": template.name,
+                "generated_at": context["generated_at"],
+                "row_count": len(rows),
+                "rows": rows,
+            },
+            indent=2,
+            default=str,
+        ).encode("utf-8")
+    if fmt == "HTML":
+        return rendered.encode("utf-8")
+    if fmt == "PDF":
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+        except ImportError:
+            raise RuntimeError("ReportLab is not installed; cannot render PDF reports")
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=letter)
+        y = 750
+        for line in (rendered.splitlines() or [""]):
+            c.drawString(40, y, line[:110])
+            y -= 14
+            if y < 40:
+                c.showPage()
+                y = 750
+        c.save()
+        return buf.getvalue()
+    raise RuntimeError(f"Unsupported output format: {output_format}")
+
+
+def _store_report_file(template: ReportTemplate, content: bytes, output_format: str) -> str:
+    """Persist the rendered report and return the real path it was written to."""
+    os.makedirs(REPORT_STORAGE_DIR, exist_ok=True)
+    safe_name = template.name.replace(" ", "_")
+    file_path = os.path.join(
+        REPORT_STORAGE_DIR,
+        f"{safe_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{output_format.lower()}",
+    )
+    with open(file_path, "wb") as f:
+        f.write(content)
+    return file_path
+
+
 def _generate_report_generation(
+    db: Session,
     template: ReportTemplate,
     output_format: str,
     schedule_id: UUID = None,
     runtime_data: dict = None,
 ) -> ReportInstance:
-    """
-    Generates the complex report generation process.
-    In a real system, this would involve:
-    1. Fetching data using template.data_source_query and runtime_data.
-    2. Rendering the template.template_content (e.g., Jinja2) with the data.
-    3. Converting the rendered output to the specified output_format (PDF, CSV, etc.).
-    4. Storing the file in a storage system (e.g., S3, local disk).
+    """Real report pipeline: query data source -> render template -> store file.
+
+    There is no simulated work and no random failure injection. Any failure
+    raises and is recorded as a FAILED instance with the real error message,
+    and file_path only ever points at a file that was actually written.
     """
     logger.info(
-        f"Simulating generation for template {template.id} in format {output_format}"
+        f"Generating report for template {template.id} in format {output_format}"
     )
-
-    # Process result
-    if random.random() < 0.1:  # 10% chance of failure
-        status_val = "FAILED"
-        error_msg = "Failure during data processing."
-        file_path = None
-        completed_at = datetime.utcnow()
-    else:
-        # Execute report generation
-        time.sleep(random.uniform(0.5, 2.0))
+    try:
+        rows = _fetch_report_data(db, template, runtime_data)
+        content = _render_report(template, rows, output_format, runtime_data)
+        file_path = _store_report_file(template, content, output_format)
         status_val = "COMPLETED"
         error_msg = None
-        # Generate file path
-        file_path = f"/var/reports/{template.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{output_format.lower()}"
-        completed_at = datetime.utcnow()
+    except Exception as exc:
+        logger.error(f"Report generation failed for template {template.id}: {exc}")
+        status_val = "FAILED"
+        error_msg = str(exc)
+        file_path = None
 
     # Create and return a new ReportInstance object (not yet saved to DB)
     instance = ReportInstance(
@@ -79,7 +163,7 @@ def _generate_report_generation(
         output_format=output_format,
         file_path=file_path,
         generated_at=datetime.utcnow(),
-        completed_at=completed_at,
+        completed_at=datetime.utcnow(),
         error_message=error_msg,
     )
     return instance
@@ -367,10 +451,9 @@ def generate_report_on_demand(
     db.commit()
     db.refresh(pending_instance)
 
-    # 2. Execute the generation process
-    # For this synchronous API, we'll generate the completion immediately after the commit
-    # to demonstrate the full flow.
+    # 2. Execute the real generation pipeline (query -> render -> store)
     generated_instance = _generate_report_generation(
+        db=db,
         template=template,
         output_format=request.output_format,
         runtime_data=request.runtime_data,
@@ -388,7 +471,7 @@ def generate_report_on_demand(
         db.refresh(db_instance)
         logger.info(f"Report instance {db_instance.id} finished with status: {db_instance.status}")
         return db_instance
-    
+
     # Should not happen if the initial commit succeeded
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update report instance after generation.")
 
@@ -400,6 +483,10 @@ def generate_report_on_demand(
 def download_report(instance_id: UUID, db: Session = Depends(get_db)):
     """
     Retrieves the generated report file for a given instance ID.
+
+    Only files that were actually written by the generation pipeline are
+    served. If the artifact is missing from storage this is a 404 - we never
+    synthesize placeholder content and serve it as a PDF/CSV.
     """
     instance = read_instance(instance_id=instance_id, db=db)
 
@@ -415,23 +502,12 @@ def download_report(instance_id: UUID, db: Session = Depends(get_db)):
             detail="File path not found for this completed report instance.",
         )
 
-    # NOTE: In a real-world scenario, this file would be retrieved from S3/Cloud Storage.
-    # Return the generated file.
-    # We must ensure the file exists for FileResponse to work.
-    
-    # Create a dummy file for demonstration purposes
-    dummy_file_path = f"/tmp/report_{instance_id}.{instance.output_format.lower()}"
-    try:
-        with open(dummy_file_path, "w") as f:
-            f.write(f"--- Report Content ---\n")
-            f.write(f"Instance ID: {instance_id}\n")
-            f.write(f"Template ID: {instance.template_id}\n")
-            f.write(f"Format: {instance.output_format}\n")
-            f.write(f"Generated At: {instance.generated_at}\n")
-            f.write(f"This is a generated report content for a {instance.output_format} file.\n")
-    except Exception as e:
-        logger.error(f"Failed to create dummy file: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create dummy file for download.")
+    if not os.path.exists(instance.file_path):
+        logger.error(f"Report artifact missing from storage: {instance.file_path}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report artifact not found in storage.",
+        )
 
     media_type_map = {
         "PDF": "application/pdf",
@@ -443,7 +519,7 @@ def download_report(instance_id: UUID, db: Session = Depends(get_db)):
     filename = f"report_{instance_id}.{instance.output_format.lower()}"
 
     return FileResponse(
-        path=dummy_file_path,
+        path=instance.file_path,
         media_type=media_type,
         filename=filename,
     )

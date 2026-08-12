@@ -33,16 +33,11 @@ interface WebhookDelivery {
   duration_ms?: number;
 }
 
-const MOCK_ENDPOINTS: WebhookEndpoint[] = [
-  { id: "wh-001", url: "https://myapp.com/webhooks/54agent", events: ["transaction.completed", "transaction.failed", "settlement.processed"], status: "active", last_delivery: "2 min ago", success_rate: 98.4, total_deliveries: 12840, created_at: "2024-01-10" },
-  { id: "wh-002", url: "https://analytics.company.io/events", events: ["transaction.created", "agent.registered"], status: "active", last_delivery: "15 min ago", success_rate: 99.1, total_deliveries: 45600, created_at: "2024-02-05" },
-  { id: "wh-003", url: "https://staging.example.com/hooks", events: ["transaction.created"], status: "paused", last_delivery: "3 days ago", success_rate: 87.2, total_deliveries: 800, created_at: "2024-10-20" },
-];
-
 const WebhookManagement: React.FC = () => {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [viewDeliveries, setViewDeliveries] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,11 +48,12 @@ const WebhookManagement: React.FC = () => {
 
   const fetchEndpoints = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/webhooks`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setEndpoints(Array.isArray(d.endpoints) ? d.endpoints : MOCK_ENDPOINTS); }
-      else { setEndpoints(MOCK_ENDPOINTS); }
-    } catch { setEndpoints(MOCK_ENDPOINTS); }
+      if (res.ok) { const d = await res.json(); setEndpoints(Array.isArray(d.endpoints) ? d.endpoints : []); }
+      else { setError("Failed to load webhook endpoints."); }
+    } catch { setError("Failed to load webhook endpoints."); }
     finally { setLoading(false); }
   };
 
@@ -112,6 +108,13 @@ const WebhookManagement: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchEndpoints()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

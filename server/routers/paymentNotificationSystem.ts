@@ -19,14 +19,37 @@ import {
   withTransaction,
 } from "../lib/transactionHelper";
 
+const LIST_QUERY_BODY = `
+    try {
+      const db = (await getDb())!;
+      const lim = input.limit ?? 10;
+      const offset = ((input.page ?? 1) - 1) * lim;
+      const rows = await db
+        .select()
+        .from(notificationDispatchLog)
+        .orderBy(desc(notificationDispatchLog.id))
+        .limit(lim)
+        .offset(offset);
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(notificationDispatchLog)
+        .limit(100);
+      return { items: rows, total, page: input.page ?? 1, limit: lim };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }`;
+const PAGE_INPUT = z.object({
+  page: z.number().min(1).max(10000).optional(),
+  limit: z.number().min(1).max(100).optional(),
+  search: z.string().min(1).max(500).optional(),
+});
 const getNotifications = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
@@ -52,7 +75,7 @@ const getNotifications = protectedProcedure
       });
     }
   });
-const getStats = publicProcedure
+const getStats = protectedProcedure
   .input(
     z.object({
       page: z.number().min(1).max(10000).optional(),
@@ -74,12 +97,12 @@ const getStats = publicProcedure
         .from(notificationDispatchLog)
         .orderBy(desc(notificationDispatchLog.id))
         .limit(5);
+      // Previously returned fabricated delivery metrics (totalSent 45892,
+      // deliveryRate 96.14, per-channel counts, retry queue) to
+      // unauthenticated callers. Only totalSent/lastUpdated have a real
+      // source in this router.
       return {
-        totalSent: 45892,
-        deliveryRate: 96.14,
-        channels: { email: 12340, sms: 18560, push: 10200, inApp: 4792 },
-        failedDeliveries: 1768,
-        retryQueue: 234,
+        totalSent: Number(total),
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {
@@ -92,13 +115,7 @@ const getStats = publicProcedure
     }
   });
 const markRead = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
@@ -125,13 +142,7 @@ const markRead = protectedProcedure
     }
   });
 const configureChannels = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
@@ -158,13 +169,7 @@ const configureChannels = protectedProcedure
     }
   });
 const getChannelConfig = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
@@ -191,13 +196,7 @@ const getChannelConfig = protectedProcedure
     }
   });
 const testNotification = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;
@@ -224,13 +223,7 @@ const testNotification = protectedProcedure
     }
   });
 const getDeliveryLog = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().min(1).max(10000).optional(),
-      limit: z.number().min(1).max(100).optional(),
-      search: z.string().min(1).max(500).optional(),
-    })
-  )
+  .input(PAGE_INPUT)
   .query(async ({ input }) => {
     try {
       const db = (await getDb())!;

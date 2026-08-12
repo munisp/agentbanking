@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw, Send, Eye, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
+import { AlertTriangle, RefreshCw, Send, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { getTenantHeadersFromStorage } from "../../services/tenant";
 
@@ -41,12 +41,12 @@ const NFIUReporting: React.FC = () => {
     setLoadError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/nfiu-reports`, { headers: getTenantHeadersFromStorage() });
-      if (!res.ok) { throw new Error(`Failed to load NFIU reports (HTTP ${res.status})`); }
+      if (!res.ok) throw new Error(`Failed to load NFIU reports (HTTP ${res.status})`);
       const d = await res.json();
       setReports(Array.isArray(d.reports) ? d.reports : []);
-    } catch (err: any) {
+    } catch (e: any) {
       setReports([]);
-      setLoadError(err?.message ?? "Unable to load NFIU reports.");
+      setLoadError(e?.message || "Failed to load NFIU reports.");
     } finally { setLoading(false); }
   };
 
@@ -54,11 +54,11 @@ const NFIUReporting: React.FC = () => {
     setSubmitting(id);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/nfiu-reports/${id}/submit`, { method: "POST", headers: getTenantHeadersFromStorage() });
-      if (!res.ok) { throw new Error(`NFIU submission failed (HTTP ${res.status})`); }
+      if (!res.ok) throw new Error(`Submission failed (HTTP ${res.status})`);
       await fetchReports();
       alert("Report submitted to NFIU successfully.");
-    } catch (err: any) {
-      alert(`Submission failed: ${err?.message ?? "Unable to reach the NFIU filing service."}`);
+    } catch (e: any) {
+      alert(`Failed to submit report to NFIU: ${e?.message || "Unknown error"}`);
     } finally { setSubmitting(null); }
   };
 
@@ -75,7 +75,7 @@ const NFIUReporting: React.FC = () => {
       setForm({ report_type: "STR", subject_name: "", subject_account: "", amount: "", reason: "" });
       fetchReports();
     } catch (err: any) {
-      alert(`Could not save report: ${err?.message ?? "The compliance service is unavailable."}`);
+      alert(`Failed to create report: ${err?.message || "Unknown error"}`);
     }
   };
 
@@ -94,13 +94,14 @@ const NFIUReporting: React.FC = () => {
       </div>
 
       {loadError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm text-red-700">
-            <AlertTriangle className="w-4 h-4" />
-            <span>{loadError} No filing history is shown because live data could not be retrieved.</span>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-700">Failed to load NFIU reports</p>
+            <p className="text-xs text-red-600">{loadError}</p>
           </div>
-          <button onClick={fetchReports} className="flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-medium">
-            <RefreshCw className="w-3 h-3" /> Retry
+          <button onClick={fetchReports} className="ml-auto text-xs px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg">
+            Retry
           </button>
         </div>
       )}
@@ -113,7 +114,7 @@ const NFIUReporting: React.FC = () => {
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <p className="text-xs text-gray-500">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${color}`}>{loading || loadError ? "—" : value}</p>
+            <p className={`text-2xl font-bold mt-1 ${color}`}>{loadError ? "—" : value}</p>
           </div>
         ))}
       </div>
@@ -171,14 +172,10 @@ const NFIUReporting: React.FC = () => {
           <tbody className="divide-y divide-gray-50">
             {loading ? (
               <tr><td colSpan={7} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" /></td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={7} className="text-center py-10 text-red-500 text-sm">Unable to load reports. Use Retry above.</td></tr>
             ) : reports.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="text-center py-10 text-sm text-gray-500">
-                  {loadError
-                    ? "Filing history unavailable — resolve the error above and retry."
-                    : "No NFIU reports on file. Reports you create and file will appear here."}
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="text-center py-10 text-gray-400 text-sm">No NFIU reports on file.</td></tr>
             ) : reports.map(r => {
               const StatusIcon = STATUS_STYLES[r.status].icon;
               return (

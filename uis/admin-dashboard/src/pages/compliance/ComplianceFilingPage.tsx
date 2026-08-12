@@ -20,7 +20,7 @@ interface Filing {
   due_date: string | null;
   status: string;
   submitted_at: string | null;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface FilingStats {
@@ -35,7 +35,6 @@ export default function ComplianceFilingPage() {
   const [filings, setFilings] = useState<Filing[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
@@ -52,23 +51,19 @@ export default function ComplianceFilingPage() {
         fetch(`${CORE_URL}/compliance/api/v1/filings/stats`, { headers: getTenantHeadersFromStorage() }),
         fetch(`${CORE_URL}/compliance/api/v1/filings?limit=100`, { headers: getTenantHeadersFromStorage() }),
       ]);
-      if (!fRes.ok) throw new Error(`Failed to load filings (HTTP ${fRes.status})`);
-      const filingsJson = await fRes.json();
-      setFilings(Array.isArray(filingsJson) ? filingsJson : []);
-      if (sRes.ok) {
-        setStats(await sRes.json());
-      } else {
-        setStats(null);
-      }
-    } catch (err: any) {
-      setFilings([]);
+      if (!sRes.ok || !fRes.ok)
+        throw new Error(`Failed to load compliance filings (HTTP ${!sRes.ok ? sRes.status : fRes.status})`);
+      setStats(await sRes.json());
+      const fData = await fRes.json();
+      setFilings(Array.isArray(fData) ? fData : []);
+    } catch (e: any) {
       setStats(null);
-      setLoadError(err?.message ?? "Unable to load compliance filings.");
+      setFilings([]);
+      setLoadError(e?.message || "Failed to load compliance filings.");
     } finally { setLoading(false); }
   };
 
   const createFiling = async () => {
-    setActionError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/filings`, {
         method: "POST",
@@ -78,22 +73,21 @@ export default function ComplianceFilingPage() {
       if (!res.ok) throw new Error(`Failed to create filing (HTTP ${res.status})`);
       setShowCreate(false);
       load();
-    } catch (err: any) {
-      setActionError(err?.message ?? "Could not create the filing. The compliance service may be unavailable.");
+    } catch (e: any) {
+      alert(`Failed to create filing: ${e?.message || "Unknown error"}`);
     }
   };
 
   const submitFiling = async (id: string) => {
-    setActionError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/filings/${id}/submit`, {
         method: "POST",
         headers: getTenantHeadersFromStorage(),
       });
-      if (!res.ok) throw new Error(`Failed to submit filing (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(`Submission failed (HTTP ${res.status})`);
       load();
-    } catch (err: any) {
-      setActionError(err?.message ?? "Could not submit the filing. No submission was recorded.");
+    } catch (e: any) {
+      alert(`Failed to submit filing: ${e?.message || "Unknown error"}`);
     }
   };
 
@@ -117,21 +111,13 @@ export default function ComplianceFilingPage() {
       </div>
 
       {loadError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm text-red-700">
-            <AlertTriangle className="h-4 w-4" />
-            <span>{loadError} No filing data is shown because live data could not be retrieved.</span>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-700">Failed to load compliance filings</p>
+            <p className="text-xs text-red-600">{loadError}</p>
           </div>
-          <button onClick={load} className="flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-medium">
-            <RefreshCw className="h-3 w-3" /> Retry
-          </button>
-        </div>
-      )}
-
-      {actionError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-2 text-sm text-red-700">
-          <AlertTriangle className="h-4 w-4" />
-          <span>{actionError}</span>
+          <button onClick={load} className="ml-auto text-xs px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg">Retry</button>
         </div>
       )}
 
@@ -167,15 +153,11 @@ export default function ComplianceFilingPage() {
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={6} className="p-8 text-center text-gray-400">Loading filings…</td></tr>
+              <tr><td colSpan={6} className="p-8 text-center"><RefreshCw className="h-5 w-5 animate-spin mx-auto text-gray-400" /></td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={6} className="p-8 text-center text-red-500">Unable to load filings. Use Retry above.</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="p-8 text-center text-gray-400">
-                {loadError
-                  ? "Filing data unavailable — resolve the error above and retry."
-                  : filings.length === 0
-                    ? "No compliance filings on record. Filings you create will appear here."
-                    : "No filings match the current filters."}
-              </td></tr>
+              <tr><td colSpan={6} className="p-8 text-center text-gray-400">No filings found</td></tr>
             ) : filtered.map(f => (
               <tr key={f.id} className="hover:bg-gray-50/50">
                 <td className="py-3 px-4 font-medium text-gray-800">{f.filing_type?.replace(/_/g, " ")}</td>

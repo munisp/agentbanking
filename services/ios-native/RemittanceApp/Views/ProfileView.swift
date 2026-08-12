@@ -23,6 +23,8 @@ struct UserProfile: Identifiable, Codable {
     var isBiometricsEnabled: Bool
     var preferredPaymentGateway: PaymentGateway
     
+    #if DEBUG
+    /// Sample profile for DEBUG previews/tests only — never used on live paths.
     static var mock: UserProfile {
         UserProfile(
             id: "user-12345",
@@ -36,6 +38,7 @@ struct UserProfile: Identifiable, Codable {
             preferredPaymentGateway: .paystack
         )
     }
+    #endif
 }
 
 /// Represents the verification status of the user.
@@ -60,51 +63,92 @@ enum PaymentGateway: String, Codable, CaseIterable {
     case interswitch = "Interswitch"
 }
 
-// MARK: - 2. API Client (Mocked)
+// MARK: - 2. Profile API (real backend client)
 
-/// A mock API client for fetching and updating user data.
-class APIClient {
-    enum APIError: Error, LocalizedError {
-        case networkError
-        case invalidResponse
-        case serverError(String)
-        
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "A network connection error occurred."
-            case .invalidResponse: return "The server returned an invalid response."
-            case .serverError(let message): return message
-            }
+/// Interface for profile fetch/update, allowing DEBUG-only mocks for previews/tests.
+protocol ProfileAPI {
+    func fetchUserProfile() -> AnyPublisher<UserProfile, ProfileAPIError>
+    func updateProfile(_ profile: UserProfile) -> AnyPublisher<UserProfile, ProfileAPIError>
+}
+
+enum ProfileAPIError: Error, LocalizedError {
+    case networkError
+    case invalidResponse
+    case serverError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError: return "A network connection error occurred."
+        case .invalidResponse: return "The server returned an invalid response."
+        case .serverError(let message): return message
         }
     }
-    
-    /// Simulates fetching the user profile from a remote server.
-    func fetchUserProfile() -> AnyPublisher<UserProfile, APIError> {
+}
+
+/// Real profile client backed by the 54agent backend profile endpoints.
+class LiveProfileAPIClient: ProfileAPI {
+    func fetchUserProfile() -> AnyPublisher<UserProfile, ProfileAPIError> {
         Future { promise in
-            // Simulate network delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                // Simulate success
-                promise(.success(UserProfile.mock))
-                
-                // To simulate an error, uncomment the line below:
-                // promise(.failure(.serverError("Failed to load profile data.")))
+            Task {
+                do {
+                    let profile: UserProfile = try await APIClient.shared.request(.profile)
+                    promise(.success(profile))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    /// Simulates updating the user profile.
-    func updateProfile(_ profile: UserProfile) -> AnyPublisher<UserProfile, APIError> {
+
+    func updateProfile(_ profile: UserProfile) -> AnyPublisher<UserProfile, ProfileAPIError> {
         Future { promise in
-            // Simulate network delay
+            Task {
+                do {
+                    let saved: UserProfile = try await APIClient.shared.request(
+                        .updateProfile,
+                        method: .post,
+                        parameters: [
+                            "firstName": profile.firstName,
+                            "lastName": profile.lastName,
+                            "email": profile.email,
+                            "phoneNumber": profile.phoneNumber,
+                            "isBiometricsEnabled": profile.isBiometricsEnabled,
+                            "preferredPaymentGateway": profile.preferredPaymentGateway.rawValue
+                        ]
+                    )
+                    promise(.success(saved))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+
+#if DEBUG
+/// Mock profile client (DEBUG builds only, for previews/tests).
+class MockProfileAPIClient: ProfileAPI {
+    func fetchUserProfile() -> AnyPublisher<UserProfile, ProfileAPIError> {
+        Future { promise in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                // Simulate success
+                promise(.success(UserProfile.mock))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    func updateProfile(_ profile: UserProfile) -> AnyPublisher<UserProfile, ProfileAPIError> {
+        Future { promise in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 promise(.success(profile))
             }
         }
         .eraseToAnyPublisher()
     }
 }
+#endif
 
 // MARK: - 3. View Model
 
@@ -119,12 +163,13 @@ final class ProfileViewModel: ObservableObject {
     @Published var isEditing: Bool = false
     @Published var isBiometricAuthSuccessful: Bool = false
     
-    private var apiClient = APIClient()
+    private var apiClient: ProfileAPI
     private var cancellables = Set<AnyCancellable>()
-    
+
     // MARK: Initialization
-    
-    init() {
+
+    init(apiClient: ProfileAPI = LiveProfileAPIClient()) {
+        self.apiClient = apiClient
         // Load cached data on initialization (Offline Mode Support)
         loadCachedProfile()
         // Fetch fresh data

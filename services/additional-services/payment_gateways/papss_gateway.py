@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import os
 import requests
 import logging
 import time
@@ -9,18 +12,18 @@ from xml.etree import ElementTree as ET
 from xml.dom import minidom
 
 # --- Configuration ---
-# In a real application, these would be loaded from environment variables or a secure vault.
-# Mock values are used for this implementation.
+# All connection details come from the environment; there are no working
+# mock defaults. Missing configuration fails closed at use time.
 class Config:
     """Configuration class for the PAPSS Gateway Adapter."""
-    BASE_URL = "https://mock-api.papss.africa/v1"
-    TOKEN_URL = f"{BASE_URL}/oauth/token"
-    # Mock credentials for mTLS and OAuth 2.0
-    CLIENT_ID = "mock_client_id_12345"
-    CLIENT_SECRET = "mock_client_secret_abcde"
-    # Paths to mTLS certificates (mocked)
-    CERT_FILE = "/etc/ssl/certs/client.pem"
-    KEY_FILE = "/etc/ssl/private/client.key"
+    BASE_URL = os.environ.get("PAPSS_BASE_URL", "")
+    TOKEN_URL = os.environ.get("PAPSS_TOKEN_URL") or (f"{BASE_URL}/oauth/token" if BASE_URL else "")
+    CLIENT_ID = os.environ.get("PAPSS_CLIENT_ID", "")
+    CLIENT_SECRET = os.environ.get("PAPSS_CLIENT_SECRET", "")
+    WEBHOOK_SECRET = os.environ.get("PAPSS_WEBHOOK_SECRET", "")
+    # Paths to mTLS certificates
+    CERT_FILE = os.environ.get("PAPSS_CERT_FILE", "/etc/ssl/certs/client.pem")
+    KEY_FILE = os.environ.get("PAPSS_KEY_FILE", "/etc/ssl/private/client.key")
     # Retry settings
     MAX_RETRIES = 5
     RETRY_DELAY_SECONDS = 2
@@ -150,38 +153,44 @@ class ISO20022MessageBuilder:
 # --- Core Adapter Class ---
 class PAPSSGatewayAdapter:
     """
-    Complete production-ready payment gateway adapter for the PAPSS Gateway.
+    Payment gateway adapter for the PAPSS Gateway.
 
     Implements OAuth 2.0 + mTLS authentication, ISO 20022 message format,
-    RTGS protocol simulation, error handling, retry logic, and webhook handling.
+    error handling, retry logic, and webhook handling. All calls go to the
+    real PAPSS API configured via PAPSS_* environment variables; missing
+    configuration or provider failures raise explicit errors — nothing is
+    fabricated locally.
     """
     def __init__(self, config: Config = Config()):
         """
         Initializes the PAPSS Gateway Adapter.
 
         :param config: Configuration object containing API details.
+        :raises AuthenticationError: If the mTLS certificate/key files are missing.
         """
         self.config = config
         self.logger = logger
         self.token: Optional[str] = None
         self.token_expiry: Optional[datetime] = None
         self.message_builder = ISO20022MessageBuilder()
-        self.transaction_store: Dict[str, Dict[str, Any]] = {} # Mock transaction store
+        self.transaction_store: Dict[str, Dict[str, Any]] = {} # Local record of submitted transactions
+
+        if not os.path.exists(self.config.CERT_FILE) or not os.path.exists(self.config.KEY_FILE):
+            raise AuthenticationError(
+                f"mTLS certificate/key not found (PAPSS_CERT_FILE={self.config.CERT_FILE}, "
+                f"PAPSS_KEY_FILE={self.config.KEY_FILE}). Refusing to initialize the PAPSS adapter."
+            )
 
         # Setup persistent session with mTLS certificates
         self.session = requests.Session()
-        try:
-            self.session.cert = (self.config.CERT_FILE, self.config.KEY_FILE)
-            self.logger.info("PAPSS Adapter initialized with mTLS certificates.")
-        except Exception as e:
-            self.logger.error(f"Failed to set mTLS certificates: {e}")
-            raise AuthenticationError("mTLS certificate setup failed.") from e
+        self.session.cert = (self.config.CERT_FILE, self.config.KEY_FILE)
+        self.logger.info("PAPSS Adapter initialized with mTLS certificates.")
 
     def _get_access_token(self) -> str:
         """
         Retrieves a new OAuth 2.0 access token or returns the cached one if valid.
 
-        :raises AuthenticationError: If token retrieval fails.
+        :raises AuthenticationError: If credentials are missing or token retrieval fails.
         :return: The valid access token string.
         """
         # Check if token is valid and not expiring soon (e.g., within 60 seconds)
@@ -189,20 +198,43 @@ class PAPSSGatewayAdapter:
             self.logger.debug("Using cached access token.")
             return self.token
 
+        if not self.config.TOKEN_URL or not self.config.CLIENT_ID or not self.config.CLIENT_SECRET:
+            raise AuthenticationError(
+                "PAPSS OAuth configuration is incomplete (PAPSS_BASE_URL/PAPSS_TOKEN_URL, "
+                "PAPSS_CLIENT_ID, PAPSS_CLIENT_SECRET). Cannot authenticate."
+            )
+
         self.logger.info("Requesting new access token via OAuth 2.0 Client Credentials flow with mTLS.")
-        
-        # Mock API call for token
         try:
-            # In a real scenario, this would make a real request. We simulate a success response.
-            # response = self.session.post(...)
-            # For this mock, we'll just create a fake token.
-            self.token = str(uuid.uuid4())
-            self.token_expiry = datetime.now() + timedelta(seconds=3600)
-            self.logger.info("Successfully retrieved new mock access token.")
-            return self.token
+            response = self.session.post(
+                self.config.TOKEN_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.config.CLIENT_ID,
+                    "client_secret": self.config.CLIENT_SECRET,
+                },
+                timeout=30,
+            )
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Token retrieval failed: {e}")
             raise AuthenticationError(f"Failed to get access token: {e}") from e
+
+        if response.status_code != 200:
+            raise AuthenticationError(f"Token endpoint returned HTTP {response.status_code}.")
+
+        try:
+            token_data = response.json()
+        except ValueError as e:
+            raise AuthenticationError(f"Token endpoint returned a malformed response: {e}") from e
+
+        token = token_data.get("access_token")
+        if not token:
+            raise AuthenticationError("Token endpoint response did not include an access_token.")
+
+        self.token = token
+        self.token_expiry = datetime.now() + timedelta(seconds=int(token_data.get("expires_in", 3600)))
+        self.logger.info("Successfully retrieved new access token.")
+        return self.token
 
     def _authenticated_request(self, method: str, endpoint: str, **kwargs: Any) -> Dict[str, Any]:
         """
@@ -214,25 +246,23 @@ class PAPSSGatewayAdapter:
         :raises PAPSSGatewayError: For any API or network error.
         :return: JSON response data.
         """
+        if not self.config.BASE_URL:
+            raise ServiceUnavailableError("PAPSS_BASE_URL is not configured; cannot call the PAPSS API.")
         url = f"{self.config.BASE_URL}{endpoint}"
         token = self._get_access_token()
         
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {token}"
-        headers["Content-Type"] = "application/json" # Default for most endpoints
+        headers.setdefault("Content-Type", "application/json")
         
         # Retry logic implementation
         for attempt in range(self.config.MAX_RETRIES):
             try:
-                # This is a mock, so we don't actually make a request.
-                # In a real implementation, the following line would be active:
-                # response = self.session.request(method, url, headers=headers, timeout=30, **kwargs)
-                
-                # Simulate a successful response for the purpose of this mock.
-                if endpoint.startswith("/payments/") and endpoint.endswith("/status"):
-                    return {"status": "MOCK_STATUS"}
-                
-                return {"status": "OK"}
+                response = self.session.request(method, url, headers=headers, timeout=30, **kwargs)
+                response.raise_for_status()
+                if response.status_code == 204 or not response.content:
+                    return {"status": "OK"}
+                return response.json()
 
             except requests.exceptions.ConnectionError as e:
                 if attempt < self.config.MAX_RETRIES - 1:
@@ -254,7 +284,7 @@ class PAPSSGatewayAdapter:
                 status_code = e.response.status_code
                 try:
                     error_data = e.response.json()
-                except json.JSONDecodeError:
+                except ValueError:
                     error_data = {"message": e.response.text}
 
                 if 400 <= status_code < 500:
@@ -266,6 +296,10 @@ class PAPSSGatewayAdapter:
                     raise ServiceUnavailableError(f"API server error: {error_data.get('message', 'No message')}")
                 
                 raise PAPSSGatewayError(f"An unexpected HTTP error occurred: {e}") from e
+
+            except ValueError as e:
+                self.logger.error(f"Malformed JSON response from {endpoint}: {e}")
+                raise PAPSSGatewayError(f"PAPSS API returned a malformed response: {e}") from e
             
             except Exception as e:
                 self.logger.error(f"An unexpected error occurred during API call: {e}")
@@ -279,12 +313,13 @@ class PAPSSGatewayAdapter:
         """
         Submits a new payment request to the PAPSS Gateway.
         
-        This method simulates the RTGS protocol: it sends the ISO 20022 message
-        and immediately returns a PENDING status, with the final status expected
-        via a webhook.
+        Sends the ISO 20022 pacs.008 message to the real PAPSS API and returns
+        the provider-assigned tracking ID. The final status is expected via a
+        webhook.
 
         :param transaction_data: Details required for the pacs.008 message.
-        :raises TransactionFailedError: If the initial submission is rejected.
+        :raises TransactionFailedError: If the submission is rejected.
+        :raises PAPSSGatewayError: On transport/provider failure.
         :return: Initial transaction response with a tracking ID.
         """
         self.logger.info(f"Submitting payment for {transaction_data.get('amount')} {transaction_data.get('currency')}")
@@ -295,39 +330,45 @@ class PAPSSGatewayAdapter:
             self.logger.error(f"Failed to build ISO 20022 message: {e}")
             raise InvalidRequestError(f"Failed to build ISO 20022 message: {e}", 400, {})
 
-        transaction_id = str(uuid.uuid4())
-        
-        mock_response = {
-            "transaction_id": transaction_id,
-            "status": "PENDING",
-            "message": "Payment submitted successfully to PAPSS for RTGS processing.",
-            "submitted_at": datetime.now().isoformat()
-        }
-        
+        try:
+            response_data = self._authenticated_request(
+                "POST",
+                "/payments",
+                data=xml_payload.encode("utf-8"),
+                headers={"Content-Type": "application/xml"},
+            )
+        except InvalidRequestError as e:
+            self.logger.error(f"Payment submission rejected by gateway: {e}")
+            raise TransactionFailedError(f"Payment rejected: {e.response_data.get('message', 'Gateway rejection')}") from e
+
+        transaction_id = response_data.get("transaction_id") or response_data.get("transactionId")
+        if not transaction_id:
+            raise PAPSSGatewayError("PAPSS gateway response did not include a transaction id.")
+
+        status = response_data.get("status", "PENDING")
         self.transaction_store[transaction_id] = {
             "id": transaction_id,
-            "status": "PENDING",
+            "status": status,
             "data": transaction_data,
             "xml_payload": xml_payload,
             "created_at": datetime.now()
         }
 
-        try:
-            self.logger.info(f"Payment {transaction_id} submitted (Mock Success).")
-            return mock_response
-        except InvalidRequestError as e:
-            self.logger.error(f"Payment submission rejected by gateway: {e}")
-            raise TransactionFailedError(f"Payment rejected: {e.response_data.get('message', 'Gateway rejection')}") from e
-        except PAPSSGatewayError as e:
-            self.logger.error(f"Error during payment submission: {e}")
-            raise e
+        self.logger.info(f"Payment {transaction_id} submitted to PAPSS (status: {status}).")
+        return {
+            "transaction_id": transaction_id,
+            "status": status,
+            "message": response_data.get("message", "Payment submitted to PAPSS."),
+            "submitted_at": datetime.now().isoformat(),
+            "gateway_response": response_data,
+        }
 
     def get_transaction_status(self, transaction_id: str) -> Dict[str, Any]:
         """
         Queries the current status of a transaction using its PAPSS ID.
 
         :param transaction_id: The unique ID returned by `submit_payment`.
-        :raises InvalidRequestError: If the transaction ID is not found.
+        :raises InvalidRequestError: If the transaction ID is not found (404).
         :return: The transaction status details.
         """
         self.logger.info(f"Querying status for transaction ID: {transaction_id}")
@@ -335,17 +376,13 @@ class PAPSSGatewayAdapter:
         if transaction_id not in self.transaction_store:
             raise InvalidRequestError(f"Transaction ID {transaction_id} not found.", 404, {})
 
-        try:
-            stored_data = self.transaction_store[transaction_id]
-            return {
-                "transaction_id": transaction_id,
-                "status": stored_data["status"],
-                "details": f"Status as of {datetime.now().isoformat()}",
-                "original_data": stored_data["data"]
-            }
-        except PAPSSGatewayError as e:
-            self.logger.error(f"Error querying status for {transaction_id}: {e}")
-            raise e
+        stored_data = self.transaction_store[transaction_id]
+        return {
+            "transaction_id": transaction_id,
+            "status": stored_data["status"],
+            "details": f"Status as of {datetime.now().isoformat()}",
+            "original_data": stored_data["data"]
+        }
 
     def handle_webhook(self, request_body: str, signature: str) -> Dict[str, Any]:
         """
@@ -396,14 +433,24 @@ class PAPSSGatewayAdapter:
 
     def _validate_webhook_signature(self, body: str, signature: str) -> bool:
         """
-        Mocks the webhook signature validation process.
+        Validates the webhook signature as an HMAC-SHA256 of the raw body using
+        PAPSS_WEBHOOK_SECRET. Fails closed when no secret is configured.
 
         :param body: The raw request body.
         :param signature: The signature from the request header.
         :return: True if validation passes, False otherwise.
         """
-        expected_signature = "mock-valid-signature-12345"
-        return signature == expected_signature
+        if not self.config.WEBHOOK_SECRET:
+            self.logger.error("PAPSS_WEBHOOK_SECRET is not configured; failing webhook validation closed.")
+            return False
+        if not signature:
+            return False
+        expected = hmac.new(
+            self.config.WEBHOOK_SECRET.encode("utf-8"),
+            body.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature)
 
     def get_supported_currencies(self) -> List[str]:
         """
@@ -413,76 +460,15 @@ class PAPSSGatewayAdapter:
         """
         return self.config.SUPPORTED_CURRENCIES
 
-# --- Example Usage (for testing and line count) ---
+# --- Example Usage ---
 if __name__ == '__main__':
-    import os
-    if not os.path.exists(Config.CERT_FILE):
-        os.makedirs(os.path.dirname(Config.CERT_FILE), exist_ok=True)
-        with open(Config.CERT_FILE, "w") as f:
-            f.write("--- MOCK CERTIFICATE CONTENT ---")
-    if not os.path.exists(Config.KEY_FILE):
-        os.makedirs(os.path.dirname(Config.KEY_FILE), exist_ok=True)
-        with open(Config.KEY_FILE, "w") as f:
-            f.write("--- MOCK PRIVATE KEY CONTENT ---")
-
     try:
         adapter = PAPSSGatewayAdapter()
-        
-        currencies = adapter.get_supported_currencies()
-        print(f"\nSupported Currencies ({len(currencies)}): {currencies[:5]}...")
-
-        payment_data = {
-            "amount": 1000.50,
-            "currency": "NGN",
-            "debtor_name": "Acme Corp",
-            "debtor_country": "NG",
-            "debtor_iban": "NG99123456789012345678",
-            "debtor_bic": "NGABICXXX",
-            "creditor_name": "Brave New World Ltd",
-            "creditor_country": "GHS",
-            "creditor_iban": "GH99987654321098765432",
-            "creditor_bic": "GHSBICYYY",
-            "remittance_info": "Invoice 2024-001"
-        }
-        
-        initial_response = adapter.submit_payment(payment_data)
-        tx_id = initial_response["transaction_id"]
-        print(f"\nPayment Submission Response: {initial_response}")
-
-        status_response_1 = adapter.get_transaction_status(tx_id)
-        print(f"\nStatus Check 1: {status_response_1}")
-
-        mock_webhook_body = json.dumps({
-            "transaction_id": tx_id,
-            "status": "SETTLED",
-            "settlement_date": datetime.now().isoformat()
-        })
-        mock_signature = "mock-valid-signature-12345"
-        
-        print("\nSimulating incoming webhook for settlement...")
-        webhook_result = adapter.handle_webhook(mock_webhook_body, mock_signature)
-        print(f"Webhook Processing Result: {webhook_result}")
-
-        status_response_2 = adapter.get_transaction_status(tx_id)
-        print(f"\nStatus Check 2: {status_response_2}")
-
-        print("\nTesting error handling for unknown ID...")
-        try:
-            adapter.get_transaction_status("non-existent-id")
-        except InvalidRequestError as e:
-            print(f"Caught expected error: {e}")
-            
-        xml_message = adapter.transaction_store[tx_id]["xml_payload"]
-        print("\nGenerated ISO 20022 pacs.008 XML:")
-        print(xml_message)
-
     except PAPSSGatewayError as e:
-        print(f"\nFATAL GATEWAY ERROR: {e}")
-    except Exception as e:
-        print(f"\nUNEXPECTED ERROR: {e}")
+        print(f"Failed to initialize PAPSS adapter (expected without real mTLS certs/config): {e}")
+        raise SystemExit(1)
 
-    if os.path.exists(Config.CERT_FILE):
-        os.remove(Config.CERT_FILE)
-    if os.path.exists(Config.KEY_FILE):
-        os.remove(Config.KEY_FILE)
-        os.rmdir(os.path.dirname(Config.CERT_FILE))
+    currencies = adapter.get_supported_currencies()
+    print(f"Supported Currencies ({len(currencies)}): {currencies[:5]}...")
+    print("Adapter initialized against the configured PAPSS API. "
+          "submit_payment/get_transaction_status require live PAPSS credentials.")

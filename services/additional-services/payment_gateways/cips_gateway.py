@@ -1,43 +1,16 @@
 import os
+import re
 import json
+import hmac
+import hashlib
 import time
 import logging
 from typing import Dict, Any, Optional, List, Callable
 from functools import wraps
 
-# Third-party library for mTLS and HTTP requests (assuming 'requests' is used)
-# In a real-world scenario, a more robust, asynchronous, and secure library might be preferred.
-# We will use 'requests' for demonstration and mock mTLS setup.
-try:
-    import requests
-    from requests.adapters import HTTPAdapter
-    from requests.packages.urllib3.util.retry import Retry
-except ImportError:
-    # Mocking the imports for a self-contained script
-    class MockRequests:
-        def __init__(self):
-            self.status_code = 200
-            self.text = '{"status": "success", "transaction_id": "MOCK_TXN_12345"}'
-            self.json_data = json.loads(self.text)
-
-        def json(self):
-            return self.json_data
-
-        def post(self, url, **kwargs):
-            logging.info(f"MOCK API Call: POST {url} with data: {kwargs.get('data')}")
-            # Simulate network latency
-            time.sleep(0.1)
-            # Simulate a successful response
-            return self
-
-        def get(self, url, **kwargs):
-            logging.info(f"MOCK API Call: GET {url}")
-            time.sleep(0.1)
-            return self
-
-    requests = MockRequests()
-    class HTTPAdapter: pass
-    class Retry: pass
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- Configuration and Constants ---
 
@@ -45,15 +18,26 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Mock CIPS API Endpoints
-CIPS_API_BASE_URL = os.environ.get("CIPS_API_BASE_URL", "https://mock-cips-gateway.com/api/v1")
+# CIPS API configuration — no working mock defaults; missing config fails closed.
+CIPS_API_BASE_URL = os.environ.get("CIPS_API_BASE_URL", "")
+CIPS_SENDER_ID = os.environ.get("CIPS_SENDER_ID", "")
+CIPS_WEBHOOK_SECRET = os.environ.get("CIPS_WEBHOOK_SECRET", "")
+CIPS_SIMULATION_MODE = os.environ.get("CIPS_SIMULATION_MODE", "false").strip().lower() == "true"
+_ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+
+if CIPS_SIMULATION_MODE and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "CIPS_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production. "
+        "Refusing to start with a simulated CIPS gateway."
+    )
+
 ENDPOINTS = {
-    "payment_initiation": f"{CIPS_API_BASE_URL}/payment/initiate",
-    "payment_status": f"{CIPS_API_BASE_URL}/payment/status",
-    "webhook_ack": f"{CIPS_API_BASE_URL}/webhook/acknowledge",
+    "payment_initiation": "/payment/initiate",
+    "payment_status": "/payment/status",
+    "webhook_ack": "/webhook/acknowledge",
 }
 
-# Error Codes and Messages (Mocked based on common financial API practices)
+# Error Codes and Messages (based on common financial API practices)
 CIPS_ERROR_CODES = {
     "0000": "Success",
     "1001": "Invalid ISO 20022 Message Format",
@@ -110,8 +94,6 @@ def retry_on_failure(max_retries: int = 3, delay: int = 5) -> Callable:
 class MessageFormatter:
     """
     Handles the creation and parsing of ISO 20022 and SWIFT MT messages.
-    In a real system, this would involve complex XML/MT parsing libraries.
-    Here, we mock the output structure.
     """
     @staticmethod
     def create_iso20022_pain001(
@@ -120,11 +102,9 @@ class MessageFormatter:
         message_id: str
     ) -> str:
         """
-        Creates a mock ISO 20022 pain.001 (Customer Credit Transfer Initiation) XML message.
+        Creates an ISO 20022 pain.001 (Customer Credit Transfer Initiation) message.
         This is a simplified JSON representation of the complex XML structure.
         """
-        # A real implementation would use a library like 'lxml' to build the XML structure
-        # based on the pain.001 schema.
         iso_message = {
             "GrpHdr": {
                 "MsgId": message_id,
@@ -149,36 +129,57 @@ class MessageFormatter:
                 }
             }
         }
-        # In a real scenario, this JSON would be converted to XML string
         return json.dumps(iso_message, indent=2)
 
     @staticmethod
     def parse_swift_mt103(mt_message: str) -> Dict[str, Any]:
         """
-        Parses a mock SWIFT MT103 (Customer Transfer) message.
-        Used for legacy or specific cross-border reporting.
+        Parses a SWIFT MT103 (Customer Transfer) message, extracting the core
+        fields from the block-based MT format.
+
+        :param mt_message: The raw MT103 message text.
+        :raises ValueError: If the message is not a parseable MT103.
+        :return: The parsed fields.
         """
-        # A real implementation would parse the block-based MT format.
-        # Mocking a simple dictionary output.
+        if not mt_message or ":20:" not in mt_message:
+            raise ValueError("Not a parseable SWIFT MT103 message (missing :20: transaction reference).")
+
+        def _tag(tag: str) -> Optional[str]:
+            match = re.search(rf"{re.escape(tag)}(.*?)(?=:\d{{2}}[A-Z]?:|$)", mt_message, re.DOTALL)
+            return match.group(1).strip() if match else None
+
+        transaction_reference = _tag(":20:")
+        value_date_ccy_amount = _tag(":32A:")
+        ordering_customer = _tag(":50K:") or _tag(":50F:")
+        beneficiary_customer = _tag(":59:")
+
+        value_date = currency = amount = None
+        if value_date_ccy_amount:
+            compact = value_date_ccy_amount.replace("\n", "")
+            match = re.match(r"(\d{6})([A-Z]{3})([\d,\.]+)", compact)
+            if match:
+                value_date, currency, amount = match.group(1), match.group(2), match.group(3)
+
         return {
             "message_type": "MT103",
-            "transaction_reference": "MOCK_MT_REF",
-            "value_date": "20251105",
-            "currency": "CNY",
-            "amount": "10000.00",
-            "ordering_customer": "SENDER_NAME",
-            "beneficiary_customer": "RECEIVER_NAME"
+            "transaction_reference": transaction_reference,
+            "value_date": value_date,
+            "currency": currency,
+            "amount": amount,
+            "ordering_customer": ordering_customer,
+            "beneficiary_customer": beneficiary_customer,
         }
 
 # --- CIPS Gateway Adapter Class ---
 
 class CIPSGatewayAdapter:
     """
-    Production-ready adapter for the CIPS (Cross-Border Interbank Payment System) Gateway.
+    Adapter for the CIPS (Cross-Border Interbank Payment System) Gateway.
 
-    Handles mTLS authentication, ISO 20022 message formatting, RTGS protocol
-    simulation, transaction tracking, error handling, and retry logic.
-    Supports cross-border payments in RMB/CNY.
+    Handles mTLS authentication, ISO 20022 message formatting, transaction
+    tracking, error handling, and retry logic. All calls go to the real CIPS
+    API configured via CIPS_* environment variables; missing configuration or
+    provider failures are surfaced as explicit errors — nothing is fabricated.
     """
     def __init__(self, cert_file: str, key_file: str, ca_bundle_file: str, api_base_url: str = CIPS_API_BASE_URL):
         """
@@ -188,8 +189,14 @@ class CIPSGatewayAdapter:
         :param key_file: Path to the client's private key file (.pem).
         :param ca_bundle_file: Path to the CA bundle file for server verification.
         :param api_base_url: Base URL for the CIPS API.
+        :raises ValueError: If CIPS_SENDER_ID or the API base URL is not configured.
+        :raises FileNotFoundError: If any certificate/key file is missing.
         """
         self.api_base_url = api_base_url
+        if not self.api_base_url:
+            raise ValueError("CIPS API base URL is not configured (set CIPS_API_BASE_URL).")
+        if not CIPS_SENDER_ID:
+            raise ValueError("CIPS sender id is not configured (set CIPS_SENDER_ID).")
         self.cert_file = cert_file
         self.key_file = key_file
         self.ca_bundle_file = ca_bundle_file
@@ -204,11 +211,9 @@ class CIPSGatewayAdapter:
         :return: Configured requests.Session object.
         :raises FileNotFoundError: If any certificate/key file is missing.
         """
-        if not all(os.path.exists(f) for f in [self.cert_file, self.key_file, self.ca_bundle_file]):
-            # In a mock environment, we skip the check, but in production, this is critical.
-            # For the purpose of this mock, we will assume the files exist.
-            logger.warning("MOCK: Certificate/Key files not found. Proceeding with mock session.")
-            # raise FileNotFoundError("One or more mTLS files are missing.")
+        missing = [f for f in [self.cert_file, self.key_file, self.ca_bundle_file] if not os.path.exists(f)]
+        if missing:
+            raise FileNotFoundError(f"mTLS certificate/key files are missing: {missing}")
 
         session = requests.Session()
         # mTLS configuration: client certificate and key
@@ -237,11 +242,11 @@ class CIPSGatewayAdapter:
         :param endpoint: The specific API endpoint path.
         :param data: JSON payload for POST requests.
         :return: Parsed JSON response from the API.
-        :raises Exception: For unhandled network or API errors.
         """
-        url = ENDPOINTS.get(endpoint)
-        if not url:
+        path = ENDPOINTS.get(endpoint)
+        if not path:
             raise ValueError(f"Unknown API endpoint: {endpoint}")
+        url = f"{self.api_base_url.rstrip('/')}{path}"
 
         try:
             if method == 'POST':
@@ -302,7 +307,6 @@ class CIPSGatewayAdapter:
         Initiates a cross-border RMB/CNY payment via the CIPS RTGS protocol.
 
         The payment message is formatted as an ISO 20022 pain.001 message.
-        This simulates the RTGS (Real-Time Gross Settlement) process, aiming for < 2min settlement.
 
         :param payment_details: Dictionary containing payment data (amount, currency, accounts, etc.).
         :return: API response dictionary with transaction status.
@@ -316,7 +320,7 @@ class CIPSGatewayAdapter:
         try:
             iso_message = self.message_formatter.create_iso20022_pain001(
                 payment_details=payment_details,
-                sender_id="MOCK_SENDER_ID",
+                sender_id=CIPS_SENDER_ID,
                 message_id=payment_details["transaction_id"]
             )
             logger.info(f"ISO 20022 pain.001 message created for TXN: {payment_details['transaction_id']}")
@@ -335,10 +339,9 @@ class CIPSGatewayAdapter:
         # 4. Send request (mTLS secured)
         response = self._send_request('POST', 'payment_initiation', data=payload)
 
-        # 5. Simulate real-time settlement tracking
+        # 5. Track settlement status from the provider response
         if response.get("status") == "success":
-            response["estimated_settlement_time"] = "< 2min"
-            response["initial_status"] = TransactionStatus.PROCESSING
+            response["initial_status"] = response.get("cips_status", TransactionStatus.PROCESSING)
             self.track_transaction_status(payment_details["transaction_id"]) # Start tracking
         
         return response
@@ -346,6 +349,9 @@ class CIPSGatewayAdapter:
     def track_transaction_status(self, transaction_id: str) -> Dict[str, Any]:
         """
         Queries the CIPS Gateway for the current status of a transaction.
+
+        Never defaults to SETTLED: if the provider does not report a status,
+        an explicit error is returned.
 
         :param transaction_id: The unique ID of the transaction.
         :return: Dictionary containing the latest transaction status.
@@ -364,8 +370,13 @@ class CIPSGatewayAdapter:
 
         # 3. Process and return status
         if response.get("status") == "success":
-            # Mock status update logic
-            current_status = response.get("cips_status", TransactionStatus.SETTLED)
+            current_status = response.get("cips_status")
+            if not current_status:
+                logger.error(f"CIPS status response for {transaction_id} did not include a status.")
+                return self._create_error_response(
+                    "STATUS_UNAVAILABLE",
+                    f"CIPS did not report a status for transaction {transaction_id}."
+                )
             response["current_status"] = current_status
             logger.info(f"Transaction {transaction_id} status: {current_status}")
         
@@ -375,7 +386,8 @@ class CIPSGatewayAdapter:
         """
         Processes an incoming webhook notification from the CIPS Gateway.
 
-        In a real system, this would involve signature verification (e.g., HMAC or mTLS client cert check).
+        Verifies an HMAC-SHA256 signature over the canonical payload using
+        CIPS_WEBHOOK_SECRET. Fails closed when no secret is configured.
 
         :param webhook_data: The payload received from the webhook.
         :param raw_signature: The signature header for verification.
@@ -383,11 +395,19 @@ class CIPSGatewayAdapter:
         """
         logger.info("Received webhook. Starting verification and processing.")
         
-        # 1. Signature Verification (MOCK)
-        # In production: Verify the raw_signature against the payload using a shared secret or public key.
-        is_signature_valid = True # Mocking success
-        
-        if not is_signature_valid:
+        # 1. Signature Verification (HMAC-SHA256 over canonical JSON body)
+        if not CIPS_WEBHOOK_SECRET:
+            logger.error("CIPS_WEBHOOK_SECRET is not configured; failing webhook validation closed.")
+            return {"status": "error", "message": "Webhook verification not configured"}
+
+        canonical_body = json.dumps(webhook_data, sort_keys=True, separators=(",", ":"))
+        expected_signature = hmac.new(
+            CIPS_WEBHOOK_SECRET.encode("utf-8"),
+            canonical_body.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not raw_signature or not hmac.compare_digest(expected_signature, raw_signature):
             logger.error("Webhook signature verification failed.")
             return {"status": "error", "message": "Invalid signature"}
 
@@ -410,96 +430,35 @@ class CIPSGatewayAdapter:
 
     def generate_mt_report(self, transaction_id: str) -> Dict[str, Any]:
         """
-        Generates a mock SWIFT MT report (e.g., MT940/MT103) for a transaction.
-        Used for reconciliation or specific reporting requirements.
-        
-        :param transaction_id: The unique ID of the transaction.
-        :return: Dictionary containing the parsed MT message data.
-        """
-        logger.info(f"Generating mock MT report for {transaction_id}")
-        # In a real scenario, this would query a reporting API or a local store.
-        mt_message = "MOCK_SWIFT_MT103_MESSAGE_CONTENT"
-        parsed_report = self.message_formatter.parse_swift_mt103(mt_message)
-        parsed_report["related_transaction_id"] = transaction_id
-        return {"status": "success", "report_type": "MT103", "data": parsed_report}
+        Generates a SWIFT MT report (e.g., MT103) for a transaction.
 
-# --- Example Usage (for demonstration and line count) ---
+        Requires a real MT message source; fails loud because none is configured.
+
+        :param transaction_id: The unique ID of the transaction.
+        :raises NotImplementedError: Always, until a real reporting source is wired.
+        """
+        raise NotImplementedError(
+            "SWIFT MT reporting requires a real MT message source (reporting API or "
+            "message store) which is not configured; refusing to fabricate an MT103 report "
+            f"for transaction {transaction_id}."
+        )
+
+# --- Example Usage ---
 
 if __name__ == "__main__":
-    # Mock file paths for mTLS
-    MOCK_CERT_FILE = "/etc/ssl/certs/client.pem"
-    MOCK_KEY_FILE = "/etc/ssl/private/client.key"
-    MOCK_CA_BUNDLE = "/etc/ssl/certs/cips_ca.pem"
+    cert_file = os.environ.get("CIPS_CERT_FILE", "/etc/ssl/certs/client.pem")
+    key_file = os.environ.get("CIPS_KEY_FILE", "/etc/ssl/private/client.key")
+    ca_bundle = os.environ.get("CIPS_CA_BUNDLE", "/etc/ssl/certs/cips_ca.pem")
 
-    # 1. Initialize the adapter
     try:
         gateway = CIPSGatewayAdapter(
-            cert_file=MOCK_CERT_FILE,
-            key_file=MOCK_KEY_FILE,
-            ca_bundle_file=MOCK_CA_BUNDLE
+            cert_file=cert_file,
+            key_file=key_file,
+            ca_bundle_file=ca_bundle
         )
+        logger.info("CIPS adapter initialized against the configured CIPS API.")
     except Exception as e:
         logger.error(f"Failed to initialize CIPS Gateway Adapter: {e}")
         exit(1)
-
-    # 2. Define a cross-border payment
-    payment_data = {
-        "transaction_id": f"TXN_{int(time.time())}",
-        "amount": 10000.00,
-        "currency": "CNY",
-        "debtor_name": "Shanghai Import Co. Ltd.",
-        "beneficiary_name": "Frankfurt Export GmbH",
-        "beneficiary_account": "DE98765432109876543210",
-        "beneficiary_bank_bic": "DEUTDEFFXXX",
-        "purpose": "Payment for machinery parts"
-    }
-
-    logger.info("\n--- Initiating Cross-Border Payment (RTGS, RMB/CNY) ---")
-    
-    # 3. Initiate the payment
-    initiation_response = gateway.initiate_cross_border_payment(payment_data)
-    
-    print("\n[Payment Initiation Response]")
-    print(json.dumps(initiation_response, indent=4))
-
-    if initiation_response.get("status") == "success":
-        txn_id = initiation_response["transaction_id"]
-        
-        # 4. Track the transaction status
-        logger.info("\n--- Tracking Transaction Status ---")
-        status_response = gateway.track_transaction_status(txn_id)
-        print("\n[Status Tracking Response]")
-        print(json.dumps(status_response, indent=4))
-
-        # 5. Simulate a webhook event
-        mock_webhook_payload = {
-            "event_id": f"WEB_{int(time.time())}",
-            "event_type": "PAYMENT_STATUS_UPDATE",
-            "transaction_id": txn_id,
-            "old_status": TransactionStatus.PROCESSING,
-            "new_status": TransactionStatus.SETTLED,
-            "settlement_time": time.strftime("%Y-%m-%dT%H:%M:%S")
-        }
-        mock_signature = "MOCK_HMAC_SIGNATURE_12345"
-        
-        logger.info("\n--- Handling Simulated Webhook ---")
-        webhook_response = gateway.handle_webhook(mock_webhook_payload, mock_signature)
-        print("\n[Webhook Handling Response]")
-        print(json.dumps(webhook_response, indent=4))
-
-        # 6. Generate a mock MT report
-        logger.info("\n--- Generating Mock SWIFT MT Report ---")
-        mt_report = gateway.generate_mt_report(txn_id)
-        print("\n[MT Report Generation Response]")
-        print(json.dumps(mt_report, indent=4))
-
-    # 7. Simulate a retryable failure (e.g., a temporary system maintenance error)
-    logger.info("\n--- Simulating Retryable Failure ---")
-    
-    # The retry logic is implemented in the @retry_on_failure decorator and the _setup_mtls_session
-    # for network-level retries. The example usage demonstrates the structure is in place.
-    
-    # The code is over 500 lines and includes all required components.
-    print(f"\nCode generation complete. Lines of code: {len(__file__.splitlines())}")
 
 # End of cips_gateway.py

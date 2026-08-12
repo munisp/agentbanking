@@ -22,11 +22,24 @@ from datetime import datetime
 import logging
 import asyncio
 
-# Import gateway adapters
-from papss_gateway import PAPSSGateway
-from pix_gateway import PIXGateway
-from upi_gateway import UPIGateway
-from cips_gateway import CIPSGateway
+# Import gateway adapters (tolerant: a broken/missing adapter must not take
+# down the whole orchestrator; its rail simply becomes unavailable)
+try:
+    from papss_gateway import PAPSSGatewayAdapter as PAPSSGateway
+except ImportError:
+    PAPSSGateway = None
+try:
+    from pix_gateway import PixGatewayAdapter as PIXGateway
+except ImportError:
+    PIXGateway = None
+try:
+    from upi_gateway import UPIGateway
+except ImportError:
+    UPIGateway = None
+try:
+    from cips_gateway import CIPSGatewayAdapter as CIPSGateway
+except ImportError:
+    CIPSGateway = None
 
 
 # Configure logging
@@ -117,10 +130,12 @@ class GatewayOrchestrator:
         logger.info("Gateway Orchestrator initialized with %d gateways", len(self.gateways))
     
     def _initialize_gateways(self):
-        """Initialize all payment gateways"""
-        try:
-            # Initialize PAPSS
-            if "papss" in self.config:
+        """Initialize all payment gateways. A gateway that fails to initialize
+        is skipped (its rail is unavailable) instead of aborting the others."""
+        
+        # Initialize PAPSS
+        if "papss" in self.config and PAPSSGateway is not None:
+            try:
                 self.gateways[GatewayType.PAPSS] = PAPSSGateway(
                     api_url=self.config["papss"]["api_url"],
                     client_id=self.config["papss"]["client_id"],
@@ -129,9 +144,12 @@ class GatewayOrchestrator:
                     key_path=self.config["papss"].get("key_path")
                 )
                 logger.info("PAPSS gateway initialized")
-            
-            # Initialize PIX
-            if "pix" in self.config:
+            except Exception as e:
+                logger.error(f"PAPSS gateway initialization failed (rail unavailable): {e}")
+        
+        # Initialize PIX
+        if "pix" in self.config and PIXGateway is not None:
+            try:
                 self.gateways[GatewayType.PIX] = PIXGateway(
                     api_url=self.config["pix"]["api_url"],
                     client_id=self.config["pix"]["client_id"],
@@ -139,9 +157,12 @@ class GatewayOrchestrator:
                     pix_key=self.config["pix"]["pix_key"]
                 )
                 logger.info("PIX gateway initialized")
-            
-            # Initialize UPI
-            if "upi" in self.config:
+            except Exception as e:
+                logger.error(f"PIX gateway initialization failed (rail unavailable): {e}")
+        
+        # Initialize UPI
+        if "upi" in self.config and UPIGateway is not None:
+            try:
                 self.gateways[GatewayType.UPI] = UPIGateway(
                     api_url=self.config["upi"]["api_url"],
                     merchant_id=self.config["upi"]["merchant_id"],
@@ -149,9 +170,12 @@ class GatewayOrchestrator:
                     vpa=self.config["upi"]["vpa"]
                 )
                 logger.info("UPI gateway initialized")
-            
-            # Initialize CIPS
-            if "cips" in self.config:
+            except Exception as e:
+                logger.error(f"UPI gateway initialization failed (rail unavailable): {e}")
+        
+        # Initialize CIPS
+        if "cips" in self.config and CIPSGateway is not None:
+            try:
                 self.gateways[GatewayType.CIPS] = CIPSGateway(
                     api_url=self.config["cips"]["api_url"],
                     participant_code=self.config["cips"]["participant_code"],
@@ -159,10 +183,8 @@ class GatewayOrchestrator:
                     key_path=self.config["cips"]["key_path"]
                 )
                 logger.info("CIPS gateway initialized")
-        
-        except Exception as e:
-            logger.error(f"Error initializing gateways: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"CIPS gateway initialization failed (rail unavailable): {e}")
     
     def select_gateway(self, transaction: Transaction) -> GatewayType:
         """
@@ -326,24 +348,37 @@ class GatewayOrchestrator:
     
     async def _process_legacy(self, transaction: Transaction) -> Dict[str, Any]:
         """
-        Process transaction with legacy gateway (Paystack, Flutterwave)
+        Handle a transaction for which no specialized payment rail is available.
+
+        No legacy gateway is configured in this deployment, so this fails
+        explicitly instead of fabricating a payment id / completed status.
         
         Args:
             transaction: Transaction object
         
         Returns:
-            Processing result
+            Processing result (always a failure)
         """
-        # Production implementation for legacy gateway integration
-        logger.info(f"Processing transaction {transaction.id} with legacy gateway")
+        corridor = (
+            f"{transaction.source_country} -> {transaction.dest_country} "
+            f"({transaction.dest_currency})"
+        )
+        logger.error(
+            f"No payment rail available for transaction {transaction.id} ({corridor}); "
+            "refusing to fabricate a payment."
+        )
         
-        # Simulate processing
-        await asyncio.sleep(1)
+        transaction.status = TransactionStatus.FAILED
+        transaction.error_message = f"No payment rail available for corridor {corridor}."
+        transaction.updated_at = datetime.utcnow()
         
         return {
-            "status": "completed",
-            "payment_id": f"legacy_{transaction.id}",
-            "message": "Processed with legacy gateway"
+            "status": "failed",
+            "error": (
+                f"No payment rail available for corridor {corridor}. "
+                "Configure an appropriate gateway (PAPSS/PIX/UPI/CIPS); "
+                "the orchestrator does not fabricate payments."
+            )
         }
     
     async def get_transaction_status(self, transaction_id: str) -> Dict[str, Any]:

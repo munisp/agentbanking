@@ -626,7 +626,7 @@ class CommunicationGateway:
         """Create response object from database message"""
         return CommunicationResponse(
             message_id=message.id,
-            recipient_id=request.recipient_id if False else message.recipient_id,
+            recipient_id=message.recipient_id,
             status=MessageStatus(message.status),
             channels_attempted=[CommunicationChannel(c) for c in (message.channels_attempted or [])],
             channels_successful=[CommunicationChannel(c) for c in (message.channels_successful or [])],

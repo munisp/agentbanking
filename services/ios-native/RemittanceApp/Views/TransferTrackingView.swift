@@ -1,14 +1,35 @@
 import SwiftUI
 
-struct TrackingEvent: Identifiable {
+struct TrackingEvent: Identifiable, Decodable {
     let id = UUID()
     let state: String
     let timestamp: Date
     let description: String
     let location: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state, timestamp, description, location
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.decode(String.self, forKey: .state)
+        description = try c.decode(String.self, forKey: .description)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+        if let iso = try? c.decode(String.self, forKey: .timestamp) {
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let d = fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else {
+                throw DecodingError.dataCorruptedError(forKey: .timestamp, in: c, debugDescription: "Unparseable date: \(iso)")
+            }
+            timestamp = d
+        } else {
+            timestamp = Date(timeIntervalSince1970: try c.decode(Double.self, forKey: .timestamp))
+        }
+    }
 }
 
-struct TransferTrackingData {
+struct TransferTrackingData: Decodable {
     let transferId: String
     let trackingId: String
     let currentState: String
@@ -23,12 +44,50 @@ struct TransferTrackingData {
     let createdAt: Date
     let estimatedCompletion: Date
     let events: [TrackingEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case transferId, trackingId, currentState, progressPercent
+        case senderName, recipientName, amount, currency
+        case destinationCurrency, destinationAmount, corridor
+        case createdAt, estimatedCompletion, events
+    }
+
+    /// Accepts ISO-8601 strings or epoch seconds for all dates.
+    init(from decoder: Decoder) throws {
+        func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) throws -> Date {
+            if let iso = try? container.decode(String.self, forKey: key) {
+                let fmt = ISO8601DateFormatter()
+                fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let d = fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) {
+                    return d
+                }
+                throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Unparseable date: \(iso)")
+            }
+            return Date(timeIntervalSince1970: try container.decode(Double.self, forKey: key))
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        transferId = try c.decode(String.self, forKey: .transferId)
+        trackingId = try c.decode(String.self, forKey: .trackingId)
+        currentState = try c.decode(String.self, forKey: .currentState)
+        progressPercent = try c.decode(Int.self, forKey: .progressPercent)
+        senderName = try c.decode(String.self, forKey: .senderName)
+        recipientName = try c.decode(String.self, forKey: .recipientName)
+        amount = try c.decode(Double.self, forKey: .amount)
+        currency = try c.decode(String.self, forKey: .currency)
+        destinationCurrency = try c.decode(String.self, forKey: .destinationCurrency)
+        destinationAmount = try c.decode(Double.self, forKey: .destinationAmount)
+        corridor = try c.decode(String.self, forKey: .corridor)
+        createdAt = try decodeDate(c, .createdAt)
+        estimatedCompletion = try decodeDate(c, .estimatedCompletion)
+        events = try c.decode([TrackingEvent].self, forKey: .events)
+    }
 }
 
 struct TransferTrackingView: View {
     let transferId: String
     @State private var tracking: TransferTrackingData?
     @State private var loading = true
+    @State private var loadError: String?
     @Environment(\.dismiss) var dismiss
     
     let transferStates = [
@@ -46,6 +105,24 @@ struct TransferTrackingView: View {
                 if loading {
                     ProgressView()
                         .padding(.top, 100)
+                } else if let loadError {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.orange)
+                        Text(loadError)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Retry") {
+                            self.loadError = nil
+                            loading = true
+                            loadTracking()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.top, 100)
+                    .padding(.horizontal)
                 } else if let data = tracking {
                     VStack(spacing: 20) {
                         // Amount Card
@@ -205,29 +282,15 @@ struct TransferTrackingView: View {
     }
     
     private func loadTracking() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            tracking = TransferTrackingData(
-                transferId: transferId,
-                trackingId: "TRK-\(transferId.prefix(8).uppercased())",
-                currentState: "IN_NETWORK",
-                progressPercent: 60,
-                senderName: "John Doe",
-                recipientName: "Jane Smith",
-                amount: 500,
-                currency: "GBP",
-                destinationCurrency: "NGN",
-                destinationAmount: 975250,
-                corridor: "MOJALOOP",
-                createdAt: Date().addingTimeInterval(-3600),
-                estimatedCompletion: Date().addingTimeInterval(1800),
-                events: [
-                    TrackingEvent(state: "INITIATED", timestamp: Date().addingTimeInterval(-3600), description: "Transfer initiated", location: nil),
-                    TrackingEvent(state: "PENDING", timestamp: Date().addingTimeInterval(-3500), description: "Awaiting verification", location: nil),
-                    TrackingEvent(state: "RESERVED", timestamp: Date().addingTimeInterval(-3000), description: "Funds reserved", location: nil),
-                    TrackingEvent(state: "IN_NETWORK", timestamp: Date().addingTimeInterval(-1800), description: "Processing", location: "Lagos Hub")
-                ]
-            )
-            loading = false
+        Task {
+            do {
+                // Real tracking data from the backend transfer-tracking endpoint.
+                tracking = try await APIClient.shared.request(.transferTracking(transferId))
+                loading = false
+            } catch {
+                loadError = "Could not load tracking information: \(error.localizedDescription)"
+                loading = false
+            }
         }
     }
 }

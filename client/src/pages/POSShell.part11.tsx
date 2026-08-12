@@ -1,6 +1,6 @@
 import { trpc } from "../lib/trpc";
 import { usePosStore } from "../store/posStore";
-import { BORDER, CARD, DISP, GOLD, GamificationData, MONO, TILE_CUSTOM_KEY, TileCustomization } from "./POSShell.shared";
+import { BORDER, CARD, DISP, GAMIFICATION_EMPTY, GOLD, GamificationData, MONO, TILE_CUSTOM_KEY, TileCustomization } from "./POSShell.shared";
 
 export function PhoneInput({
   value,

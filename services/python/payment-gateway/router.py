@@ -1,17 +1,34 @@
 """
 Router for payment-gateway service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/python/payment-gateway/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/payment-gateway", tags=["payment-gateway"])
 
-@router.post("/payments")
-async def create_payment(request: PaymentRequest):
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "payment-gateway endpoints are not served by this gateway router. "
+    "Use the standalone payment-gateway service."
+)
 
-@router.get("/payments/{payment_id}")
-async def get_payment(payment_id: str):
-    return {"status": "ok"}
 
+@router.get("/health")
+async def health_check():
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "payment-gateway", "detail": _UNAVAILABLE},
+    )
+
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

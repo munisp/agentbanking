@@ -5,6 +5,8 @@ import { getDb } from "../db";
 import { pnlReports } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
@@ -19,9 +21,9 @@ import {
 const getPnl = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -52,9 +54,9 @@ const getPnl = protectedProcedure
 const getBalanceSheet = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -85,9 +87,9 @@ const getBalanceSheet = protectedProcedure
 const getCashFlow = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -118,9 +120,9 @@ const getCashFlow = protectedProcedure
 const getTrialBalance = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -148,12 +150,12 @@ const getTrialBalance = protectedProcedure
       });
     }
   });
-const getStats = publicProcedure
+const getStats = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })
@@ -170,13 +172,13 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
+      // Previously returned fabricated financials (totalRevenue 4.56e9,
+      // netProfit 1.67e9, reportCount 156) to unauthenticated callers.
+      // Only reportCount/lastGenerated have a real source in this router.
       return {
-        totalRevenue: 4560000000,
-        totalExpenses: 2890000000,
-        netProfit: 1670000000,
-        profitMargin: 36.6,
-        reportCount: 156,
-        lastGenerated: new Date().toISOString(),
+        reportCount: Number(total),
+        lastGenerated:
+          (recent[0] as any)?.createdAt ?? new Date().toISOString(),
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -190,9 +192,9 @@ const getStats = publicProcedure
 const exportReport = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -223,9 +225,9 @@ const exportReport = protectedProcedure
 const getRevenueBreakdown = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
     })
   )
   .query(async ({ input }) => {
@@ -255,38 +257,30 @@ const getRevenueBreakdown = protectedProcedure
   });
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  draft: ["scheduled", "generating"],
+  scheduled: ["generating", "cancelled"],
+  generating: ["completed", "failed"],
+  completed: ["distributed", "archived"],
+  distributed: ["acknowledged", "archived"],
+  acknowledged: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  retry_pending: ["generating"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
-// ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateFinancialreportingsuiteInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
 }
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {
@@ -307,70 +301,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 }
 
 // ── Domain Calculations ────────────────────────────────────────────────────
-function computeFees(amount: number, txType: string = "transfer") {
-  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
-  const feeResult = calculateFee(amount, txType);
-  const commResult = calculateCommission(feeResult.fee, txType);
-  const taxResult = calculateTax(feeResult.fee, "vat");
-  const totalDeductions = feeResult.fee + taxResult.taxAmount;
-  const netAmount = Math.max(0, amount - totalDeductions);
-  const rate = amount > 0 ? feeResult.fee / amount : 0;
-  return {
-    fee: feeResult.fee,
-    feeRate: parseFloat(rate.toFixed(4)),
-    commission: commResult.agentShare,
-    platformCommission: commResult.platformShare,
-    tax: taxResult.taxAmount,
-    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
-    netAmount: parseFloat(netAmount.toFixed(2)),
-    grossAmount: amount,
-  };
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_FINANCIALREPORTINGSUITE = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_FINANCIALREPORTINGSUITE.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_FINANCIALREPORTINGSUITE.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
 
 // ── Integrity Constraints ──────────────────────────────────────────────────
 const _constraints = {

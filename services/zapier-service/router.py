@@ -1,41 +1,34 @@
 """
 Router for zapier-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/zapier-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/zapier-service", tags=["zapier-service"])
 
-@router.get("/")
-async def root():
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "zapier-service endpoints are not served by this gateway router. "
+    "Use the standalone zapier-service service."
+)
+
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "zapier-service", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/api/v1/send")
-async def send_message(message: Message):
-    return {"status": "ok"}
 
-@router.post("/api/v1/order")
-async def create_order(order: OrderMessage):
-    return {"status": "ok"}
-
-@router.get("/api/v1/messages")
-async def get_messages(limit: int = 50):
-    return {"status": "ok"}
-
-@router.get("/api/v1/orders")
-async def get_orders(limit: int = 50):
-    return {"status": "ok"}
-
-@router.get("/api/v1/metrics")
-async def get_metrics():
-    return {"status": "ok"}
-
-@router.post("/webhook")
-async def webhook_handler(request: Request):
-    return {"status": "ok"}
-
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

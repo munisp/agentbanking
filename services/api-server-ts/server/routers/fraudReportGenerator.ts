@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { fraudAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -17,40 +19,31 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  detected: ["under_investigation"],
+  under_investigation: ["confirmed_fraud", "false_positive", "escalated"],
+  escalated: ["under_investigation", "confirmed_fraud"],
+  confirmed_fraud: ["mitigation_in_progress"],
+  mitigation_in_progress: ["resolved", "blocked"],
+  blocked: ["unblocked", "permanently_blocked"],
+  unblocked: ["monitoring"],
+  monitoring: ["cleared", "re_flagged"],
+  re_flagged: ["under_investigation"],
+  cleared: ["closed"],
+  resolved: ["closed"],
+  false_positive: ["closed"],
+  permanently_blocked: [],
+  closed: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateFraudreportgeneratorInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -94,51 +87,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_FRAUDREPORTGENERATOR = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_FRAUDREPORTGENERATOR.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_FRAUDREPORTGENERATOR.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Error Handling ─────────────────────────────────────────────────────────
 function handleError(error: unknown, context: string): never {
   if (error instanceof TRPCError) throw error;
@@ -158,76 +106,6 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _fraudReportGenerator_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -242,13 +120,59 @@ const _txPatterns = {
   },
 };
 
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishfraudReportGeneratorMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `fraud.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `fraud_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `fraud_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("fraud", { ref, action, ...payload, timestamp: ts }).catch(
+    () => {}
+  );
+}
+
 export const fraudReportGeneratorRouter = router({
   list: protectedProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -332,6 +256,8 @@ export const fraudReportGeneratorRouter = router({
 
       return results;
     }),
+  // Previously returned a fabricated reportId + status "generating" without
+  // generating any report.
   generateReport: protectedProcedure
     .input(
       z.object({
@@ -340,55 +266,41 @@ export const fraudReportGeneratorRouter = router({
         type: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "fraudReportGenerator",
-        "mutation",
-        "Executed fraudReportGenerator mutation"
-      );
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report generation is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
 
-      return {
-        reportId: `report-${Date.now()}`,
-        status: "generating" as const,
-      };
-    }),
+  // Previously returned status "completed" with an empty data payload for
+  // any reportId.
   getReport: protectedProcedure
-    .input(z.object({ reportId: z.string() }))
-    .query(async ({ input }) => {
-      return {
-        id: input.reportId,
-        status: "completed" as const,
-        data: {},
-        generatedAt: new Date().toISOString(),
-      };
+    .input(z.object({ reportId: z.string().min(1).max(255) }))
+    .query(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report retrieval is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
+
+  // Previously returned a canned empty report list.
   listReports: protectedProcedure.query(async () => {
-    return {
-      reports: [] as Array<{
-        id: string;
-        name: string;
-        status: string;
-        createdAt: string;
-      }>,
-      total: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report listing is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
+
+  // Previously returned hard-coded zero stats regardless of fraudAlerts data.
   quickStats: protectedProcedure.query(async () => {
-    return {
-      totalCases: 0,
-      openCases: 0,
-      resolvedToday: 0,
-      avgResolutionTimeHours: 0,
-      totalLossPrevented: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud case statistics is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
 });

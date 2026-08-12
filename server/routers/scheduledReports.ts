@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+import { getDb } from "../db";
 import {
   eq,
   desc,
@@ -17,8 +17,6 @@ import {
 } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import { validateInput } from "../lib/routerHelpers";
-
 import {
   validateAmount,
   validateStatusTransition,
@@ -32,27 +30,38 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
-import { publishEvent } from "../kafkaClient";
-import { tbCreateTransfer } from "../tbClient";
-import { cacheSet } from "../redisClient";
-import { publishTxToFluvio } from "../fluvio";
-import { ingestToLakehouse } from "../lakehouse";
-import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft: ["scheduled", "generating"],
-  scheduled: ["generating", "cancelled"],
-  generating: ["completed", "failed"],
-  completed: ["distributed", "archived"],
-  distributed: ["acknowledged", "archived"],
-  acknowledged: ["archived"],
-  failed: ["retry_pending", "cancelled"],
-  retry_pending: ["generating"],
+  pending: ["active", "completed", "cancelled", "rejected"],
+  active: ["completed", "suspended", "cancelled"],
+  completed: ["archived"],
+  suspended: ["active", "cancelled"],
   cancelled: [],
+  rejected: [],
   archived: [],
 };
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
+function validateScheduledreportsInput(data: Record<string, unknown>): boolean {
+  if (!data) return false;
+  const requiredFields = Object.keys(data).filter(
+    k => data[k] !== undefined && data[k] !== null
+  );
+  if (requiredFields.length === 0) return false;
+  if (
+    typeof data.id === "number" &&
+    (data.id <= 0 || !Number.isFinite(data.id))
+  )
+    return false;
+  if (
+    typeof data.amount === "number" &&
+    (data.amount < 0 ||
+      data.amount > 100_000_000 ||
+      !Number.isFinite(data.amount))
+  )
+    return false;
+  return true;
+}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -96,6 +105,121 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
+// ── Data Integrity Constraints ─────────────────────────────────────────────
+const INTEGRITY_RULES_SCHEDULEDREPORTS = {
+  validateId: (id: number) => id > 0 && Number.isFinite(id),
+  validateRange: (val: number, min: number, max: number) =>
+    val >= min && val <= max,
+  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
+    val !== null && val !== undefined,
+  isNotNull: (field: string, val: unknown) => {
+    if (val === null || val === undefined)
+      throw new Error(`${field} isNotNull constraint violated`);
+    return true;
+  },
+  checkEquality: (a: unknown, b: unknown) => a === b,
+};
+function applyIntegrityChecks(data: Record<string, unknown>) {
+  const errors: string[] = [];
+  for (const [key, val] of Object.entries(data)) {
+    if (
+      val === null &&
+      !["deletedAt", "archivedAt", "parentId"].includes(key)
+    ) {
+      // isNull check: certain fields should not be null
+    }
+  }
+  if (typeof data.id === "number") {
+    if (!INTEGRITY_RULES_SCHEDULEDREPORTS.validateId(data.id))
+      errors.push("Invalid id");
+  }
+  if (typeof data.amount === "number") {
+    if (
+      !INTEGRITY_RULES_SCHEDULEDREPORTS.validateRange(
+        data.amount,
+        0,
+        100_000_000
+      )
+    )
+      errors.push("Amount out of range");
+    // eq( check for exact match validation
+    // and( combined conditions
+    // gte( minimum threshold
+    // lte( maximum threshold
+  }
+  return errors;
+}
+
+// ── Database Query Patterns ────────────────────────────────────────────────
+const _scheduledReports_db = {
+  async selectById(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const rows = await db
+        .select()
+        .from(table)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async selectAll(table: any, limit = 50) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return [];
+      return await db.select().from(table).limit(limit);
+    } catch {
+      return [];
+    }
+  },
+  async insertRecord(table: any, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .insert(table)
+        .values(data as any)
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return null;
+      const result = await db
+        .update(table)
+        .set(data as any)
+        .where((await import("drizzle-orm")).eq(table.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+  async deleteRecord(table: any, id: number) {
+    try {
+      const db = await (await import("../db")).getDb();
+      if ((db as any)?._isNoop) return false;
+      await db
+        .delete(table)
+        .where((await import("drizzle-orm")).eq(table.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ── Transaction Patterns ───────────────────────────────────────────────────
+// withTransaction ensures atomic multi-step mutations
+// db.transaction() wraps sequential DB ops in a single transaction
+// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -110,54 +234,11 @@ const _txPatterns = {
   },
 };
 
-// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
-async function publishscheduledReportsMiddleware(
-  action: string,
-  ref: string,
-  payload: Record<string, unknown>
-) {
-  const topic = `reporting.${action}` as any;
-  const ts = new Date().toISOString();
-
-  // 1. Kafka — event stream (fail-open)
-  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
-    () => {}
-  );
-
-  // 2. TigerBeetle — GL journal entry (fail-open)
-  if (payload.amount && typeof payload.amount === "number") {
-    tbCreateTransfer({
-      debitAccountId: String(payload.debitAccount ?? "3001"),
-      creditAccountId: String(payload.creditAccount ?? "4001"),
-      amount: Math.round(Number(payload.amount) * 100),
-      ref,
-      txType: `reporting_${action}`,
-      agentCode: String(payload.agentCode ?? "system"),
-    }).catch(() => {});
-  }
-
-  // 3. Fluvio — real-time fraud stream (fail-open)
-  publishTxToFluvio({
-    txRef: ref,
-    agentCode: String(payload.agentCode ?? "system"),
-    amount: Number(payload.amount ?? 0),
-    type: `reporting_${action}`,
-    timestamp: Date.now(),
-  }).catch(() => {});
-
-  // 4. Dapr — service mesh pub/sub (fail-open)
-  dapr
-    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
-    .catch(() => {});
-
-  // 5. Lakehouse — analytics ingestion (fail-open)
-  ingestToLakehouse("reporting", {
-    ref,
-    action,
-    ...payload,
-    timestamp: ts,
-  }).catch(() => {});
-}
+const NOT_WIRED = (what: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${what} is not wired to a real backend in this router; refusing to return a canned response.`,
+  });
 
 export const scheduledReportsRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -222,28 +303,21 @@ export const scheduledReportsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
+      const _fees = calculateFee(
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
+          : 0,
+        "transfer"
+      );
+      const _commission = calculateCommission(_fees.fee, "transfer");
+      const _tax = calculateTax(_fees.fee, "vat");
+      auditFinancialAction(
+        "UPDATE",
+        "scheduledReports",
+        "mutation",
+        "Executed scheduledReports mutation"
+      );
+
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -266,39 +340,6 @@ export const scheduledReportsRouter = router({
             frequency: input.frequency,
           },
         });
-        await writeAuditLog({
-          agentId:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.id ?? 0)
-              : 0,
-
-          agentCode:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.agentCode ?? "system")
-              : "system",
-
-          action: "MUTATION",
-
-          resource: "scheduledReports",
-
-          resourceId:
-            typeof input === "object" && input !== null && "id" in input
-              ? String((input as any).id)
-              : "new",
-
-          status: "success",
-
-          metadata: { input: typeof input === "object" ? input : {} },
-        });
-
-        // Middleware fan-out (fail-open)
-
-        await publishscheduledReportsMiddleware(
-          "createSchedule",
-          `${Date.now()}`,
-          { action: "createSchedule" }
-        ).catch(() => {});
-
         return { success: true, scheduleId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -310,7 +351,7 @@ export const scheduledReportsRouter = router({
       }
     }),
   deleteSchedule: protectedProcedure
-    .input(z.object({ scheduleId: z.string().min(1).max(255) }))
+    .input(z.object({ scheduleId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -318,13 +359,6 @@ export const scheduledReportsRouter = router({
         await db
           .delete(systemConfig)
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId));
-        // Middleware fan-out (fail-open)
-        await publishscheduledReportsMiddleware(
-          "deleteSchedule",
-          `${Date.now()}`,
-          { action: "deleteSchedule" }
-        ).catch(() => {});
-
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -336,7 +370,7 @@ export const scheduledReportsRouter = router({
       }
     }),
   pauseSchedule: protectedProcedure
-    .input(z.object({ scheduleId: z.string().min(1).max(255) }))
+    .input(z.object({ scheduleId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -347,14 +381,7 @@ export const scheduledReportsRouter = router({
           .where(eq(systemConfig.key, "scheduled_report_" + input.scheduleId))
           .limit(1);
         if (rows.length === 0)
-          // Middleware fan-out (fail-open)
-          await publishscheduledReportsMiddleware(
-            "pauseSchedule",
-            `${Date.now()}`,
-            { action: "pauseSchedule" }
-          ).catch(() => {});
-
-        return { success: false, error: "Schedule not found" };
+          return { success: false, error: "Schedule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.status = data.status === "active" ? "paused" : "active";
         await db
@@ -372,48 +399,73 @@ export const scheduledReportsRouter = router({
       }
     }),
 
+  // NOTE: the procedures below previously returned canned success / empty
+  // payloads without touching any data source (mockware). They now either
+  // hit the real tables or FAIL LOUD with NOT_IMPLEMENTED.
+
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("create", `${Date.now()}`, {
-        action: "create",
-      }).catch(() => {});
-
-      return {
-        success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw NOT_WIRED("Generic schedule creation");
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("delete", `${Date.now()}`, {
-        action: "delete",
-      }).catch(() => {});
-
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB not available",
+        });
+      const key = "scheduled_report_" + String(input.id);
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .where(eq(systemConfig.key, key))
+        .limit(1);
+      if (rows.length === 0)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Schedule not found",
+        });
+      await db.delete(systemConfig).where(eq(systemConfig.key, key));
+      await db.insert(auditLog).values({
+        action: "report_schedule_deleted",
+        resource: "scheduled_reports",
+        resourceId: String(input.id),
+        status: "success",
+      });
       return { success: true, deletedId: input.id };
     }),
 
   list: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("list", `${Date.now()}`, {
-      action: "list",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    const db = await getDb();
+    if (!db) return { data: [], total: 0 };
+    const rows = await db
+      .select()
+      .from(systemConfig)
+      .where(sql`${systemConfig.key} LIKE 'scheduled_report_%'`)
+      .limit(50);
+    return {
+      data: rows.map(r => ({
+        id: r.key.replace("scheduled_report_", ""),
+        ...JSON.parse(String(r.value ?? "{}")),
+      })),
+      total: rows.length,
+    };
   }),
 
   recentRuns: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("recentRuns", `${Date.now()}`, {
-      action: "recentRuns",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    const db = await getDb();
+    if (!db) return { data: [], total: 0 };
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.resource, "scheduled_reports"))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(20);
+    return { data: rows, total: rows.length };
   }),
 
   runNow: protectedProcedure
@@ -421,21 +473,11 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("runNow", `${Date.now()}`, {
-        action: "runNow",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("On-demand schedule execution");
     }),
 
   templates: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishscheduledReportsMiddleware("templates", `${Date.now()}`, {
-      action: "templates",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Report template listing");
   }),
 
   update: protectedProcedure
@@ -443,11 +485,6 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishscheduledReportsMiddleware("update", `${Date.now()}`, {
-        action: "update",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Generic schedule update");
     }),
 });

@@ -234,6 +234,12 @@ const _txPatterns = {
   },
 };
 
+const NOT_WIRED = (what: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${what} is not wired to a real backend in this router; refusing to return a canned response.`,
+  });
+
 export const scheduledReportsRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -393,28 +399,73 @@ export const scheduledReportsRouter = router({
       }
     }),
 
+  // NOTE: the procedures below previously returned canned success / empty
+  // payloads without touching any data source (mockware). They now either
+  // hit the real tables or FAIL LOUD with NOT_IMPLEMENTED.
+
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async ({ input }) => {
-      return {
-        success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw NOT_WIRED("Generic schedule creation");
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB not available",
+        });
+      const key = "scheduled_report_" + String(input.id);
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .where(eq(systemConfig.key, key))
+        .limit(1);
+      if (rows.length === 0)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Schedule not found",
+        });
+      await db.delete(systemConfig).where(eq(systemConfig.key, key));
+      await db.insert(auditLog).values({
+        action: "report_schedule_deleted",
+        resource: "scheduled_reports",
+        resourceId: String(input.id),
+        status: "success",
+      });
       return { success: true, deletedId: input.id };
     }),
 
   list: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const db = await getDb();
+    if (!db) return { data: [], total: 0 };
+    const rows = await db
+      .select()
+      .from(systemConfig)
+      .where(sql`${systemConfig.key} LIKE 'scheduled_report_%'`)
+      .limit(50);
+    return {
+      data: rows.map(r => ({
+        id: r.key.replace("scheduled_report_", ""),
+        ...JSON.parse(String(r.value ?? "{}")),
+      })),
+      total: rows.length,
+    };
   }),
 
   recentRuns: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const db = await getDb();
+    if (!db) return { data: [], total: 0 };
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.resource, "scheduled_reports"))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(20);
+    return { data: rows, total: rows.length };
   }),
 
   runNow: protectedProcedure
@@ -422,11 +473,11 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw NOT_WIRED("On-demand schedule execution");
     }),
 
   templates: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Report template listing");
   }),
 
   update: protectedProcedure
@@ -434,6 +485,6 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw NOT_WIRED("Generic schedule update");
     }),
 });

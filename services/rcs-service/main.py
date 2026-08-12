@@ -37,9 +37,6 @@ Production-ready service with webhook handling and message processing
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("rcs-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -53,6 +50,8 @@ import httpx
 import asyncio
 from enum import Enum
 
+# Shared middleware/observability wiring happens after `app` is created
+# further below (the previous ordering raised NameError at import time).
 app = FastAPI(
     title="Rcs Service",
     description="Rich Communication Services",
@@ -68,14 +67,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+apply_middleware(app)
+setup_logging("rcs-service")
+app.include_router(metrics_router)
+
 # Configuration
 class Config:
-    API_KEY = os.getenv("RCS_API_KEY", "demo_key")
-    API_SECRET = os.getenv("RCS_API_SECRET", "demo_secret")
-    WEBHOOK_SECRET = os.getenv("RCS_WEBHOOK_SECRET", "webhook_secret")
+    # No demo defaults: demo credentials previously allowed the service to
+    # "send" messages against a fictional provider configuration.
+    API_KEY = os.getenv("RCS_API_KEY", "")
+    API_SECRET = os.getenv("RCS_API_SECRET", "")
+    WEBHOOK_SECRET = os.getenv("RCS_WEBHOOK_SECRET", "")
     API_BASE_URL = os.getenv("RCS_API_URL", "https://api.rcs.com")
+    SIMULATION_MODE = os.getenv("RCS_SIMULATION_MODE", "").lower() == "true"
+    ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "development")).lower()
 
 config = Config()
+
+channel_name = "rcs"
+
+if config.SIMULATION_MODE and config.ENVIRONMENT == "production":
+    raise RuntimeError(
+        "RCS_SIMULATION_MODE=true is forbidden in production. "
+        "Configure real RCS provider credentials instead."
+    )
 
 # Models
 class MessageType(str, Enum):
@@ -147,35 +162,67 @@ async def health_check():
 
 @app.post("/api/v1/send", response_model=MessageResponse)
 async def send_message(message: Message, background_tasks: BackgroundTasks):
-    """Send a message via Rcs"""
+    """Send a message via the RCS provider API.
+
+    FAIL LOUD: previously every message was stored with status 'sent' without
+    contacting any provider. The message is now only accepted after the
+    provider confirms acceptance; otherwise a 503/502 is raised.
+    """
     global message_count
-    
+
+    if not config.API_KEY:
+        if config.SIMULATION_MODE and config.ENVIRONMENT != "production":
+            raise HTTPException(
+                status_code=503,
+                detail="RCS provider is not configured (RCS_API_KEY unset). Simulation mode does not fabricate sends.",
+            )
+        raise HTTPException(status_code=503, detail="RCS provider is not configured (RCS_API_KEY unset)")
+
+    message_id = f"{channel_name}_{int(datetime.now().timestamp())}_{message_count}"
+
     try:
-        message_id = f"{channel_name}_{int(datetime.now().timestamp())}_{message_count}"
-        
-        # Store message
-        messages_db.append({
-            "id": message_id,
-            "recipient": message.recipient,
-            "type": message.message_type,
-            "content": message.content,
-            "metadata": message.metadata,
-            "timestamp": datetime.now(),
-            "status": "sent"
-        })
-        
-        message_count += 1
-        
-        # Background task to check delivery status
-        background_tasks.add_task(check_delivery_status, message_id)
-        
-        return {
-            "message_id": message_id,
-            "status": "sent",
-            "timestamp": datetime.now()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{config.API_BASE_URL}/messages",
+                headers={"Authorization": f"Bearer {config.API_KEY}"},
+                json={
+                    "recipient": message.recipient,
+                    "type": message.message_type.value,
+                    "content": message.content,
+                    "metadata": message.metadata or {},
+                    "client_message_id": message_id,
+                },
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"RCS provider unreachable: {e}")
+
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"RCS provider rejected the message: HTTP {resp.status_code}: {resp.text[:300]}",
+        )
+
+    # Store message only after provider acceptance
+    messages_db.append({
+        "id": message_id,
+        "recipient": message.recipient,
+        "type": message.message_type,
+        "content": message.content,
+        "metadata": message.metadata,
+        "timestamp": datetime.now(),
+        "status": "sent"
+    })
+
+    message_count += 1
+
+    # Background task to check delivery status
+    background_tasks.add_task(check_delivery_status, message_id)
+
+    return {
+        "message_id": message_id,
+        "status": "sent",
+        "timestamp": datetime.now()
+    }
 
 @app.post("/api/v1/order")
 async def create_order(order: OrderMessage):
@@ -229,13 +276,18 @@ async def webhook_handler(request: Request):
         signature = request.headers.get("X-Rcs-Signature", "")
         body = await request.body()
         
-        # Verify signature (implement proper verification in production)
+        # Verify webhook signature. Previously the expected signature was
+        # computed but never compared, so any forged webhook was accepted.
+        if not config.WEBHOOK_SECRET:
+            raise HTTPException(status_code=503, detail="Webhook secret is not configured")
         expected_signature = hmac.new(
             config.WEBHOOK_SECRET.encode(),
             body,
             hashlib.sha256
         ).hexdigest()
-        
+        if not signature or not hmac.compare_digest(signature, expected_signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
         # Process webhook event
         event_data = await request.json()
         
@@ -280,19 +332,24 @@ async def get_metrics():
     """Get service metrics"""
     uptime = (datetime.now() - service_start_time).total_seconds()
     
+    total_tracked = len(messages_db)
+    delivered = sum(1 for m in messages_db if m["status"] == "delivered")
+    failed = sum(1 for m in messages_db if m["status"] == "failed")
     return {
         "channel": "Rcs",
         "messages_sent": message_count,
         "orders_received": order_count,
         "uptime_seconds": int(uptime),
-        "avg_response_time_ms": 45,
-        "success_rate": 0.97
+        "messages_tracked": total_tracked,
+        "messages_delivered": delivered,
+        "messages_failed": failed,
+        "delivery_rate": (delivered / total_tracked) if total_tracked > 0 else None,
     }
 
 # Helper functions
 async def check_delivery_status(message_id: str):
     """Background task to check message delivery status via provider API"""
-    new_status = "delivered"
+    new_status = "sent"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
@@ -301,9 +358,9 @@ async def check_delivery_status(message_id: str):
             )
             if resp.status_code == 200:
                 delivery_data = resp.json()
-                new_status = delivery_data.get("status", "delivered")
+                new_status = delivery_data.get("status", "sent")
     except Exception:
-        new_status = "sent"
+        new_status = "unknown"
     for msg in messages_db:
         if msg["id"] == message_id:
             msg["status"] = new_status

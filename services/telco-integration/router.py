@@ -1,33 +1,34 @@
 """
 Router for telco-integration service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/telco-integration/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/telco-integration", tags=["telco-integration"])
 
-@router.post("/purchase")
-async def purchase(purchase: TelcoPurchase):
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "telco-integration endpoints are not served by this gateway router. "
+    "Use the standalone telco-integration service."
+)
 
-@router.get("/verify/{transaction_id}")
-async def verify_transaction(transaction_id: str):
-    return {"status": "ok"}
-
-@router.get("/data-plans/{provider}")
-async def get_data_plans(provider: TelcoProvider):
-    return {"status": "ok"}
-
-@router.get("/transactions")
-async def list_transactions(
-    agent_id: Optional[str] = None,
-    status: Optional[str] = None,
-    provider: Optional[str] = None,
-    limit: int = Query(default=50, le=200)):
-    return {"status": "ok"}
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "telco-integration", "detail": _UNAVAILABLE},
+    )
 
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

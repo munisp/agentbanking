@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 # Database connection pool
 db_pool = None
 
-# Push notification providers
-FCM_SERVER_KEY = ""  # Firebase Cloud Messaging
-APNS_KEY = ""  # Apple Push Notification Service
-WEB_PUSH_VAPID_KEY = ""  # Web Push VAPID key
+# Push notification providers (configured via environment)
+FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")  # Firebase Cloud Messaging
+APNS_KEY = os.getenv("APNS_KEY", "")  # Apple Push Notification Service
+WEB_PUSH_VAPID_KEY = os.getenv("WEB_PUSH_VAPID_KEY", "")  # Web Push VAPID key
+WEB_PUSH_SUBJECT = os.getenv("WEB_PUSH_SUBJECT", "mailto:admin@example.com")
 
 # Enums
 class NotificationType(str, Enum):
@@ -152,6 +153,9 @@ async def init_db():
 # Helper functions
 async def send_fcm_notification(token: str, notification: Dict) -> bool:
     """Send notification via Firebase Cloud Messaging (Android)"""
+    if not FCM_SERVER_KEY:
+        logger.error("FCM_SERVER_KEY is not configured; cannot send Android push notification")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -184,6 +188,9 @@ async def send_fcm_notification(token: str, notification: Dict) -> bool:
 
 async def send_apns_notification(token: str, notification: Dict) -> bool:
     """Send notification via Apple Push Notification Service (iOS)"""
+    if not APNS_KEY:
+        logger.error("APNS_KEY is not configured; cannot send iOS push notification")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -215,16 +222,37 @@ async def send_apns_notification(token: str, notification: Dict) -> bool:
         return False
 
 async def send_web_push_notification(token: str, notification: Dict) -> bool:
-    """Send notification via Web Push (browser)"""
+    """Send notification via Web Push (browser).
+
+    FAIL LOUD: the previous placeholder logged "sent" and returned True
+    without delivering anything, causing notifications to be recorded as
+    'sent' in the database when nothing was delivered. Now returns False
+    (recorded as a failed delivery) unless a real dispatch succeeds.
+    """
+    if not WEB_PUSH_VAPID_KEY:
+        logger.error("WEB_PUSH_VAPID_KEY is not configured; cannot send web push notification")
+        return False
     try:
-        # Web Push implementation would use pywebpush library
-        # For now, this is a placeholder
-        logger.info(f"Web push notification sent to {token[:20]}...")
+        from pywebpush import webpush  # type: ignore
+        webpush(
+            subscription_info=json.loads(token),
+            data=json.dumps({
+                "title": notification["title"],
+                "body": notification["body"],
+                "data": notification.get("data", {}),
+            }),
+            vapid_private_key=WEB_PUSH_VAPID_KEY,
+            vapid_claims={"sub": WEB_PUSH_SUBJECT},
+            ttl=notification.get("ttl", 86400),
+        )
         return True
-        
+    except ImportError:
+        logger.error("pywebpush is not installed; cannot send web push notification")
+        return False
     except Exception as e:
         logger.error(f"Web push send error: {e}")
         return False
+
 
 async def send_to_device(token: str, platform: str, notification: Dict) -> bool:
     """Send notification to specific device"""
@@ -511,4 +539,3 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8086)
-

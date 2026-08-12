@@ -178,6 +178,15 @@ async function publishweeklyReportsMiddleware(
   }).catch(() => {});
 }
 
+// FAIL LOUD helper for procedures that have no real backend wired. The
+// previous implementations returned canned { success: true } / empty
+// payloads without touching any data source.
+const NOT_WIRED = (what: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${what} is not wired to a real backend in this router; refusing to return a canned response.`,
+  });
+
 export const weeklyReportsRouter = router({
   list: protectedProcedure
     .input(
@@ -274,12 +283,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("addRecipient", `${Date.now()}`, {
-        action: "addRecipient",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report recipient management");
     }),
 
   generate: protectedProcedure
@@ -287,47 +291,27 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("generate", `${Date.now()}`, {
-        action: "generate",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report generation");
     }),
 
   getEmailConfig: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Weekly report email configuration");
   }),
 
   getPdfHtml: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Weekly report PDF rendering");
   }),
 
   getSchedule: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("getSchedule", `${Date.now()}`, {
-      action: "getSchedule",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Weekly report schedule configuration");
   }),
 
   latest: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("latest", `${Date.now()}`, {
-      action: "latest",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Latest weekly report retrieval");
   }),
 
   listRecipients: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishweeklyReportsMiddleware("listRecipients", `${Date.now()}`, {
-      action: "listRecipients",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    throw NOT_WIRED("Weekly report recipient listing");
   }),
 
   removeRecipient: protectedProcedure
@@ -335,12 +319,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("removeRecipient", `${Date.now()}`, {
-        action: "removeRecipient",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report recipient management");
     }),
 
   sendEmail: protectedProcedure
@@ -348,12 +327,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("sendEmail", `${Date.now()}`, {
-        action: "sendEmail",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report email delivery");
     }),
 
   updateEmailConfig: protectedProcedure
@@ -361,14 +335,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware(
-        "updateEmailConfig",
-        `${Date.now()}`,
-        { action: "updateEmailConfig" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report email configuration");
     }),
 
   updateSchedule: protectedProcedure
@@ -376,11 +343,6 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishweeklyReportsMiddleware("updateSchedule", `${Date.now()}`, {
-        action: "updateSchedule",
-      }).catch(() => {});
-
-      return { success: true };
+      throw NOT_WIRED("Weekly report schedule configuration");
     }),
 });

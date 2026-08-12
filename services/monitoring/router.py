@@ -1,5 +1,6 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from . import schemas, service
@@ -11,12 +12,50 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-# --- Dependency for simple placeholder authentication ---
-# In a real application, this would validate a JWT or API key
-def get_current_user() -> Dict[str, Any]:
-    # Production implementation for a simple user object or ID
-    # For this task, we'll assume the user is authenticated
-    return {"id": 1, "username": "admin"}
+# --- Authentication dependency ---
+# CRITICAL FIX: the previous placeholder returned a hard-coded admin user for
+# every request (authentication bypass). Requests must now carry a valid
+# Keycloak-issued Bearer JWT.
+KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://keycloak:8080")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "remittance")
+_JWKS_URL = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+_jwks_client = None
+
+
+def _get_jwks_client():
+    global _jwks_client
+    if _jwks_client is None:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(_JWKS_URL, cache_keys=True)
+    return _jwks_client
+
+
+def get_current_user(authorization: str = Header(...)) -> Dict[str, Any]:
+    import jwt
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    token = authorization[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+        return {
+            "id": claims.get("sub"),
+            "username": claims.get("preferred_username", claims.get("sub")),
+            "roles": claims.get("realm_access", {}).get("roles", []),
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Token validation unavailable: {e}")
 
 # --- Service Routes ---
 

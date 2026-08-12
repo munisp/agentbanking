@@ -278,40 +278,44 @@ export const advancedBiReportingRouter = router({
       return results;
     }),
 
+  // Previously returned hard-coded counts (25 reports, 50000 dataPoints).
   dashboard: protectedProcedure.query(async () => {
-    return {
-      reports: 25,
-      scheduledReports: 5,
-      lastGenerated: new Date().toISOString(),
-      dataPoints: 50000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "BI dashboard metrics is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
+  // Previously returned a hard-coded template (T-001 "Monthly Revenue") and
+  // data-source list.
   reportBuilder: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishadvancedBiReportingMiddleware(
-      "reportBuilder",
-      `${Date.now()}`,
-      { action: "reportBuilder" }
-    ).catch(() => {});
-
-    return {
-      templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],
-      dataSources: ["postgres", "opensearch"],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Report builder catalog is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
-  generateReport: publicProcedure
+
+  // Was a PUBLIC (unauthenticated) mutation returning a fabricated reportId
+  // and status "generating" without generating anything.
+  generateReport: protectedProcedure
     .input(
       z.object({ templateId: z.string().min(1).max(255).optional() }).optional()
     )
     .mutation(async () => {
-      return {
-        reportId: "RPT-" + Date.now(),
-        status: "generating",
-        estimatedTime: 30,
-      };
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "BI report generation is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 
+  // Previously returned hard-coded zero KPIs.
   executiveKpis: protectedProcedure.query(async () => {
-    return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Executive KPI computation is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
 });

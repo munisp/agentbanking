@@ -1,66 +1,34 @@
 """
 Router for float-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/float-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/float-service", tags=["float-service"])
 
+_UNAVAILABLE = (
+    "float-service endpoints are not served by this gateway router. "
+    "Use the standalone float-service service."
+)
+
+
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "float-service", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/float/initialize")
-async def initialize_float(
-    agent_id: str,
-    initial_balance: Decimal,
-    min_threshold: Decimal = Decimal("10000")):
-    return {"status": "ok"}
 
-@router.get("/float/{agent_id}")
-async def get_float_balance(agent_id: str):
-    return {"status": "ok"}
-
-@router.post("/float/{agent_id}/reserve")
-async def reserve_float(
-    agent_id: str,
-    amount: Decimal,
-    reference: Optional[str] = None
-):
-    return {"status": "ok"}
-
-@router.post("/float/{agent_id}/commit")
-async def commit_reserved_float(
-    agent_id: str,
-    amount: Decimal,
-    reference: Optional[str] = None
-):
-    return {"status": "ok"}
-
-@router.post("/float/{agent_id}/release")
-async def release_reserved_float(
-    agent_id: str,
-    amount: Decimal,
-    reference: Optional[str] = None
-):
-    return {"status": "ok"}
-
-@router.post("/float/{agent_id}/rebalance")
-async def rebalance_float(
-    agent_id: str,
-    request: FloatRebalanceRequest
-):
-    return {"status": "ok"}
-
-@router.get("/float/{agent_id}/transactions")
-async def get_float_transactions(
-    agent_id: str,
-    limit: int = 100
-):
-    return {"status": "ok"}
-
-@router.get("/float/{agent_id}/alerts")
-async def get_float_alerts(agent_id: str):
-    return {"status": "ok"}
-
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

@@ -22,9 +22,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("communication-gateway")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, EmailStr
 import httpx
@@ -823,9 +820,52 @@ def send_bulk_notifications_task(messages_data: List[Dict[str, Any]]):
 
 @celery_app.task
 def send_scheduled_message_task(message_id: str):
-    """Celery task for sending scheduled messages"""
+    """Celery task for sending scheduled messages.
+
+    Loads the persisted message and processes it through the real channel
+    pipeline. The previous implementation only logged the ID, silently
+    dropping every scheduled message.
+    """
     logger.info(f"Processing scheduled message: {message_id}")
-    # This would retrieve the message and process it
+    db = SessionLocal()
+    try:
+        message = db.query(CommunicationMessage).filter(
+            CommunicationMessage.id == message_id
+        ).first()
+        if not message:
+            logger.error(f"Scheduled message {message_id} not found")
+            return
+        if message.status not in (MessageStatus.PENDING.value, MessageStatus.QUEUED.value):
+            logger.info(f"Scheduled message {message_id} already handled (status={message.status})")
+            return
+
+        request = CommunicationRequest(
+            recipient_id=message.recipient_id,
+            message_type=MessageType(message.message_type),
+            priority=MessagePriority(message.priority),
+            subject=message.subject,
+            content=message.content,
+            channels=[CommunicationChannel(c) for c in (message.channels or [])],
+            data=message.data,
+            template_id=message.template_id,
+            template_data=message.template_data,
+            callback_url=message.callback_url,
+            idempotency_key=message.idempotency_key,
+        )
+    finally:
+        db.close()
+
+    gateway = CommunicationGateway()
+    try:
+        asyncio.run(gateway.initialize())
+    except Exception as e:
+        # Redis/rate-limiter init failure must not block the send; rate
+        # limiting degrades to allow (see check_rate_limit).
+        logger.warning(f"Gateway init degraded for scheduled send: {e}")
+    response = asyncio.run(gateway.process_message(message_id, request))
+    logger.info(
+        f"Scheduled message {message_id} finished with status={response.status.value}"
+    )
 
 @celery_app.task
 def process_scheduled_notifications():
@@ -834,6 +874,12 @@ def process_scheduled_notifications():
 
 # FastAPI application
 app = FastAPI(title="Communication Gateway", version="1.0.0")
+
+# Shared middleware/observability wiring (must run after `app` exists; the
+# previous ordering raised NameError at import time).
+apply_middleware(app)
+setup_logging("communication-gateway")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

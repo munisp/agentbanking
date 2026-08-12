@@ -146,6 +146,14 @@ async function publishdragDropReportBuilderMiddleware(
   }).catch(() => {});
 }
 
+// FAIL LOUD helper for procedures that have no real backend wired. The
+// previous implementations returned canned success / empty payloads.
+const NOT_WIRED = (what: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${what} is not wired to a real backend in this router; refusing to return a canned response.`,
+  });
+
 export const dragDropReportBuilderRouter = router({
   listReports: protectedProcedure
     .input(z.object({ limit: z.number().default(20) }).optional())
@@ -343,24 +351,72 @@ export const dragDropReportBuilderRouter = router({
     return { totalReports: Number(total.value) };
   }),
 
-  saveReport: publicProcedure
+  // Was publicProcedure returning a hard-coded { id: "RPT-001", saved: true }
+  // without persisting anything. Now a protected mutation that really saves.
+  saveReport: protectedProcedure
     .input(
       z.object({ name: z.string(), config: z.record(z.string(), z.unknown()) })
     )
     .mutation(async ({ input }) => {
-      return { id: "RPT-001", name: input.name, saved: true };
+      try {
+        const db = (await getDb())!;
+        const [report] = await db
+          .insert(biReportDefinitions)
+          .values({ name: input.name, config: input.config } as any)
+          .returning();
+        await db.insert(auditLog).values({
+          action: "report_saved",
+          resource: "bi_report_definitions",
+          resourceId: String(report.id),
+          status: "success",
+          metadata: { name: input.name },
+        });
+        return { id: report.id, name: report.name, saved: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
     }),
 
   executeReport: protectedProcedure.query(async () => {
-    return { data: [], columns: [], rowCount: 0 };
+    throw NOT_WIRED("Report execution engine");
   }),
 
   exportReport: protectedProcedure.query(async () => {
-    return { url: "/exports/report.pdf", format: "pdf" };
+    throw NOT_WIRED("Report export");
   }),
-  dashboard: protectedProcedure.query(async () => ({
-    reports: [],
-    recentActivity: [],
-    stats: { totalReports: 0, sharedReports: 0 },
-  })),
+
+  // Previously returned canned empty arrays/zero stats. Now backed by real
+  // queries against biReportDefinitions + auditLog.
+  dashboard: protectedProcedure.query(async () => {
+    const db = (await getDb())!;
+    const reports = await db
+      .select()
+      .from(biReportDefinitions)
+      .orderBy(desc(biReportDefinitions.createdAt))
+      .limit(10);
+    const [total] = await db
+      .select({ value: count() })
+      .from(biReportDefinitions)
+      .limit(100);
+    const recentActivity = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.resource, "bi_report_definitions"))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(10);
+    return {
+      reports,
+      recentActivity,
+      stats: {
+        totalReports: Number(total.value),
+        // No sharing feature exists in the schema; zero is the real value.
+        sharedReports: 0,
+      },
+    };
+  }),
 });

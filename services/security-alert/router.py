@@ -1,48 +1,34 @@
 """
 Router for security-alert service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/security-alert/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/security-alert", tags=["security-alert"])
 
-@router.post("/alerts")
-async def create_alert(
-    alert: AlertCreate,
-    background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(verify_token)):
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "security-alert endpoints are not served by this gateway router. "
+    "Use the standalone security-alert service."
+)
 
-@router.get("/alerts")
-async def list_alerts(
-    status: Optional[AlertStatus] = None,
-    severity: Optional[AlertSeverity] = None,
-    entity_type: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
-    user: Dict[str, Any] = Depends(verify_token)):
-    return {"status": "ok"}
-
-@router.get("/alerts/{alert_id}")
-async def get_alert(
-    alert_id: str,
-    user: Dict[str, Any] = Depends(verify_token)):
-    return {"status": "ok"}
-
-@router.patch("/alerts/{alert_id}")
-async def update_alert(
-    alert_id: str,
-    update: AlertUpdate,
-    user: Dict[str, Any] = Depends(verify_token)):
-    return {"status": "ok"}
-
-@router.get("/alerts/stats/summary")
-async def get_alert_stats(
-    user: Dict[str, Any] = Depends(verify_token)):
-    return {"status": "ok"}
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "security-alert", "detail": _UNAVAILABLE},
+    )
 
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

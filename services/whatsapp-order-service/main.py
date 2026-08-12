@@ -36,9 +36,6 @@ WhatsApp order management service
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("whatsapp-order-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from datetime import datetime
@@ -60,8 +57,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+apply_middleware(app)
+setup_logging("whatsapp-order-service")
+app.include_router(metrics_router)
+
 # Service state
 service_start_time = datetime.now()
+
+# Real request counters (replacing previously hard-coded metric values)
+_request_counters = {"total": 0, "success": 0, "failed": 0}
+
+
+@app.middleware("http")
+async def _count_requests(request, call_next):
+    response = await call_next(request)
+    _request_counters["total"] += 1
+    if response.status_code < 400:
+        _request_counters["success"] += 1
+    else:
+        _request_counters["failed"] += 1
+    return response
 
 class HealthResponse(BaseModel):
     status: str
@@ -107,13 +122,12 @@ async def get_status():
 
 @app.get("/api/v1/metrics")
 async def get_metrics():
-    """Get service metrics"""
+    """Get service metrics (real in-process counters; no fabricated values)"""
     uptime = (datetime.now() - service_start_time).total_seconds()
     return {
-        "requests_total": 1000,
-        "requests_success": 950,
-        "requests_failed": 50,
-        "avg_response_time_ms": 45,
+        "requests_total": _request_counters["total"],
+        "requests_success": _request_counters["success"],
+        "requests_failed": _request_counters["failed"],
         "uptime_seconds": int(uptime)
     }
 

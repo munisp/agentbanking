@@ -5,56 +5,64 @@ import { getDb } from "../db";
 import { notificationDispatchLog } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   calculateFee,
   calculateCommission,
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { checkDailyLimit } from "../lib/cbnLimits";
 import {
   auditFinancialAction,
   withTransaction,
 } from "../lib/transactionHelper";
 
+const PAGE_INPUT = z.object({
+  page: z.number().min(1).max(10000).optional(),
+  limit: z.number().min(1).max(100).optional(),
+  search: z.string().min(1).max(500).optional(),
+});
+
+async function queryDispatchLog(input: {
+  page?: number;
+  limit?: number;
+}) {
+  try {
+    const db = (await getDb())!;
+    const lim = input.limit ?? 10;
+    const offset = ((input.page ?? 1) - 1) * lim;
+    const rows = await db
+      .select()
+      .from(notificationDispatchLog)
+      .orderBy(desc(notificationDispatchLog.id))
+      .limit(lim)
+      .offset(offset);
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(notificationDispatchLog)
+      .limit(100);
+    return { items: rows, total, page: input.page ?? 1, limit: lim };
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message:
+        error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+}
+
 const getNotifications = protectedProcedure
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
+const getStats = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
-const getStats = publicProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      page: z.number().min(1).max(10000).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      search: z.string().min(1).max(500).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     })
@@ -71,12 +79,12 @@ const getStats = publicProcedure
         .from(notificationDispatchLog)
         .orderBy(desc(notificationDispatchLog.id))
         .limit(5);
+      // Previously returned fabricated delivery metrics (totalSent 45892,
+      // deliveryRate 96.14, per-channel counts, retry queue) to
+      // unauthenticated callers. Only totalSent/lastUpdated have a real
+      // source in this router.
       return {
-        totalSent: 45892,
-        deliveryRate: 96.14,
-        channels: { email: 12340, sms: 18560, push: 10200, inApp: 4792 },
-        failedDeliveries: 1768,
-        retryQueue: 234,
+        totalSent: Number(total),
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {
@@ -89,204 +97,57 @@ const getStats = publicProcedure
     }
   });
 const markRead = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
 const configureChannels = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
 const getChannelConfig = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
 const testNotification = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
 const getDeliveryLog = protectedProcedure
-  .input(
-    z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
-    })
-  )
-  .query(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      const lim = input.limit ?? 10;
-      const offset = ((input.page ?? 1) - 1) * lim;
-      const rows = await db
-        .select()
-        .from(notificationDispatchLog)
-        .orderBy(desc(notificationDispatchLog.id))
-        .limit(lim)
-        .offset(offset);
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(notificationDispatchLog)
-        .limit(100);
-      return { items: rows, total, page: input.page ?? 1, limit: lim };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
-  });
+  .input(PAGE_INPUT)
+  .query(async ({ input }) => queryDispatchLog(input));
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
+  initiated: ["pending_validation"],
+  pending_validation: ["validated", "failed_validation"],
+  validated: ["authorized", "declined"],
+  authorized: ["processing"],
+  processing: ["completed", "failed", "reversed"],
+  completed: ["settled", "disputed", "reversed"],
+  settled: ["reconciled"],
+  reconciled: ["archived"],
+  failed: ["retry_pending", "cancelled"],
+  failed_validation: ["retry_pending", "cancelled"],
+  declined: ["cancelled"],
+  reversed: ["refund_processing"],
+  refund_processing: ["refunded"],
+  refunded: ["archived"],
+  disputed: ["under_investigation"],
+  under_investigation: ["resolved", "escalated"],
+  resolved: ["archived"],
+  escalated: ["resolved"],
+  retry_pending: ["processing"],
   cancelled: [],
-  rejected: [],
   archived: [],
 };
 
-// ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validatePaymentnotificationsystemInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
+function enforceTransition(currentStatus: string, newStatus: string) {
+  const allowed =
+    STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+  if (allowed && !allowed.includes(newStatus)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+    });
+  }
 }
+
+// ── Data Integrity Helpers ─────────────────────────────────────────────────
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
 function logOperation(action: string, details: Record<string, unknown>) {
@@ -307,70 +168,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
 }
 
 // ── Domain Calculations ────────────────────────────────────────────────────
-function computeFees(amount: number, txType: string = "transfer") {
-  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
-  const feeResult = calculateFee(amount, txType);
-  const commResult = calculateCommission(feeResult.fee, txType);
-  const taxResult = calculateTax(feeResult.fee, "vat");
-  const totalDeductions = feeResult.fee + taxResult.taxAmount;
-  const netAmount = Math.max(0, amount - totalDeductions);
-  const rate = amount > 0 ? feeResult.fee / amount : 0;
-  return {
-    fee: feeResult.fee,
-    feeRate: parseFloat(rate.toFixed(4)),
-    commission: commResult.agentShare,
-    platformCommission: commResult.platformShare,
-    tax: taxResult.taxAmount,
-    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
-    netAmount: parseFloat(netAmount.toFixed(2)),
-    grossAmount: amount,
-  };
-}
-
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_PAYMENTNOTIFICATIONSYSTEM = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_PAYMENTNOTIFICATIONSYSTEM.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_PAYMENTNOTIFICATIONSYSTEM.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
 
 // ── Integrity Constraints ──────────────────────────────────────────────────
 const _constraints = {

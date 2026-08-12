@@ -10,9 +10,6 @@ Handles WhatsApp-based order processing, messaging, and automation
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("whatsapp-order-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -24,6 +21,12 @@ import httpx
 import os
 
 app = FastAPI(title="WhatsApp Order Service", version="1.0.0")
+
+# Shared middleware/observability wiring (must run after `app` exists; the
+# previous ordering raised NameError at import time).
+apply_middleware(app)
+setup_logging("whatsapp-order-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(
@@ -106,6 +109,9 @@ WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID", "")
 # Helper Functions
 async def send_whatsapp_message(phone: str, message: str) -> bool:
     """Send WhatsApp message via Meta Business API"""
+    if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_ID:
+        print("WHATSAPP_TOKEN/WHATSAPP_PHONE_ID not configured; cannot send WhatsApp message")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -249,12 +255,19 @@ async def add_message(order_id: str, message_req: SendMessageRequest):
         timestamp=datetime.now()
     )
     
+    # Send via WhatsApp FIRST and fail loudly if the provider rejects it;
+    # previously the API reported "Message sent successfully" even when the
+    # WhatsApp send failed or WHATSAPP_TOKEN was not configured.
+    sent = await send_whatsapp_message(order.customer.phone, message_req.message)
+    if not sent:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp message could not be delivered (provider unreachable or not configured)",
+        )
+
     order.messages.append(message)
     order.updated_at = datetime.now()
-    
-    # Send via WhatsApp
-    await send_whatsapp_message(order.customer.phone, message_req.message)
-    
+
     # Broadcast message
     await broadcast_update({
         "type": "new_message",
@@ -303,12 +316,18 @@ async def execute_quick_action(order_id: str, action_req: QuickActionRequest):
         timestamp=datetime.now()
     )
     
+    # Send via WhatsApp FIRST and fail loudly on provider failure; previously
+    # success was reported even when the send failed.
+    sent = await send_whatsapp_message(order.customer.phone, message_text)
+    if not sent:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp message could not be delivered (provider unreachable or not configured)",
+        )
+
     order.messages.append(message)
     order.updated_at = datetime.now()
-    
-    # Send via WhatsApp
-    await send_whatsapp_message(order.customer.phone, message_text)
-    
+
     calculate_stats()
     
     # Broadcast update
@@ -395,4 +414,3 @@ async def verify_webhook(hub_mode: str, hub_verify_token: str, hub_challenge: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8040)
-

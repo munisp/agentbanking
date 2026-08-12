@@ -52,13 +52,50 @@ async def get_db_pool():
         _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     return _db_pool
 
+KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://keycloak:8080")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "remittance")
+KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "remittance-api")
+_JWKS_URL = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+_jwks_client = None
+
+
+def _get_jwks_client():
+    global _jwks_client
+    if _jwks_client is None:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(_JWKS_URL, cache_keys=True)
+    return _jwks_client
+
+
 async def verify_token(authorization: str = Header(...)):
+    """Validate the Bearer JWT against the Keycloak realm JWKS.
+
+    Previously this only checked the header shape, so any non-empty string
+    was accepted as a token (authentication bypass). Authentication is now
+    always enforced: tokens must be signed, unexpired realm JWTs.
+    """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     token = authorization[7:]
-    if not token or len(token) < 10:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return token
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    import jwt
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+        return claims.get("sub", "")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Token validation unavailable: {e}")
+
 
 app = FastAPI(title="Reporting Service", description="Reporting Service for Remittance Platform", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -102,20 +139,28 @@ class ReportRequest(BaseModel):
 
 @app.post("/api/v1/reports/generate")
 async def generate_report(req: ReportRequest, token: str = Depends(verify_token)):
+    """Request generation of a report.
+
+    FAIL LOUD: this service has no report-rendering backend wired up, and the
+    previous implementation marked every request 'completed' with a fabricated
+    summary. Requests are now recorded as 'failed' and the caller gets a 501
+    instead of a fake report.
+    """
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO reports (report_type, title, parameters, generated_by, status)
-               VALUES ($1, $2, $3, $4, 'processing') RETURNING *""",
-            req.report_type, req.title, json.dumps(req.parameters or {}), token[:36]
+            """INSERT INTO reports (report_type, title, parameters, generated_by, status, result)
+               VALUES ($1, $2, $3, $4, 'failed', $5) RETURNING *""",
+            req.report_type, req.title, json.dumps(req.parameters or {}), token[:36],
+            json.dumps({"error": "Report generation backend is not implemented for this service"}),
         )
-        report_id = row["id"]
-        result = {"summary": f"Report {req.report_type} generated", "parameters": req.parameters, "generated_at": datetime.utcnow().isoformat()}
-        await conn.execute(
-            "UPDATE reports SET status='completed', result=$1, completed_at=NOW() WHERE id=$2",
-            json.dumps(result), report_id
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "report_id": str(row["id"]),
+                "error": "Report generation is not implemented for this service. No report was produced.",
+            },
         )
-        return {"report_id": str(report_id), "status": "completed", "result": result}
 
 @app.get("/api/v1/reports")
 async def list_reports(report_type: Optional[str] = None, skip: int = 0, limit: int = 50, token: str = Depends(verify_token)):

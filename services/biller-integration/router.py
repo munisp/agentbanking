@@ -1,41 +1,34 @@
 """
 Router for biller-integration service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/biller-integration/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/biller-integration", tags=["biller-integration"])
 
-@router.post("/verify")
-async def verify_customer_endpoint(customer_id: str, biller_code: str):
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "biller-integration endpoints are not served by this gateway router. "
+    "Use the standalone biller-integration service."
+)
 
-@router.post("/payments")
-async def create_payment(payment: BillerPayment):
-    return {"status": "ok"}
-
-@router.get("/payments/{transaction_ref}")
-async def get_payment(transaction_ref: str):
-    return {"status": "ok"}
-
-@router.get("/billers")
-async def list_billers(category: Optional[BillerCategory] = None):
-    return {"status": "ok"}
-
-@router.get("/billers/{biller_code}/variations")
-async def get_biller_variations(biller_code: str):
-    return {"status": "ok"}
-
-@router.get("/transactions")
-async def list_transactions(
-    agent_id: Optional[str] = None,
-    status: Optional[str] = None,
-    category: Optional[str] = None,
-    limit: int = Query(default=50, le=200)):
-    return {"status": "ok"}
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "biller-integration", "detail": _UNAVAILABLE},
+    )
 
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

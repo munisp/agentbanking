@@ -386,37 +386,51 @@ export const notificationInboxRouter = router({
       }
     }),
 
+  // FAIL LOUD: archive previously returned { success: true } without
+  // modifying any notification.
   archive: protectedProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishnotificationInboxMiddleware("archive", `${Date.now()}`, {
-        action: "archive",
-      }).catch(() => {});
-
-      return { success: true };
+      // FAIL LOUD: previously returned a canned success payload.
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Inbox archive is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 
+  // FAIL LOUD: bulkDelete previously returned { success: true } without
+  // deleting any notification.
   bulkDelete: protectedProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishnotificationInboxMiddleware("bulkDelete", `${Date.now()}`, {
-        action: "bulkDelete",
-      }).catch(() => {});
-
-      return { success: true };
+      // FAIL LOUD: previously returned a canned success payload.
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Inbox bulk delete is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 
   getUnreadCounts: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Unread-count aggregation is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
 
   toggleStar: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Star toggling is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
 });

@@ -1,6 +1,5 @@
 import logging
-import random
-import time
+import os
 from datetime import datetime, timedelta
 from typing import List
 from uuid import UUID
@@ -38,51 +37,28 @@ get_db = config.get_db
 
 
 # --- Utility Functions (Business Logic) ---
+class ReportGenerationNotAvailable(RuntimeError):
+    """Raised when no real report-generation backend is configured."""
+
+
 def _generate_report_generation(
     template: ReportTemplate,
     output_format: str,
     schedule_id: UUID = None,
     runtime_data: dict = None,
 ) -> ReportInstance:
-    """
-    Generates the complex report generation process.
-    In a real system, this would involve:
-    1. Fetching data using template.data_source_query and runtime_data.
-    2. Rendering the template.template_content (e.g., Jinja2) with the data.
-    3. Converting the rendered output to the specified output_format (PDF, CSV, etc.).
-    4. Storing the file in a storage system (e.g., S3, local disk).
-    """
-    logger.info(
-        f"Simulating generation for template {template.id} in format {output_format}"
-    )
+    """Generate a report instance from a template.
 
-    # Process result
-    if random.random() < 0.1:  # 10% chance of failure
-        status_val = "FAILED"
-        error_msg = "Failure during data processing."
-        file_path = None
-        completed_at = datetime.utcnow()
-    else:
-        # Execute report generation
-        time.sleep(random.uniform(0.5, 2.0))
-        status_val = "COMPLETED"
-        error_msg = None
-        # Generate file path
-        file_path = f"/var/reports/{template.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{output_format.lower()}"
-        completed_at = datetime.utcnow()
-
-    # Create and return a new ReportInstance object (not yet saved to DB)
-    instance = ReportInstance(
-        template_id=template.id,
-        schedule_id=schedule_id,
-        status=status_val,
-        output_format=output_format,
-        file_path=file_path,
-        generated_at=datetime.utcnow(),
-        completed_at=completed_at,
-        error_message=error_msg,
+    FAIL LOUD: the previous implementation simulated generation (random
+    failures, fake sleeps, fabricated /var/reports file paths that never
+    existed). There is no rendering/storage backend wired to this service, so
+    generation now fails loudly instead of fabricating COMPLETED instances.
+    """
+    raise ReportGenerationNotAvailable(
+        "Report generation backend is not configured for this service "
+        f"(template={template.id}, format={output_format}). "
+        "No report was produced and no file path was fabricated."
     )
-    return instance
 
 
 def _calculate_next_run(schedule_type: str) -> datetime:
@@ -367,14 +343,27 @@ def generate_report_on_demand(
     db.commit()
     db.refresh(pending_instance)
 
-    # 2. Execute the generation process
-    # For this synchronous API, we'll generate the completion immediately after the commit
-    # to demonstrate the full flow.
-    generated_instance = _generate_report_generation(
-        template=template,
-        output_format=request.output_format,
-        runtime_data=request.runtime_data,
-    )
+    # 2. Execute the generation process. Fails loudly (501) when no real
+    # generation backend is configured; the instance is marked FAILED with the
+    # reason instead of a fabricated COMPLETED status.
+    try:
+        generated_instance = _generate_report_generation(
+            template=template,
+            output_format=request.output_format,
+            runtime_data=request.runtime_data,
+        )
+    except ReportGenerationNotAvailable as e:
+        db_inst = db.query(ReportInstance).filter(ReportInstance.id == pending_instance.id).first()
+        if db_inst:
+            db_inst.status = "FAILED"
+            db_inst.error_message = str(e)
+            db_inst.completed_at = datetime.utcnow()
+            db.add(db_inst)
+            db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(e),
+        )
 
     # 3. Update the instance with the result
     db_instance = db.query(ReportInstance).filter(ReportInstance.id == pending_instance.id).first()
@@ -415,23 +404,18 @@ def download_report(instance_id: UUID, db: Session = Depends(get_db)):
             detail="File path not found for this completed report instance.",
         )
 
-    # NOTE: In a real-world scenario, this file would be retrieved from S3/Cloud Storage.
-    # Return the generated file.
-    # We must ensure the file exists for FileResponse to work.
-    
-    # Create a dummy file for demonstration purposes
-    dummy_file_path = f"/tmp/report_{instance_id}.{instance.output_format.lower()}"
-    try:
-        with open(dummy_file_path, "w") as f:
-            f.write(f"--- Report Content ---\n")
-            f.write(f"Instance ID: {instance_id}\n")
-            f.write(f"Template ID: {instance.template_id}\n")
-            f.write(f"Format: {instance.output_format}\n")
-            f.write(f"Generated At: {instance.generated_at}\n")
-            f.write(f"This is a generated report content for a {instance.output_format} file.\n")
-    except Exception as e:
-        logger.error(f"Failed to create dummy file: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create dummy file for download.")
+    # Return the actual generated file. FAIL LOUD if it does not exist on
+    # disk: the previous implementation wrote a dummy placeholder file and
+    # served it as if it were the real report.
+    file_path = instance.file_path
+    if not os.path.isfile(file_path):
+        logger.error(
+            f"Report instance {instance_id} marked COMPLETED but file is missing: {file_path}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generated report file is not available on this server.",
+        )
 
     media_type_map = {
         "PDF": "application/pdf",
@@ -443,7 +427,7 @@ def download_report(instance_id: UUID, db: Session = Depends(get_db)):
     filename = f"report_{instance_id}.{instance.output_format.lower()}"
 
     return FileResponse(
-        path=dummy_file_path,
+        path=file_path,
         media_type=media_type,
         filename=filename,
     )

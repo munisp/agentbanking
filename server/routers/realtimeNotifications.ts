@@ -304,35 +304,31 @@ export const realtimeNotificationsRouter = router({
         });
       }
     }),
+  // Previously returned fabricated metrics (45892 total, 234 unread,
+  // hard-coded per-channel counts and a fake "N-001 Payment Received"
+  // notification). Now backed by real notification_logs queries; channel
+  // breakdown and 24h volume are not derivable here and were removed.
   dashboard: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishrealtimeNotificationsMiddleware("send", `${Date.now()}`, {
-      action: "send",
-    }).catch(() => {});
-
+    const db = (await getDb())!;
+    const [total] = await db
+      .select({ value: count() })
+      .from(notification_logs)
+      .limit(100);
+    const [unread] = await db
+      .select({ value: count() })
+      .from(notification_logs)
+      .where(eq(notification_logs.status, "pending"))
+      .limit(100);
+    const recentNotifications = await db
+      .select()
+      .from(notification_logs)
+      .orderBy(desc(notification_logs.id))
+      .limit(5);
     return {
-      totalRecords: 0,
-      activeRecords: 0,
+      totalNotifications: Number(total.value),
+      unreadCount: Number(unread.value),
       lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-      totalNotifications: 45892,
-      unreadCount: 234,
-      sentLast24h: 1250,
-      byChannel: [
-        { channel: "email", count: 400 },
-        { channel: "sms", count: 350 },
-        { channel: "push", count: 300 },
-        { channel: "inApp", count: 200 },
-      ],
-      recentNotifications: [
-        {
-          id: "N-001",
-          title: "Payment Received",
-          type: "transaction",
-          createdAt: new Date().toISOString(),
-        },
-      ],
+      recentNotifications,
     };
   }),
 
@@ -354,7 +350,9 @@ export const realtimeNotificationsRouter = router({
     };
   }),
 
-  broadcast: publicProcedure
+  // Was a PUBLIC (unauthenticated) mutation returning a fabricated
+  // messageId "MSG-001" with sent/failed counters without sending anything.
+  broadcast: protectedProcedure
     .input(
       z.object({
         title: z.string(),
@@ -363,7 +361,11 @@ export const realtimeNotificationsRouter = router({
         priority: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      return { sent: 0, failed: 0, messageId: "MSG-001", title: input.title };
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Broadcast delivery is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 });

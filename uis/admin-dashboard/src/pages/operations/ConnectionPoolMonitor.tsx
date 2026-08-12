@@ -20,24 +20,11 @@ interface PeakRecord {
   utilization: number;
 }
 
-const MOCK_POOLS: DBPool[] = [
-  { dbName: "core-banking", poolSize: 20, activeConnections: 14, idleConnections: 6, waitingRequests: 0, maxOverflow: 10 },
-  { dbName: "audit-logs", poolSize: 10, activeConnections: 3, idleConnections: 7, waitingRequests: 0, maxOverflow: 5 },
-  { dbName: "kyc-store", poolSize: 15, activeConnections: 11, idleConnections: 2, waitingRequests: 3, maxOverflow: 8 },
-  { dbName: "analytics", poolSize: 8, activeConnections: 8, idleConnections: 0, waitingRequests: 7, maxOverflow: 4 },
-];
-
-const MOCK_PEAKS: PeakRecord[] = [
-  { dbName: "core-banking", peakActive: 18, peakTime: "2026-05-01 09:14", utilization: 90 },
-  { dbName: "kyc-store", peakActive: 14, peakTime: "2026-04-30 14:22", utilization: 93 },
-  { dbName: "analytics", peakActive: 8, peakTime: "2026-05-02 08:00", utilization: 100 },
-  { dbName: "audit-logs", peakActive: 6, peakTime: "2026-04-28 11:05", utilization: 60 },
-];
-
 const ConnectionPoolMonitor: React.FC = () => {
   const [pools, setPools] = useState<DBPool[]>([]);
   const [peaks, setPeaks] = useState<PeakRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   
@@ -46,14 +33,15 @@ const ConnectionPoolMonitor: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/connection-pools`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setPools(Array.isArray(d.pools) ? d.pools : MOCK_POOLS);
-        setPeaks(Array.isArray(d.peaks) ? d.peaks : MOCK_PEAKS);
-      } else { setPools(MOCK_POOLS); setPeaks(MOCK_PEAKS); }
-    } catch { setPools(MOCK_POOLS); setPeaks(MOCK_PEAKS); }
+        setPools(Array.isArray(d.pools) ? d.pools : []);
+        setPeaks(Array.isArray(d.peaks) ? d.peaks : []);
+      } else { setError("Failed to load connection pool data."); }
+    } catch { setError("Failed to load connection pool data."); }
     finally { setLoading(false); }
   };
 
@@ -66,11 +54,18 @@ const ConnectionPoolMonitor: React.FC = () => {
       setActionMsg(`${action === "drain" ? "Drain" : "Resize"} initiated for ${dbName}`);
       setTimeout(() => setActionMsg(null), 3000);
       fetchData();
-    } catch { setActionMsg(`${action} triggered for ${dbName} (demo)`); setTimeout(() => setActionMsg(null), 3000); }
+    } catch { setActionMsg(`Failed to ${action} ${dbName}. Please try again.`); setTimeout(() => setActionMsg(null), 3000); }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

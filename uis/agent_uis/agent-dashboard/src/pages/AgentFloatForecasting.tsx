@@ -28,7 +28,6 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Clock,
-  TrendingUp,
   Wallet,
   Banknote,
   Building2,
@@ -100,7 +99,13 @@ export default function AgentFloatForecasting() {
 
   const handleConfirmReplenish = () => {
     if (!selectedAgent) return;
-    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount: 50000 });
+    const amount = Number(replenishAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid replenishment amount.");
+      return;
+    }
+    // User-confirmed amount from the dialog form — never a hardcoded value.
+    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount });
   };
 
   // Render only real backend forecasts — never fabricated agent float data.
@@ -146,11 +151,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ₦{(stats.data?.totalFloat ?? 2450000000).toLocaleString()}
+                {stats.data?.totalFloat != null
+                  ? `₦${stats.data.totalFloat.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-green-500 flex items-center gap-1">
-                <TrendingUp className="h-3 w-3" />
-                +12.3% from last week
+              <p className="text-xs text-muted-foreground">
+                {stats.data ? "Current reported pool" : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -162,10 +168,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-500">
-                {stats.data?.stockoutRisk ?? 47}
+                {stats.data?.stockoutRisk ?? "—"}
               </div>
               <p className="text-xs text-muted-foreground">
-                of {stats.data?.agentsMonitored ?? 1250} active agents
+                {stats.data?.agentsMonitored != null
+                  ? `of ${stats.data.agentsMonitored} active agents`
+                  : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -177,9 +185,13 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                ₦{(stats.data?.predictedDemand7d ?? 85000000).toLocaleString()}
+                {stats.data?.predictedDemand7d != null
+                  ? `₦${stats.data.predictedDemand7d.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">Across 23 agents</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.data ? "Across monitored agents" : "No data available"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -190,7 +202,7 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                {stats.data?.avgAccuracy ?? 94.7}%
+                {stats.data?.avgAccuracy != null ? `${stats.data.avgAccuracy}%` : "—"}
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
@@ -202,18 +214,14 @@ export default function AgentFloatForecasting() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Agent Float Forecasts</CardTitle>
+              {/* Bulk replenish disabled: the backend exposes no endpoint that
+                  computes per-agent amounts, and a hardcoded amount would be
+                  fabricated. Replenish agents individually instead. */}
               <Button
-                onClick={() =>
-                  triggerReplenishment.mutate({
-                    agentId: "all-below-threshold",
-                    amount: 50000,
-                  })
-                }
-                disabled={triggerReplenishment.isPending}
+                disabled
+                title="Bulk auto-replenish is unavailable — replenish agents individually with a confirmed amount."
               >
-                {triggerReplenishment.isPending
-                  ? "Processing..."
-                  : "Auto-Replenish All"}
+                Auto-Replenish All
               </Button>
             </div>
           </CardHeader>

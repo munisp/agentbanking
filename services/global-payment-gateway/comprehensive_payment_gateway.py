@@ -10,10 +10,6 @@ Multi-provider payment processing with real-time currency exchange, webhooks, an
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("global-payment-gateway")
-app.include_router(metrics_router)
-
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -62,6 +58,10 @@ paypalrestsdk.configure({
     "client_id": PAYPAL_CLIENT_ID,
     "client_secret": PAYPAL_CLIENT_SECRET
 })
+
+# Mobile money provider (M-Pesa, MTN, etc.) aggregator
+MOBILE_MONEY_PROVIDER_URL = os.getenv("MOBILE_MONEY_PROVIDER_URL", "").strip() or None
+MOBILE_MONEY_PROVIDER_API_KEY = os.getenv("MOBILE_MONEY_PROVIDER_API_KEY", "").strip() or None
 
 # Currency exchange API
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY", "")
@@ -242,7 +242,12 @@ class RefundResponse(BaseModel):
 # ==================== HELPER FUNCTIONS ====================
 
 async def get_exchange_rate(from_currency: str, to_currency: str, db: Session) -> Decimal:
-    """Get exchange rate with caching"""
+    """Get exchange rate with caching
+    
+    Raises:
+        HTTPException 503: when no live rate is available. Hardcoded fallback
+            rates are never silently substituted for real FX data.
+    """
     
     if from_currency == to_currency:
         return Decimal("1.0")
@@ -294,21 +299,12 @@ async def get_exchange_rate(from_currency: str, to_currency: str, db: Session) -
             else:
                 raise HTTPException(status_code=400, detail=f"Exchange rate not available for {to_currency}")
     
+    except HTTPException:
+        raise
     except Exception as e:
-        # Fallback to default rates
-        default_rates = {
-            ("USD", "EUR"): Decimal("0.92"),
-            ("USD", "GBP"): Decimal("0.79"),
-            ("USD", "JPY"): Decimal("157.0"),
-            ("USD", "KES"): Decimal("130.0"),
-            ("USD", "NGN"): Decimal("1500.0"),
-        }
-        
-        rate = default_rates.get((from_currency, to_currency))
-        if rate:
-            return rate
-        
-        raise HTTPException(status_code=500, detail=f"Failed to get exchange rate: {str(e)}")
+        # Fail loudly: never fall back to stale hardcoded rates (e.g. USD->NGN 1500)
+        # when computing real payment amounts.
+        raise HTTPException(status_code=503, detail=f"Failed to get exchange rate: {str(e)}")
 
 def calculate_fees(amount: Decimal, provider: str) -> Dict[str, Decimal]:
     """Calculate platform and provider fees"""
@@ -426,17 +422,56 @@ async def process_paypal_payment(payment_data: PaymentRequest, db: Session) -> D
         }
 
 async def process_mobile_money_payment(payment_data: PaymentRequest, db: Session) -> Dict[str, Any]:
-    """Process mobile money payment via provider API"""
+    """Process mobile money payment via the configured provider API
     
-    # In production, integrate with mobile money APIs (M-Pesa, MTN, etc.)
-    return {
-        "provider_transaction_id": f"MM-{uuid.uuid4().hex[:12].upper()}",
-        "status": "processing",
-        "provider_response": {
-            "phone": payment_data.mobile_money_phone,
-            "amount": str(payment_data.amount),
-            "currency": payment_data.currency
+    Raises:
+        HTTPException 503: when no mobile money provider is configured.
+        Provider transaction IDs are never fabricated.
+    """
+    
+    if not MOBILE_MONEY_PROVIDER_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Mobile money provider is not configured (MOBILE_MONEY_PROVIDER_URL is unset)"
+        )
+    
+    try:
+        headers = {"Content-Type": "application/json"}
+        if MOBILE_MONEY_PROVIDER_API_KEY:
+            headers["Authorization"] = f"Bearer {MOBILE_MONEY_PROVIDER_API_KEY}"
+        
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{MOBILE_MONEY_PROVIDER_URL.rstrip('/')}/payments",
+                json={
+                    "phone": payment_data.mobile_money_phone,
+                    "amount": str(payment_data.amount),
+                    "currency": payment_data.currency,
+                    "reference": payment_data.order_id,
+                    "metadata": payment_data.metadata or {}
+                },
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+    except Exception as e:
+        return {
+            "status": "failed",
+            "failure_reason": f"Mobile money provider error: {e}"
         }
+    
+    provider_tx_id = data.get("transaction_id") or data.get("id")
+    if not provider_tx_id:
+        return {
+            "status": "failed",
+            "failure_reason": "Mobile money provider did not return a transaction ID"
+        }
+    
+    provider_status = str(data.get("status", "")).lower()
+    return {
+        "provider_transaction_id": provider_tx_id,
+        "status": "succeeded" if provider_status in {"success", "succeeded", "completed"} else "processing",
+        "provider_response": data
     }
 
 # ==================== FASTAPI APP ====================
@@ -446,6 +481,10 @@ app = FastAPI(
     description="Multi-provider payment processing with currency exchange and webhooks",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("global-payment-gateway")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -525,7 +564,7 @@ async def create_payment(
     elif payment_data.provider == "mobile_money":
         result = await process_mobile_money_payment(payment_data, db)
     else:
-        result = {"status": "failed", "failure_reason": "Unsupported provider"}
+        result = {"status": "failed", "failure_reason": f"Provider '{payment_data.provider}' has no configured processor"}
     
     # Update transaction
     transaction.provider_transaction_id = result.get("provider_transaction_id")
@@ -555,7 +594,11 @@ async def create_refund(
     refund_data: RefundRequest,
     db: Session = Depends(get_db)
 ):
-    """Process refund (full or partial)"""
+    """Process refund (full or partial)
+    
+    A refund is only marked succeeded when the payment provider confirms it.
+    Providers without a configured refund rail fail explicitly.
+    """
     
     # Get transaction
     transaction = db.query(PaymentTransaction).filter(
@@ -603,22 +646,49 @@ async def create_refund(
             refund.succeeded_at = datetime.utcnow()
         
         elif transaction.provider == "paypal":
-            # PayPal refund implementation
+            # Real PayPal refund against the captured sale
+            payment = PayPalPayment.find(transaction.provider_transaction_id)
+            sale = None
+            for txn in payment.transactions:
+                for related in txn.related_resources:
+                    if getattr(related, "sale", None):
+                        sale = related.sale
+                        break
+                if sale:
+                    break
+            if sale is None:
+                raise RuntimeError("No captured sale found for this PayPal payment")
+            
+            paypal_refund = sale.refund({
+                "amount": {
+                    "total": str(refund_amount),
+                    "currency": transaction.currency
+                }
+            })
+            if not paypal_refund.success():
+                raise RuntimeError(f"PayPal refund failed: {paypal_refund.error}")
+            
+            refund.provider_refund_id = paypal_refund.id
             refund.status = "succeeded"
             refund.succeeded_at = datetime.utcnow()
         
         else:
-            refund.status = "succeeded"
-            refund.succeeded_at = datetime.utcnow()
+            # bank_transfer / mobile_money: no refund rail is configured here,
+            # so fail explicitly instead of pretending the refund succeeded.
+            raise RuntimeError(
+                f"Refunds are not supported for provider '{transaction.provider}': "
+                "no refund integration is configured"
+            )
         
-        # Update transaction
-        transaction.refunded_amount += refund_amount
-        transaction.refund_count += 1
-        
-        if transaction.refunded_amount >= transaction.amount:
-            transaction.status = "refunded"
-        else:
-            transaction.status = "partially_refunded"
+        # Update transaction only when the provider confirmed the refund
+        if refund.status == "succeeded":
+            transaction.refunded_amount += refund_amount
+            transaction.refund_count += 1
+            
+            if transaction.refunded_amount >= transaction.amount:
+                transaction.status = "refunded"
+            else:
+                transaction.status = "partially_refunded"
         
         db.commit()
         db.refresh(refund)

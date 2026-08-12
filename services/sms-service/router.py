@@ -1,6 +1,11 @@
+import base64
+import json
 import logging
+import os
 from typing import List, Optional
 from datetime import datetime
+from urllib import request as urlrequest
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -20,6 +25,92 @@ router = APIRouter(
     tags=["SMS Service"],
     responses={404: {"description": "Not found"}},
 )
+
+# --- SMS Provider Client (Africa's Talking / Twilio) ---
+#
+# Messages are only marked SENT when the configured provider returns a
+# successful response with a real provider message ID. No console/print
+# fallback may ever report success.
+
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "africas_talking").lower()
+
+AT_API_KEY = os.getenv("AT_API_KEY", "")
+AT_USERNAME = os.getenv("AT_USERNAME", "")
+AT_ENVIRONMENT = os.getenv("AT_ENVIRONMENT", "production").lower()
+AT_BASE_URL = (
+    "https://api.sandbox.africastalking.com"
+    if AT_ENVIRONMENT == "sandbox"
+    else "https://api.africastalking.com"
+)
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+
+PROVIDER_TIMEOUT = 15  # seconds
+
+
+def send_via_provider(recipient: str, body: str, sender_id: Optional[str] = None) -> dict:
+    """Send an SMS via the configured provider.
+
+    Returns {"success": True, "provider_message_id": ...} ONLY on a real
+    provider success response with a real provider message id.
+    """
+    if SMS_PROVIDER == "africas_talking":
+        if not (AT_API_KEY and AT_USERNAME):
+            return {"success": False, "error": "Africa's Talking provider not configured (AT_API_KEY/AT_USERNAME missing)"}
+        payload = urlencode({
+            "username": AT_USERNAME,
+            "to": recipient,
+            "message": body,
+            "from": sender_id or "",
+        }).encode()
+        req = urlrequest.Request(f"{AT_BASE_URL}/version1/messaging", data=payload)
+        req.add_header("apiKey", AT_API_KEY)
+        req.add_header("Accept", "application/json")
+        try:
+            with urlrequest.urlopen(req, timeout=PROVIDER_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+        except Exception as exc:
+            logger.error(f"[sms] Africa's Talking send failed: {exc}")
+            return {"success": False, "error": str(exc)}
+        recipients = data.get("SMSMessageData", {}).get("Recipients", [])
+        if recipients:
+            first = recipients[0]
+            provider_status = str(first.get("status", "")).lower()
+            message_id = first.get("messageId", "")
+            if provider_status not in ("failed", "rejected") and message_id:
+                return {"success": True, "provider": "africastalking", "provider_message_id": message_id, "cost": first.get("cost", "")}
+        return {"success": False, "error": f"Africa's Talking rejected message: {data}"}
+
+    if SMS_PROVIDER == "twilio":
+        if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER):
+            return {"success": False, "error": "Twilio provider not configured (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER missing)"}
+        payload = urlencode({
+            "From": TWILIO_FROM_NUMBER,
+            "To": recipient,
+            "Body": body,
+        }).encode()
+        req = urlrequest.Request(
+            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
+            data=payload,
+        )
+        auth = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+        req.add_header("Authorization", f"Basic {auth}")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        try:
+            with urlrequest.urlopen(req, timeout=PROVIDER_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+        except Exception as exc:
+            logger.error(f"[sms] Twilio send failed: {exc}")
+            return {"success": False, "error": str(exc)}
+        sid = data.get("sid")
+        if sid and data.get("status") not in ("failed", "undelivered"):
+            return {"success": True, "provider": "twilio", "provider_message_id": sid, "provider_status": data.get("status")}
+        return {"success": False, "error": f"Twilio rejected message: {data}"}
+
+    return {"success": False, "error": f"Unknown SMS_PROVIDER '{SMS_PROVIDER}'"}
+
 
 # --- Helper Functions (Service Layer Simulation) ---
 
@@ -194,8 +285,11 @@ def send_sms_message(
     db: Session = Depends(config.get_db)
 ):
     """
-    Sends the process of sending an SMS message. 
-    It updates the status to SENT and records the sent time.
+    Sends an SMS message via the configured SMS provider.
+
+    The status is set to SENT only when the provider returns a successful
+    response with a real provider message ID. On any provider failure the
+    status is set to FAILED and a 502 is returned.
     """
     db_sms = get_sms_message(db, sms_id)
     if not db_sms:
@@ -207,22 +301,42 @@ def send_sms_message(
             detail=f"SMS message ID {sms_id} is already {db_sms.status}"
         )
 
-    # Send via provider
-    db_sms.status = models.SMSStatus.SENT.value
-    db_sms.sent_at = datetime.utcnow()
-    
-    # Add log
+    # Send via the real SMS provider
+    result = send_via_provider(db_sms.recipient_number, db_sms.message_body, db_sms.sender_id)
+
+    if result.get("success"):
+        db_sms.status = models.SMSStatus.SENT.value
+        db_sms.sent_at = datetime.utcnow()
+
+        log = models.SMSActivityLog(
+            sms_message=db_sms,
+            activity_type="SEND_ATTEMPT",
+            details=(
+                f"SMS sent via {result.get('provider', SMS_PROVIDER)}; "
+                f"provider_message_id={result.get('provider_message_id')}"
+            )
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(db_sms)
+        logger.info(f"SMS message sent, ID: {sms_id}, provider_message_id={result.get('provider_message_id')}")
+        return db_sms
+
+    # Provider failure — mark FAILED, never SENT
+    failed_status = getattr(models.SMSStatus, "FAILED", None)
+    db_sms.status = failed_status.value if failed_status is not None else "FAILED"
     log = models.SMSActivityLog(
         sms_message=db_sms,
         activity_type="SEND_ATTEMPT",
-        details="SMS sending sent and status updated to SENT."
+        details=f"SMS send FAILED via provider {SMS_PROVIDER}: {result.get('error')}"
     )
     db.add(log)
-    
     db.commit()
-    db.refresh(db_sms)
-    logger.info(f"SMS message sent, ID: {sms_id}")
-    return db_sms
+    logger.error(f"SMS message send failed, ID: {sms_id}: {result.get('error')}")
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=f"SMS provider send failed: {result.get('error')}"
+    )
 
 @router.get(
     "/{sms_id}/status",

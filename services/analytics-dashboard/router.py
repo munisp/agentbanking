@@ -1,98 +1,34 @@
 """
 Router for analytics-dashboard service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
 
-WARNING (mockware remediation): these endpoints were auto-generated stubs
-returning fabricated {"status": "ok"} responses that SHADOW the real,
-database-backed (and JWT-protected) endpoints in
-services/analytics-dashboard/main.py. The /token stub was especially
-dangerous: it impersonated the real JWT login endpoint (an auth bypass).
-Until this stub is removed from every registration site, all endpoints fail
-loudly with 501 Not Implemented. Do NOT re-add ok-fabricating handlers here.
+The real implementation lives in the standalone service (services/analytics-dashboard/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/analytics-dashboard", tags=["analytics-dashboard"])
 
-_STUB_DETAIL = (
-    "analytics-dashboard stub endpoint disabled: use the real implementation "
-    "in services/analytics-dashboard/main.py"
+_UNAVAILABLE = (
+    "analytics-dashboard endpoints are not served by this gateway router. "
+    "Use the standalone analytics-dashboard service."
 )
-
-
-def _not_implemented():
-    raise HTTPException(status_code=501, detail=_STUB_DETAIL)
 
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok", "note": "stub router only; real API is in main.py"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "analytics-dashboard", "detail": _UNAVAILABLE},
+    )
 
 
-@router.post("/token")
-async def login_for_access_token():
-    # AUTH-BYPASS FIX: this stub previously returned {"status": "ok"} while
-    # shadowing the real JWT-issuing /token endpoint in main.py. It now fails
-    # loudly; tokens are only issued by the real implementation.
-    _not_implemented()
-
-
-@router.post("/user-activities/")
-def create_user_activity():
-    _not_implemented()
-
-
-@router.get("/user-activities/")
-def read_user_activities():
-    _not_implemented()
-
-
-@router.get("/user-activities/{activity_id}")
-def read_user_activity(activity_id: int):
-    _not_implemented()
-
-
-@router.post("/transactions/")
-def create_transaction():
-    _not_implemented()
-
-
-@router.get("/transactions/")
-def read_transactions():
-    _not_implemented()
-
-
-@router.get("/transactions/{transaction_id}")
-def read_transaction(transaction_id: int):
-    _not_implemented()
-
-
-@router.post("/metrics/")
-def create_metric():
-    _not_implemented()
-
-
-@router.get("/metrics/")
-def read_metrics():
-    _not_implemented()
-
-
-@router.get("/metrics/{metric_id}")
-def read_metric(metric_id: int):
-    _not_implemented()
-
-
-@router.post("/alerts/")
-def create_alert():
-    _not_implemented()
-
-
-@router.get("/alerts/")
-def read_alerts():
-    _not_implemented()
-
-
-@router.get("/alerts/{alert_id}")
-def read_alert(alert_id: int):
-    _not_implemented()
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

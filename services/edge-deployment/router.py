@@ -1,65 +1,34 @@
 """
 Router for edge-deployment service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/edge-deployment/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/edge-deployment", tags=["edge-deployment"])
 
+_UNAVAILABLE = (
+    "edge-deployment endpoints are not served by this gateway router. "
+    "Use the standalone edge-deployment service."
+)
+
+
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "edge-deployment", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/token")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    return {"status": "ok"}
 
-@router.post("/users/")
-async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.get("/users/me/")
-async def read_users_me(current_user: models.User = Depends(auth.get_current_active_user)):
-    return {"status": "ok"}
-
-@router.post("/devices/")
-async def create_edge_device(device: schemas.EdgeDeviceCreate, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.get("/devices/")
-async def read_edge_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.get("/devices/{device_id}")
-async def read_edge_device(device_id: str, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.put("/devices/{device_id}")
-async def update_edge_device(device_id: str, device: schemas.EdgeDeviceUpdate, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.delete("/devices/{device_id}")
-async def delete_edge_device(device_id: str, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.post("/deployments/")
-async def create_deployment(deployment: schemas.DeploymentCreate, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.get("/deployments/")
-async def read_deployments(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.get("/deployments/{deployment_id}")
-async def read_deployment(deployment_id: str, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.put("/deployments/{deployment_id}")
-async def update_deployment(deployment_id: str, deployment: schemas.DeploymentUpdate, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
-@router.delete("/deployments/{deployment_id}")
-async def delete_deployment(deployment_id: str, db: Session = Depends(get_db)):
-    return {"status": "ok"}
-
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

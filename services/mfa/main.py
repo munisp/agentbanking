@@ -87,13 +87,48 @@ class VerifyRequest(BaseModel):
     method: MFAMethod
 
 
+KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://keycloak:8080")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "remittance")
+_JWKS_URL = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+_jwks_client = None
+
+
+def _get_jwks_client():
+    global _jwks_client
+    if _jwks_client is None:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(_JWKS_URL, cache_keys=True)
+    return _jwks_client
+
+
 async def verify_bearer_token(authorization: str = Header(...)):
+    """Validate the Bearer JWT against the Keycloak realm JWKS.
+
+    CRITICAL FIX: previously any non-empty Bearer string passed this check,
+    allowing unauthenticated enroll/verify/unenroll of MFA for arbitrary
+    users. Authentication is now always enforced.
+    """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     token = authorization[7:]
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
-    return token
+    import jwt
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+        return claims.get("sub", "")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Token validation unavailable: {e}")
 
 
 def _generate_totp_secret() -> str:
@@ -343,4 +378,3 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8012)
-

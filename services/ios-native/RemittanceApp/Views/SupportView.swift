@@ -23,7 +23,7 @@ struct HelpCenterCategory: Identifiable, Codable {
     let iconName: String
 }
 
-// MARK: - 2. API Client Stub
+// MARK: - 2. Support API (real backend client)
 
 enum APIError: Error, LocalizedError {
     case networkError(String)
@@ -39,41 +39,74 @@ enum APIError: Error, LocalizedError {
     }
 }
 
-class APIClient {
-    // Simulate fetching data from a remote server
+/// Interface for the support backend, allowing DEBUG-only mocks.
+protocol SupportAPI {
+    func fetchFAQs() -> AnyPublisher<[FAQItem], APIError>
+    func submitContactForm(subject: String, message: String) -> AnyPublisher<Bool, APIError>
+}
+
+/// Real support client backed by the 54agent backend. Contact-form success is
+/// reported only when the server has actually accepted the request.
+class LiveSupportAPIClient: SupportAPI {
+    private struct SubmitResponse: Decodable { let accepted: Bool }
+
     func fetchFAQs() -> AnyPublisher<[FAQItem], APIError> {
-        // Simulate network delay
-        return Future { promise in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
-                if Bool.random() { // Simulate success
-                    let faqs = [
-                        FAQItem(id: 1, question: "How do I send money?", answer: "Navigate to the 'Send Money' tab, select a recipient, enter the amount, and confirm the transaction."),
-                        FAQItem(id: 2, question: "What are your exchange rates?", answer: "Our rates are updated in real-time and displayed before you confirm any transaction."),
-                        FAQItem(id: 3, question: "Is live chat available 24/7?", answer: "Yes, our live chat support is available 24 hours a day, 7 days a week.")
-                    ]
+        Future { promise in
+            Task {
+                do {
+                    let faqs: [FAQItem] = try await APIClient.shared.request(.supportFAQs)
                     promise(.success(faqs))
-                } else { // Simulate failure
-                    promise(.failure(.networkError("The server could not be reached. Please check your connection.")))
+                } catch {
+                    promise(.failure(.networkError(error.localizedDescription)))
                 }
             }
         }
         .eraseToAnyPublisher()
     }
-    
-    // Simulate sending a contact form
+
     func submitContactForm(subject: String, message: String) -> AnyPublisher<Bool, APIError> {
-        return Future { promise in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-                if Bool.random() {
-                    promise(.success(true))
-                } else {
-                    promise(.failure(.serverError("Failed to submit form. Please try again later.")))
+        Future { promise in
+            Task {
+                do {
+                    let response: SubmitResponse = try await APIClient.shared.request(
+                        .supportContact,
+                        method: .post,
+                        parameters: ["subject": subject, "message": message]
+                    )
+                    promise(.success(response.accepted))
+                } catch {
+                    promise(.failure(.serverError(error.localizedDescription)))
                 }
             }
         }
         .eraseToAnyPublisher()
     }
 }
+
+#if DEBUG
+/// Mock support client (DEBUG builds only, for previews/tests).
+class MockSupportAPIClient: SupportAPI {
+    func fetchFAQs() -> AnyPublisher<[FAQItem], APIError> {
+        Future { promise in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                promise(.success([
+                    FAQItem(id: 1, question: "Debug FAQ", answer: "Preview content (DEBUG only).")
+                ]))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    func submitContactForm(subject: String, message: String) -> AnyPublisher<Bool, APIError> {
+        Future { promise in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                promise(.success(true))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+}
+#endif
 
 // MARK: - 3. State Management (ObservableObject)
 
@@ -87,14 +120,15 @@ class SupportViewModel: ObservableObject {
     @Published var isFormValid: Bool = false
     @Published var isFormSubmitted: Bool = false
     
-    private var apiClient = APIClient()
+    private var apiClient: SupportAPI
     private var cancellables = Set<AnyCancellable>()
     
-    // Dummy local cache for offline support
+    // Local cache for offline support
     private let localCacheKey = "cachedFAQs"
-    
-    init() {
-        // Check for network connectivity (simplified for this stub)
+
+    init(apiClient: SupportAPI = LiveSupportAPIClient()) {
+        self.apiClient = apiClient
+        // Check for network connectivity (simplified)
         self.isOffline = false // Assume online initially
         
         // Load cached data on initialization
@@ -190,7 +224,7 @@ class SupportViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // MARK: - Biometric Authentication Stub
+    // MARK: - Biometric Authentication
     
     func authenticateForSensitiveAction(completion: @escaping (Bool) -> Void) {
         let context = LAContext()
@@ -307,7 +341,7 @@ struct SupportView: View {
                 }
             }
             
-            // Payment Gateway Links (Stubbed)
+            // Payment Gateway Links
             Section("Payment Gateway Support") {
                 Link("Paystack Support", destination: URL(string: "https://support.paystack.com")!)
                 Link("Flutterwave Support", destination: URL(string: "https://support.flutterwave.com")!)
@@ -391,7 +425,7 @@ struct SupportView: View {
             }
             
             if viewModel.isFormSubmitted {
-                Text("✅ Your request has been submitted successfully!")
+                Text("Your request has been submitted successfully!")
                     .foregroundColor(.green)
             }
         }
@@ -467,7 +501,7 @@ struct PaymentDisputeFormView: View {
     }
 }
 
-// MARK: - 6. Dummy Data
+// MARK: - 6. Help Center Categories
 
 let helpCenterCategories = [
     HelpCenterCategory(id: 101, name: "Sending Money", iconName: "arrow.up.right.circle.fill"),

@@ -24,16 +24,22 @@ export default function RealtimeTxMonitorPage() {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
+  // NOTE: No real-time transaction monitoring backend is reachable from this
+  // dashboard (the tRPC client is a migration stub and no REST endpoint for
+  // tx alerts exists). Fail loud: render an explicit unavailable state and
+  // never fire success toasts for actions no backend performed.
+  const MONITOR_UNAVAILABLE_MESSAGE =
+    "Real-time transaction monitoring is unavailable — the alert service is not connected.";
   const alertsQuery = {data: null, isLoading: false, refetch: () => {}};
   const statsQuery = {data: null, isLoading: false, refetch: () => {}};
   const ackMutation = {
-    mutate: () => { alertsQuery.refetch(); toast.success("Alert acknowledged"); },
-    mutateAsync: async () => { alertsQuery.refetch(); toast.success("Alert acknowledged"); },
+    mutate: () => { toast.error(MONITOR_UNAVAILABLE_MESSAGE); },
+    mutateAsync: async () => { toast.error(MONITOR_UNAVAILABLE_MESSAGE); },
     isPending: false, isLoading: false,
   } as any;
   const dismissMutation = {
-    mutate: () => { alertsQuery.refetch(); toast.success("Alert dismissed"); },
-    mutateAsync: async () => { alertsQuery.refetch(); toast.success("Alert dismissed"); },
+    mutate: () => { toast.error(MONITOR_UNAVAILABLE_MESSAGE); },
+    mutateAsync: async () => { toast.error(MONITOR_UNAVAILABLE_MESSAGE); },
     isPending: false, isLoading: false,
   } as any;
 
@@ -62,35 +68,23 @@ export default function RealtimeTxMonitorPage() {
           {/* CRUD Actions */}
           <div className="flex gap-2 mb-4">
             <button
-              onClick={() => {
-                toast?.({
-                  title: "Create Alert Rule",
-                  description: "Feature ready for integration",
-                });
-              }}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+              disabled
+              title={MONITOR_UNAVAILABLE_MESSAGE}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed"
             >
               + Create Alert Rule
             </button>
             <button
-              onClick={() => {
-                toast?.({
-                  title: "Edit Alert",
-                  description: "Select a alert to edit",
-                });
-              }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+              disabled
+              title={MONITOR_UNAVAILABLE_MESSAGE}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed"
             >
               ✏️ Edit Alert
             </button>
             <button
-              onClick={() => {
-                toast?.({
-                  title: "Delete Alert",
-                  description: "Select a alert to delete",
-                });
-              }}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+              disabled
+              title={MONITOR_UNAVAILABLE_MESSAGE}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed"
             >
               🗑️ Delete Alert
             </button>
@@ -103,7 +97,7 @@ export default function RealtimeTxMonitorPage() {
           onClick={() => {
             alertsQuery.refetch();
             statsQuery.refetch();
-            toast.success("Refreshed");
+            toast.error(MONITOR_UNAVAILABLE_MESSAGE);
           }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium"
         >
@@ -111,36 +105,40 @@ export default function RealtimeTxMonitorPage() {
         </button>
       </div>
 
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+        {MONITOR_UNAVAILABLE_MESSAGE}
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           {
             label: "Total Alerts",
-            value: stats?.totalAlerts ?? 0,
+            value: stats?.totalAlerts ?? "—",
             icon: AlertTriangle,
             color: "text-yellow-400",
           },
           {
             label: "Critical",
-            value: stats?.critical ?? 0,
+            value: stats?.critical ?? "—",
             icon: XCircle,
             color: "text-red-400",
           },
           {
             label: "High",
-            value: stats?.high ?? 0,
+            value: stats?.high ?? "—",
             icon: AlertTriangle,
             color: "text-orange-400",
           },
           {
             label: "Acknowledged",
-            value: stats?.acknowledged ?? 0,
+            value: stats?.acknowledged ?? "—",
             icon: CheckCircle,
             color: "text-emerald-400",
           },
           {
             label: "Pending",
-            value: stats?.pending ?? 0,
+            value: stats?.pending ?? "—",
             icon: Activity,
             color: "text-blue-400",
           },
@@ -224,7 +222,7 @@ export default function RealtimeTxMonitorPage() {
               ) : alerts.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-zinc-500">
-                    No alerts found
+                    {MONITOR_UNAVAILABLE_MESSAGE}
                   </td>
                 </tr>
               ) : (

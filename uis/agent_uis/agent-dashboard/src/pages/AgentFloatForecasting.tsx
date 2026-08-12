@@ -47,96 +47,7 @@ type AgentForecast = {
   lastReplenished?: string;
 };
 
-const MOCK_AGENTS: AgentForecast[] = [
-  {
-    id: "AGT-001",
-    name: "Adebayo Ogundimu",
-    currentFloat: 450000,
-    predictedNeed: 820000,
-    shortfall: 370000,
-    risk: "high",
-    location: "Lagos - Ikeja",
-    avgDailyVolume: 780000,
-    lastReplenished: "2 days ago",
-  },
-  {
-    id: "AGT-002",
-    name: "Chioma Eze",
-    currentFloat: 280000,
-    predictedNeed: 650000,
-    shortfall: 370000,
-    risk: "critical",
-    location: "Abuja - Wuse",
-    avgDailyVolume: 620000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-003",
-    name: "Ibrahim Musa",
-    currentFloat: 1200000,
-    predictedNeed: 900000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kano - Nassarawa",
-    avgDailyVolume: 850000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-004",
-    name: "Fatima Bello",
-    currentFloat: 520000,
-    predictedNeed: 750000,
-    shortfall: 230000,
-    risk: "medium",
-    location: "Port Harcourt",
-    avgDailyVolume: 710000,
-    lastReplenished: "4 days ago",
-  },
-  {
-    id: "AGT-005",
-    name: "Emeka Nwosu",
-    currentFloat: 180000,
-    predictedNeed: 600000,
-    shortfall: 420000,
-    risk: "critical",
-    location: "Enugu - New Haven",
-    avgDailyVolume: 580000,
-    lastReplenished: "5 days ago",
-  },
-  {
-    id: "AGT-006",
-    name: "Aisha Yusuf",
-    currentFloat: 890000,
-    predictedNeed: 700000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kaduna - Barnawa",
-    avgDailyVolume: 660000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-007",
-    name: "Oluwaseun Adeyemi",
-    currentFloat: 340000,
-    predictedNeed: 580000,
-    shortfall: 240000,
-    risk: "high",
-    location: "Ibadan - Bodija",
-    avgDailyVolume: 540000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-008",
-    name: "Grace Okafor",
-    currentFloat: 670000,
-    predictedNeed: 620000,
-    shortfall: 0,
-    risk: "low",
-    location: "Benin City",
-    avgDailyVolume: 600000,
-    lastReplenished: "2 days ago",
-  },
-];
+
 
 export default function AgentFloatForecasting() {
   const [selectedPeriod, setSelectedPeriod] = useState("7d");
@@ -192,10 +103,17 @@ export default function AgentFloatForecasting() {
     triggerReplenishment.mutate({ agentId: selectedAgent.id, amount: 50000 });
   };
 
-  const agents = forecast.data?.forecasts ?? MOCK_AGENTS;
+  // Render only real backend forecasts — never fabricated agent float data.
+  const agents = (forecast.data?.forecasts as any[]) ?? [];
 
   return (
     <DashboardLayout>
+      {forecast.isError && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm flex items-center justify-between">
+          <span>Could not load float forecasts from the server.</span>
+          <button onClick={() => forecast.refetch()} className="underline">Retry</button>
+        </div>
+      )}
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>

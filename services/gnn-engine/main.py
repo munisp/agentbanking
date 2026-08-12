@@ -33,6 +33,13 @@ from shared.observability import setup_logging, get_logger, metrics_router, Metr
 Production-Ready GNN Engine Service
 Graph Neural Network for Fraud Detection
 Uses real PyTorch Geometric models with trained weights
+
+NOTE: Fraud scores are ONLY served from models with trained weight
+checkpoints on disk ({MODEL_PATH}/<name>_fraud_detector.pt). A model with
+random (untrained) initialization is NEVER used for inference — /predict
+returns 503 for untrained models. /train performs real supervised training
+on a labeled graph dataset (GNN_TRAINING_DATA_PATH, JSON) and only
+activates the model after it has been trained and evaluated.
 """
 import os
 import logging
@@ -84,7 +91,8 @@ class Config:
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     MODEL_VERSION = "2.0.0"
     FRAUD_THRESHOLD = float(os.getenv("FRAUD_THRESHOLD", "0.7"))
-    
+    TRAINING_DATA_PATH = os.getenv("GNN_TRAINING_DATA_PATH", "")  # JSON labeled graph dataset
+
 config = Config()
 
 # Statistics
@@ -105,16 +113,16 @@ class GCNFraudDetector(torch.nn.Module):
         self.conv2 = GCNConv(hidden_dim, hidden_dim)
         self.conv3 = GCNConv(hidden_dim, num_classes)
         self.dropout = torch.nn.Dropout(0.5)
-        
+
     def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         x = self.conv3(x, edge_index)
         return F.log_softmax(x, dim=1)
 
@@ -126,16 +134,16 @@ class GATFraudDetector(torch.nn.Module):
         self.conv2 = GATConv(hidden_dim * heads, hidden_dim, heads=heads)
         self.conv3 = GATConv(hidden_dim * heads, num_classes, heads=1)
         self.dropout = torch.nn.Dropout(0.5)
-        
+
     def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
         x = F.elu(x)
         x = self.dropout(x)
-        
+
         x = self.conv2(x, edge_index)
         x = F.elu(x)
         x = self.dropout(x)
-        
+
         x = self.conv3(x, edge_index)
         return F.log_softmax(x, dim=1)
 
@@ -147,105 +155,127 @@ class GraphSAGEFraudDetector(torch.nn.Module):
         self.conv2 = SAGEConv(hidden_dim, hidden_dim)
         self.conv3 = SAGEConv(hidden_dim, num_classes)
         self.dropout = torch.nn.Dropout(0.5)
-        
+
     def forward(self, x, edge_index):
         x = self.conv1(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         x = self.conv3(x, edge_index)
         return F.log_softmax(x, dim=1)
 
 # ==================== Model Manager ====================
 
 class GNNModelManager:
-    """Manages GNN models and inference"""
+    """Manages GNN models and inference.
+
+    A model is only eligible for inference once trained weights have been
+    loaded from disk. Untrained (random-initialized) networks are never
+    served as fraud scores.
+    """
     def __init__(self):
         self.device = torch.device(config.DEVICE)
         self.models = {}
+        self.trained: Dict[str, bool] = {}
+        self.training_metrics: Dict[str, Dict[str, Any]] = {}
         self.feature_dim = 32  # Default feature dimension
         self.load_models()
-        
+
     def load_models(self):
         """Load pre-trained GNN models"""
         try:
             model_path = Path(config.MODEL_PATH)
             model_path.mkdir(parents=True, exist_ok=True)
-            
-            # Initialize models
+
+            # Initialize model architectures
             self.models['gcn'] = GCNFraudDetector(self.feature_dim).to(self.device)
             self.models['gat'] = GATFraudDetector(self.feature_dim).to(self.device)
             self.models['graphsage'] = GraphSAGEFraudDetector(self.feature_dim).to(self.device)
-            
-            # Try to load saved weights
+
+            # Load saved weights — fail closed: no weights => model not servable
             for model_name, model in self.models.items():
                 weight_path = model_path / f"{model_name}_fraud_detector.pt"
                 if weight_path.exists():
                     model.load_state_dict(torch.load(weight_path, map_location=self.device))
-                    logger.info(f"Loaded {model_name} weights from {weight_path}")
+                    self.trained[model_name] = True
+                    logger.info(f"Loaded trained {model_name} weights from {weight_path}")
                 else:
-                    logger.warning(f"No saved weights for {model_name}, using random initialization")
-                    # Initialize with pre-trained patterns for demo
-                    self._initialize_with_patterns(model)
-                
+                    self.trained[model_name] = False
+                    logger.error(
+                        f"No trained weights for {model_name} at {weight_path} — "
+                        "model will REFUSE inference (503) until trained"
+                    )
+
                 model.eval()
-                
-            logger.info(f"Loaded {len(self.models)} GNN models on {self.device}")
-            
+
+            logger.info(
+                f"GNN models on {self.device}: "
+                + ", ".join(f"{n}={'trained' if t else 'UNTRAINED'}" for n, t in self.trained.items())
+            )
+
         except Exception as e:
             logger.error(f"Error loading models: {e}")
             raise
-    
-    def _initialize_with_patterns(self, model):
-        """Initialize model with fraud detection patterns"""
-        # This computes pre-trained weights with fraud patterns
-        # In production, this would be replaced with actual trained weights
-        for param in model.parameters():
-            if param.dim() > 1:
-                torch.nn.init.xavier_uniform_(param)
-    
+
+    def is_trained(self, model_name: str) -> bool:
+        return self.trained.get(model_name, False)
+
     def save_model(self, model_name: str):
         """Save model weights"""
         if model_name not in self.models:
             raise ValueError(f"Model {model_name} not found")
-        
+
         model_path = Path(config.MODEL_PATH)
         model_path.mkdir(parents=True, exist_ok=True)
         weight_path = model_path / f"{model_name}_fraud_detector.pt"
-        
+
         torch.save(self.models[model_name].state_dict(), weight_path)
         logger.info(f"Saved {model_name} weights to {weight_path}")
-    
+
+    def mark_trained(self, model_name: str, metrics: Optional[Dict[str, Any]] = None):
+        self.trained[model_name] = True
+        if metrics:
+            self.training_metrics[model_name] = metrics
+
     def predict(self, graph_data: Data, model_name: str = 'gcn') -> Dict[str, Any]:
-        """Predict fraud using specified GNN model"""
+        """Predict fraud using specified GNN model.
+
+        Fails closed: raises RuntimeError if the requested model has no
+        trained weights — random-init outputs are never served as scores.
+        """
         if model_name not in self.models:
             raise ValueError(f"Model {model_name} not found")
-        
+        if not self.is_trained(model_name):
+            raise RuntimeError(
+                f"Model '{model_name}' has no trained checkpoint loaded; "
+                "inference refused (train the model first via /train with a real dataset)"
+            )
+
         model = self.models[model_name]
         model.eval()
-        
+
         with torch.no_grad():
             # Move data to device
             graph_data = graph_data.to(self.device)
-            
+
             # Forward pass
             out = model(graph_data.x, graph_data.edge_index)
-            
+
             # Get predictions
             probs = torch.exp(out)
             fraud_probs = probs[:, 1].cpu().numpy()
             predictions = (fraud_probs > config.FRAUD_THRESHOLD).astype(int)
-            
+
             # Get node embeddings (from second-to-last layer)
             embeddings = self._get_embeddings(model, graph_data)
-            
+
             # Identify anomalous nodes
             anomalous_nodes = np.where(predictions == 1)[0].tolist()
-            
+
             return {
                 "fraud_probabilities": fraud_probs.tolist(),
                 "predictions": predictions.tolist(),
@@ -253,13 +283,13 @@ class GNNModelManager:
                 "anomalous_nodes": anomalous_nodes,
                 "model_name": model_name
             }
-    
+
     def _get_embeddings(self, model, graph_data):
         """Extract node embeddings from model"""
         with torch.no_grad():
             x = graph_data.x
             edge_index = graph_data.edge_index
-            
+
             # Get embeddings from second layer
             if hasattr(model, 'conv2'):
                 x = model.conv1(x, edge_index)
@@ -267,7 +297,7 @@ class GNNModelManager:
                 x = model.conv2(x, edge_index)
             else:
                 x = model.conv1(x, edge_index)
-            
+
             return x.cpu().numpy()
 
 # Initialize model manager
@@ -302,7 +332,7 @@ class FraudPredictionResponse(BaseModel):
 def create_graph_from_transactions(transactions: List[Transaction], edges: List[List[int]]) -> Data:
     """Create PyTorch Geometric graph from transactions"""
     num_nodes = len(transactions)
-    
+
     # Extract features
     features = []
     for txn in transactions:
@@ -316,12 +346,12 @@ def create_graph_from_transactions(transactions: List[Transaction], edges: List[
             feat = [amount_norm, hour, day]
             # Pad to feature_dim
             feat = feat + [0.0] * (model_manager.feature_dim - len(feat))
-        
+
         features.append(feat[:model_manager.feature_dim])
-    
+
     # Create node features tensor
     x = torch.tensor(features, dtype=torch.float)
-    
+
     # Create edge index
     if edges:
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
@@ -333,7 +363,7 @@ def create_graph_from_transactions(transactions: List[Transaction], edges: List[
                 edge_list.append([i, j])
                 edge_list.append([j, i])  # Undirected
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
-    
+
     return Data(x=x, edge_index=edge_index)
 
 # ==================== API Endpoints ====================
@@ -345,17 +375,20 @@ async def root():
         "version": config.MODEL_VERSION,
         "device": config.DEVICE,
         "models": list(model_manager.models.keys()),
+        "trained_models": {k: v for k, v in model_manager.trained.items()},
         "status": "ready"
     }
 
 @app.get("/health")
 async def health_check():
     uptime = (datetime.now() - stats["start_time"]).total_seconds()
+    any_trained = any(model_manager.trained.values())
     return {
-        "status": "healthy",
+        "status": "healthy" if any_trained else "degraded",
         "uptime_seconds": int(uptime),
         "device": config.DEVICE,
         "models_loaded": len(model_manager.models),
+        "models_trained": model_manager.trained,
         "total_predictions": stats["total_predictions"],
         "fraud_detected": stats["fraud_detected"]
     }
@@ -363,30 +396,40 @@ async def health_check():
 @app.post("/predict", response_model=List[FraudPredictionResponse])
 async def predict_fraud(request: FraudPredictionRequest):
     """Predict fraud for a batch of transactions using GNN"""
+    if request.model_name not in model_manager.models:
+        raise HTTPException(status_code=404, detail=f"Model {request.model_name} not found")
+    if not model_manager.is_trained(request.model_name):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"GNN model '{request.model_name}' has no trained checkpoint. "
+                "Fraud scoring is refused rather than served from a random-initialized network."
+            ),
+        )
     try:
         stats["total_predictions"] += 1
-        
+
         # Create graph from transactions
         graph_data = create_graph_from_transactions(request.transactions, request.edges)
-        
+
         # Predict using specified model
         predictions = model_manager.predict(graph_data, request.model_name)
-        
+
         # Format response
         responses = []
         for idx, txn in enumerate(request.transactions):
             fraud_score = predictions["fraud_probabilities"][idx]
             is_fraudulent = predictions["predictions"][idx] == 1
-            
+
             if is_fraudulent:
                 stats["fraud_detected"] += 1
-            
+
             explanation = f"GNN model '{request.model_name}' detected "
             if is_fraudulent:
                 explanation += f"fraudulent activity (score: {fraud_score:.3f})"
             else:
                 explanation += f"normal activity (score: {fraud_score:.3f})"
-            
+
             responses.append(FraudPredictionResponse(
                 transaction_id=txn.transaction_id,
                 is_fraudulent=is_fraudulent,
@@ -395,9 +438,11 @@ async def predict_fraud(request: FraudPredictionRequest):
                 anomalous_nodes=predictions["anomalous_nodes"],
                 explanation=explanation
             ))
-        
+
         return responses
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -408,40 +453,111 @@ async def list_models():
     return {
         "models": [
             {
-                "name": "gcn",
-                "description": "Graph Convolutional Network",
-                "parameters": sum(p.numel() for p in model_manager.models['gcn'].parameters())
-            },
-            {
-                "name": "gat",
-                "description": "Graph Attention Network",
-                "parameters": sum(p.numel() for p in model_manager.models['gat'].parameters())
-            },
-            {
-                "name": "graphsage",
-                "description": "GraphSAGE",
-                "parameters": sum(p.numel() for p in model_manager.models['graphsage'].parameters())
+                "name": name,
+                "description": desc,
+                "parameters": sum(p.numel() for p in model_manager.models[name].parameters()),
+                "trained": model_manager.trained.get(name, False),
+                "training_metrics": model_manager.training_metrics.get(name),
             }
+            for name, desc in [
+                ("gcn", "Graph Convolutional Network"),
+                ("gat", "Graph Attention Network"),
+                ("graphsage", "GraphSAGE"),
+            ]
         ],
         "device": config.DEVICE
     }
 
 @app.post("/train")
-async def train_model(background_tasks: BackgroundTasks):
-    """Trigger model training (background task)"""
-    background_tasks.add_task(train_gnn_model)
-    return {"message": "Training started in background"}
+async def train_model(background_tasks: BackgroundTasks, model_name: str = "gcn"):
+    """Trigger model training (background task) on a real labeled dataset.
 
-def train_gnn_model():
-    """Train GNN model on fraud data"""
-    logger.info("Starting GNN model training...")
-    # In production, this would:
-    # 1. Load training data from database
-    # 2. Create graph dataset
-    # 3. Train model
-    # 4. Evaluate on validation set
-    # 5. Save best model
-    logger.info("Training completed")
+    Requires GNN_TRAINING_DATA_PATH pointing to a JSON file:
+      {"x": [[...features per node...]], "edge_index": [[src...],[dst...]],
+       "y": [0|1 per node], "train_mask": [bool...] (optional),
+       "val_mask": [bool...] (optional)}
+    """
+    if model_name not in model_manager.models:
+        raise HTTPException(status_code=404, detail=f"Model {model_name} not found")
+    if not config.TRAINING_DATA_PATH or not os.path.exists(config.TRAINING_DATA_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No training data configured. Set GNN_TRAINING_DATA_PATH to a labeled "
+                "graph dataset (JSON). Training without real labeled fraud data is not supported."
+            ),
+        )
+    background_tasks.add_task(train_gnn_model, model_name)
+    return {"message": f"Training started in background for '{model_name}'", "dataset": config.TRAINING_DATA_PATH}
+
+def train_gnn_model(model_name: str = "gcn"):
+    """Train GNN model on real labeled fraud graph data.
+
+    Loads a labeled dataset from disk, runs supervised training, evaluates
+    on a validation split, and only then persists weights and marks the
+    model as servable.
+    """
+    logger.info(f"Starting GNN model training for '{model_name}'...")
+    try:
+        with open(config.TRAINING_DATA_PATH) as f:
+            dataset = json.load(f)
+
+        x = torch.tensor(dataset["x"], dtype=torch.float)
+        edge_index = torch.tensor(dataset["edge_index"], dtype=torch.long)
+        y = torch.tensor(dataset["y"], dtype=torch.long)
+        num_nodes = x.size(0)
+
+        train_mask = dataset.get("train_mask")
+        val_mask = dataset.get("val_mask")
+        if train_mask:
+            train_mask = torch.tensor(train_mask, dtype=torch.bool)
+        else:
+            train_mask = torch.rand(num_nodes) < 0.8
+        if val_mask:
+            val_mask = torch.tensor(val_mask, dtype=torch.bool)
+        else:
+            val_mask = ~train_mask
+
+        data = Data(x=x, edge_index=edge_index, y=y).to(model_manager.device)
+        train_mask = train_mask.to(model_manager.device)
+        val_mask = val_mask.to(model_manager.device)
+
+        model = model_manager.models[model_name]
+        model.train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+
+        epochs = int(os.getenv("GNN_TRAIN_EPOCHS", "200"))
+        for epoch in range(epochs):
+            optimizer.zero_grad()
+            out = model(data.x, data.edge_index)
+            loss = F.nll_loss(out[train_mask], data.y[train_mask])
+            loss.backward()
+            optimizer.step()
+
+        # Evaluate
+        model.eval()
+        with torch.no_grad():
+            out = model(data.x, data.edge_index)
+            pred = out.argmax(dim=1)
+            val_correct = int((pred[val_mask] == data.y[val_mask]).sum())
+            val_total = int(val_mask.sum())
+            val_accuracy = val_correct / val_total if val_total > 0 else 0.0
+
+        metrics = {
+            "val_accuracy": round(val_accuracy, 4),
+            "final_loss": round(float(loss.item()), 4),
+            "epochs": epochs,
+            "training_nodes": int(train_mask.sum()),
+            "validation_nodes": val_total,
+            "dataset": config.TRAINING_DATA_PATH,
+            "trained_at": datetime.now().isoformat(),
+        }
+        logger.info(f"Training completed for '{model_name}': {metrics}")
+
+        model_manager.save_model(model_name)
+        model_manager.mark_trained(model_name, metrics)
+    except Exception as e:
+        logger.error(f"GNN training failed for '{model_name}': {e}")
 
 @app.get("/stats")
 async def get_statistics():
@@ -454,10 +570,10 @@ async def get_statistics():
         "fraud_rate": stats["fraud_detected"] / max(stats["total_predictions"], 1),
         "model_version": stats["model_version"],
         "device": config.DEVICE,
-        "models_loaded": len(model_manager.models)
+        "models_loaded": len(model_manager.models),
+        "models_trained": model_manager.trained
     }
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
-

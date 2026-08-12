@@ -9,9 +9,15 @@ Specializes in:
   - Form field detection and value extraction
   - Hierarchical document structure (sections, headers, paragraphs)
   - Business document templates (invoices, contracts, certificates)
+
+NOTE: All parsed output comes from the real Docling engine. When Docling is
+not installed or parsing fails, endpoints return HTTP 503/422 — the service
+never returns fabricated document content.
 """
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import os
@@ -95,110 +101,146 @@ class DoclingEngine:
     def __init__(self):
         self.converter = None
         self.initialized = False
+        self.init_error: Optional[str] = None
 
     async def initialize(self):
+        """Initialize the real Docling converter. Fails closed — no mock mode."""
         if self.initialized:
             return
         try:
-            # In production:
-            # from docling.document_converter import DocumentConverter
-            # self.converter = DocumentConverter()
+            from docling.document_converter import DocumentConverter
+            self.converter = DocumentConverter()
             self.initialized = True
+            self.init_error = None
             logger.info("Docling engine initialized")
         except Exception as e:
-            logger.warning(f"Docling not available, using mock: {e}")
-            self.initialized = True
+            self.converter = None
+            self.initialized = False
+            self.init_error = str(e)
+            logger.error(f"Docling engine unavailable: {e}")
 
     async def parse_document(self, file_bytes: bytes, filename: str) -> DoclingResult:
-        """Parse a document and extract structured data."""
+        """Parse a document and extract structured data using Docling.
+
+        Raises HTTP 503 when the engine is unavailable — never returns
+        fabricated sections/tables/fields.
+        """
         await self.initialize()
+        if not self.initialized or self.converter is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Docling engine unavailable: "
+                    f"{self.init_error or 'docling is not installed or failed to initialize'}. "
+                    "Document parsing cannot be performed."
+                ),
+            )
+
         start = time.monotonic()
         request_id = str(uuid.uuid4())
 
-        # In production:
-        # from docling.datamodel.base_models import InputFormat
-        # source = DocumentStream(name=filename, stream=io.BytesIO(file_bytes))
-        # result = self.converter.convert(source)
-        # doc = result.document
+        from docling.datamodel.base_models import DocumentStream
 
-        # Mock structured output
-        sections = [
-            DocumentSection(
-                section_id="s1", level=0,
-                title="Certificate of Incorporation",
-                content="This certifies that ACME FINTECH LTD has been incorporated...",
-                page_start=1, page_end=1,
-            ),
-            DocumentSection(
-                section_id="s2", level=1,
-                title="Company Details",
-                content="Registration Number: PVT-2024-12345\nDate of Incorporation: 15 January 2024",
-                page_start=1, page_end=1,
-            ),
-            DocumentSection(
-                section_id="s3", level=1,
-                title="Directors",
-                content="The following persons are registered as directors...",
-                page_start=1, page_end=2,
-            ),
-            DocumentSection(
-                section_id="s4", level=1,
-                title="Share Capital",
-                content="Authorized share capital: KES 10,000,000",
-                page_start=2, page_end=2,
-            ),
-        ]
+        source = DocumentStream(name=filename, stream=io.BytesIO(file_bytes))
+        try:
+            conversion = self.converter.convert(source)
+        except Exception as e:
+            logger.error(f"Docling conversion failed for {filename}: {e}")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Docling failed to parse document '{filename}': {e}",
+            )
 
-        tables = [
-            ExtractedTable(
-                table_id="t1", page=2,
-                title="Board of Directors",
-                headers=["Name", "Nationality", "ID Number", "Shares", "Role"],
-                rows=[
-                    ["John Kamau", "Kenyan", "12345678", "5,000", "Managing Director"],
-                    ["Jane Wanjiku", "Kenyan", "87654321", "3,000", "Director"],
-                    ["Peter Ochieng", "Kenyan", "11223344", "2,000", "Secretary"],
-                ],
+        doc = conversion.document
+
+        # ── Sections from the real document text items ──
+        sections: list[DocumentSection] = []
+        sec_idx = 0
+        for item in getattr(doc, "texts", []) or []:
+            label = str(getattr(item, "label", "text")).lower()
+            text = (getattr(item, "text", "") or "").strip()
+            if not text:
+                continue
+            page = 1
+            prov = getattr(item, "prov", None)
+            if prov:
+                try:
+                    page = int(getattr(prov[0], "page_no", 1))
+                except Exception:
+                    page = 1
+            if "title" in label:
+                level = 0
+            elif "section_header" in label or "header" in label:
+                level = 1
+            else:
+                level = 2
+            sec_idx += 1
+            sections.append(DocumentSection(
+                section_id=f"s{sec_idx}",
+                level=level,
+                title=text[:120] if level <= 1 else "",
+                content=text,
+                page_start=page,
+                page_end=page,
+            ))
+
+        # ── Tables from the real document ──
+        tables: list[ExtractedTable] = []
+        for t_idx, table in enumerate(getattr(doc, "tables", []) or [], start=1):
+            headers: list[str] = []
+            rows: list[list[str]] = []
+            page = 1
+            try:
+                df = table.export_to_dataframe(doc=doc)
+                headers = [str(c) for c in df.columns]
+                rows = [[str(v) for v in row] for row in df.values.tolist()]
+            except Exception as e:
+                logger.warning(f"Could not export table {t_idx} to dataframe: {e}")
+            prov = getattr(table, "prov", None)
+            if prov:
+                try:
+                    page = int(getattr(prov[0], "page_no", 1))
+                except Exception:
+                    page = 1
+            tables.append(ExtractedTable(
+                table_id=f"t{t_idx}",
+                page=page,
+                title=None,
+                headers=headers,
+                rows=rows,
                 cells=[],
-                confidence=0.93,
-            ),
-            ExtractedTable(
-                table_id="t2", page=2,
-                title="Share Distribution",
-                headers=["Share Class", "Quantity", "Par Value", "Total Value"],
-                rows=[
-                    ["Ordinary", "10,000", "KES 100", "KES 1,000,000"],
-                    ["Preference", "5,000", "KES 200", "KES 1,000,000"],
-                ],
-                cells=[],
-                confidence=0.91,
-            ),
-        ]
+                confidence=None,  # Docling does not emit per-table confidence
+            ))
 
-        form_fields = [
-            FormField("f1", "Company Name", "ACME FINTECH LTD", "text", 1, 0.96, [50, 100, 400, 130]),
-            FormField("f2", "Registration Number", "PVT-2024-12345", "text", 1, 0.95, [50, 140, 300, 170]),
-            FormField("f3", "Date of Incorporation", "15/01/2024", "date", 1, 0.94, [50, 180, 250, 210]),
-            FormField("f4", "Registered Office", "Westlands, Nairobi", "text", 1, 0.92, [50, 220, 350, 250]),
-            FormField("f5", "Business Activity", "Financial Technology Services", "text", 1, 0.90, [50, 260, 400, 290]),
-            FormField("f6", "Registrar Signature", "[signed]", "signature", 2, 0.88, [300, 500, 500, 550]),
-        ]
+        # Docling does not perform form-field value extraction; return an
+        # empty list honestly rather than fabricated fields.
+        form_fields: list[FormField] = []
+
+        try:
+            full_text = doc.export_to_markdown()
+        except Exception:
+            full_text = "\n\n".join(s.content for s in sections)
+
+        total_pages = 1
+        try:
+            total_pages = len(getattr(doc, "pages", {}) or {}) or 1
+        except Exception:
+            total_pages = 1
 
         return DoclingResult(
             request_id=request_id,
-            document_type="certificate_of_incorporation",
-            total_pages=2,
+            document_type=getattr(conversion, "input", None) and "document" or "document",
+            total_pages=total_pages,
             sections=sections,
             tables=tables,
             form_fields=form_fields,
             metadata={
                 "file_name": filename,
                 "file_size": len(file_bytes),
-                "format": "pdf",
-                "language": "en",
-                "creation_date": "2024-01-15",
+                "parser": "ibm-docling",
+                "form_fields_note": "Form field extraction is not supported by the Docling engine; list is empty by design.",
             },
-            full_text="\n\n".join(s.content for s in sections),
+            full_text=full_text,
             processing_time_ms=round((time.monotonic() - start) * 1000, 2),
         )
 
@@ -216,15 +258,27 @@ class DoclingRequest(BaseModel):
     extract_forms: bool = True
 
 
+def _resolve_file_bytes(req: DoclingRequest) -> bytes:
+    """Resolve uploaded document bytes. Raises 400/502 — never substitutes mock bytes."""
+    if req.file_base64:
+        try:
+            return base64.b64decode(req.file_base64)
+        except Exception as e:
+            raise HTTPException(400, f"Invalid base64 file data: {e}")
+    if req.file_url:
+        import urllib.request
+        try:
+            with urllib.request.urlopen(req.file_url, timeout=30) as resp:
+                return resp.read()
+        except Exception as e:
+            raise HTTPException(502, f"Failed to download file from URL: {e}")
+    raise HTTPException(400, "Provide file_base64 or file_url")
+
+
 @app.post("/docling/parse")
 async def parse_document(req: DoclingRequest):
     """Parse document and extract structured data."""
-    import base64
-    if req.file_base64:
-        file_bytes = base64.b64decode(req.file_base64)
-    else:
-        file_bytes = b"mock_pdf"
-
+    file_bytes = _resolve_file_bytes(req)
     result = await docling_engine.parse_document(file_bytes, req.filename)
     return asdict(result)
 
@@ -232,8 +286,7 @@ async def parse_document(req: DoclingRequest):
 @app.post("/docling/tables")
 async def extract_tables(req: DoclingRequest):
     """Extract only tables from document."""
-    import base64
-    file_bytes = base64.b64decode(req.file_base64) if req.file_base64 else b"mock"
+    file_bytes = _resolve_file_bytes(req)
     result = await docling_engine.parse_document(file_bytes, req.filename)
     return {"tables": [asdict(t) for t in result.tables]}
 
@@ -241,19 +294,22 @@ async def extract_tables(req: DoclingRequest):
 @app.post("/docling/forms")
 async def extract_forms(req: DoclingRequest):
     """Extract only form fields from document."""
-    import base64
-    file_bytes = base64.b64decode(req.file_base64) if req.file_base64 else b"mock"
+    file_bytes = _resolve_file_bytes(req)
     result = await docling_engine.parse_document(file_bytes, req.filename)
-    return {"form_fields": [asdict(f) for f in result.form_fields]}
+    return {
+        "form_fields": [asdict(f) for f in result.form_fields],
+        "note": "Form field extraction is not supported by the Docling engine; list is empty by design.",
+    }
 
 
 @app.get("/health")
 async def health():
     return {
-        "status": "healthy",
+        "status": "healthy" if docling_engine.initialized else "degraded",
         "service": "docling",
         "version": "1.0.0",
         "engine_initialized": docling_engine.initialized,
+        "engine_error": docling_engine.init_error,
     }
 
 

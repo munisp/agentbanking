@@ -47,14 +47,14 @@ class RealtimeMonitorService:
         total_transactions = self.db.query(func.count(Transaction.id)).filter(
             Transaction.created_at >= last_24h
         ).scalar() or 0
-        
+
         successful_transactions = self.db.query(func.count(Transaction.id)).filter(
             and_(
                 Transaction.created_at >= last_24h,
                 Transaction.status == TransactionStatus.COMPLETED
             )
         ).scalar() or 0
-        
+
         success_rate = (successful_transactions / total_transactions * 100) if total_transactions > 0 else 0.0
 
         # Average processing time (last 24 hours)
@@ -136,7 +136,7 @@ class RealtimeMonitorService:
         ).group_by(Transaction.currency).all()
 
         total_volume = sum(r.volume for r in results)
-        
+
         return [
             CurrencyBreakdown(
                 currency=r.currency,
@@ -171,29 +171,19 @@ class RealtimeMonitorService:
         ]
 
     def _get_top_corridors(self, since: datetime, limit: int = 5) -> List[TopCorridor]:
-        """Get top payment corridors"""
-        # This is a simplified version - in production, you'd join with user country data
-        # For now, returning mock data structure
-        return [
-            TopCorridor(
-                from_country="Nigeria",
-                to_country="United States",
-                volume=150000.0,
-                count=450
-            ),
-            TopCorridor(
-                from_country="Nigeria",
-                to_country="United Kingdom",
-                volume=120000.0,
-                count=380
-            ),
-            TopCorridor(
-                from_country="Nigeria",
-                to_country="Canada",
-                volume=80000.0,
-                count=250
-            )
-        ]
+        """Get top payment corridors.
+
+        Corridor attribution requires sender/recipient country data, which the
+        current schema does not carry (users have no country field). Returning
+        fabricated corridors (hardcoded Nigeria->US/UK/Canada volumes) was
+        mockware and has been removed: until country data exists, this returns
+        an honest empty list rather than invented numbers.
+        """
+        logger.info(
+            "top-corridor aggregation unavailable: no country attributes on "
+            "transactions/users; returning empty corridor list"
+        )
+        return []
 
     def get_transactions(
         self,
@@ -209,22 +199,22 @@ class RealtimeMonitorService:
         if filters:
             if filters.status:
                 query = query.filter(Transaction.status.in_(filters.status))
-            
+
             if filters.type:
                 query = query.filter(Transaction.type.in_(filters.type))
-            
+
             if filters.date_from:
                 query = query.filter(Transaction.created_at >= filters.date_from)
-            
+
             if filters.date_to:
                 query = query.filter(Transaction.created_at <= filters.date_to)
-            
+
             if filters.currency:
                 query = query.filter(Transaction.currency.in_(filters.currency))
-            
+
             if filters.min_amount is not None:
                 query = query.filter(Transaction.amount >= filters.min_amount)
-            
+
             if filters.max_amount is not None:
                 query = query.filter(Transaction.amount <= filters.max_amount)
 
@@ -280,14 +270,14 @@ class RealtimeMonitorService:
     def acknowledge_alert(self, alert_id: str, user_id: str) -> Optional[Alert]:
         """Acknowledge an alert"""
         alert = self.db.query(Alert).filter(Alert.id == alert_id).first()
-        
+
         if alert:
             alert.acknowledged = True
             alert.acknowledged_at = datetime.utcnow()
             alert.acknowledged_by = user_id
             self.db.commit()
             self.db.refresh(alert)
-        
+
         return alert
 
     def export_transactions_csv(self, filters: Optional[DashboardFilters] = None) -> str:

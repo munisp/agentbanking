@@ -9,6 +9,11 @@ Uses multimodal LLMs (GPT-4V, Gemini Pro Vision, LLaVA) to:
   - Detect document anomalies and potential fraud
   - Extract complex/non-standard fields that regex cannot handle
   - Classify documents by type and issuing authority
+
+NOTE: This service performs REAL VLM inference against the configured
+backend (BUILT_IN_FORGE_API_URL / BUILT_IN_FORGE_API_KEY). When no backend
+is configured or inference fails, endpoints return HTTP 503 — the service
+never fabricates analysis results and never defaults to VERIFIED.
 """
 
 import asyncio
@@ -61,10 +66,10 @@ class VLMAnalysis:
     extracted_data: dict
     ocr_cross_verification: dict
     fraud_indicators: list[dict]
-    fraud_score: float  # 0.0 (clean) to 1.0 (fraudulent)
+    fraud_score: Optional[float]  # 0.0 (clean) to 1.0 (fraudulent); None when the VLM did not provide one
     verification_result: VerificationResult
     visual_quality_assessment: dict
-    confidence: float
+    confidence: Optional[float]
     reasoning: str
     processing_time_ms: float
 
@@ -98,6 +103,7 @@ Respond in JSON format with these exact keys:
   "extracted_data": {},
   "fraud_indicators": [{"type": "string", "description": "string", "severity": "low|medium|high", "location": "string"}],
   "fraud_score": 0.0,
+  "confidence": 0.0,
   "visual_quality": {"resolution": "string", "lighting": "string", "focus": "string", "angle": "string"},
   "security_features_found": [],
   "security_features_missing": [],
@@ -123,51 +129,44 @@ Respond in JSON:
         self.api_url = os.getenv("BUILT_IN_FORGE_API_URL", "")
         self.api_key = os.getenv("BUILT_IN_FORGE_API_KEY", "")
 
+    def _backend_configured(self) -> bool:
+        return bool(self.api_url and self.api_key)
+
     async def analyze_document(self, image_base64: str, ocr_data: Optional[dict] = None) -> VLMAnalysis:
-        """Run full VLM analysis on a document image."""
+        """Run full VLM analysis on a document image.
+
+        Performs real VLM inference. Raises HTTP 503 when the VLM backend is
+        not configured or the call fails — never fabricates an analysis and
+        never defaults the verification result to VERIFIED.
+        """
         start = time.monotonic()
         request_id = str(uuid.uuid4())
 
-        # In production, call the LLM API with image
-        # response = await self._call_vlm(self.DOCUMENT_ANALYSIS_PROMPT, image_base64)
+        if not self._backend_configured():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "VLM backend not configured "
+                    "(BUILT_IN_FORGE_API_URL / BUILT_IN_FORGE_API_KEY missing). "
+                    "Document analysis cannot be performed."
+                ),
+            )
 
-        # Mock response for development
-        analysis_data = {
-            "document_type": "national_identity_card",
-            "issuing_authority": "Republic of Kenya - National Registration Bureau",
-            "document_language": "en",
-            "extracted_data": {
-                "document_number": "12345678",
-                "full_name": "JOHN KAMAU MWANGI",
-                "date_of_birth": "15/03/1990",
-                "sex": "M",
-                "district_of_birth": "NAIROBI",
-                "date_of_issue": "20/06/2015",
-                "photo_present": True,
-                "signature_present": True,
-            },
-            "fraud_indicators": [],
-            "fraud_score": 0.05,
-            "visual_quality": {
-                "resolution": "adequate",
-                "lighting": "good",
-                "focus": "sharp",
-                "angle": "front-facing",
-            },
-            "security_features_found": [
-                "holographic overlay",
-                "microprint border",
-                "UV-reactive ink",
-                "ghost image",
-            ],
-            "security_features_missing": [],
-            "reasoning": "Document appears genuine. All expected security features for a Kenyan national ID card (2014 series) are present. Font consistency is maintained across all text elements. Photo shows no signs of digital manipulation. Holographic overlay pattern matches known genuine specimens.",
-        }
+        try:
+            analysis_data = await self._call_vlm(self.DOCUMENT_ANALYSIS_PROMPT, image_base64)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"VLM inference failed: {e}")
+            raise HTTPException(status_code=503, detail=f"VLM inference unavailable: {e}")
+
+        if not isinstance(analysis_data, dict):
+            raise HTTPException(status_code=503, detail="VLM returned an unparseable response")
 
         # Cross-verify with OCR if provided
         ocr_verification = {}
         if ocr_data:
-            ocr_verification = self._cross_verify_ocr(analysis_data["extracted_data"], ocr_data)
+            ocr_verification = self._cross_verify_ocr(analysis_data.get("extracted_data", {}), ocr_data)
 
         fraud_indicators = [
             {
@@ -177,29 +176,43 @@ Respond in JSON:
                 "location": ind.get("location", ""),
             }
             for ind in analysis_data.get("fraud_indicators", [])
+            if isinstance(ind, dict)
         ]
 
-        verification = VerificationResult.VERIFIED
-        if analysis_data["fraud_score"] > 0.7:
-            verification = VerificationResult.REJECTED
-        elif analysis_data["fraud_score"] > 0.4:
-            verification = VerificationResult.SUSPICIOUS
-        elif analysis_data["fraud_score"] > 0.2:
+        # Use the model-reported fraud score only. If the VLM did not return a
+        # score, the document goes to NEEDS_REVIEW — never default VERIFIED.
+        fraud_score = analysis_data.get("fraud_score")
+        if isinstance(fraud_score, (int, float)):
+            fraud_score = float(fraud_score)
+            if fraud_score > 0.7:
+                verification = VerificationResult.REJECTED
+            elif fraud_score > 0.4:
+                verification = VerificationResult.SUSPICIOUS
+            elif fraud_score > 0.2:
+                verification = VerificationResult.NEEDS_REVIEW
+            else:
+                verification = VerificationResult.VERIFIED
+        else:
+            logger.warning("VLM response missing fraud_score; marking document as needs_review")
+            fraud_score = None
             verification = VerificationResult.NEEDS_REVIEW
+
+        confidence = analysis_data.get("confidence")
+        confidence = float(confidence) if isinstance(confidence, (int, float)) else None
 
         return VLMAnalysis(
             request_id=request_id,
-            document_type=analysis_data["document_type"],
-            issuing_authority=analysis_data["issuing_authority"],
-            document_language=analysis_data["document_language"],
-            extracted_data=analysis_data["extracted_data"],
+            document_type=analysis_data.get("document_type", "unknown"),
+            issuing_authority=analysis_data.get("issuing_authority", "unknown"),
+            document_language=analysis_data.get("document_language", "unknown"),
+            extracted_data=analysis_data.get("extracted_data", {}),
             ocr_cross_verification=ocr_verification,
             fraud_indicators=fraud_indicators,
-            fraud_score=analysis_data["fraud_score"],
+            fraud_score=fraud_score,
             verification_result=verification,
-            visual_quality_assessment=analysis_data["visual_quality"],
-            confidence=0.92,
-            reasoning=analysis_data["reasoning"],
+            visual_quality_assessment=analysis_data.get("visual_quality", {}),
+            confidence=confidence,
+            reasoning=analysis_data.get("reasoning", ""),
             processing_time_ms=round((time.monotonic() - start) * 1000, 2),
         )
 
@@ -216,15 +229,14 @@ Respond in JSON:
                 "vlm_value": str(vlm_value),
                 "ocr_value": str(ocr_value),
                 "match": match,
-                "confidence": 0.95 if match else 0.5,
             })
 
         matches = sum(1 for v in verifications if v["match"])
-        total = len(verifications) if verifications else 1
+        total = len(verifications)
 
         return {
             "field_verifications": verifications,
-            "overall_match_score": round(matches / total, 2),
+            "overall_match_score": round(matches / total, 2) if total else None,
             "discrepancies": [v["field"] for v in verifications if not v["match"]],
         }
 
@@ -247,6 +259,9 @@ Respond in JSON:
                 "Content-Type": "application/json",
             }
             async with session.post(f"{self.api_url}/v1/chat/completions", json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise RuntimeError(f"VLM backend returned HTTP {resp.status}: {body[:500]}")
                 data = await resp.json()
                 return json.loads(data["choices"][0]["message"]["content"])
 
@@ -298,10 +313,10 @@ async def classify_document(req: VLMRequest):
 @app.get("/health")
 async def health():
     return {
-        "status": "healthy",
+        "status": "healthy" if vlm_engine._backend_configured() else "degraded",
         "service": "vlm-document",
         "version": "1.0.0",
-        "vlm_configured": bool(vlm_engine.api_url),
+        "vlm_configured": vlm_engine._backend_configured(),
     }
 
 

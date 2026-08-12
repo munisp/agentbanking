@@ -50,6 +50,8 @@ class TransactionScoreResponse(BaseModel):
 
 _sender_history: Dict[str, List[Dict[str, Any]]] = {}
 _counterparty_history: Dict[str, int] = {}
+# Real per-sender profile built from actual scoring decisions.
+_sender_profiles: Dict[str, Dict[str, Any]] = {}
 _scoring_analytics: Dict[str, Any] = {
     "total_scored": 0,
     "total_approved": 0,
@@ -72,6 +74,11 @@ COMPLETION_ESTIMATES = {
 AMOUNT_THRESHOLDS = {
     "NGN": {"low": 10_000, "medium": 100_000, "high": 1_000_000},
     "USD": {"low": 50, "medium": 500, "high": 5_000},
+}
+
+SCORING_WEIGHTS = {
+    "amount": 0.20, "velocity": 0.15, "counterparty": 0.10,
+    "channel": 0.10, "time": 0.05, "fraud": 0.25, "gateway": 0.15
 }
 
 
@@ -139,6 +146,10 @@ def _compute_time_score() -> tuple:
 
 
 async def _get_fraud_score(request: TransactionScoreRequest) -> tuple:
+    """
+    Query the fraud engine. FAILS LOUD: an unreachable or malformed fraud
+    engine response raises 502 — we never invent a default fraud score.
+    """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(f"{FRAUD_ENGINE_URL}/check_transaction", json={
@@ -146,20 +157,35 @@ async def _get_fraud_score(request: TransactionScoreRequest) -> tuple:
                 "amount": request.amount,
                 "transaction_type": request.transaction_type,
             })
-            if resp.status_code == 200:
-                data = resp.json()
-                risk = data.get("risk_score", 0.1)
-                score = max(0, (1.0 - risk) * 100)
-                factors = []
-                if score < 50:
-                    factors.append(f"Fraud engine flagged: risk_score={risk:.2f}")
-                return score, factors
-    except Exception:
-        pass
-    return 88.0, []
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"fraud engine unreachable ({exc}); refusing to fabricate a fraud score",
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"fraud engine returned HTTP {resp.status_code}; refusing to fabricate a fraud score",
+        )
+    data = resp.json()
+    if "risk_score" not in data:
+        raise HTTPException(
+            status_code=502,
+            detail="fraud engine response missing risk_score; refusing to fabricate a fraud score",
+        )
+    risk = float(data["risk_score"])
+    score = max(0.0, (1.0 - risk) * 100)
+    factors = []
+    if score < 50:
+        factors.append(f"Fraud engine flagged: risk_score={risk:.2f}")
+    return score, factors
 
 
 async def _get_gateway_score(request: TransactionScoreRequest) -> tuple:
+    """
+    Query the smart-routing predictor. FAILS LOUD: an unreachable or malformed
+    predictor response raises 502 — we never invent a default success probability.
+    """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(f"{SMART_ROUTING_URL}/predict", json={
@@ -167,17 +193,27 @@ async def _get_gateway_score(request: TransactionScoreRequest) -> tuple:
                 "currency": request.currency,
                 "destination_bank": request.recipient_bank_code or "default",
             })
-            if resp.status_code == 200:
-                data = resp.json()
-                prob = data.get("success_probability", 0.92)
-                return prob * 100, []
-    except Exception:
-        pass
-    return 92.0, []
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"smart-routing predictor unreachable ({exc}); refusing to fabricate a gateway score",
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"smart-routing predictor returned HTTP {resp.status_code}; refusing to fabricate a gateway score",
+        )
+    data = resp.json()
+    if "success_probability" not in data:
+        raise HTTPException(
+            status_code=502,
+            detail="smart-routing response missing success_probability; refusing to fabricate a gateway score",
+        )
+    return float(data["success_probability"]) * 100, []
 
 
-@router.post("/score", response_model=TransactionScoreResponse)
-async def score_transaction(request: TransactionScoreRequest):
+async def compute_score(request: TransactionScoreRequest) -> TransactionScoreResponse:
+    """Score a transaction using the real heuristic engine + live downstream scores."""
     ref = hashlib.sha256(
         f"{request.sender_id}{request.recipient_id}{request.amount}{time.time()}".encode()
     ).hexdigest()[:16]
@@ -190,10 +226,7 @@ async def score_transaction(request: TransactionScoreRequest):
     fraud_score, fraud_factors = await _get_fraud_score(request)
     gateway_score, gw_factors = await _get_gateway_score(request)
 
-    weights = {
-        "amount": 0.20, "velocity": 0.15, "counterparty": 0.10,
-        "channel": 0.10, "time": 0.05, "fraud": 0.25, "gateway": 0.15
-    }
+    weights = SCORING_WEIGHTS
     overall = (
         amount_score * weights["amount"]
         + velocity_score * weights["velocity"]
@@ -221,6 +254,20 @@ async def score_transaction(request: TransactionScoreRequest):
     cp_key = f"{request.sender_id}->{request.recipient_id}"
     _counterparty_history[cp_key] = _counterparty_history.get(cp_key, 0) + 1
 
+    profile = _sender_profiles.setdefault(request.sender_id, {
+        "total_transactions": 0,
+        "flagged_transactions": 0,
+        "last_score": None,
+        "last_risk_level": None,
+        "last_updated": None,
+    })
+    profile["total_transactions"] += 1
+    if recommendation in ("review", "decline"):
+        profile["flagged_transactions"] += 1
+    profile["last_score"] = round(overall, 1)
+    profile["last_risk_level"] = risk_level
+    profile["last_updated"] = datetime.utcnow().isoformat()
+
     _scoring_analytics["total_scored"] += 1
     _scoring_analytics["score_sum"] += overall
     if recommendation == "approve":
@@ -232,8 +279,9 @@ async def score_transaction(request: TransactionScoreRequest):
     hour_key = datetime.utcnow().strftime("%Y-%m-%d-%H")
     _scoring_analytics["hourly_counts"][hour_key] = _scoring_analytics["hourly_counts"].get(hour_key, 0) + 1
     _scoring_analytics["recent_decisions"].append({
-        "ref": ref, "score": round(overall, 1), "decision": recommendation,
-        "risk": risk_level, "amount": request.amount, "at": datetime.utcnow().isoformat(),
+        "ref": ref, "sender_id": request.sender_id, "score": round(overall, 1),
+        "decision": recommendation, "risk": risk_level, "amount": request.amount,
+        "at": datetime.utcnow().isoformat(),
     })
     if len(_scoring_analytics["recent_decisions"]) > 100:
         _scoring_analytics["recent_decisions"] = _scoring_analytics["recent_decisions"][-100:]
@@ -258,15 +306,30 @@ async def score_transaction(request: TransactionScoreRequest):
     )
 
 
+@router.post("/score", response_model=TransactionScoreResponse)
+async def score_transaction(request: TransactionScoreRequest):
+    return await compute_score(request)
+
+
 @router.get("/history/{sender_id}")
 async def get_sender_score_history(sender_id: str):
-    history = _sender_history.get(sender_id, [])
+    history = _sender_history.get(sender_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail=f"no scoring history for sender {sender_id}")
     return {
         "sender_id": sender_id,
         "transaction_count_1h": len([h for h in history if (datetime.utcnow() - h["time"]).total_seconds() < 3600]),
         "transaction_count_24h": len([h for h in history if (datetime.utcnow() - h["time"]).total_seconds() < 86400]),
         "total_transactions": len(history),
     }
+
+
+@router.get("/profile/{sender_id}")
+async def get_sender_profile(sender_id: str):
+    profile = _sender_profiles.get(sender_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"no risk profile for sender {sender_id}")
+    return {"sender_id": sender_id, **profile}
 
 
 @router.get("/analytics")
@@ -294,8 +357,5 @@ async def get_scoring_thresholds():
         "amount_thresholds": AMOUNT_THRESHOLDS,
         "channel_reliability": CHANNEL_RELIABILITY,
         "completion_estimates": COMPLETION_ESTIMATES,
-        "weights": {
-            "amount": 0.20, "velocity": 0.15, "counterparty": 0.10,
-            "channel": 0.10, "time": 0.05, "fraud": 0.25, "gateway": 0.15
-        },
+        "weights": SCORING_WEIGHTS,
     }

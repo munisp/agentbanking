@@ -1,10 +1,15 @@
 """
-Transaction Scoring - FastAPI microservice
-Real-time transaction risk scoring with ML-based fraud detection and behavioral analysis
+Transaction Scoring - FastAPI microservice (services/python mirror)
+Real-time transaction risk scoring. This mirror delegates to the canonical
+scoring engine in services/transaction-scoring/router.py; when that module is
+not available in the deployment image, scoring endpoints fail loud with 503.
+No canned "risk_score 0.0 / approve" stubs, no fabricated profiles — unknown
+entities return 404 and feedback persists to Redis or fails with 503.
 """
 import os
+import json
 import logging
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 import sys as _sys2, os as _os2
@@ -16,11 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import signal
 import sys
 import atexit
-import logging
 
 # --- PostgreSQL Persistence ---
 import asyncpg
-from typing import Optional
 
 _pg_pool: Optional[asyncpg.Pool] = None
 
@@ -88,139 +91,160 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Transaction Scoring", description="Real-time transaction risk scoring with ML-based fraud detection and behavioral analysis", version="1.0.0")
+# ---------------------------------------------------------------------------
+# Canonical scoring engine (loaded from services/transaction-scoring/router.py)
+# ---------------------------------------------------------------------------
+
+_engine = None
+_engine_error: Optional[str] = None
+
+
+def _load_engine():
+    """Load the canonical transaction-scoring engine module. Never fabricates."""
+    global _engine, _engine_error
+    if _engine is not None:
+        return _engine
+    try:
+        import importlib.util
+        router_path = _os2.path.join(
+            _os2.path.dirname(_os2.path.abspath(__file__)),
+            "..", "..", "transaction-scoring", "router.py",
+        )
+        spec = importlib.util.spec_from_file_location("transaction_scoring_engine", router_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _engine = module
+        return _engine
+    except Exception as exc:
+        _engine_error = f"canonical scoring engine unavailable: {exc}"
+        logger.error(_engine_error)
+        return None
+
+
+def _engine_or_503():
+    engine = _load_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail=_engine_error)
+    return engine
+
+
+app = FastAPI(title="Transaction Scoring", description="Real-time transaction risk scoring with heuristic + live downstream scores", version="1.0.0")
 
 @app.on_event("startup")
 async def _init_pg_pool():
     await get_pg_pool()
 
 apply_middleware(app, enable_auth=True)
-
-import psycopg2
-import psycopg2.extras
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/transaction_scoring")
-
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
-    return conn
-
-def init_db():
-    conn = get_db()
-    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-        id SERIAL PRIMARY KEY,
-        action TEXT, entity_id TEXT, data TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS state_store (
-        key TEXT PRIMARY KEY, value TEXT,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-    )""")
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def log_audit(action: str, entity_id: str, data: str = ""):
-    try:
-        conn = get_db()
-        conn.execute("INSERT INTO audit_log (action, entity_id, data) VALUES (%s, %s, %s)", (action, entity_id, data))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- Domain Helpers ---
+# --- Feedback persistence (Redis required; 503 when unavailable) ---
 
-def validate_request(data: dict, required_fields: list) -> list:
-    """Validate that all required fields are present in request data."""
-    missing = [f for f in required_fields if f not in data or data[f] is None]
-    return missing
+_redis_client = None
+_redis_error: Optional[str] = None
 
-def sanitize_input(value: str) -> str:
-    """Sanitize user input to prevent injection attacks."""
-    if not isinstance(value, str):
-        return str(value)
-    return value.strip().replace("<", "&lt;").replace(">", "&gt;")
-
-def format_currency(amount: float, currency: str = "NGN") -> str:
-    """Format amount with currency symbol."""
-    symbols = {"NGN": "₦", "USD": "$", "GBP": "£", "EUR": "€", "KES": "KSh"}
-    symbol = symbols.get(currency, currency + " ")
-    return f"{symbol}{amount:,.2f}"
-
-def generate_reference(prefix: str = "REF") -> str:
-    """Generate a unique reference ID."""
-    import time
-    import hashlib
-    ts = str(time.time()).encode()
-    h = hashlib.md5(ts).hexdigest()[:8].upper()
-    return f"{prefix}-{h}"
-
-def paginate(items: list, page: int = 1, per_page: int = 20) -> dict:
-    """Paginate a list of items."""
-    start = (page - 1) * per_page
-    end = start + per_page
-    return {
-        "items": items[start:end],
-        "total": len(items),
-        "page": page,
-        "per_page": per_page,
-        "total_pages": (len(items) + per_page - 1) // per_page
-    }
+def _get_redis():
+    global _redis_client, _redis_error
+    if _redis_client is not None:
+        return _redis_client
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        _redis_error = "REDIS_URL is not configured"
+        return None
+    try:
+        import redis  # type: ignore
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        return _redis_client
+    except Exception as exc:
+        _redis_error = f"Redis unavailable: {exc}"
+        _redis_client = None
+        return None
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "transaction-scoring", "version": "1.0.0", "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "status": "healthy",
+        "service": "transaction-scoring",
+        "version": "1.0.0",
+        "engine_loaded": _engine is not None,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 @app.post("/api/v1/scoring/evaluate")
 async def evaluate_transaction(transaction_id: str, amount: float, sender_id: str, receiver_id: str, transaction_type: str):
-    """Score a transaction for risk."""
-    # Persist operation result to PostgreSQL
-    import json as _json, time as _time
-    await pg_set("evaluate_transaction_" + str(int(_time.time() * 1000)), _json.dumps({"action": "evaluate_transaction", "timestamp": _time.time()}), "transaction-scoring")
-
-    return {"transaction_id": transaction_id, "risk_score": 0.0, "risk_level": "low", "flags": [], "recommendation": "approve", "scoring_time_ms": 0}
+    """Score a transaction with the real scoring engine (502/503 on failure)."""
+    engine = _engine_or_503()
+    request = engine.TransactionScoreRequest(
+        sender_id=sender_id,
+        recipient_id=receiver_id,
+        amount=amount,
+        transaction_type=transaction_type,
+        metadata={"transaction_id": transaction_id},
+    )
+    result = await engine.compute_score(request)
+    return {
+        "transaction_id": transaction_id,
+        "transaction_ref": result.transaction_ref,
+        "risk_score": round(100.0 - result.overall_score, 1),
+        "risk_level": result.risk_level,
+        "flags": result.factors,
+        "recommendation": result.recommendation,
+        "breakdown": result.breakdown.model_dump(),
+        "scored_at": result.scored_at,
+    }
 
 @app.get("/api/v1/scoring/rules")
 async def get_scoring_rules():
-    """Get active scoring rules and weights."""
-    # Load persisted state from PostgreSQL
-    _pg_cached = await pg_get("get_scoring_rules", "transaction-scoring")
-    if _pg_cached is not None:
-        import json as _json
-        try:
-            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
-        except Exception:
-            pass
-
-    return {"rules": [], "total": 0, "model_version": "1.0.0"}
+    """Get the active scoring rules and weights actually used by the engine."""
+    engine = _engine_or_503()
+    rules = [
+        {"name": "amount", "weight": engine.SCORING_WEIGHTS["amount"], "config": engine.AMOUNT_THRESHOLDS},
+        {"name": "velocity", "weight": engine.SCORING_WEIGHTS["velocity"], "config": {"window_seconds": 3600, "elevated": 5, "limit": 15}},
+        {"name": "counterparty", "weight": engine.SCORING_WEIGHTS["counterparty"], "config": {"trusted_threshold": 5}},
+        {"name": "channel", "weight": engine.SCORING_WEIGHTS["channel"], "config": engine.CHANNEL_RELIABILITY},
+        {"name": "time", "weight": engine.SCORING_WEIGHTS["time"], "config": {"business_hours": "06:00-22:00 UTC"}},
+        {"name": "fraud", "weight": engine.SCORING_WEIGHTS["fraud"], "config": {"source": "fraud-engine", "fail_mode": "closed_502"}},
+        {"name": "gateway", "weight": engine.SCORING_WEIGHTS["gateway"], "config": {"source": "smart-routing", "fail_mode": "closed_502"}},
+    ]
+    return {"rules": rules, "total": len(rules), "model_version": "heuristic-1.0.0"}
 
 @app.get("/api/v1/scoring/{entity_id}/profile")
 async def get_risk_profile(entity_id: str):
-    """Get entity risk profile and history."""
-    # Load persisted state from PostgreSQL
-    _pg_cached = await pg_get("get_risk_profile", "transaction-scoring")
-    if _pg_cached is not None:
-        import json as _json
-        try:
-            return _json.loads(_pg_cached) if isinstance(_pg_cached, str) else _pg_cached
-        except Exception:
-            pass
-
-    return {"entity_id": entity_id, "risk_score": 0.0, "risk_level": "low", "total_transactions": 0, "flagged_transactions": 0, "last_updated": None}
+    """Get entity risk profile built from real scoring decisions (404 if unknown)."""
+    engine = _engine_or_503()
+    profile = engine._sender_profiles.get(entity_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"no risk profile for entity {entity_id}")
+    return {
+        "entity_id": entity_id,
+        "risk_score": round(100.0 - profile["last_score"], 1) if profile["last_score"] is not None else None,
+        "risk_level": profile["last_risk_level"],
+        "total_transactions": profile["total_transactions"],
+        "flagged_transactions": profile["flagged_transactions"],
+        "last_updated": profile["last_updated"],
+    }
 
 @app.post("/api/v1/scoring/feedback")
 async def submit_feedback(transaction_id: str, actual_outcome: str):
-    """Submit feedback for model training."""
-    # Persist operation result to PostgreSQL
-    import json as _json, time as _time
-    await pg_set("submit_feedback_" + str(int(_time.time() * 1000)), _json.dumps({"action": "submit_feedback", "timestamp": _time.time()}), "transaction-scoring")
-
+    """Persist feedback for model training (503 when no feedback store is configured)."""
     valid_outcomes = ["legitimate", "fraud", "suspicious", "false_positive"]
-    if actual_outcome not in valid_outcomes: raise HTTPException(400, f"Must be one of: {valid_outcomes}")
+    if actual_outcome not in valid_outcomes:
+        raise HTTPException(400, f"Must be one of: {valid_outcomes}")
+    client = _get_redis()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"feedback store unavailable ({_redis_error}); feedback was NOT recorded",
+        )
+    record = {
+        "transaction_id": transaction_id,
+        "outcome": actual_outcome,
+        "recorded_at": datetime.utcnow().isoformat(),
+    }
+    try:
+        client.rpush("transaction-scoring:feedback", json.dumps(record))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"failed to persist feedback: {exc}")
     return {"transaction_id": transaction_id, "feedback_recorded": True, "outcome": actual_outcome}
 
 if __name__ == "__main__":

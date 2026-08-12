@@ -1,10 +1,21 @@
 """
 Billing Anomaly Detector (Python)
 Real-time anomaly detection on billing streams using statistical methods (Z-score,
-IQR, DBSCAN clustering) and ML-based isolation forests. Detects revenue leakage,
-fee miscalculations, commission fraud, and unusual transaction patterns. Publishes
-alerts to Kafka and indexes findings in OpenSearch for forensic analysis.
-Integrates with: Kafka, OpenSearch, Redis, PostgreSQL, Dapr, Temporal, Permify
+IQR) and deterministic business rules. Detects revenue leakage, fee
+miscalculations, commission fraud, and unusual transaction patterns.
+
+Event ingestion (real, in priority order):
+  1. Kafka consumer on BILLING_EVENTS_TOPIC (default "billing.events") via
+     confluent-kafka when KAFKA_BROKERS is reachable.
+  2. Direct push via POST /api/v1/events.
+  3. The synthetic event generator is reachable ONLY when
+     BILLING_ANOMALY_SIMULATION_MODE=true AND the environment is non-production;
+     enabling it in production hard-fails at startup.
+
+Alerts are published to Kafka topic "billing.anomalies" and indexed in
+OpenSearch for forensic analysis. Delivery failures are logged at ERROR level
+and counted in metrics — they are never silently swallowed.
+Integrates with: Kafka, OpenSearch
 """
 
 import os
@@ -14,19 +25,20 @@ import time
 import logging
 import hashlib
 import statistics
+import threading
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from collections import deque
-import threading
 
 # --- Production: Graceful Shutdown ---
 import signal
 import sys
 import atexit
-import logging
 
 _shutdown_handlers = []
 
@@ -56,16 +68,25 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════════════
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
+IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
+SIMULATION_MODE = os.getenv("BILLING_ANOMALY_SIMULATION_MODE", "").lower() == "true"
+
+if SIMULATION_MODE and IS_PRODUCTION:
+    raise RuntimeError(
+        "BILLING_ANOMALY_SIMULATION_MODE=true is forbidden in production: "
+        "synthetic billing events must never drive live anomaly alerts."
+    )
+
 @dataclass
 class Config:
     port: int = int(os.getenv("PORT", "9301"))
     kafka_brokers: str = os.getenv("KAFKA_BROKERS", "kafka:9092")
+    kafka_events_topic: str = os.getenv("BILLING_EVENTS_TOPIC", "billing.events")
+    kafka_alerts_topic: str = os.getenv("BILLING_ALERTS_TOPIC", "billing.anomalies")
+    kafka_group_id: str = os.getenv("BILLING_ANOMALY_GROUP_ID", "billing-anomaly-detector")
     opensearch_url: str = os.getenv("OPENSEARCH_URL", "http://opensearch:9200")
-    redis_addr: str = os.getenv("REDIS_ADDR", "redis:6379")
-    postgres_url: str = os.getenv("POSTGRES_URL", "")
-    dapr_http_port: int = int(os.getenv("DAPR_HTTP_PORT", "3500"))
-    temporal_addr: str = os.getenv("TEMPORAL_ADDR", "temporal:7233")
-    permify_addr: str = os.getenv("PERMIFY_ADDR", "permify:3476")
+    opensearch_index: str = os.getenv("OPENSEARCH_INDEX", "billing-anomalies")
     z_score_threshold: float = float(os.getenv("Z_SCORE_THRESHOLD", "3.0"))
     iqr_multiplier: float = float(os.getenv("IQR_MULTIPLIER", "1.5"))
     window_size: int = int(os.getenv("WINDOW_SIZE", "1000"))
@@ -100,7 +121,7 @@ class Anomaly:
     expected_value: float
     actual_value: float
     deviation_pct: float
-    detection_method: str  # "z_score", "iqr", "isolation_forest", "rule_based"
+    detection_method: str  # "z_score", "iqr", "rule_based"
     agent_id: str
     client_id: str
     detected_at: int
@@ -116,30 +137,90 @@ class DetectorMetrics:
     total_leakage_detected: float = 0.0
     avg_detection_latency_ms: float = 0.0
     last_event_at: int = 0
+    alerts_delivered: int = 0
+    alerts_failed: int = 0
+    opensearch_indexed: int = 0
+    opensearch_failed: int = 0
+    kafka_events_consumed: int = 0
+    kafka_consumer_errors: int = 0
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Alert / Index sinks (real delivery, loud failures)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AlertSink:
+    """Publishes anomaly alerts to Kafka and indexes them in OpenSearch."""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._producer = None
+        self._producer_error: Optional[str] = None
+        try:
+            from confluent_kafka import Producer  # type: ignore
+            self._producer = Producer({"bootstrap.servers": config.kafka_brokers})
+        except Exception as exc:
+            self._producer_error = f"Kafka producer unavailable: {exc}"
+            logger.error(self._producer_error)
+
+    def publish_alert(self, anomaly: Anomaly) -> bool:
+        """Publish to Kafka. Returns True on handoff, False on failure."""
+        if self._producer is None:
+            logger.error(
+                f"[Kafka] ALERT NOT DELIVERED ({self._producer_error}): "
+                f"{anomaly.anomaly_id} ({anomaly.severity})"
+            )
+            return False
+        try:
+            self._producer.produce(
+                self.config.kafka_alerts_topic,
+                value=json.dumps(asdict(anomaly), default=str).encode(),
+            )
+            self._producer.flush(timeout=5.0)
+            return True
+        except Exception as exc:
+            logger.error(f"[Kafka] ALERT NOT DELIVERED ({exc}): {anomaly.anomaly_id}")
+            return False
+
+    def index_anomaly(self, anomaly: Anomaly) -> bool:
+        """Index in OpenSearch. Returns True on success, False on failure."""
+        url = f"{self.config.opensearch_url}/{self.config.opensearch_index}/_doc/{anomaly.anomaly_id}"
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(asdict(anomaly), default=str).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                return 200 <= resp.status < 300
+        except Exception as exc:
+            logger.error(f"[OpenSearch] INDEX FAILED ({exc}): {anomaly.anomaly_id}")
+            return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Anomaly Detection Engine
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class AnomalyDetector:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, sink: AlertSink):
         self.config = config
+        self.sink = sink
         self.metrics = DetectorMetrics()
         self.anomalies: List[Anomaly] = []
         self.windows: Dict[str, deque] = {}  # Per-metric sliding windows
         self.alert_timestamps: Dict[str, int] = {}  # Cooldown tracking
         self.lock = threading.Lock()
-    
+
     def process_event(self, event: BillingEvent) -> Optional[Anomaly]:
         """Process a billing event and detect anomalies"""
         start_time = time.time()
-        
+
         with self.lock:
             self.metrics.events_processed += 1
             self.metrics.last_event_at = int(time.time())
-        
+
         anomaly = None
-        
+
         # Method 1: Rule-based detection (fee vs expected)
         if event.expected_amount > 0:
             deviation = abs(event.amount - event.expected_amount) / event.expected_amount
@@ -148,27 +229,27 @@ class AnomalyDetector:
                     event, "fee_miscalculation", deviation,
                     "rule_based", event.expected_amount, event.amount
                 )
-        
+
         # Method 2: Z-score detection (statistical outlier)
         if anomaly is None:
             window_key = f"{event.event_type}-{event.client_id}"
             anomaly = self._z_score_detect(event, window_key)
-        
+
         # Method 3: IQR detection (robust outlier)
         if anomaly is None:
             window_key = f"{event.event_type}-{event.agent_id}"
             anomaly = self._iqr_detect(event, window_key)
-        
+
         # Method 4: Pattern-based (unusual timing, frequency)
         if anomaly is None:
             anomaly = self._pattern_detect(event)
-        
+
         # Update sliding window
         window_key = f"{event.event_type}-{event.client_id}"
         if window_key not in self.windows:
             self.windows[window_key] = deque(maxlen=self.config.window_size)
         self.windows[window_key].append(event.amount)
-        
+
         # Record anomaly if detected
         if anomaly:
             with self.lock:
@@ -177,13 +258,10 @@ class AnomalyDetector:
                 if anomaly.severity == "critical":
                     self.metrics.critical_anomalies += 1
                 self.metrics.total_leakage_detected += abs(anomaly.actual_value - anomaly.expected_value)
-            
-            # Publish to Kafka
+
             self._publish_alert(anomaly)
-            
-            # Index in OpenSearch
             self._index_anomaly(anomaly)
-        
+
         # Update latency metric
         latency_ms = (time.time() - start_time) * 1000
         with self.lock:
@@ -191,47 +269,47 @@ class AnomalyDetector:
             self.metrics.avg_detection_latency_ms = (
                 (self.metrics.avg_detection_latency_ms * (n - 1) + latency_ms) / n
             )
-        
+
         return anomaly
-    
+
     def _z_score_detect(self, event: BillingEvent, window_key: str) -> Optional[Anomaly]:
         """Detect anomalies using Z-score method"""
         window = self.windows.get(window_key)
         if not window or len(window) < 30:
             return None
-        
+
         values = list(window)
         mean = statistics.mean(values)
         std = statistics.stdev(values)
-        
+
         if std == 0:
             return None
-        
+
         z_score = abs(event.amount - mean) / std
-        
+
         if z_score > self.config.z_score_threshold:
             return self._create_anomaly(
                 event, "unusual_pattern", z_score / 10.0,
                 "z_score", mean, event.amount
             )
-        
+
         return None
-    
+
     def _iqr_detect(self, event: BillingEvent, window_key: str) -> Optional[Anomaly]:
         """Detect anomalies using IQR method (robust to outliers)"""
         window = self.windows.get(window_key)
         if not window or len(window) < 20:
             return None
-        
+
         values = sorted(list(window))
         n = len(values)
         q1 = values[n // 4]
         q3 = values[3 * n // 4]
         iqr = q3 - q1
-        
+
         lower_fence = q1 - self.config.iqr_multiplier * iqr
         upper_fence = q3 + self.config.iqr_multiplier * iqr
-        
+
         if event.amount < lower_fence or event.amount > upper_fence:
             median = values[n // 2]
             deviation = abs(event.amount - median) / median if median else 0
@@ -240,9 +318,9 @@ class AnomalyDetector:
                 min(1.0, deviation),
                 "iqr", median, event.amount
             )
-        
+
         return None
-    
+
     def _pattern_detect(self, event: BillingEvent) -> Optional[Anomaly]:
         """Detect anomalies based on business rules and patterns"""
         # Rule: Zero-fee transactions (potential revenue leakage)
@@ -251,21 +329,21 @@ class AnomalyDetector:
                 event, "revenue_leakage", 1.0,
                 "rule_based", event.expected_amount, 0.0
             )
-        
+
         # Rule: Negative amounts (reversal fraud)
         if event.amount < 0 and event.event_type != "settlement_processed":
             return self._create_anomaly(
                 event, "commission_fraud", 0.9,
                 "rule_based", 0.0, event.amount
             )
-        
+
         return None
-    
+
     def _create_anomaly(self, event: BillingEvent, anomaly_type: str, score: float,
                        method: str, expected: float, actual: float) -> Anomaly:
         """Create an anomaly record"""
         deviation_pct = abs(actual - expected) / expected * 100 if expected else 100.0
-        
+
         severity = "low"
         if score > 0.7 or deviation_pct > 50:
             severity = "critical"
@@ -273,7 +351,7 @@ class AnomalyDetector:
             severity = "high"
         elif score > 0.3 or deviation_pct > 10:
             severity = "medium"
-        
+
         return Anomaly(
             anomaly_id=f"AN-{hashlib.md5(f'{event.event_id}-{time.time()}'.encode()).hexdigest()[:10]}",
             event_id=event.event_id,
@@ -289,35 +367,44 @@ class AnomalyDetector:
             client_id=event.client_id,
             detected_at=int(time.time()),
         )
-    
+
     def _publish_alert(self, anomaly: Anomaly):
-        """Publish anomaly alert to Kafka topic billing.anomalies"""
-        # Check cooldown
+        """Publish anomaly alert to Kafka with cooldown; failures counted loudly."""
         cooldown_key = f"{anomaly.anomaly_type}-{anomaly.agent_id}"
         now = int(time.time())
         last_alert = self.alert_timestamps.get(cooldown_key, 0)
-        
+
         if now - last_alert < self.config.alert_cooldown_secs:
             return
-        
+
         self.alert_timestamps[cooldown_key] = now
-        logger.warning(f"[Kafka] Publishing anomaly alert: {anomaly.anomaly_id} ({anomaly.severity})")
-    
+        delivered = self.sink.publish_alert(anomaly)
+        with self.lock:
+            if delivered:
+                self.metrics.alerts_delivered += 1
+            else:
+                self.metrics.alerts_failed += 1
+
     def _index_anomaly(self, anomaly: Anomaly):
-        """Index anomaly in OpenSearch for forensic analysis"""
-        logger.info(f"[OpenSearch] Indexing anomaly {anomaly.anomaly_id}")
-    
+        """Index anomaly in OpenSearch; failures counted loudly."""
+        indexed = self.sink.index_anomaly(anomaly)
+        with self.lock:
+            if indexed:
+                self.metrics.opensearch_indexed += 1
+            else:
+                self.metrics.opensearch_failed += 1
+
     def get_anomalies(self, severity: Optional[str] = None, limit: int = 50) -> List[dict]:
         with self.lock:
             filtered = self.anomalies
             if severity:
                 filtered = [a for a in filtered if a.severity == severity]
             return [asdict(a) for a in filtered[-limit:]]
-    
+
     def get_metrics(self) -> dict:
         with self.lock:
             return asdict(self.metrics)
-    
+
     def get_summary(self) -> dict:
         with self.lock:
             by_type = {}
@@ -325,7 +412,7 @@ class AnomalyDetector:
             for a in self.anomalies:
                 by_type[a.anomaly_type] = by_type.get(a.anomaly_type, 0) + 1
                 by_severity[a.severity] = by_severity.get(a.severity, 0) + 1
-            
+
             return {
                 "total_anomalies": len(self.anomalies),
                 "by_type": by_type,
@@ -335,20 +422,72 @@ class AnomalyDetector:
             }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Simulated Event Stream (in production: Kafka consumer)
+# Real Kafka event consumer
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def kafka_consumer_loop(detector: AnomalyDetector, config: Config):
+    """Consume real billing events from Kafka and feed the detector."""
+    try:
+        from confluent_kafka import Consumer, KafkaException  # type: ignore
+    except Exception as exc:
+        logger.error(f"[Kafka] consumer unavailable ({exc}) — no stream ingestion active")
+        return
+
+    try:
+        consumer = Consumer({
+            "bootstrap.servers": config.kafka_brokers,
+            "group.id": config.kafka_group_id,
+            "auto.offset.reset": "latest",
+        })
+        consumer.subscribe([config.kafka_events_topic])
+    except KafkaException as exc:
+        logger.error(f"[Kafka] failed to start consumer on {config.kafka_events_topic}: {exc}")
+        return
+
+    logger.info(f"[Kafka] consuming billing events from {config.kafka_events_topic}")
+    while True:
+        try:
+            msg = consumer.poll(timeout=1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                with detector.lock:
+                    detector.metrics.kafka_consumer_errors += 1
+                logger.error(f"[Kafka] consumer error: {msg.error()}")
+                continue
+            data = json.loads(msg.value().decode())
+            detector.process_event(BillingEvent(**data))
+            with detector.lock:
+                detector.metrics.kafka_events_consumed += 1
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            with detector.lock:
+                detector.metrics.kafka_consumer_errors += 1
+            logger.error(f"[Kafka] malformed billing event dropped: {exc}")
+        except Exception as exc:
+            with detector.lock:
+                detector.metrics.kafka_consumer_errors += 1
+            logger.error(f"[Kafka] consumer loop error: {exc}")
+            time.sleep(1.0)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Simulated Event Stream — NON-PRODUCTION SIMULATION ONLY
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def simulate_billing_stream(detector: AnomalyDetector):
-    """Simulate billing events for testing"""
+    """
+    Synthetic billing events for local development/testing ONLY.
+    Reachable exclusively with BILLING_ANOMALY_SIMULATION_MODE=true in a
+    non-production environment (enforced at module import time).
+    """
     import random
-    
+
     event_types = ["fee_charged", "commission_paid", "settlement_processed", "revenue_split"]
     agents = [f"AGT-{i:04d}" for i in range(1, 51)]
     clients = ["XMTS", "CLIENT-002", "CLIENT-003"]
-    
+
     while True:
         time.sleep(0.5)  # 2 events per second
-        
+
         event_type = random.choice(event_types)
         base_amounts = {
             "fee_charged": 150.0,
@@ -356,12 +495,10 @@ def simulate_billing_stream(detector: AnomalyDetector):
             "settlement_processed": 5000.0,
             "revenue_split": 1200.0,
         }
-        
+
         base = base_amounts[event_type]
-        # Normal variation
         amount = base * random.gauss(1.0, 0.15)
-        
-        # Inject anomaly ~2% of the time
+
         is_anomaly = random.random() < 0.02
         if is_anomaly:
             anomaly_type = random.choice(["zero", "negative", "spike", "drift"])
@@ -373,10 +510,10 @@ def simulate_billing_stream(detector: AnomalyDetector):
                 amount = base * random.uniform(5, 20)
             elif anomaly_type == "drift":
                 amount = base * 0.3
-        
+
         event = BillingEvent(
-            event_id=f"EVT-{int(time.time()*1000)}",
-            transaction_id=f"TX-{random.randint(100000, 999999)}",
+            event_id=f"EVT-SIM-{int(time.time()*1000)}",
+            transaction_id=f"TX-SIM-{random.randint(100000, 999999)}",
             agent_id=random.choice(agents),
             client_id=random.choice(clients),
             event_type=event_type,
@@ -385,8 +522,9 @@ def simulate_billing_stream(detector: AnomalyDetector):
             currency="NGN",
             billing_model="revenue_share",
             timestamp=int(time.time()),
+            metadata={"synthetic": True},
         )
-        
+
         detector.process_event(event)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -395,18 +533,19 @@ def simulate_billing_stream(detector: AnomalyDetector):
 
 class AnomalyHandler(BaseHTTPRequestHandler):
     detector: AnomalyDetector = None
-    
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
         params = parse_qs(parsed.query)
-        
+
         if path == "/health":
             self._respond(200, {
                 "status": "healthy",
                 "service": "billing-anomaly-detector",
                 "events_processed": self.detector.metrics.events_processed,
                 "anomalies_detected": self.detector.metrics.anomalies_detected,
+                "simulation_mode": SIMULATION_MODE,
             })
         elif path == "/api/v1/anomalies":
             severity = params.get("severity", [None])[0]
@@ -418,17 +557,21 @@ class AnomalyHandler(BaseHTTPRequestHandler):
             self._respond(200, self.detector.get_metrics())
         else:
             self._respond(404, {"error": "Not found"})
-    
+
     def do_POST(self):
         parsed = urlparse(self.path)
-        
+
         if parsed.path == "/api/v1/events":
             content_length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(content_length)) if content_length > 0 else {}
-            
-            event = BillingEvent(**body)
+
+            try:
+                event = BillingEvent(**body)
+            except TypeError as exc:
+                self._respond(422, {"error": f"invalid billing event: {exc}"})
+                return
             anomaly = self.detector.process_event(event)
-            
+
             self._respond(200, {
                 "processed": True,
                 "anomaly_detected": anomaly is not None,
@@ -436,13 +579,13 @@ class AnomalyHandler(BaseHTTPRequestHandler):
             })
         else:
             self._respond(404, {"error": "Not found"})
-    
+
     def _respond(self, status: int, data):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(data, default=str).encode())
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -453,22 +596,28 @@ class AnomalyHandler(BaseHTTPRequestHandler):
 def main():
     config = Config()
     logger.info(f"Starting Billing Anomaly Detector on port {config.port}")
-    logger.info(f"  Kafka: {config.kafka_brokers}")
-    logger.info(f"  OpenSearch: {config.opensearch_url}")
+    logger.info(f"  Kafka: {config.kafka_brokers} (events: {config.kafka_events_topic}, alerts: {config.kafka_alerts_topic})")
+    logger.info(f"  OpenSearch: {config.opensearch_url} (index: {config.opensearch_index})")
     logger.info(f"  Z-score threshold: {config.z_score_threshold}")
     logger.info(f"  IQR multiplier: {config.iqr_multiplier}")
     logger.info(f"  Window size: {config.window_size}")
-    
-    detector = AnomalyDetector(config)
-    
-    # Start simulated event stream (in production: Kafka consumer)
-    threading.Thread(target=simulate_billing_stream, args=(detector,), daemon=True).start()
-    
+
+    sink = AlertSink(config)
+    detector = AnomalyDetector(config, sink)
+
+    if SIMULATION_MODE:
+        logger.warning("BILLING_ANOMALY_SIMULATION_MODE=true (non-production): "
+                       "synthetic billing stream active")
+        threading.Thread(target=simulate_billing_stream, args=(detector,), daemon=True).start()
+    else:
+        # Real ingestion: Kafka consumer + POST /api/v1/events
+        threading.Thread(target=kafka_consumer_loop, args=(detector, config), daemon=True).start()
+
     # Start HTTP server
     AnomalyHandler.detector = detector
     server = HTTPServer(("0.0.0.0", config.port), AnomalyHandler)
     logger.info(f"Billing Anomaly Detector ready on port {config.port}")
-    
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

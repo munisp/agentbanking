@@ -15,7 +15,8 @@ Trains and serves ML models for:
 
 Architecture:
   - Feature engineering from raw telemetry data
-  - Model training with scikit-learn (Random Forest, Gradient Boosting)
+  - Model training on RECORDED probe telemetry (from telemetry-aggregator or
+    a recorded dataset file) — never silently trained on random synthetic data
   - Model versioning and A/B testing
   - Scheduled retraining from telemetry-aggregator data
   - Model serving via REST API
@@ -30,7 +31,10 @@ Endpoints:
   GET  /health             — Health check
 
 Environment:
-  TELEMETRY_AGGREGATOR_URL, MODEL_STORE_PATH, RETRAIN_INTERVAL_HOURS
+  TELEMETRY_AGGREGATOR_URL, MODEL_STORE_PATH, RETRAIN_INTERVAL_HOURS,
+  NETWORK_ML_TRAINING_DATA_PATH (recorded probes JSON),
+  CARRIER_METRICS_PATH (recorded carrier metrics JSON),
+  NETWORK_ML_SIMULATION_MODE=true (demo only, forbidden in production)
 """
 
 import os
@@ -72,6 +76,21 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("network-ml-trainer")
+
+# ── Simulation mode gating ────────────────────────────────────────────────────
+SIMULATION_MODE = os.getenv("NETWORK_ML_SIMULATION_MODE", "false").lower() == "true"
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "production")).lower()
+if SIMULATION_MODE and APP_ENV == "production":
+    raise RuntimeError(
+        "NETWORK_ML_SIMULATION_MODE=true is forbidden in production: "
+        "synthetic training data and simulated carrier metrics must not serve production traffic."
+    )
+if SIMULATION_MODE:
+    logger.warning("NETWORK_ML_SIMULATION_MODE enabled — synthetic demo data permitted (non-production)")
+
+TELEMETRY_AGGREGATOR_URL = os.getenv("TELEMETRY_AGGREGATOR_URL", "")
+TRAINING_DATA_PATH = os.getenv("NETWORK_ML_TRAINING_DATA_PATH", "")
+CARRIER_METRICS_PATH = os.getenv("CARRIER_METRICS_PATH", "")
 
 # ── Feature Engineering ───────────────────────────────────────────────────────
 
@@ -150,6 +169,7 @@ class ModelMetadata:
     training_samples: int
     feature_count: int
     feature_names: List[str]
+    data_source: str = ""
     mae: float = 0.0
     rmse: float = 0.0
     r2_score: float = 0.0
@@ -163,12 +183,12 @@ class SimpleDecisionTree:
         self.bias: float = 0.0
         self.trained: bool = False
 
-    def train(self, X: List[List[float]], y: List[float]) -> ModelMetadata:
+    def train(self, X: List[List[float]], y: List[float], data_source: str = "") -> ModelMetadata:
         """Train using simple linear regression (gradient descent)."""
         if not X or not y:
             return ModelMetadata(
                 model_id="none", version="0.0.0", trained_at=datetime.utcnow().isoformat(),
-                training_samples=0, feature_count=0, feature_names=[]
+                training_samples=0, feature_count=0, feature_names=[], data_source=data_source
             )
 
         n_features = len(X[0])
@@ -208,6 +228,7 @@ class SimpleDecisionTree:
             training_samples=n_samples,
             feature_count=n_features,
             feature_names=FEATURE_NAMES[:n_features],
+            data_source=data_source,
             mae=round(mae, 4),
             rmse=round(rmse, 4),
             r2_score=round(r2, 4),
@@ -216,7 +237,7 @@ class SimpleDecisionTree:
 
     def predict_single(self, x: List[float]) -> float:
         if not self.trained:
-            return 50.0  # Default mid-range score
+            raise RuntimeError("Model is not trained — prediction refused")
         pred = self.bias + sum(w * xi for w, xi in zip(self.weights, x))
         return max(0.0, min(100.0, pred))
 
@@ -268,28 +289,91 @@ class OutagePredictor:
             "confidence": round(confidence, 3),
             "risk_level": risk_level,
             "factors": factors,
+            "model_type": "rule_based",
             "predicted_at": datetime.utcnow().isoformat(),
         }
 
 
 class CarrierRecommender:
-    """Recommends optimal carrier based on location, time, and historical data."""
+    """Recommends optimal carrier based on recorded carrier performance metrics.
+
+    Metrics are loaded from a recorded source (CARRIER_METRICS_PATH JSON or the
+    telemetry-aggregator). When no recorded metrics exist, recommendations are
+    refused (fail loud) rather than served from hardcoded "simulated" scores.
+    The hardcoded table below is ONLY used in explicit simulation mode
+    (NETWORK_ML_SIMULATION_MODE=true, non-production) and is labeled as such.
+    """
+
+    # Demo-only fallback, used exclusively when SIMULATION_MODE is on
+    _SIMULATED_CARRIER_SCORES: Dict[str, Dict[str, float]] = {
+        "Lagos": {"MTN": 72, "Airtel": 68, "Glo": 55, "9mobile": 50},
+        "Abuja": {"MTN": 75, "Airtel": 70, "Glo": 60, "9mobile": 55},
+        "Kano": {"MTN": 65, "Airtel": 60, "Glo": 45, "9mobile": 40},
+        "Nairobi": {"Safaricom": 80, "Airtel": 65, "Telkom": 55},
+        "Johannesburg": {"Vodacom": 78, "MTN": 72, "Cell_C": 60, "Telkom": 58},
+    }
 
     def __init__(self):
-        # Simulated carrier performance data by region
-        self.carrier_scores: Dict[str, Dict[str, float]] = {
-            "Lagos": {"MTN": 72, "Airtel": 68, "Glo": 55, "9mobile": 50},
-            "Abuja": {"MTN": 75, "Airtel": 70, "Glo": 60, "9mobile": 55},
-            "Kano": {"MTN": 65, "Airtel": 60, "Glo": 45, "9mobile": 40},
-            "Nairobi": {"Safaricom": 80, "Airtel": 65, "Telkom": 55},
-            "Johannesburg": {"Vodacom": 78, "MTN": 72, "Cell_C": 60, "Telkom": 58},
-        }
+        self.carrier_scores: Dict[str, Dict[str, float]] = {}
+        self.metrics_source: Optional[str] = None
+        self._load_recorded_metrics()
+
+    def _load_recorded_metrics(self):
+        """Load recorded carrier performance metrics from file or telemetry aggregator."""
+        # 1. Recorded metrics file
+        if CARRIER_METRICS_PATH and os.path.exists(CARRIER_METRICS_PATH):
+            try:
+                with open(CARRIER_METRICS_PATH) as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and data:
+                    self.carrier_scores = data
+                    self.metrics_source = CARRIER_METRICS_PATH
+                    logger.info(f"Loaded recorded carrier metrics from {CARRIER_METRICS_PATH}")
+                    return
+            except Exception as e:
+                logger.error(f"Failed to load carrier metrics file {CARRIER_METRICS_PATH}: {e}")
+
+        # 2. Telemetry aggregator API
+        if TELEMETRY_AGGREGATOR_URL:
+            import urllib.request
+            try:
+                url = f"{TELEMETRY_AGGREGATOR_URL.rstrip('/')}/api/v1/carriers/metrics"
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                scores = data.get("carrier_scores", data)
+                if isinstance(scores, dict) and scores:
+                    self.carrier_scores = scores
+                    self.metrics_source = url
+                    logger.info(f"Loaded recorded carrier metrics from telemetry aggregator")
+                    return
+            except Exception as e:
+                logger.error(f"Failed to fetch carrier metrics from telemetry aggregator: {e}")
+
+        if SIMULATION_MODE:
+            self.carrier_scores = dict(self._SIMULATED_CARRIER_SCORES)
+            self.metrics_source = "simulated (NETWORK_ML_SIMULATION_MODE)"
+            logger.warning("Using SIMULATED carrier performance scores (non-production demo mode)")
+        else:
+            logger.error(
+                "No recorded carrier metrics available (set CARRIER_METRICS_PATH or "
+                "TELEMETRY_AGGREGATOR_URL). Carrier recommendations will be refused."
+            )
 
     def recommend(self, region: str, hour: int, is_peak: bool) -> Dict:
         """Recommend best carrier for given context."""
-        scores = self.carrier_scores.get(region, self.carrier_scores.get("Lagos", {}))
+        if not self.carrier_scores:
+            raise RuntimeError(
+                "No recorded carrier performance metrics available — "
+                "carrier recommendation refused. Configure CARRIER_METRICS_PATH or "
+                "TELEMETRY_AGGREGATOR_URL with real probe-derived metrics."
+            )
+
+        scores = self.carrier_scores.get(region)
         if not scores:
-            return {"carrier": "unknown", "score": 0, "alternatives": []}
+            raise RuntimeError(
+                f"No recorded carrier metrics for region '{region}' — "
+                "recommendation refused rather than guessed."
+            )
 
         # Adjust for peak hours (some carriers handle congestion better)
         adjusted = {}
@@ -315,14 +399,17 @@ class CarrierRecommender:
             "hour": hour,
             "is_peak": is_peak,
             "alternatives": alternatives,
+            "model_type": "rule_based",
+            "metrics_source": self.metrics_source,
             "recommended_at": datetime.utcnow().isoformat(),
         }
 
 
-# ── Training Data Generator (for demo/testing) ───────────────────────────────
+# ── Training Data Loading ────────────────────────────────────────────────────
 
 def generate_training_data(n_samples: int = 1000) -> Tuple[List[List[float]], List[float]]:
-    """Generate synthetic training data for network quality prediction."""
+    """Generate SYNTHETIC training data. Demo/testing only — callers must be in
+    explicit simulation mode (NETWORK_ML_SIMULATION_MODE=true, non-production)."""
     X = []
     y = []
     for _ in range(n_samples):
@@ -362,6 +449,44 @@ def generate_training_data(n_samples: int = 1000) -> Tuple[List[List[float]], Li
     return X, y
 
 
+def load_recorded_training_data() -> Tuple[Optional[List[List[float]]], Optional[List[float]]]:
+    """Load training data from RECORDED network probes.
+
+    Sources (in order):
+      1. NETWORK_ML_TRAINING_DATA_PATH — JSON file {"X": [[...]], "y": [...]}
+      2. TELEMETRY_AGGREGATOR_URL — GET /api/v1/probes/training-set
+
+    Returns (X, y) or (None, None) when no recorded data is available.
+    """
+    if TRAINING_DATA_PATH and os.path.exists(TRAINING_DATA_PATH):
+        try:
+            with open(TRAINING_DATA_PATH) as f:
+                data = json.load(f)
+            X, y = data.get("X"), data.get("y")
+            if X and y and len(X) == len(y):
+                logger.info(f"Loaded {len(X)} recorded training samples from {TRAINING_DATA_PATH}")
+                return X, y
+            logger.error(f"Training data file {TRAINING_DATA_PATH} malformed (X/y mismatch)")
+        except Exception as e:
+            logger.error(f"Failed to load training data file {TRAINING_DATA_PATH}: {e}")
+
+    if TELEMETRY_AGGREGATOR_URL:
+        import urllib.request
+        try:
+            url = f"{TELEMETRY_AGGREGATOR_URL.rstrip('/')}/api/v1/probes/training-set"
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            X, y = data.get("X"), data.get("y")
+            if X and y and len(X) == len(y):
+                logger.info(f"Loaded {len(X)} recorded training samples from telemetry aggregator")
+                return X, y
+            logger.error("Telemetry aggregator returned no usable training set")
+        except Exception as e:
+            logger.error(f"Failed to fetch training data from telemetry aggregator: {e}")
+
+    return None, None
+
+
 # ── Flask App ─────────────────────────────────────────────────────────────────
 
 try:
@@ -374,39 +499,75 @@ outage_predictor = OutagePredictor()
 carrier_recommender = CarrierRecommender()
 model_metadata: Optional[ModelMetadata] = None
 
+
+def train_on_recorded_data() -> bool:
+    """Train the quality model on recorded probe data. Returns True on success."""
+    global model_metadata
+    X, y = load_recorded_training_data()
+    if not X or not y:
+        return False
+    model_metadata = quality_model.train(
+        X, y,
+        data_source=TRAINING_DATA_PATH or TELEMETRY_AGGREGATOR_URL or "recorded-probes",
+    )
+    logger.info(
+        f"[Network-ML-Trainer] Model trained on recorded probes: "
+        f"samples={model_metadata.training_samples} MAE={model_metadata.mae} R2={model_metadata.r2_score}"
+    )
+    return True
+
+
 def create_app():
     app = Flask(__name__)
-# ─── Security Hardening (CVE-2024-34069, CVE-2026-27205) ─────────────────────
-import os as _os
-_flask_env = _os.getenv("FLASK_ENV", _os.getenv("APP_ENV", "production")).lower()
-if _flask_env != "development":
-    app.config["DEBUG"] = False
-    app.config["TESTING"] = False
-    _os.environ["WERKZEUG_DEBUG_PIN"] = "off"
-app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SECRET_KEY"] = _os.getenv("FLASK_SECRET_KEY", _os.urandom(32).hex())
 
-@app.after_request
-def _add_security_headers(response):
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers.pop("Server", None)
-    return response
-# ─────────────────────────────────────────────────────────────────────────────
+    # ─── Security Hardening (CVE-2024-34069, CVE-2026-27205) ─────────────────
+    _flask_env = os.getenv("FLASK_ENV", os.getenv("APP_ENV", "production")).lower()
+    if _flask_env != "development":
+        app.config["DEBUG"] = False
+        app.config["TESTING"] = False
+        os.environ["WERKZEUG_DEBUG_PIN"] = "off"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", os.urandom(32).hex())
 
+    @app.after_request
+    def _add_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers.pop("Server", None)
+        return response
+    # ─────────────────────────────────────────────────────────────────────────
 
     @app.route("/train", methods=["POST"])
     def train():
         global model_metadata
         data = request.get_json() or {}
         n_samples = data.get("n_samples", 1000)
-        X, y = generate_training_data(n_samples)
-        model_metadata = quality_model.train(X, y)
-        return jsonify(asdict(model_metadata))
+
+        # Prefer recorded probe data
+        X, y = load_recorded_training_data()
+        if X and y:
+            model_metadata = quality_model.train(
+                X, y,
+                data_source=TRAINING_DATA_PATH or TELEMETRY_AGGREGATOR_URL or "recorded-probes",
+            )
+            return jsonify(asdict(model_metadata))
+
+        # Synthetic data only in explicit simulation mode (non-production)
+        if SIMULATION_MODE:
+            logger.warning("Training on SYNTHETIC demo data (simulation mode, non-production)")
+            X, y = generate_training_data(n_samples)
+            model_metadata = quality_model.train(X, y, data_source="synthetic-demo")
+            return jsonify(asdict(model_metadata))
+
+        return jsonify({
+            "error": "No recorded probe training data available. Configure "
+                     "NETWORK_ML_TRAINING_DATA_PATH or TELEMETRY_AGGREGATOR_URL. "
+                     "Training on synthetic data is disabled outside simulation mode.",
+        }), 503
 
     @app.route("/predict", methods=["POST"])
     def predict():
@@ -414,11 +575,18 @@ def _add_security_headers(response):
         features = data.get("features", [])
         if not features:
             return jsonify({"error": "Missing features"}), 400
-        if isinstance(features[0], list):
-            scores = quality_model.predict_batch(features)
-            return jsonify({"predictions": scores})
-        score = quality_model.predict_single(features)
-        return jsonify({"prediction": score})
+        if not quality_model.trained:
+            return jsonify({
+                "error": "Quality model is not trained on recorded data — prediction refused."
+            }), 503
+        try:
+            if isinstance(features[0], list):
+                scores = quality_model.predict_batch(features)
+                return jsonify({"predictions": scores})
+            score = quality_model.predict_single(features)
+            return jsonify({"prediction": score})
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
 
     @app.route("/predict/outage", methods=["POST"])
     def predict_outage():
@@ -435,7 +603,10 @@ def _add_security_headers(response):
         region = data.get("region", "Lagos")
         hour = data.get("hour", datetime.utcnow().hour)
         is_peak = data.get("is_peak", hour in [8, 9, 10, 12, 13, 17, 18, 19])
-        result = carrier_recommender.recommend(region, hour, is_peak)
+        try:
+            result = carrier_recommender.recommend(region, hour, is_peak)
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
         return jsonify(result)
 
     @app.route("/model/info", methods=["GET"])
@@ -451,6 +622,7 @@ def _add_security_headers(response):
                 "mae": model_metadata.mae,
                 "rmse": model_metadata.rmse,
                 "r2_score": model_metadata.r2_score,
+                "data_source": model_metadata.data_source,
                 "feature_importance": model_metadata.feature_importance,
             })
         return jsonify({"status": "no model trained yet"})
@@ -462,6 +634,8 @@ def _add_security_headers(response):
             "service": "network-ml-trainer",
             "version": "1.0.0",
             "model_trained": quality_model.trained,
+            "carrier_metrics_source": carrier_recommender.metrics_source,
+            "simulation_mode": SIMULATION_MODE,
         })
 
     return app
@@ -473,10 +647,23 @@ if __name__ == "__main__":
         app = create_app()
         port = int(os.getenv("PORT", "9017"))
         logger.info(f"[Network-ML-Trainer] Starting on :{port}")
-        # Auto-train on startup with synthetic data
-        X, y = generate_training_data(5000)
-        model_metadata = quality_model.train(X, y)
-        logger.info(f"[Network-ML-Trainer] Model trained: MAE={model_metadata.mae}, R2={model_metadata.r2_score}")
+
+        # Train on RECORDED probes at startup; synthetic auto-training only in
+        # explicit simulation mode (non-production).
+        if train_on_recorded_data():
+            logger.info("[Network-ML-Trainer] Startup training on recorded probes complete")
+        elif SIMULATION_MODE:
+            logger.warning("[Network-ML-Trainer] No recorded data — falling back to SYNTHETIC demo training (simulation mode)")
+            X, y = generate_training_data(5000)
+            model_metadata = quality_model.train(X, y, data_source="synthetic-demo")
+            logger.info(f"[Network-ML-Trainer] Demo model trained: MAE={model_metadata.mae}, R2={model_metadata.r2_score}")
+        else:
+            logger.error(
+                "[Network-ML-Trainer] No recorded probe data available at startup — "
+                "model remains UNTRAINED and /predict will return 503 until /train succeeds "
+                "with real data (NETWORK_ML_TRAINING_DATA_PATH or TELEMETRY_AGGREGATOR_URL)."
+            )
+
         app.run(host="0.0.0.0", port=port, debug=False)
     else:
         logger.error("Flask not installed.")

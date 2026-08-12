@@ -47,6 +47,7 @@ struct Config {
     tigerbeetle_addr: String,
     temporal_host: String,
     fluvio_endpoint: String,
+    payout_gateway_url: Option<String>,
     vat_rate: f64,         // 7.5% Nigerian VAT
     default_commission: f64, // 5.0% platform commission
     min_commission: f64,
@@ -62,6 +63,7 @@ impl Config {
             tigerbeetle_addr: std::env::var("TIGERBEETLE_ADDR").unwrap_or_else(|_| "localhost:3000".into()),
             temporal_host: std::env::var("TEMPORAL_HOST").unwrap_or_else(|_| "localhost:7233".into()),
             fluvio_endpoint: std::env::var("FLUVIO_ENDPOINT").unwrap_or_else(|_| "localhost:9003".into()),
+            payout_gateway_url: std::env::var("PAYOUT_GATEWAY_URL").ok().filter(|v| !v.trim().is_empty()),
             vat_rate: std::env::var("VAT_RATE").ok().and_then(|v| v.parse().ok()).unwrap_or(0.075),
             default_commission: std::env::var("PLATFORM_COMMISSION_PCT").ok().and_then(|v| v.parse().ok()).unwrap_or(5.0),
             min_commission: 0.5,
@@ -269,11 +271,15 @@ impl AppState {
             .await;
     }
 
-    // TigerBeetle ledger entry
+    // TigerBeetle ledger entry.
+    //
+    // Returns Some(transfer_id) ONLY when the ledger accepted the write.
+    // A transfer id is never fabricated when TigerBeetle is down or rejects
+    // the entry — callers must propagate the failure.
     async fn record_ledger_entry(&self, split: &PaymentSplit) -> Option<String> {
         let transfer_id = Uuid::new_v4().to_string();
         let url = format!("http://{}/transfers", self.config.tigerbeetle_addr);
-        let _ = self.http_client.post(&url)
+        match self.http_client.post(&url)
             .json(&serde_json::json!({
                 "id": transfer_id,
                 "debit_account_id": format!("agent-{}", split.agent_id),
@@ -284,8 +290,51 @@ impl AppState {
                 "user_data": split.order_number,
             }))
             .send()
-            .await;
-        Some(transfer_id)
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => Some(transfer_id),
+            Ok(resp) => {
+                warn!(status = %resp.status(), %transfer_id, "TigerBeetle rejected ledger entry");
+                None
+            }
+            Err(e) => {
+                warn!(error = %e, %transfer_id, "TigerBeetle ledger write failed");
+                None
+            }
+        }
+    }
+
+    // Request a real settlement disbursement from the configured payout
+    // gateway. Returns Ok(()) only when the gateway accepted the batch; the
+    // caller must not mark anything settled otherwise.
+    async fn disburse_settlement(
+        &self,
+        batch_id: &str,
+        store_id: i64,
+        splits: &[PaymentSplit],
+        payment_ref: &Option<String>,
+    ) -> Result<(), String> {
+        let gateway_url = self.config.payout_gateway_url.clone()
+            .ok_or_else(|| "no payout gateway configured".to_string())?;
+        let total_payout: f64 = splits.iter().map(|s| s.agent_payout).sum();
+        let url = format!("{}/settlements", gateway_url.trim_end_matches('/'));
+        let resp = self.http_client.post(&url)
+            .json(&serde_json::json!({
+                "batchId": batch_id,
+                "storeId": store_id,
+                "totalPayout": total_payout,
+                "currency": "NGN",
+                "splitIds": splits.iter().map(|s| s.id.clone()).collect::<Vec<_>>(),
+                "paymentRef": payment_ref,
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("payout gateway unreachable: {e}"))?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("payout gateway rejected settlement batch: HTTP {}", resp.status()))
+        }
     }
 
     // Fluvio streaming
@@ -349,9 +398,21 @@ async fn create_split(
         tigerbeetle_transfer_id: None,
     };
 
-    // Record in TigerBeetle ledger
-    let transfer_id = state.record_ledger_entry(&split).await;
-    split.tigerbeetle_transfer_id = transfer_id;
+    // Record in TigerBeetle ledger — fail loudly when the ledger write does
+    // not succeed instead of storing a fabricated transfer id.
+    let transfer_id = match state.record_ledger_entry(&split).await {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({
+                    "error": "ledger_unavailable",
+                    "message": "Failed to record the ledger entry in TigerBeetle; split not created",
+                })),
+            ).into_response();
+        }
+    };
+    split.tigerbeetle_transfer_id = Some(transfer_id);
 
     {
         let mut splits = state.splits.write().unwrap();
@@ -383,24 +444,63 @@ async fn settle_splits(
     state: axum::extract::State<Arc<AppState>>,
     Json(req): Json<SettleRequest>,
 ) -> impl IntoResponse {
-    let mut settled_count = 0i64;
-    let mut total_payout = 0.0f64;
+    // Settlement requires a real disbursement rail; never flip statuses
+    // without moving funds.
+    if state.config.payout_gateway_url.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "settlement_unavailable",
+                "message": "No payout gateway configured (PAYOUT_GATEWAY_URL is unset); refusing to mark splits settled without moving funds",
+            })),
+        ).into_response();
+    }
+
+    let pending: Vec<PaymentSplit> = {
+        let splits = state.splits.read().unwrap();
+        splits.iter()
+            .filter(|s| s.store_id == req.store_id && s.status == SplitStatus::Pending)
+            .cloned()
+            .collect()
+    };
+
+    if pending.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "no pending splits for store"})),
+        ).into_response();
+    }
+
+    let batch_id = Uuid::new_v4().to_string();
+    let total_payout: f64 = pending.iter().map(|s| s.agent_payout).sum();
+    let settled_count = pending.len() as i64;
+
+    // Disburse first; only mark splits settled on real gateway confirmation.
+    if let Err(e) = state.disburse_settlement(&batch_id, req.store_id, &pending, &req.payment_ref).await {
+        warn!(error = %e, %batch_id, "settlement disbursement failed");
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({
+                "error": "settlement_failed",
+                "message": format!("Settlement disbursement failed; splits left pending: {e}"),
+            })),
+        ).into_response();
+    }
 
     {
+        let now = Utc::now();
         let mut splits = state.splits.write().unwrap();
         for split in splits.iter_mut() {
-            if split.store_id == req.store_id && split.status == SplitStatus::Pending {
+            if pending.iter().any(|p| p.id == split.id) {
                 split.status = SplitStatus::Settled;
-                split.settled_at = Some(Utc::now());
+                split.settled_at = Some(now);
                 split.payment_ref = req.payment_ref.clone();
-                total_payout += split.agent_payout;
-                settled_count += 1;
             }
         }
     }
 
     let batch = SettlementBatch {
-        batch_id: Uuid::new_v4().to_string(),
+        batch_id,
         store_id: req.store_id,
         splits_count: settled_count,
         total_payout,
@@ -430,32 +530,67 @@ async fn settle_splits(
 async fn batch_settle(
     state: axum::extract::State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let mut store_totals: HashMap<i64, (i64, f64)> = HashMap::new();
+    // Settlement requires a real disbursement rail; never flip statuses
+    // without moving funds.
+    if state.config.payout_gateway_url.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "settlement_unavailable",
+                "message": "No payout gateway configured (PAYOUT_GATEWAY_URL is unset); refusing to mark splits settled without moving funds",
+            })),
+        ).into_response();
+    }
 
+    // Group pending splits by store
+    let mut by_store: HashMap<i64, Vec<PaymentSplit>> = HashMap::new();
     {
-        let mut splits = state.splits.write().unwrap();
-        for split in splits.iter_mut() {
+        let splits = state.splits.read().unwrap();
+        for split in splits.iter() {
             if split.status == SplitStatus::Pending {
-                split.status = SplitStatus::Settled;
-                split.settled_at = Some(Utc::now());
-                let entry = store_totals.entry(split.store_id).or_insert((0, 0.0));
-                entry.0 += 1;
-                entry.1 += split.agent_payout;
+                by_store.entry(split.store_id).or_default().push(split.clone());
             }
         }
     }
 
     let mut batches_created = Vec::new();
-    for (store_id, (count, total)) in &store_totals {
-        let batch = SettlementBatch {
-            batch_id: Uuid::new_v4().to_string(),
-            store_id: *store_id,
-            splits_count: *count,
-            total_payout: *total,
-            status: "settled".into(),
-            created_at: Utc::now(),
-        };
-        batches_created.push(batch);
+    let mut failures: Vec<serde_json::Value> = Vec::new();
+
+    for (store_id, store_splits) in &by_store {
+        let batch_id = Uuid::new_v4().to_string();
+        let total_payout: f64 = store_splits.iter().map(|s| s.agent_payout).sum();
+        let splits_count = store_splits.len() as i64;
+
+        // Disburse first; only mark settled on real gateway confirmation.
+        match state.disburse_settlement(&batch_id, *store_id, store_splits, &None).await {
+            Ok(()) => {
+                {
+                    let now = Utc::now();
+                    let mut splits = state.splits.write().unwrap();
+                    for split in splits.iter_mut() {
+                        if store_splits.iter().any(|p| p.id == split.id) {
+                            split.status = SplitStatus::Settled;
+                            split.settled_at = Some(now);
+                        }
+                    }
+                }
+                batches_created.push(SettlementBatch {
+                    batch_id,
+                    store_id: *store_id,
+                    splits_count,
+                    total_payout,
+                    status: "settled".into(),
+                    created_at: Utc::now(),
+                });
+            }
+            Err(e) => {
+                warn!(error = %e, %batch_id, store_id, "batch settlement disbursement failed");
+                failures.push(serde_json::json!({
+                    "storeId": store_id,
+                    "error": e,
+                }));
+            }
+        }
     }
 
     {
@@ -465,8 +600,9 @@ async fn batch_settle(
 
     Json(serde_json::json!({
         "batchesCreated": batches_created.len(),
-        "totalStores": store_totals.len(),
+        "totalStores": by_store.len(),
         "batches": batches_created,
+        "failures": failures,
     })).into_response()
 }
 

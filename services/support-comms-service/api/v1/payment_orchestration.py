@@ -1,11 +1,45 @@
+import os
 from typing import Any
 
-from fastapi import APIRouter, Header, Body
+from fastapi import APIRouter, Header, Body, HTTPException
 
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Mock data
+# Runtime configuration
+#
+# The mock fixtures below are served ONLY in explicitly gated, non-production
+# simulation mode. Live authenticated endpoints must never serve fabricated
+# channel metrics (tx counts, success rates, revenue) or routing rules.
+# ---------------------------------------------------------------------------
+
+_SIMULATION_MODE = os.getenv(
+    "PAYMENT_ORCHESTRATION_SIMULATION_MODE", "false"
+).lower() == "true"
+_ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "production")).lower()
+
+if _SIMULATION_MODE and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "PAYMENT_ORCHESTRATION_SIMULATION_MODE=true is forbidden in production: "
+        "fabricated payment metrics must never be served to live clients"
+    )
+
+
+def _require_simulation_mode(feature: str) -> None:
+    """Fail loudly when no real orchestration data source is wired."""
+    if not _SIMULATION_MODE:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Payment orchestration {feature} has no live data source configured; "
+                "mock data is only available with "
+                "PAYMENT_ORCHESTRATION_SIMULATION_MODE=true outside production"
+            ),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Mock data (simulation mode only — see above)
 # ---------------------------------------------------------------------------
 
 MOCK_CHANNELS = [
@@ -118,7 +152,13 @@ MOCK_ROUTING_RULES = [
 async def list_payment_channels(
     tenant_id: str = Header(..., alias="x-tenant-id"),
 ) -> dict[str, Any]:
-    return {"message": "success", "data": MOCK_CHANNELS, "tenant_id": tenant_id}
+    _require_simulation_mode("channel metrics")
+    return {
+        "message": "success",
+        "data": MOCK_CHANNELS,
+        "tenant_id": tenant_id,
+        "simulation_mode": True,
+    }
 
 
 @router.put("/channels/{channel_id}/status", tags=["Payment Orchestration"])
@@ -127,11 +167,16 @@ async def update_channel_status(
     body: dict = Body(...),
     tenant_id: str = Header(..., alias="x-tenant-id"),
 ) -> dict[str, Any]:
+    _require_simulation_mode("channel management")
+    known_channel_ids = {channel["id"] for channel in MOCK_CHANNELS}
+    if channel_id not in known_channel_ids:
+        raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
     new_status = body.get("status", "")
     return {
         "message": "Channel status updated",
         "data": {"channel_id": channel_id, "status": new_status},
         "tenant_id": tenant_id,
+        "simulation_mode": True,
     }
 
 
@@ -139,4 +184,10 @@ async def update_channel_status(
 async def list_routing_rules(
     tenant_id: str = Header(..., alias="x-tenant-id"),
 ) -> dict[str, Any]:
-    return {"message": "success", "data": MOCK_ROUTING_RULES, "tenant_id": tenant_id}
+    _require_simulation_mode("routing rules")
+    return {
+        "message": "success",
+        "data": MOCK_ROUTING_RULES,
+        "tenant_id": tenant_id,
+        "simulation_mode": True,
+    }

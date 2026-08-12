@@ -1,5 +1,9 @@
+import json
 import logging
-from typing import List
+import os
+import urllib.error
+import urllib.request
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -24,8 +28,60 @@ router = APIRouter(prefix="/payouts", tags=["payouts"])
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# --- Disbursement Configuration ---
+# Simulated disbursement is only allowed when explicitly enabled AND outside
+# production. Production requires a configured payout gateway.
+PAYOUT_SIMULATION_MODE = os.getenv("PAYOUT_SIMULATION_MODE", "false").lower() == "true"
+APP_ENV = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "production")).lower()
+PAYOUT_GATEWAY_URL = os.getenv("PAYOUT_GATEWAY_URL", "").strip() or None
+PAYOUT_GATEWAY_API_KEY = os.getenv("PAYOUT_GATEWAY_API_KEY", "").strip() or None
+
+if PAYOUT_SIMULATION_MODE and APP_ENV == "production":
+    raise RuntimeError(
+        "PAYOUT_SIMULATION_MODE=true is forbidden in production: "
+        "simulated payouts must never run against live funds"
+    )
+
 
 # --- Helper Functions (Business Logic) ---
+
+def _disburse_payout(payout: Payout) -> Tuple[bool, str]:
+    """Disburse a single payout via the configured payment gateway.
+
+    Returns (success, detail). Only reports success when the gateway confirms
+    the disbursement — payout results are never fabricated.
+    """
+    payload = {
+        "payout_id": str(payout.id),
+        "amount": float(payout.amount),
+        "currency": payout.currency,
+        "recipient_id": payout.recipient_id,
+        "payment_method": payout.payment_method,
+        "external_reference_id": payout.external_reference_id,
+    }
+    headers = {"Content-Type": "application/json"}
+    if PAYOUT_GATEWAY_API_KEY:
+        headers["Authorization"] = f"Bearer {PAYOUT_GATEWAY_API_KEY}"
+
+    request = urllib.request.Request(
+        f"{PAYOUT_GATEWAY_URL.rstrip('/')}/payouts",
+        data=json.dumps(payload).encode(),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        logger.error(f"Payout gateway call failed for payout {payout.id}: {e}")
+        return False, f"payout gateway unavailable: {e}"
+
+    gateway_status = str(data.get("status", "")).upper()
+    if gateway_status in {"PAID", "SUCCESS", "COMPLETED"}:
+        reference = data.get("reference") or data.get("provider_reference")
+        return True, reference or "confirmed by gateway"
+    return False, f"gateway did not confirm payout (status={gateway_status or 'unknown'})"
+
 
 def _get_batch_or_404(db: Session, batch_id: str) -> PayoutBatch:
     """Fetches a PayoutBatch by ID or raises a 404 error."""
@@ -123,11 +179,22 @@ def _approve_batch(
 
 
 def _process_batch(db: Session, batch: PayoutBatch) -> PayoutBatch:
-    """Processes the processing of an approved PayoutBatch."""
+    """Processes the disbursement of an approved PayoutBatch."""
     if batch.status != "APPROVED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Batch is in status '{batch.status}'. Only APPROVED batches can be processed.",
+        )
+
+    if not PAYOUT_SIMULATION_MODE and not PAYOUT_GATEWAY_URL:
+        # Never fabricate payout results: without a disbursement rail the batch
+        # stays APPROVED and we fail loudly.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No payout gateway configured (PAYOUT_GATEWAY_URL is unset) and "
+                "simulation mode is disabled. Refusing to fabricate payout results."
+            ),
         )
 
     # 1. Update batch status to PROCESSING
@@ -135,18 +202,26 @@ def _process_batch(db: Session, batch: PayoutBatch) -> PayoutBatch:
     db.add(batch)
     db.flush()
 
-    # 2. Execute payout via payment gateway and update individual payout statuses
-    # In a real system, this would involve an external API call and a webhook/callback
-    # to update the status. Here, we process a successful transition.
+    # 2. Execute payouts and update individual payout statuses
     successful_payouts = 0
     for payout in batch.payouts:
-        # Simple logic: 90% success rate simulation
-        if hash(payout.id) % 10 != 0:
-            payout.status = "PAID"
-            successful_payouts += 1
+        if PAYOUT_SIMULATION_MODE:
+            # Explicitly gated test-only simulation (never runs in production).
+            if hash(payout.id) % 10 != 0:
+                payout.status = "PAID"
+                successful_payouts += 1
+            else:
+                payout.status = "FAILED"
+                logger.error(f"Payout {payout.id} failed during simulated processing.")
         else:
-            payout.status = "FAILED"
-            logger.error(f"Payout {payout.id} failed during processing.")
+            success, detail = _disburse_payout(payout)
+            if success:
+                payout.status = "PAID"
+                successful_payouts += 1
+                logger.info(f"Payout {payout.id} disbursed: {detail}")
+            else:
+                payout.status = "FAILED"
+                logger.error(f"Payout {payout.id} failed during processing: {detail}")
         db.add(payout)
 
     # 3. Update batch status to COMPLETED/FAILED based on individual payout results
@@ -279,8 +354,8 @@ def approve_payout_batch(
 @router.post(
     "/batches/{batch_id}/process",
     response_model=PayoutBatchRead,
-    summary="Process an Approved Payout Batch (Simulation)",
-    description="Processes the external processing of an APPROVED payout batch, updating individual payout statuses and the final batch status.",
+    summary="Process an Approved Payout Batch",
+    description="Disburses an APPROVED payout batch via the configured payout gateway, updating individual payout statuses and the final batch status.",
 )
 def process_payout_batch(batch_id: str, db: Session = Depends(get_db)):
     """
@@ -293,8 +368,8 @@ def process_payout_batch(batch_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/batches/{batch_id}/reconcile",
     response_model=ReconciliationRecordRead,
-    summary="Reconcile a Completed Payout Batch (Simulation)",
-    description="Processes the reconciliation process for a COMPLETED or FAILED batch, comparing expected vs. actual paid amounts and creating a reconciliation record.",
+    summary="Reconcile a Completed Payout Batch",
+    description="Reconciles a COMPLETED or FAILED batch against actual disbursed amounts, creating a reconciliation record.",
 )
 def reconcile_payout_batch(batch_id: str, db: Session = Depends(get_db)):
     """

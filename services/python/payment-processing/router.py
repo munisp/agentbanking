@@ -1,7 +1,8 @@
 import uuid
 from typing import List, Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -13,7 +14,7 @@ from schemas import (
     RefundCreate, RefundOut,
     ListResponse
 )
-from models import Transaction
+from models import Merchant, Transaction
 
 # --- Dependencies ---
 
@@ -21,13 +22,33 @@ def get_payment_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Payment
     """Dependency to get the PaymentService instance."""
     return PaymentService(db)
 
-# Simulated Authentication Dependency
-# In a real system, this would validate a header (e.g., X-API-Key) against the Merchant.api_key_hash
-async def authenticate_merchant(merchant_id: Annotated[uuid.UUID, Query(description="The ID of the merchant making the request.")]) -> uuid.UUID:
-    """Simulated merchant authentication."""
-    # For simplicity, we just return the merchant_id, assuming it's valid for now.
-    # A real implementation would check the API key and return the associated merchant ID.
-    return merchant_id
+async def authenticate_merchant(
+    x_api_key: Annotated[str, Header(alias="X-API-Key", description="The merchant API key.")],
+    service: Annotated[PaymentService, Depends(get_payment_service)]
+) -> uuid.UUID:
+    """Authenticate the merchant via the X-API-Key header.
+
+    The presented key is hashed with the same function used at merchant
+    registration and matched against Merchant.api_key_hash. Unknown keys are
+    rejected with 401 and inactive merchants with 403 — no merchant is ever
+    assumed valid.
+    """
+    api_key_hash = service.hash_func(x_api_key)
+    stmt = select(Merchant).where(Merchant.api_key_hash == api_key_hash)
+    result = await service.db.execute(stmt)
+    merchant = result.scalar_one_or_none()
+
+    if merchant is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key."
+        )
+    if not merchant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Merchant account is inactive."
+        )
+    return merchant.id
 
 # --- Routers ---
 
@@ -127,11 +148,12 @@ async def get_payment_method(
 async def create_transaction(
     transaction_in: TransactionCreate,
     service: Annotated[PaymentService, Depends(get_payment_service)],
-    # merchant_id: Annotated[uuid.UUID, Depends(authenticate_merchant)] # Use this for real auth
+    merchant_id: Annotated[uuid.UUID, Depends(authenticate_merchant)]
 ) -> None:
     """Processes a new payment transaction using a stored payment method."""
     try:
-        # transaction_in.merchant_id = merchant_id # Set merchant_id from auth
+        # The authenticated merchant is authoritative; never trust a client-supplied merchant_id.
+        transaction_in.merchant_id = merchant_id
         return await service.create_transaction(transaction_in)
     except ServiceException as e:
         handle_service_exception(e)
@@ -174,11 +196,17 @@ async def list_transactions(
 async def create_refund(
     refund_in: RefundCreate,
     service: Annotated[PaymentService, Depends(get_payment_service)],
-    # merchant_id: Annotated[uuid.UUID, Depends(authenticate_merchant)] # Use this for real auth
+    merchant_id: Annotated[uuid.UUID, Depends(authenticate_merchant)]
 ) -> None:
     """Processes a refund for a successful transaction."""
     try:
-        # Logic to ensure the transaction belongs to the authenticated merchant would go here
+        # Ensure the transaction belongs to the authenticated merchant.
+        transaction = await service.get_transaction(refund_in.transaction_id)
+        if transaction.merchant_id != merchant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Transaction does not belong to the authenticated merchant."
+            )
         return await service.create_refund(refund_in)
     except ServiceException as e:
         handle_service_exception(e)

@@ -11,8 +11,7 @@ Features:
 """
 
 import asyncio
-import hashlib
-import uuid
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -56,14 +55,29 @@ class CryptoService:
     - KYC/AML compliance
     - Wallet management
     """
-    
+
+    # Well-known stablecoin contract addresses (EVM chains)
+    DEFAULT_STABLECOIN_CONTRACTS = {
+        "ETHEREUM": {
+            "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        },
+        "POLYGON": {
+            "USDC": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+            "USDT": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+        },
+    }
+
     def __init__(
         self,
         exchange_api_url: str,
         exchange_api_key: str,
         exchange_api_secret: str,
         blockchain_rpc_urls: Dict[str, str],
-        hot_wallet_addresses: Dict[str, str]
+        hot_wallet_addresses: Dict[str, str],
+        bank_transfer_api_url: Optional[str] = None,
+        crypto_signer_url: Optional[str] = None,
+        stablecoin_contracts: Optional[Dict[str, Dict[str, str]]] = None
     ):
         """
         Initialize crypto service
@@ -72,14 +86,29 @@ class CryptoService:
             exchange_api_url: Exchange API endpoint
             exchange_api_key: Exchange API key
             exchange_api_secret: Exchange API secret
-            blockchain_rpc_urls: RPC URLs for each blockchain
+            blockchain_rpc_urls: RPC URLs for each blockchain (EVM JSON-RPC URLs,
+                Horizon base URL for Stellar)
             hot_wallet_addresses: Hot wallet addresses
+            bank_transfer_api_url: Banking rail API for fiat payouts
+                (defaults to BANK_TRANSFER_API_URL env var)
+            crypto_signer_url: Signing/custody service used to broadcast
+                on-chain transfers (defaults to CRYPTO_SIGNER_URL env var)
+            stablecoin_contracts: Stablecoin contract addresses per chain
         """
         self.exchange_api_url = exchange_api_url
         self.exchange_api_key = exchange_api_key
         self.exchange_api_secret = exchange_api_secret
         self.blockchain_rpc_urls = blockchain_rpc_urls
         self.hot_wallet_addresses = hot_wallet_addresses
+        self.bank_transfer_api_url = (
+            bank_transfer_api_url or os.getenv("BANK_TRANSFER_API_URL")
+        )
+        self.crypto_signer_url = (
+            crypto_signer_url or os.getenv("CRYPTO_SIGNER_URL")
+        )
+        self.stablecoin_contracts = (
+            stablecoin_contracts or self.DEFAULT_STABLECOIN_CONTRACTS
+        )
         
         self.client: Optional[httpx.AsyncClient] = None
         self._transactions: Dict[str, Dict] = {}
@@ -472,10 +501,38 @@ class CryptoService:
         amount: Decimal,
         to_address: str
     ) -> str:
-        """Send cryptocurrency on blockchain"""
-        # Simplified - would use web3.py or stellar-sdk in production
-        # Return mock transaction hash
-        return f"0x{hashlib.sha256(f'{stablecoin}{blockchain}{amount}{to_address}'.encode()).hexdigest()}"
+        """Send cryptocurrency on blockchain via the configured signing/custody service.
+
+        A transaction hash is only ever returned when a real signer broadcasts the
+        transaction. Without a configured signer we cannot produce a real on-chain
+        transaction, so we fail loudly instead of fabricating a hash.
+        """
+        if not self.client:
+            raise RuntimeError("Service not initialized")
+
+        if not self.crypto_signer_url:
+            raise RuntimeError(
+                "No signing/custody service configured (set CRYPTO_SIGNER_URL); "
+                "refusing to fabricate a blockchain transaction hash"
+            )
+
+        response = await self.client.post(
+            f"{self.crypto_signer_url.rstrip('/')}/transfer",
+            json={
+                "stablecoin": stablecoin.value,
+                "blockchain": blockchain.value,
+                "amount": str(amount),
+                "from_address": self.hot_wallet_addresses.get(blockchain.value),
+                "to_address": to_address
+            }
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        tx_hash = data.get("tx_hash")
+        if not tx_hash:
+            raise RuntimeError("Signing service did not return a transaction hash")
+        return tx_hash
     
     async def _get_crypto_balance(
         self,
@@ -483,9 +540,54 @@ class CryptoService:
         stablecoin: Stablecoin,
         blockchain: Blockchain
     ) -> Decimal:
-        """Get user crypto balance"""
-        # Simplified - would query actual blockchain
-        return Decimal("1000")  # Mock balance
+        """Get the on-chain stablecoin balance of the service hot wallet.
+
+        Queries the configured blockchain node (JSON-RPC eth_call for EVM chains,
+        Horizon for Stellar). Raises when the node, wallet or contract is not
+        configured or unreachable — balances are never fabricated.
+        """
+        if not self.client:
+            raise RuntimeError("Service not initialized")
+
+        rpc_url = self.blockchain_rpc_urls.get(blockchain.value)
+        wallet_address = self.hot_wallet_addresses.get(blockchain.value)
+        if not rpc_url:
+            raise RuntimeError(f"No RPC URL configured for {blockchain.value}")
+        if not wallet_address:
+            raise RuntimeError(f"No hot wallet address configured for {blockchain.value}")
+
+        if blockchain in (Blockchain.ETHEREUM, Blockchain.POLYGON):
+            contract = self.stablecoin_contracts.get(blockchain.value, {}).get(stablecoin.value)
+            if not contract:
+                raise RuntimeError(
+                    f"No contract address configured for {stablecoin.value} on {blockchain.value}"
+                )
+            # ERC-20 balanceOf(address)
+            call_data = "0x70a08231" + wallet_address.lower().replace("0x", "").rjust(64, "0")
+            result = await self._rpc_call(
+                rpc_url,
+                "eth_call",
+                [{"to": contract, "data": call_data}, "latest"]
+            )
+            raw_balance = int(result, 16)
+            # USDC/USDT use 6 decimals
+            return Decimal(raw_balance) / Decimal(10 ** 6)
+
+        if blockchain == Blockchain.STELLAR:
+            response = await self.client.get(
+                f"{rpc_url.rstrip('/')}/accounts/{wallet_address}"
+            )
+            response.raise_for_status()
+            for balance in response.json().get("balances", []):
+                if (
+                    balance.get("asset_type") != "native"
+                    and balance.get("asset_code") == stablecoin.value
+                ):
+                    return Decimal(balance.get("balance", "0"))
+            # Account exists but holds no trustline for this asset
+            return Decimal("0")
+
+        raise RuntimeError(f"Unsupported blockchain: {blockchain.value}")
     
     async def _initiate_bank_transfer(
         self,
@@ -493,11 +595,51 @@ class CryptoService:
         currency: str,
         bank_account: Dict
     ) -> Dict:
-        """Initiate bank transfer for off-ramp"""
-        # Would integrate with ACH/SWIFT/etc
-        return {
-            "reference": f"BT{uuid.uuid4().hex[:8].upper()}"
-        }
+        """Initiate bank transfer for off-ramp via the configured banking rail.
+
+        Raises when no banking rail is configured — bank references are never
+        fabricated.
+        """
+        if not self.client:
+            raise RuntimeError("Service not initialized")
+
+        if not self.bank_transfer_api_url:
+            raise RuntimeError(
+                "No bank transfer rail configured (set BANK_TRANSFER_API_URL); "
+                "refusing to fabricate a bank transfer reference"
+            )
+
+        response = await self.client.post(
+            f"{self.bank_transfer_api_url.rstrip('/')}/transfers",
+            json={
+                "amount": str(amount),
+                "currency": currency,
+                "bank_account": bank_account
+            }
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("reference"):
+            raise RuntimeError("Bank transfer rail did not return a reference")
+        return {"reference": data["reference"]}
+    
+    async def _rpc_call(self, rpc_url: str, method: str, params: list):
+        """Execute a JSON-RPC call against a configured blockchain node."""
+        if not self.client:
+            raise RuntimeError("Service not initialized")
+
+        response = await self.client.post(
+            rpc_url,
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        if "error" in payload:
+            raise RuntimeError(f"RPC error calling {method}: {payload['error']}")
+        return payload.get("result")
     
     async def _estimate_gas_fee(self, blockchain: Blockchain) -> Decimal:
         """Estimate gas fee"""
@@ -513,9 +655,35 @@ class CryptoService:
         tx_hash: str,
         blockchain: Blockchain
     ) -> int:
-        """Get transaction confirmations"""
-        # Simplified - would query actual blockchain
-        return 12  # Mock confirmations
+        """Get transaction confirmations from the configured blockchain node.
+
+        Raises when the node is not configured or unreachable — confirmation
+        counts are never fabricated.
+        """
+        rpc_url = self.blockchain_rpc_urls.get(blockchain.value)
+        if not rpc_url:
+            raise RuntimeError(f"No RPC URL configured for {blockchain.value}")
+
+        if blockchain in (Blockchain.ETHEREUM, Blockchain.POLYGON):
+            receipt = await self._rpc_call(rpc_url, "eth_getTransactionReceipt", [tx_hash])
+            if not receipt or not receipt.get("blockNumber"):
+                return 0
+            latest = await self._rpc_call(rpc_url, "eth_blockNumber", [])
+            return max(int(latest, 16) - int(receipt["blockNumber"], 16) + 1, 0)
+
+        if blockchain == Blockchain.STELLAR:
+            if not self.client:
+                raise RuntimeError("Service not initialized")
+            response = await self.client.get(
+                f"{rpc_url.rstrip('/')}/transactions/{tx_hash}"
+            )
+            if response.status_code == 404:
+                return 0
+            response.raise_for_status()
+            # Stellar transactions are final once included in a ledger
+            return 1
+
+        raise RuntimeError(f"Unsupported blockchain: {blockchain.value}")
     
     def _get_required_confirmations(self, blockchain: Blockchain) -> int:
         """Get required confirmations"""

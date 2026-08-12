@@ -26,59 +26,12 @@ interface TableSchema {
   foreignKeys: ForeignKey[];
 }
 
-const MOCK_TABLES: TableSchema[] = [
-  {
-    name: "agents", rowCount: 48200, sizeKB: 9840,
-    columns: [
-      { name: "id", type: "uuid", nullable: false, defaultValue: "gen_random_uuid()", index: true },
-      { name: "tenant_id", type: "uuid", nullable: false, defaultValue: null, index: true },
-      { name: "phone", type: "varchar(20)", nullable: false, defaultValue: null, index: true },
-      { name: "status", type: "varchar(20)", nullable: false, defaultValue: "'active'", index: false },
-      { name: "created_at", type: "timestamptz", nullable: false, defaultValue: "now()", index: false },
-    ],
-    foreignKeys: [{ column: "tenant_id", referencesTable: "tenants", referencesColumn: "id" }],
-  },
-  {
-    name: "transactions", rowCount: 4820000, sizeKB: 1024000,
-    columns: [
-      { name: "id", type: "uuid", nullable: false, defaultValue: "gen_random_uuid()", index: true },
-      { name: "agent_id", type: "uuid", nullable: false, defaultValue: null, index: true },
-      { name: "amount", type: "numeric(18,2)", nullable: false, defaultValue: null, index: false },
-      { name: "currency", type: "char(3)", nullable: false, defaultValue: "'NGN'", index: false },
-      { name: "type", type: "varchar(30)", nullable: false, defaultValue: null, index: true },
-      { name: "status", type: "varchar(20)", nullable: false, defaultValue: "'pending'", index: true },
-      { name: "created_at", type: "timestamptz", nullable: false, defaultValue: "now()", index: false },
-    ],
-    foreignKeys: [{ column: "agent_id", referencesTable: "agents", referencesColumn: "id" }],
-  },
-  {
-    name: "kyc_verifications", rowCount: 51000, sizeKB: 20480,
-    columns: [
-      { name: "id", type: "uuid", nullable: false, defaultValue: "gen_random_uuid()", index: true },
-      { name: "agent_id", type: "uuid", nullable: false, defaultValue: null, index: true },
-      { name: "document_type", type: "varchar(40)", nullable: false, defaultValue: null, index: false },
-      { name: "verified_at", type: "timestamptz", nullable: true, defaultValue: null, index: false },
-      { name: "status", type: "varchar(20)", nullable: false, defaultValue: "'pending'", index: false },
-    ],
-    foreignKeys: [{ column: "agent_id", referencesTable: "agents", referencesColumn: "id" }],
-  },
-  {
-    name: "tenants", rowCount: 12, sizeKB: 48,
-    columns: [
-      { name: "id", type: "uuid", nullable: false, defaultValue: "gen_random_uuid()", index: true },
-      { name: "name", type: "varchar(120)", nullable: false, defaultValue: null, index: false },
-      { name: "country_code", type: "char(2)", nullable: false, defaultValue: null, index: false },
-      { name: "created_at", type: "timestamptz", nullable: false, defaultValue: "now()", index: false },
-    ],
-    foreignKeys: [],
-  },
-];
-
 const DatabaseSchemaVisualization: React.FC = () => {
   const [tables, setTables] = useState<TableSchema[]>([]);
   const [selected, setSelected] = useState<TableSchema | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   
 
@@ -86,15 +39,16 @@ const DatabaseSchemaVisualization: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/schema`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        const t = Array.isArray(d.tables) ? d.tables : MOCK_TABLES;
+        const t = Array.isArray(d.tables) ? d.tables : [];
         setTables(t);
         setSelected(t[0] ?? null);
-      } else { setTables(MOCK_TABLES); setSelected(MOCK_TABLES[0]); }
-    } catch { setTables(MOCK_TABLES); setSelected(MOCK_TABLES[0]); }
+      } else { setError("Failed to load database schema."); }
+    } catch { setError("Failed to load database schema."); }
     finally { setLoading(false); }
   };
 
@@ -113,6 +67,13 @@ const DatabaseSchemaVisualization: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Table2 className="w-7 h-7 text-indigo-600" /> Database Schema Viewer

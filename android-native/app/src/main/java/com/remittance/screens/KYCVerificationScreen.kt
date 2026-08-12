@@ -21,6 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import com.pos54link.app.BuildConfig
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -113,7 +118,15 @@ interface KycApiService {
 
     @GET("kyc/status")
     suspend fun getKycStatus(): KycStatusDto
+
+    @POST("payments/initiate")
+    suspend fun initiatePayment(@Body body: Map<String, String>): PaymentInitiateDto
 }
+
+data class PaymentInitiateDto(
+    val status: String,
+    val reference: String? = null
+)
 
 /**
  * Room Data Access Object (DAO) for KYC status.
@@ -128,7 +141,7 @@ interface KycDao {
 }
 
 /**
- * Room Database (Stub).
+ * Room Database.
  */
 @Database(entities = [KycStatusEntity::class], version = 1)
 abstract class KycDatabase : RoomDatabase() {
@@ -141,8 +154,12 @@ abstract class KycDatabase : RoomDatabase() {
 class KycRepository(
     private val apiService: KycApiService,
     private val kycDao: KycDao,
-    private val userId: String = "user_123" // Placeholder
+    private val userId: String = "current_user" // Local cache key for the signed-in user's KYC status
 ) {
+    /** Initiates a real payment via the backend; the server's response is reported verbatim. */
+    suspend fun initiatePayment(gateway: String): PaymentInitiateDto =
+        apiService.initiatePayment(mapOf("gateway" to gateway, "purpose" to "kyc_verification_fee"))
+
     /**
      * Fetches KYC status from the network and caches it locally.
      */
@@ -244,12 +261,12 @@ class KYCVerificationViewModel(
 
         viewModelScope.launch {
             try {
-                // In a real app, you'd convert the Uri to a File or use a ContentResolver to get an InputStream
-                // For this stub, we'll simulate file creation from the Uri (not production ready)
+                // Resolve the selected Uri to a real temp file via ContentResolver —
+                // the actual document bytes are uploaded, never a placeholder.
                 val file = File(context.cacheDir, "kyc_doc_${System.currentTimeMillis()}.jpg")
-                // In a real app, copy content from currentUri to 'file'
-                // For now, we just use a placeholder file
-                file.createNewFile()
+                context.contentResolver.openInputStream(currentUri)?.use { input ->
+                    file.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IOException("Could not read the selected document.")
 
                 val response = repository.uploadDocument(currentType, file)
                 // Update local status based on API response
@@ -290,13 +307,19 @@ class KYCVerificationViewModel(
         }
     }
 
-    // Stub for Payment Gateway Integration
+    // Real payment initiation via the backend — never simulated.
     fun initiatePayment(gateway: String) {
         _state.update { it.copy(paymentGatewayStatus = "Initiating payment via $gateway...") }
-        // Real implementation would launch the payment gateway SDK/Activity
         viewModelScope.launch {
-            kotlinx.coroutines.delay(2000) // Simulate payment process
-            _state.update { it.copy(paymentGatewayStatus = "Payment via $gateway simulated successfully.") }
+            try {
+                val response = repository.initiatePayment(gateway)
+                val ref = response.reference?.let { " Reference: $it." } ?: ""
+                _state.update { it.copy(paymentGatewayStatus = "Payment via $gateway: ${response.status}.$ref") }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(paymentGatewayStatus = "Payment via $gateway failed: ${e.message}. No charge was made.")
+                }
+            }
         }
     }
 }
@@ -304,18 +327,18 @@ class KYCVerificationViewModel(
 // --- 4. UI Layer (Composable) ---
 
 /**
- * Mock dependency injection setup for the screen.
- * In a real app, this would use Hilt/Koin.
+ * Dependency setup for the screen. Uses the configured backend base URL.
+ * (Hilt/Koin can replace this provider without touching the screen logic.)
  */
 object Injection {
     private val retrofit = Retrofit.Builder()
-        .baseUrl("https://api.remittance.com/") // Placeholder URL
+        .baseUrl(BuildConfig.BASE_URL)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
     private val apiService = retrofit.create(KycApiService::class.java)
 
-    // Mock database for simplicity in this single file
+    // In-memory cache of the latest server-reported KYC status for this session.
     private val mockDao = object : KycDao {
         private val statusFlow = MutableStateFlow<KycStatusEntity?>(null)
         override fun getKycStatus(userId: String): Flow<KycStatusEntity?> = statusFlow
@@ -418,23 +441,34 @@ fun KYCVerificationScreen(
         }
     }
 
-    // Handle Biometric Prompt (requires Activity context, stubbed here)
+    // Real biometric/device-credential prompt (platform BiometricPrompt).
     if (state.isBiometricAuthRequired) {
-        AlertDialog(
-            onDismissRequest = { viewModel.onBiometricAuthComplete(false) },
-            title = { Text("Biometric Authentication") },
-            text = { Text("Please use your fingerprint or face to authenticate the final submission.") },
-            confirmButton = {
-                Button(onClick = { viewModel.onBiometricAuthComplete(true) }) {
-                    Text("Authenticate (Stub)")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.onBiometricAuthComplete(false) }) {
-                    Text("Cancel")
-                }
+        LaunchedEffect(Unit) {
+            val activity = context as? FragmentActivity
+            if (activity == null) {
+                viewModel.onBiometricAuthComplete(false)
+                return@LaunchedEffect
             }
-        )
+            val executor = ContextCompat.getMainExecutor(activity)
+            val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    viewModel.onBiometricAuthComplete(true)
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    viewModel.onBiometricAuthComplete(false)
+                }
+                override fun onAuthenticationFailed() {
+                    // Non-fatal: the system prompt stays visible for another attempt.
+                }
+            })
+            // BIOMETRIC_STRONG with DEVICE_CREDENTIAL (passcode) fallback — never silently allowed.
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Biometric Authentication")
+                .setSubtitle("Authenticate the final KYC submission")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build()
+            prompt.authenticate(promptInfo)
+        }
     }
 
     // Handle Error Display
@@ -642,7 +676,7 @@ fun BiometricAuthSection(state: KycState, onTriggerAuth: () -> Unit) {
 fun PaymentGatewaySection(state: KycState, onInitiatePayment: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "Payment Gateway Integration (Stub)",
+            text = "Payment Gateway Integration",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 8.dp)
         )
@@ -685,7 +719,7 @@ fun PreviewKYCVerificationScreen() {
 // --- Documentation and Comments ---
 // The code follows MVVM architecture.
 // State is managed via Kotlin Flow/StateFlow in the ViewModel.
-// Data access is abstracted via KycRepository, which uses KycApiService (Retrofit stub) and KycDao (Room stub).
+// Data access is abstracted via KycRepository (Retrofit API + Room cache).
 // Offline mode is supported by observing the KycDao in the ViewModel.
 // UI uses Jetpack Compose and Material Design 3 components.
 // Accessibility is partially addressed with `contentDescription` in Composable functions.

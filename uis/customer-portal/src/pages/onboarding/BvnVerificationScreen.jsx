@@ -2,7 +2,6 @@ import {
     AlertCircle,
     ArrowLeft,
     CheckCircle,
-    Loader,
     Shield,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -14,9 +13,10 @@ const BvnVerificationScreen = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [bvn, setBvn] = useState("");
-  const [isVerifying, setIsVerifying] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState("");
   const [bvnIsValid, setBvnIsValid] = useState(null);
+  const [verificationUnavailable, setVerificationUnavailable] =
+    useState(false);
   const [accountType, setAccountType] = useState("");
 
   useEffect(() => {
@@ -31,37 +31,22 @@ const BvnVerificationScreen = () => {
     }
   }, [location]);
 
-  const validateBvn = async (value) => {
+  const validateBvn = (value) => {
     if (value.length !== 11) {
       setBvnIsValid(null);
       setVerificationMessage("");
+      setVerificationUnavailable(false);
       return;
     }
 
-    setIsVerifying(true);
-    setVerificationMessage("");
+    // No BVN verification endpoint is currently exposed to the customer
+    // portal. Fail closed: never claim a BVN is verified without a
+    // server-confirmed response, and do not advance onboarding as verified.
     setBvnIsValid(null);
-
-    try {
-      // Simulate BVN verification API call
-      // In production, replace with actual verification service
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Mock validation - check if BVN is all digits
-      const isValid = /^\d{11}$/.test(value);
-
-      setBvnIsValid(isValid);
-      setVerificationMessage(
-        isValid
-          ? "BVN verified successfully"
-          : "Invalid BVN format. Please check and try again.",
-      );
-    } catch (error) {
-      setBvnIsValid(false);
-      setVerificationMessage("Verification failed. Please try again.");
-    } finally {
-      setIsVerifying(false);
-    }
+    setVerificationUnavailable(true);
+    setVerificationMessage(
+      "BVN verification is temporarily unavailable. You can skip this step and verify your BVN later.",
+    );
   };
 
   const handleBvnChange = (e) => {
@@ -74,6 +59,7 @@ const BvnVerificationScreen = () => {
     } else {
       setBvnIsValid(null);
       setVerificationMessage("");
+      setVerificationUnavailable(false);
     }
   };
 
@@ -170,17 +156,12 @@ const BvnVerificationScreen = () => {
                   `}
                 />
                 {/* Input Status Icon */}
-                {isVerifying && (
-                  <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                    <Loader className="w-5 h-5 text-gray-400 animate-spin" />
-                  </div>
-                )}
-                {!isVerifying && bvnIsValid === true && (
+                {bvnIsValid === true && (
                   <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                     <CheckCircle className="w-5 h-5 text-green-500" />
                   </div>
                 )}
-                {!isVerifying && bvnIsValid === false && (
+                {bvnIsValid === false && (
                   <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                     <AlertCircle className="w-5 h-5 text-red-500" />
                   </div>
@@ -191,7 +172,11 @@ const BvnVerificationScreen = () => {
                 {verificationMessage && (
                   <p
                     className={`text-sm font-medium ${
-                      bvnIsValid ? "text-green-600" : "text-red-600"
+                      bvnIsValid
+                        ? "text-green-600"
+                        : verificationUnavailable
+                          ? "text-yellow-600"
+                          : "text-red-600"
                     }`}
                   >
                     {verificationMessage}
@@ -199,14 +184,6 @@ const BvnVerificationScreen = () => {
                 )}
               </div>
             </div>
-
-            {/* <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-              <p className="text-sm text-yellow-900">
-                <strong>Note:</strong> You can skip this step and provide your
-                BVN later. However, some features may be limited until your BVN
-                is verified.
-              </p>
-            </div> */}
           </div>
         </div>
 
@@ -219,7 +196,7 @@ const BvnVerificationScreen = () => {
             <ArrowLeft className="w-5 h-5" />
             Back
           </button>
-          {!bvn && (
+          {(!bvn || verificationUnavailable) && (
             <button
               onClick={handleSkip}
               className="flex-1 py-3 border-2 border-yellow-300 text-yellow-700 rounded-xl font-semibold hover:bg-yellow-50 transition-colors"

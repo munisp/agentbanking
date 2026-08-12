@@ -1,6 +1,13 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.orm import Session
+
+try:
+    import jwt  # PyJWT
+except ImportError:  # pragma: no cover - auth backend unavailable
+    jwt = None
 
 from . import schemas, service
 from .database import get_db
@@ -11,18 +18,49 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-# --- Dependency for simple placeholder authentication ---
-# In a real application, this would validate a JWT or API key
-def get_current_user() -> Dict[str, Any]:
-    # Production implementation for a simple user object or ID
-    # For this task, we'll assume the user is authenticated
-    return {"id": 1, "username": "admin"}
+# --- Authentication ---
+# Real authentication for mutating endpoints: a valid Bearer JWT signed with
+# the shared secret is required. This FAILS CLOSED - when the auth backend is
+# not configured (MONITORING_JWT_SECRET unset) or PyJWT is unavailable, all
+# authenticated calls are rejected instead of silently becoming "admin".
+JWT_SECRET = os.getenv("MONITORING_JWT_SECRET", "")
+JWT_ALGORITHM = os.getenv("MONITORING_JWT_ALGORITHM", "HS256")
+
+
+def get_current_user(authorization: str = Header(None)) -> Dict[str, Any]:
+    """Validate the Bearer JWT and return the authenticated principal."""
+    if jwt is None or not JWT_SECRET:
+        # Fail closed: no auth backend configured, so nobody gets in.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication backend is not configured (MONITORING_JWT_SECRET unset); refusing request",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or malformed Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = authorization[len("Bearer "):]
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {
+        "id": claims.get("sub"),
+        "username": claims.get("username") or claims.get("sub"),
+        "roles": claims.get("roles", []),
+    }
 
 # --- Service Routes ---
 
 @router.post("/services/", response_model=schemas.Service, status_code=status.HTTP_201_CREATED)
 def create_service(
-    service_data: schemas.ServiceCreate, 
+    service_data: schemas.ServiceCreate,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -34,8 +72,8 @@ def create_service(
 
 @router.get("/services/", response_model=List[schemas.Service])
 def read_services(
-    skip: int = Query(0, ge=0), 
-    limit: int = Query(100, le=1000), 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, le=1000),
     db: Session = Depends(get_db)
 ) -> None:
     """Retrieve a list of all monitored services."""
@@ -51,8 +89,8 @@ def read_service(service_id: int, db: Session = Depends(get_db)) -> None:
 
 @router.put("/services/{service_id}", response_model=schemas.Service)
 def update_service(
-    service_id: int, 
-    service_data: schemas.ServiceUpdate, 
+    service_id: int,
+    service_data: schemas.ServiceUpdate,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -66,7 +104,7 @@ def update_service(
 
 @router.delete("/services/{service_id}", response_model=schemas.Message)
 def delete_service(
-    service_id: int, 
+    service_id: int,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -81,7 +119,7 @@ def delete_service(
 @router.post("/services/{service_id}/endpoints/", response_model=schemas.Endpoint, status_code=status.HTTP_201_CREATED)
 def create_endpoint_for_service(
     service_id: int,
-    endpoint_data: schemas.EndpointBase, 
+    endpoint_data: schemas.EndpointBase,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -97,8 +135,8 @@ def create_endpoint_for_service(
 @router.get("/services/{service_id}/endpoints/", response_model=List[schemas.Endpoint])
 def read_endpoints_for_service(
     service_id: int,
-    skip: int = Query(0, ge=0), 
-    limit: int = Query(100, le=1000), 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, le=1000),
     db: Session = Depends(get_db)
 ) -> None:
     """Retrieve all endpoints for a given service."""
@@ -117,8 +155,8 @@ def read_endpoint(endpoint_id: int, db: Session = Depends(get_db)) -> None:
 
 @router.put("/endpoints/{endpoint_id}", response_model=schemas.Endpoint)
 def update_endpoint(
-    endpoint_id: int, 
-    endpoint_data: schemas.EndpointUpdate, 
+    endpoint_id: int,
+    endpoint_data: schemas.EndpointUpdate,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -132,7 +170,7 @@ def update_endpoint(
 
 @router.delete("/endpoints/{endpoint_id}", response_model=schemas.Message)
 def delete_endpoint(
-    endpoint_id: int, 
+    endpoint_id: int,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
@@ -146,12 +184,12 @@ def delete_endpoint(
 
 @router.post("/records/", response_model=schemas.MonitorRecord, status_code=status.HTTP_201_CREATED)
 def create_monitor_record(
-    record_data: schemas.MonitorRecordCreate, 
+    record_data: schemas.MonitorRecordCreate,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ) -> None:
     """
-    Record a new monitoring check result. 
+    Record a new monitoring check result.
     This is typically called by an external monitoring worker.
     """
     try:
@@ -164,8 +202,8 @@ def create_monitor_record(
 @router.get("/endpoints/{endpoint_id}/records/", response_model=List[schemas.MonitorRecord])
 def read_monitor_records_for_endpoint(
     endpoint_id: int,
-    skip: int = Query(0, ge=0), 
-    limit: int = Query(100, le=1000), 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, le=1000),
     db: Session = Depends(get_db)
 ) -> None:
     """Retrieve the latest monitor records for a given endpoint."""

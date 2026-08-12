@@ -323,13 +323,9 @@ export const regulatorySandboxTesterRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishregulatorySandboxTesterMiddleware(
-        "runComplianceCheck",
-        `${Date.now()}`,
-        { action: "runComplianceCheck" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "regulatorySandboxTester.runComplianceCheck is not available in this deployment",
+      });
     }),
 });

@@ -59,6 +59,9 @@ type Config struct {
 	OpenAppSecURL   string
 	LakehouseURL    string
 	Environment     string
+	// DevMode enables the unauthenticated local-dev bypass. It must be set
+	// explicitly via DEV_MODE=true; it is never implied by ENVIRONMENT.
+	DevMode         bool
 }
 
 func loadConfig() Config {
@@ -78,6 +81,7 @@ func loadConfig() Config {
 		OpenSearchURL:   envOr("OPENSEARCH_URL", "http://localhost:9200"),
 		LakehouseURL:    envOr("LAKEHOUSE_URL", "http://localhost:8181"),
 		Environment:     envOr("ENVIRONMENT", "development"),
+		DevMode:         os.Getenv("DEV_MODE") == "true",
 	}
 }
 
@@ -170,8 +174,8 @@ func (t *TemporalClient) StartWorkflow(workflowID, taskQueue string, input inter
 	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/namespaces/default/workflows", t.host),
 		"application/json", bytes.NewReader(data))
 	if err != nil {
-		log.Printf("[Temporal] Failed: %v (will retry)", err)
-		return nil // Fail open in dev
+		log.Printf("[Temporal] Failed to start workflow %s: %v", workflowID, err)
+		return err
 	}
 	defer resp.Body.Close()
 	return nil
@@ -187,8 +191,9 @@ func (p *PermifyClient) Check(entity, relation, subject string) (bool, error) {
 	resp, err := http.Post(fmt.Sprintf("http://%s/v1/permissions/check", p.host),
 		"application/json", bytes.NewReader(data))
 	if err != nil {
-		log.Printf("[Permify] Unavailable, failing open: %v", err)
-		return true, nil
+		// Fail CLOSED: an unreachable authorization service means deny.
+		log.Printf("[Permify] Unavailable, failing closed: %v", err)
+		return false, fmt.Errorf("permify check unavailable: %w", err)
 	}
 	defer resp.Body.Close()
 	var result struct {
@@ -346,15 +351,34 @@ type Claims struct {
 }
 
 func (cfg Config) verifyJWT(tokenStr string) (*Claims, error) {
-	// In production: validates JWT signature against Keycloak JWKS endpoint
-	resp, err := http.Get(fmt.Sprintf("%s/realms/54agent/protocol/openid-connect/userinfo", cfg.KeycloakURL))
+	if tokenStr == "" {
+		return nil, fmt.Errorf("empty bearer token")
+	}
+	// Validate the token against Keycloak's userinfo endpoint. Keycloak
+	// verifies the token signature and expiry server-side; any error or
+	// non-200 response fails CLOSED (no synthetic identities are ever issued).
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("%s/realms/54agent/protocol/openid-connect/userinfo", cfg.KeycloakURL), nil)
 	if err != nil {
-		// Fail open in dev mode
-		return &Claims{Sub: "dev-user", Email: "dev@54agent.ng", Roles: []string{"admin"}, TenantID: "default"}, nil
+		return nil, fmt.Errorf("failed to build token validation request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("identity provider unavailable; failing closed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("token rejected by identity provider (status %d)", resp.StatusCode)
+	}
 	var claims Claims
-	json.NewDecoder(resp.Body).Decode(&claims)
+	if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
+		return nil, fmt.Errorf("failed to decode identity claims: %w", err)
+	}
+	if claims.Sub == "" {
+		return nil, fmt.Errorf("identity provider returned no subject claim")
+	}
 	return &claims, nil
 }
 
@@ -387,7 +411,7 @@ func registerWithAPISIX(cfg Config, serviceName string, port string) {
 	req, _ := http.NewRequest("PUT",
 		fmt.Sprintf("%s/apisix/admin/routes/%s", cfg.ApisixAdminURL, serviceName),
 		bytes.NewReader(body))
-	req.Header.Set("X-API-KEY", "edd1c9f034335f136f87ad84b625c8f1")
+	req.Header.Set("X-API-KEY", os.Getenv("APISIX_ADMIN_KEY"))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
@@ -660,10 +684,13 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 			}
 			auth := r.Header.Get("Authorization")
 			if auth == "" {
-				// Dev mode: allow unauthenticated
-				if cfg.Environment == "development" {
+				// Unauthenticated access is only possible with an explicit
+				// DEV_MODE=true opt-in, and never grants admin privileges.
+				// ENVIRONMENT=development no longer implies any bypass.
+				if cfg.DevMode {
+					log.Printf("[auth] DEV_MODE bypass used for %s %s (no credentials presented)", r.Method, r.URL.Path)
 					r = r.WithContext(context.WithValue(r.Context(), "claims",
-						&Claims{Sub: "dev-user", Email: "dev@54agent.ng", Roles: []string{"admin"}, TenantID: "default"}))
+						&Claims{Sub: "dev-user", Email: "dev@54agent.ng", Roles: []string{"dev"}, TenantID: "default"}))
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -673,6 +700,7 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 			token := strings.TrimPrefix(auth, "Bearer ")
 			claims, err := cfg.verifyJWT(token)
 			if err != nil {
+				log.Printf("[auth] Token validation failed: %v", err)
 				respondJSON(w, 401, map[string]string{"error": "invalid token"})
 				return
 			}
@@ -687,9 +715,10 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 type APISIXClient struct{ adminURL, apiKey string }
 
 func NewAPISIXClient(adminURL string) *APISIXClient {
+	// The admin key must come from the environment; no fallback is provided.
 	apiKey := os.Getenv("APISIX_ADMIN_KEY")
 	if apiKey == "" {
-		apiKey = "edd1c9f034335f136f87ad84b625c8f1"
+		log.Printf("[APISIX] WARNING: APISIX_ADMIN_KEY is not set; admin API calls will fail authentication")
 	}
 	return &APISIXClient{adminURL: adminURL, apiKey: apiKey}
 }

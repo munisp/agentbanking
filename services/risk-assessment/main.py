@@ -32,6 +32,12 @@ from shared.observability import setup_logging, get_logger, metrics_router, Metr
 """
 Risk Assessment Service for Remittance Platform
 Provides comprehensive risk assessment for transactions, customers, and portfolios
+
+ML model policy: the service serves risk scores ONLY from versioned trained
+model artifacts (produced by the offline training pipeline and supplied via
+RISK_FRAUD_MODEL_PATH / RISK_ANOMALY_MODEL_PATH / RISK_SCALER_PATH). It
+never trains on synthetic random data at boot; if artifacts are missing the
+service refuses to start (fail closed).
 """
 
 import asyncio
@@ -160,10 +166,11 @@ class RiskAssessmentService:
         }
         
     async def initialize(self):
-        """Initialize the risk assessment service"""
+        """Initialize the risk assessment service (fails closed if the
+        trained model artifacts are not available)."""
         try:
-            # Load or train risk models
-            await self.load_or_train_models()
+            # Load trained risk model artifacts (required)
+            await self.load_models()
             
             logger.info("Risk Assessment Service initialized successfully")
             
@@ -171,127 +178,47 @@ class RiskAssessmentService:
             logger.error(f"Failed to initialize Risk Assessment Service: {e}")
             raise
 
-    async def load_or_train_models(self):
-        """Load existing models or train new ones"""
-        fraud_model_path = "/tmp/fraud_risk_model.joblib"
-        anomaly_model_path = "/tmp/anomaly_risk_model.joblib"
-        scaler_path = "/tmp/risk_scaler.joblib"
-        
-        if (os.path.exists(fraud_model_path) and 
-            os.path.exists(anomaly_model_path) and 
-            os.path.exists(scaler_path)):
-            
-            # Load existing models
-            self.fraud_model = joblib.load(fraud_model_path)
-            self.anomaly_model = joblib.load(anomaly_model_path)
-            self.scaler = joblib.load(scaler_path)
-            
-            logger.info("Loaded existing risk assessment models")
-        else:
-            # Train new models
-            await self.train_models()
+    async def load_models(self):
+        """Load versioned trained model artifacts.
 
-    async def train_models(self):
-        """Train risk assessment models"""
-        try:
-            # Generate synthetic training data
-            data = self.generate_synthetic_risk_data(5000)
-            
-            # Prepare features
-            X = data.drop(['fraud_label', 'anomaly_label'], axis=1).values
-            y_fraud = data['fraud_label'].values
-            y_anomaly = data['anomaly_label'].values
-            
-            # Scale features
-            self.scaler = StandardScaler()
-            X_scaled = self.scaler.fit_transform(X)
-            
-            # Train fraud detection model
-            self.fraud_model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                random_state=42
+        Raises RuntimeError when any artifact path is unconfigured, missing,
+        or unloadable. The service never trains substitute models on
+        synthetic data at boot.
+        """
+        fraud_model_path = os.getenv("RISK_FRAUD_MODEL_PATH", "")
+        anomaly_model_path = os.getenv("RISK_ANOMALY_MODEL_PATH", "")
+        scaler_path = os.getenv("RISK_SCALER_PATH", "")
+        
+        missing = [
+            name for name, path in (
+                ("RISK_FRAUD_MODEL_PATH", fraud_model_path),
+                ("RISK_ANOMALY_MODEL_PATH", anomaly_model_path),
+                ("RISK_SCALER_PATH", scaler_path),
             )
-            self.fraud_model.fit(X_scaled, y_fraud)
-            
-            # Train anomaly detection model
-            self.anomaly_model = IsolationForest(
-                contamination=0.1,
-                random_state=42
+            if not path or not os.path.exists(path)
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Trained risk model artifacts unavailable ({', '.join(missing)}); "
+                "refusing to serve risk assessments without trained models"
             )
-            self.anomaly_model.fit(X_scaled)
-            
-            # Save models
-            joblib.dump(self.fraud_model, "/tmp/fraud_risk_model.joblib")
-            joblib.dump(self.anomaly_model, "/tmp/anomaly_risk_model.joblib")
-            joblib.dump(self.scaler, "/tmp/risk_scaler.joblib")
-            
-            logger.info("Risk assessment models trained successfully")
-            
-        except Exception as e:
-            logger.error(f"Model training failed: {e}")
-            raise
+        
+        self.fraud_model = joblib.load(fraud_model_path)
+        self.anomaly_model = joblib.load(anomaly_model_path)
+        self.scaler = joblib.load(scaler_path)
+        
+        logger.info(
+            "Loaded trained risk assessment model artifacts "
+            f"(fraud={fraud_model_path}, anomaly={anomaly_model_path}, scaler={scaler_path})"
+        )
 
-    def generate_synthetic_risk_data(self, n_samples: int) -> pd.DataFrame:
-        """Generate synthetic risk data for training"""
-        np.random.seed(42)
-        
-        data = {
-            # Transaction features
-            'transaction_amount': np.random.lognormal(5, 2, n_samples),
-            'transaction_frequency': np.random.poisson(5, n_samples),
-            'time_since_last_transaction': np.random.exponential(24, n_samples),
-            'transaction_velocity': np.random.gamma(2, 2, n_samples),
-            
-            # Customer features
-            'customer_age': np.random.randint(18, 80, n_samples),
-            'account_age_days': np.random.randint(1, 3650, n_samples),
-            'customer_risk_score': np.random.beta(2, 5, n_samples),
-            'kyc_status': np.random.choice([0, 1], n_samples, p=[0.1, 0.9]),
-            
-            # Behavioral features
-            'unusual_time': np.random.choice([0, 1], n_samples, p=[0.8, 0.2]),
-            'unusual_location': np.random.choice([0, 1], n_samples, p=[0.9, 0.1]),
-            'device_change': np.random.choice([0, 1], n_samples, p=[0.95, 0.05]),
-            'ip_reputation': np.random.beta(8, 2, n_samples),
-            
-            # Financial features
-            'balance_ratio': np.random.beta(3, 2, n_samples),
-            'credit_utilization': np.random.beta(2, 5, n_samples),
-            'debt_to_income': np.random.beta(2, 3, n_samples),
-            'payment_history': np.random.beta(8, 2, n_samples),
-            
-            # Network features
-            'network_risk': np.random.beta(1, 9, n_samples),
-            'peer_risk_score': np.random.beta(2, 8, n_samples),
-            'connection_strength': np.random.beta(3, 2, n_samples),
-        }
-        
-        df = pd.DataFrame(data)
-        
-        # Generate fraud labels based on risk factors
-        fraud_score = (
-            (df['transaction_amount'] > df['transaction_amount'].quantile(0.95)).astype(int) * 0.3 +
-            (df['unusual_time'] == 1).astype(int) * 0.2 +
-            (df['unusual_location'] == 1).astype(int) * 0.2 +
-            (df['device_change'] == 1).astype(int) * 0.15 +
-            (df['ip_reputation'] < 0.3).astype(int) * 0.15 +
-            np.random.normal(0, 0.1, n_samples)
-        )
-        
-        df['fraud_label'] = (fraud_score > 0.5).astype(int)
-        
-        # Generate anomaly labels
-        anomaly_score = (
-            (df['transaction_velocity'] > df['transaction_velocity'].quantile(0.9)).astype(int) * 0.4 +
-            (df['balance_ratio'] < 0.1).astype(int) * 0.3 +
-            (df['network_risk'] > 0.7).astype(int) * 0.3 +
-            np.random.normal(0, 0.1, n_samples)
-        )
-        
-        df['anomaly_label'] = (anomaly_score > 0.4).astype(int)
-        
-        return df
+    def _require_models(self):
+        """Guard: assessments can only run with loaded trained artifacts."""
+        if self.fraud_model is None or self.anomaly_model is None or self.scaler is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Risk models are not loaded; risk assessment is unavailable"
+            )
 
     async def assess_risk(self, request: RiskAssessmentRequest) -> RiskAssessmentResponse:
         """Perform comprehensive risk assessment"""
@@ -305,12 +232,15 @@ class RiskAssessmentService:
             else:
                 return await self.assess_operational_risk(request)
                 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Risk assessment failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
     async def assess_transaction_risk(self, request: RiskAssessmentRequest) -> RiskAssessmentResponse:
         """Assess transaction-specific risks"""
+        self._require_models()
         data = request.data
         
         # Prepare features for ML models
@@ -1102,7 +1032,7 @@ class RiskAssessmentRequestModel(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize service on startup"""
+    """Initialize service on startup (fails closed without trained artifacts)"""
     await risk_service.initialize()
 
 @app.post("/assess-risk")

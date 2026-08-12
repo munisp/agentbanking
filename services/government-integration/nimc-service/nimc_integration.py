@@ -13,6 +13,7 @@ import httpx
 import hashlib
 import hmac
 import json
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -190,6 +191,11 @@ class NIMCIntegrationService:
         
         Returns:
             NIMC data or None if not found
+        
+        Raises:
+            RuntimeError: if the NIMC provider is unavailable or returns an
+                error. Callers must fail closed and never treat a provider
+                failure as a successful or negative verification.
         """
         try:
             # Prepare request
@@ -224,17 +230,23 @@ class NIMCIntegrationService:
                 return None
             else:
                 logger.error(f"NIMC API error: {response.status_code} - {response.text}")
-                return None
+                raise RuntimeError(
+                    f"NIMC provider error: HTTP {response.status_code}"
+                )
                 
         except httpx.HTTPError as e:
             logger.error(f"NIMC API request error: {e}")
-            return None
+            raise RuntimeError(f"NIMC provider request failed: {e}") from e
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"NIMC query error: {e}")
-            # In sandbox mode, return mock data
+            # Mock data is ONLY returned when sandbox mode was explicitly
+            # enabled via configuration; never fabricate identity data in
+            # production paths.
             if self.use_sandbox:
                 return self._get_mock_nimc_data(nin)
-            return None
+            raise RuntimeError(f"NIMC provider query failed: {e}") from e
     
     def _validate_nin_format(self, nin: str) -> bool:
         """Validate NIN format (11 digits)"""
@@ -356,10 +368,12 @@ class NIMCIntegrationService:
         return len(intersection) / len(union)
     
     def _calculate_confidence(self, verified_fields: Dict[str, bool]) -> float:
-        """Calculate overall confidence score"""
+        """Calculate overall confidence score from real field matches"""
         
         if not verified_fields:
-            return 1.0  # No fields to verify
+            # No fields were actually matched against provider data; never
+            # claim full confidence without evidence.
+            return 0.0
         
         verified_count = sum(1 for v in verified_fields.values() if v)
         total_count = len(verified_fields)
@@ -404,7 +418,7 @@ class NIMCIntegrationService:
         return signature
     
     def _get_mock_nimc_data(self, nin: str) -> Dict:
-        """Get mock NIMC data for sandbox testing"""
+        """Get mock NIMC data for sandbox testing (explicit sandbox only)"""
         
         return {
             "nin": nin,
@@ -430,11 +444,11 @@ class NIMCIntegrationService:
             "local_processing": True
         }
 
-# Production: set KYC_SANDBOX_MODE=false to call real NIMC API.
-# Defaults to sandbox=True so the service is safe out-of-the-box.
-import os as _os
+# Sandbox mode is OFF by default. Set KYC_SANDBOX_MODE=true explicitly to
+# enable the sandbox/simulation environment; production must never silently
+# fall back to fabricated identity data.
 nimc_service = NIMCIntegrationService(
-    use_sandbox=_os.getenv("KYC_SANDBOX_MODE", "true").lower() != "false"
+    use_sandbox=os.getenv("KYC_SANDBOX_MODE", "false").lower() == "true"
 )
 
 # API endpoints

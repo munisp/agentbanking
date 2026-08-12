@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     ML_MODEL_THRESHOLD: float = 0.75
     RULES_ENGINE_ENABLED: bool = True
     FRAUD_ML_SERVICE_URL: str = ""
+    # Explicit opt-in: when the external ML service is configured but fails,
+    # fall back to the local heuristic scorer. Scores produced this way are
+    # labeled via MLService.last_score_source. Default False = fail closed.
+    ALLOW_LOCAL_HEURISTIC_FALLBACK: bool = False
     VELOCITY_CHECK_WINDOW_HOURS: int = 24
     HIGH_VALUE_THRESHOLD_NGN: float = 500000.0
     SUSPICIOUS_COUNTRIES: str = "IR,KP,SY,CU,SD"
@@ -57,18 +61,29 @@ def get_db() -> Generator:
     finally:
         db.close()
 
+class MLServiceUnavailableError(Exception):
+    """Raised when the configured ML service cannot produce a score and the
+    local heuristic fallback was not explicitly enabled."""
+    pass
+
 class MLService:
     """
-    Production fraud detection ML service using deterministic feature-based scoring.
-    Computes risk scores from transaction features: amount anomaly, velocity,
-    geo-anomaly, device fingerprint, merchant risk, and time-of-day patterns.
-    Falls back to external ML service if FRAUD_ML_SERVICE_URL is configured.
+    Fraud scoring service.
+
+    Scoring sources (see self.last_score_source after each call):
+      - "external_ml_service": score from the configured FRAUD_ML_SERVICE_URL
+      - "local_heuristic": local deterministic feature-based scoring (the
+        primary mode when no external service is configured)
+      - "local_heuristic_fallback": local scoring used because the external
+        ML service failed; only possible when ALLOW_LOCAL_HEURISTIC_FALLBACK
+        is explicitly enabled. Callers should treat these scores as degraded.
     """
     def __init__(self, threshold: float, rules_enabled: bool):
         self.threshold = threshold
         self.rules_enabled = rules_enabled
         self._external_url = settings.FRAUD_ML_SERVICE_URL
         self._suspicious_countries = set(settings.SUSPICIOUS_COUNTRIES.split(","))
+        self.last_score_source: Optional[str] = None
 
     def _compute_amount_anomaly(self, amount: float, avg_amount: float, std_amount: float) -> float:
         if std_amount <= 0:
@@ -115,6 +130,7 @@ class MLService:
 
     def score_transaction(self, transaction_data: dict) -> float:
         if self._external_url:
+            external_error: Optional[Exception] = None
             try:
                 import httpx
                 resp = httpx.post(
@@ -123,9 +139,30 @@ class MLService:
                     timeout=5.0
                 )
                 if resp.status_code == 200:
-                    return resp.json().get("score", 0.5)
+                    payload = resp.json()
+                    if "score" not in payload:
+                        raise ValueError("ML service response missing 'score' field")
+                    self.last_score_source = "external_ml_service"
+                    return float(payload["score"])
+                external_error = RuntimeError(f"ML service returned HTTP {resp.status_code}")
             except Exception as e:
-                logger.warning(f"External ML service unavailable, using local scoring: {e}")
+                external_error = e
+
+            # External service failed. Only fall back if explicitly enabled,
+            # and label the score source so callers know it is degraded.
+            if not settings.ALLOW_LOCAL_HEURISTIC_FALLBACK:
+                self.last_score_source = None
+                raise MLServiceUnavailableError(
+                    f"External ML service unavailable ({external_error}) and "
+                    "ALLOW_LOCAL_HEURISTIC_FALLBACK is not enabled; refusing to score"
+                )
+            logger.error(
+                f"External ML service failed ({external_error}); using EXPLICITLY ENABLED "
+                "local heuristic fallback (score source: local_heuristic_fallback)"
+            )
+            self.last_score_source = "local_heuristic_fallback"
+        else:
+            self.last_score_source = "local_heuristic"
 
         amount = transaction_data.get("amount", 0.0)
         avg_amount = transaction_data.get("avg_transaction_amount", 50000.0)

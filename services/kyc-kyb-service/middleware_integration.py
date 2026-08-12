@@ -122,10 +122,15 @@ class KafkaIntegration:
     async def connect(self):
         """Connect to Kafka"""
         logger.info(f"Connecting to Kafka at {self.config.kafka_bootstrap_servers}")
-        # In production, initialize aiokafka producer
+        # Producer connectivity is established lazily per-publish via the
+        # Dapr pub/sub sidecar (kafka-pubsub component).
     
     async def publish(self, topic_key: str, event: Dict[str, Any], key: Optional[str] = None):
-        """Publish event to Kafka topic"""
+        """Publish event to Kafka topic via the Dapr pub/sub sidecar.
+
+        Raises RuntimeError if the event could not actually be published —
+        callers must never believe an event was emitted when it was not.
+        """
         topic = self.TOPICS.get(topic_key, topic_key)
         
         # Add metadata
@@ -134,11 +139,23 @@ class KafkaIntegration:
             "source": "kyc-kyb-service",
             "event_id": secrets.token_hex(16),
         }
+        if key is not None:
+            event["_metadata"]["partition_key"] = key
         
         logger.info(f"Publishing to {topic}: {event.get('event_type', 'unknown')}")
         
-        # In production, use aiokafka producer
-        # await self._producer.send_and_wait(topic, json.dumps(event).encode(), key=key.encode() if key else None)
+        import aiohttp
+        url = f"http://localhost:{self.config.dapr_http_port}/v1.0/publish/kafka-pubsub/{topic}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=event) as resp:
+                    if resp.status >= 300:
+                        body = await resp.text()
+                        raise RuntimeError(
+                            f"Kafka publish to {topic} failed (HTTP {resp.status}): {body}"
+                        )
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Kafka publish to {topic} failed: {e}") from e
     
     async def subscribe(self, topic_key: str, handler: Callable):
         """Subscribe to Kafka topic"""
@@ -177,7 +194,39 @@ class TemporalIntegration:
     async def connect(self):
         """Connect to Temporal"""
         logger.info(f"Connecting to Temporal at {self.config.temporal_host}")
-        # In production, initialize temporalio client
+        # Connectivity is established per-call via the Temporal HTTP API.
+    
+    async def _start_workflow(self, workflow_id: str, workflow_type: str, input_data: Dict[str, Any]) -> str:
+        """Actually start a workflow via the Temporal HTTP API.
+
+        Raises RuntimeError if the workflow could not be started — a
+        workflow_id is only returned for a workflow that really exists.
+        """
+        import aiohttp
+        url = (
+            f"http://{self.config.temporal_host}"
+            f"/api/v1/namespaces/{self.config.temporal_namespace}/workflows"
+        )
+        payload = {
+            "workflow_id": workflow_id,
+            "workflow_type": workflow_type,
+            "task_queue": self.config.temporal_task_queue,
+            "input": input_data,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status >= 300:
+                        body = await resp.text()
+                        raise RuntimeError(
+                            f"Temporal failed to start workflow {workflow_id} "
+                            f"(HTTP {resp.status}): {body}"
+                        )
+        except aiohttp.ClientError as e:
+            raise RuntimeError(
+                f"Temporal unavailable; workflow {workflow_id} was NOT started: {e}"
+            ) from e
+        return workflow_id
     
     async def start_kyc_verification_workflow(
         self,
@@ -191,15 +240,12 @@ class TemporalIntegration:
         
         logger.info(f"Starting KYC verification workflow: {workflow_id}")
         
-        # In production:
-        # handle = await self._client.start_workflow(
-        #     "KYCVerificationWorkflow",
-        #     args=[verification_id, subject_id, verification_type, documents],
-        #     id=workflow_id,
-        #     task_queue=self.config.temporal_task_queue,
-        # )
-        
-        return workflow_id
+        return await self._start_workflow(workflow_id, "KYCVerificationWorkflow", {
+            "verification_id": verification_id,
+            "subject_id": subject_id,
+            "verification_type": verification_type,
+            "documents": documents,
+        })
     
     async def start_kyb_verification_workflow(
         self,
@@ -213,7 +259,12 @@ class TemporalIntegration:
         
         logger.info(f"Starting KYB verification workflow: {workflow_id}")
         
-        return workflow_id
+        return await self._start_workflow(workflow_id, "KYBVerificationWorkflow", {
+            "verification_id": verification_id,
+            "business_id": business_id,
+            "verification_path": verification_path,
+            "documents": documents,
+        })
     
     async def start_monitoring_workflow(
         self,
@@ -226,7 +277,11 @@ class TemporalIntegration:
         
         logger.info(f"Starting monitoring workflow: {workflow_id}")
         
-        return workflow_id
+        return await self._start_workflow(workflow_id, "ContinuousMonitoringWorkflow", {
+            "subject_id": subject_id,
+            "risk_level": risk_level,
+            "screening_frequency_days": screening_frequency_days,
+        })
     
     async def start_case_workflow(
         self,
@@ -240,7 +295,12 @@ class TemporalIntegration:
         
         logger.info(f"Starting case workflow: {workflow_id}")
         
-        return workflow_id
+        return await self._start_workflow(workflow_id, "CaseManagementWorkflow", {
+            "case_id": case_id,
+            "case_type": case_type,
+            "priority": priority,
+            "sla_hours": sla_hours,
+        })
     
     async def signal_workflow(self, workflow_id: str, signal_name: str, data: Dict[str, Any]):
         """Send signal to workflow"""
@@ -295,7 +355,23 @@ class RedisIntegration:
     async def connect(self):
         """Connect to Redis"""
         logger.info(f"Connecting to Redis at {self.config.redis_url}")
-        # In production, initialize aioredis client
+        # Connection is established lazily on first use.
+    
+    async def _get_client(self):
+        """Get a connected redis client, or None if unavailable."""
+        if self._client is not None:
+            return self._client
+        try:
+            import redis.asyncio as aioredis  # type: ignore
+        except ImportError:
+            logger.error("redis client library is not installed")
+            return None
+        try:
+            self._client = aioredis.from_url(self.config.redis_url)
+            return self._client
+        except Exception as e:
+            logger.error(f"Failed to create redis client: {e}")
+            return None
     
     async def cache_decision(
         self,
@@ -308,18 +384,28 @@ class RedisIntegration:
         
         logger.debug(f"Caching decision for {subject_id}")
         
-        # In production:
-        # await self._client.setex(key, ttl_seconds, json.dumps(decision))
+        client = await self._get_client()
+        if client is None:
+            logger.error(f"Redis unavailable; decision for {subject_id} NOT cached")
+            return
+        try:
+            await client.setex(key, ttl_seconds, json.dumps(decision))
+        except Exception as e:
+            logger.error(f"Redis cache_decision failed: {e}")
     
     async def get_cached_decision(self, subject_id: str) -> Optional[Dict[str, Any]]:
         """Get cached decision"""
         key = f"{self.CACHE_PREFIXES['decision']}{subject_id}"
         
-        # In production:
-        # data = await self._client.get(key)
-        # return json.loads(data) if data else None
-        
-        return None
+        client = await self._get_client()
+        if client is None:
+            return None
+        try:
+            data = await client.get(key)
+            return json.loads(data) if data else None
+        except Exception as e:
+            logger.error(f"Redis get_cached_decision failed: {e}")
+            return None
     
     async def cache_risk_score(
         self,
@@ -339,14 +425,28 @@ class RedisIntegration:
         
         logger.debug(f"Caching risk score for {subject_id}: {score}")
         
-        # In production:
-        # await self._client.setex(key, ttl_seconds, json.dumps(data))
+        client = await self._get_client()
+        if client is None:
+            logger.error(f"Redis unavailable; risk score for {subject_id} NOT cached")
+            return
+        try:
+            await client.setex(key, ttl_seconds, json.dumps(data))
+        except Exception as e:
+            logger.error(f"Redis cache_risk_score failed: {e}")
     
     async def get_risk_score(self, subject_id: str) -> Optional[Dict[str, Any]]:
         """Get cached risk score"""
         key = f"{self.CACHE_PREFIXES['risk_score']}{subject_id}"
         
-        return None
+        client = await self._get_client()
+        if client is None:
+            return None
+        try:
+            data = await client.get(key)
+            return json.loads(data) if data else None
+        except Exception as e:
+            logger.error(f"Redis get_risk_score failed: {e}")
+            return None
     
     async def check_rate_limit(
         self,
@@ -354,23 +454,42 @@ class RedisIntegration:
         limit: int,
         window_seconds: int
     ) -> bool:
-        """Check rate limit"""
+        """Check rate limit using Redis INCR/EXPIRE.
+
+        Fails CLOSED: if Redis or the client library is unavailable, the
+        request is denied rather than silently allowed.
+        """
         rate_key = f"{self.CACHE_PREFIXES['rate_limit']}{key}"
         
-        # In production, use Redis INCR with EXPIRE
-        # current = await self._client.incr(rate_key)
-        # if current == 1:
-        #     await self._client.expire(rate_key, window_seconds)
-        # return current <= limit
-        
-        return True
+        client = await self._get_client()
+        if client is None:
+            logger.error(
+                f"Redis unavailable; denying rate-limited request for {key} (fail closed)"
+            )
+            return False
+        try:
+            current = await client.incr(rate_key)
+            if current == 1:
+                await client.expire(rate_key, window_seconds)
+            return current <= limit
+        except Exception as e:
+            logger.error(
+                f"Rate limit check failed for {key}: {e}; denying request (fail closed)"
+            )
+            return False
     
     async def publish(self, channel: str, message: Dict[str, Any]):
         """Publish message to Redis channel"""
         logger.debug(f"Publishing to channel {channel}")
         
-        # In production:
-        # await self._client.publish(channel, json.dumps(message))
+        client = await self._get_client()
+        if client is None:
+            logger.error(f"Redis unavailable; message to {channel} NOT published")
+            return
+        try:
+            await client.publish(channel, json.dumps(message))
+        except Exception as e:
+            logger.error(f"Redis publish to {channel} failed: {e}")
     
     async def close(self):
         """Close Redis connection"""
@@ -408,12 +527,15 @@ class DaprIntegration:
         
         logger.info(f"Invoking {app_id}/{method}")
         
-        # In production, use aiohttp to call Dapr sidecar
-        # async with aiohttp.ClientSession() as session:
-        #     async with session.request(http_method, url, json=data) as response:
-        #         return await response.json()
-        
-        return {}
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.request(http_method, url, json=data) as response:
+                if response.status >= 300:
+                    body = await response.text()
+                    raise RuntimeError(
+                        f"Dapr invoke {app_id}/{method} failed (HTTP {response.status}): {body}"
+                    )
+                return await response.json()
     
     async def save_state(self, store_name: str, key: str, value: Any):
         """Save state to Dapr state store"""
@@ -423,7 +545,12 @@ class DaprIntegration:
         
         logger.debug(f"Saving state {key} to {store_name}")
         
-        # In production, POST to Dapr state API
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data) as resp:
+                if resp.status >= 300:
+                    body = await resp.text()
+                    logger.error(f"Dapr save_state failed (HTTP {resp.status}): {body}")
     
     async def get_state(self, store_name: str, key: str) -> Any:
         """Get state from Dapr state store"""
@@ -431,7 +558,16 @@ class DaprIntegration:
         
         logger.debug(f"Getting state {key} from {store_name}")
         
-        return None
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    return None
+        except Exception as e:
+            logger.error(f"Dapr get_state failed: {e}")
+            return None
     
     async def publish_event(self, pubsub_name: str, topic: str, data: Dict[str, Any]):
         """Publish event via Dapr pub/sub"""
@@ -439,7 +575,14 @@ class DaprIntegration:
         
         logger.info(f"Publishing to {pubsub_name}/{topic}")
         
-        # In production, POST to Dapr publish API
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data) as resp:
+                if resp.status >= 300:
+                    body = await resp.text()
+                    raise RuntimeError(
+                        f"Dapr publish to {pubsub_name}/{topic} failed (HTTP {resp.status}): {body}"
+                    )
     
     async def send_notification(
         self,
@@ -462,6 +605,18 @@ class DaprIntegration:
         }
         
         logger.info(f"Sending {notification_type} notification to {recipient}")
+        
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status >= 300:
+                        body = await resp.text()
+                        logger.error(
+                            f"Dapr notification binding failed (HTTP {resp.status}): {body}"
+                        )
+        except Exception as e:
+            logger.error(f"Dapr notification failed: {e}")
 
 
 # ============================================================================
@@ -671,7 +826,21 @@ class PermifyIntegration:
         """Create permission relationship"""
         logger.info(f"Creating relationship: {entity_type}:{entity_id}#{relation}@{subject_type}:{subject_id}")
         
-        # In production, call Permify write API
+        import aiohttp
+        url = f"http://{self.config.permify_host}/v1/tenants/{self.config.permify_tenant}/relationships/write"
+        payload = {
+            "entity": {"type": entity_type, "id": entity_id},
+            "relation": relation,
+            "subject": {"type": subject_type, "id": subject_id},
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status >= 300:
+                        body = await resp.text()
+                        logger.error(f"Permify relationship write failed (HTTP {resp.status}): {body}")
+        except Exception as e:
+            logger.error(f"Permify relationship write failed: {e}")
     
     async def check_permission(
         self,
@@ -681,11 +850,34 @@ class PermifyIntegration:
         subject_type: str,
         subject_id: str
     ) -> bool:
-        """Check if subject has permission on entity"""
+        """Check if subject has permission on entity.
+
+        Fails CLOSED: any Permify error or unavailability returns False
+        (deny), never a blanket allow.
+        """
         logger.debug(f"Checking permission: {entity_type}:{entity_id}#{permission}@{subject_type}:{subject_id}")
         
-        # In production, call Permify check API
-        return True
+        import aiohttp
+        url = f"http://{self.config.permify_host}/v1/tenants/{self.config.permify_tenant}/permissions/check"
+        payload = {
+            "entity": {"type": entity_type, "id": entity_id},
+            "permission": permission,
+            "subject": {"type": subject_type, "id": subject_id},
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status != 200:
+                        body = await resp.text()
+                        logger.error(
+                            f"Permify check failed (HTTP {resp.status}): {body}; denying (fail closed)"
+                        )
+                        return False
+                    data = await resp.json()
+                    return data.get("can") == "RESULT_ALLOWED"
+        except Exception as e:
+            logger.error(f"Permify check failed: {e}; denying (fail closed)")
+            return False
     
     async def set_kyc_tier_permissions(self, user_id: str, tier: str):
         """Set permissions based on KYC tier"""

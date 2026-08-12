@@ -2,11 +2,20 @@
 KYC Document Verifier — Sprint 78
 Automated document verification for agent onboarding
 Supports: NIN, BVN, International Passport, Driver's License, Voter's Card
+
+Verification model:
+  - Local checks are FORMAT checks only (regex/length). They can never mark
+    a document "verified".
+  - "verified" requires confirmation from the identity registry
+    (IDENTITY_REGISTRY_URL). Without a configured registry, documents stay
+    "format_valid" and KYC levels are NOT upgraded.
 """
 import json
 import time
 import hashlib
 import re
+import os
+import urllib.request
 from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Optional
 from enum import Enum
@@ -37,6 +46,12 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
+logger = logging.getLogger(__name__)
+
+# Identity registry used to actually confirm documents (NIMC/NIBSS/etc).
+# When unset, no document can reach "verified" status.
+IDENTITY_REGISTRY_URL = os.getenv("IDENTITY_REGISTRY_URL", "")
+
 
 class DocumentType(Enum):
     NIN = "nin"
@@ -49,6 +64,7 @@ class DocumentType(Enum):
 
 class VerificationStatus(Enum):
     PENDING = "pending"
+    FORMAT_VALID = "format_valid"
     VERIFIED = "verified"
     REJECTED = "rejected"
     EXPIRED = "expired"
@@ -83,6 +99,9 @@ class KYCProfile:
     last_reviewed: Optional[float] = None
 
 class DocumentValidator:
+    """FORMAT validation only. A passing regex means the number is shaped
+    correctly — it says nothing about whether the document exists or belongs
+    to anyone."""
     NIN_PATTERN = re.compile(r"^\d{11}$")
     BVN_PATTERN = re.compile(r"^\d{11}$")
     PASSPORT_PATTERN = re.compile(r"^[A-Z]\d{8}$")
@@ -90,22 +109,19 @@ class DocumentValidator:
     @staticmethod
     def validate_nin(number: str) -> tuple:
         if DocumentValidator.NIN_PATTERN.match(number):
-            checksum = sum(int(d) for d in number) % 10
-            return (True, 95.0, "NIN format valid, checksum verified")
+            return (True, 0.0, "NIN format valid (11 digits); registry confirmation required for verification")
         return (False, 0.0, "Invalid NIN format (expected 11 digits)")
 
     @staticmethod
     def validate_bvn(number: str) -> tuple:
         if DocumentValidator.BVN_PATTERN.match(number):
-            if number.startswith("22"):
-                return (True, 98.0, "BVN format valid, bank prefix verified")
-            return (True, 85.0, "BVN format valid")
+            return (True, 0.0, "BVN format valid (11 digits); registry confirmation required for verification")
         return (False, 0.0, "Invalid BVN format (expected 11 digits)")
 
     @staticmethod
     def validate_passport(number: str) -> tuple:
         if DocumentValidator.PASSPORT_PATTERN.match(number):
-            return (True, 90.0, "Passport format valid")
+            return (True, 0.0, "Passport format valid; issuing-authority confirmation required for verification")
         return (False, 0.0, "Invalid passport format (expected letter + 8 digits)")
 
     @staticmethod
@@ -118,7 +134,8 @@ class DocumentValidator:
         validator = validators.get(doc_type)
         if validator:
             return validator(number)
-        return (True, 70.0, f"Document type {doc_type} accepted (manual review recommended)")
+        # Fail closed: unknown document types are rejected, never auto-accepted.
+        return (False, 0.0, f"Unsupported document type '{doc_type}'; rejected (manual intake required)")
 
 class KYCEngine:
     REQUIRED_DOCS = {
@@ -153,9 +170,52 @@ class KYCEngine:
             self._update_profile_status(profile)
             self.profiles[agent_id] = profile
 
+    def _confirm_with_registry(self, doc_type: str, number: str, full_name: str) -> tuple:
+        """Confirm the document with the identity registry.
+
+        Returns (verified, note). Any registry failure or absence means NOT
+        verified — never a fabricated confirmation.
+        """
+        if not IDENTITY_REGISTRY_URL:
+            return (False, "No identity registry configured (IDENTITY_REGISTRY_URL); "
+                           "document remains format_valid only")
+        try:
+            payload = json.dumps({
+                "doc_type": doc_type,
+                "doc_number": number,
+                "full_name": full_name,
+            }).encode()
+            req = urllib.request.Request(
+                f"{IDENTITY_REGISTRY_URL.rstrip('/')}/verify",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("verified"):
+                return (True, "Identity registry confirmed document")
+            return (False, f"Identity registry did not confirm document: "
+                           f"{data.get('reason', 'no match')}")
+        except Exception as e:
+            return (False, f"Identity registry confirmation unavailable: {e}")
+
     def submit_document(self, agent_id, doc_type, number, full_name, dob, issue_date, expiry_date, authority, country):
         doc_id = hashlib.sha256(f"{agent_id}{doc_type}{number}".encode()).hexdigest()[:12]
         valid, confidence, note = DocumentValidator.validate(doc_type, number)
+        notes = [note]
+        status = "format_valid" if valid else "rejected"
+        verified_at = None
+        confidence_score = 0.0
+
+        if valid:
+            # "verified" requires real registry confirmation.
+            registry_verified, registry_note = self._confirm_with_registry(doc_type, number, full_name)
+            notes.append(registry_note)
+            if registry_verified:
+                status = "verified"
+                verified_at = time.time()
+                confidence_score = confidence
+
         doc = KYCDocument(
             doc_id=f"DOC-{doc_id.upper()}",
             agent_id=agent_id,
@@ -167,15 +227,16 @@ class KYCEngine:
             expiry_date=expiry_date,
             issuing_authority=authority,
             country=country,
-            status="verified" if valid and confidence >= 85 else "manual_review" if valid else "rejected",
-            confidence_score=confidence,
-            verification_notes=[note],
-            verified_at=time.time() if valid and confidence >= 85 else None,
+            status=status,
+            confidence_score=confidence_score,
+            verification_notes=notes,
+            verified_at=verified_at,
         )
         self.documents[doc.doc_id] = doc
         return doc
 
     def _update_profile_status(self, profile: KYCProfile):
+        # Only registry-verified documents count toward KYC level upgrades.
         verified_types = {d.doc_type for d in profile.documents if d.status == "verified"}
         for level in [3, 2, 1]:
             required = set(self.REQUIRED_DOCS[level])

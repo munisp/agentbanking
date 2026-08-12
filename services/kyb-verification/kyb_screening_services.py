@@ -2,6 +2,12 @@
 KYB Screening Services - Real Implementations
 Provides actual integrations for sanctions, adverse media, and PEP screening.
 Calls real HTTP APIs for OFAC, UN, EU sanctions lists with retry and fallback.
+
+FAIL-CLOSED CONTRACT: when a screening provider is unreachable or not
+configured, these services raise ScreeningUnavailableError instead of
+returning an empty (clean-looking) result or fabricating hits from
+keywords. Callers must treat ScreeningUnavailableError as
+"screening_unavailable" and force manual review.
 """
 
 import asyncio
@@ -17,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 SCREENING_TIMEOUT = float(os.getenv("SCREENING_TIMEOUT_SECONDS", "10"))
 SCREENING_MAX_RETRIES = int(os.getenv("SCREENING_MAX_RETRIES", "3"))
+
+
+class ScreeningUnavailableError(Exception):
+    """Raised when a screening provider cannot actually perform screening.
+    Callers must force manual review; never treat as a clean pass."""
+    pass
 
 
 async def _http_get_with_retry(url: str, params: dict = None, headers: dict = None, max_retries: int = SCREENING_MAX_RETRIES) -> Optional[dict]:
@@ -36,7 +48,9 @@ async def _http_get_with_retry(url: str, params: dict = None, headers: dict = No
 
 class SanctionsScreeningService:
     """
-    Sanctions screening service calling real OFAC, UN, EU APIs with fallback to pattern matching.
+    Sanctions screening service calling real OFAC, UN, EU APIs.
+    Raises ScreeningUnavailableError when a provider cannot be reached —
+    never fabricates hits from country or name keywords.
     """
 
     def __init__(self, config: Dict[str, Any] = None):
@@ -69,6 +83,10 @@ class SanctionsScreeningService:
             
         Returns:
             List of sanctions matches
+            
+        Raises:
+            ScreeningUnavailableError: if any sanctions list provider could
+                not actually be queried. Callers must force manual review.
         """
         # Check cache first
         cache_key = self._get_cache_key(name, country, entity_type)
@@ -84,200 +102,122 @@ class SanctionsScreeningService:
             tasks = [
                 self._screen_ofac(name, country, entity_type),
                 self._screen_un(name, country, entity_type),
-                self._screen_eu(name, country, entity_type),
-                self._screen_local_lists(name, country, entity_type)
+                self._screen_eu(name, country, entity_type)
             ]
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Combine results
+            # Combine results; track provider failures
+            failures = []
             for result in results:
                 if isinstance(result, list):
                     hits.extend(result)
                 elif isinstance(result, Exception):
                     logger.error(f"Screening error: {result}")
+                    failures.append(result)
             
-            # Cache results
+            # Fail closed: an unscreened list must never look like a clean
+            # pass feeding an auto-APPROVED decision.
+            if failures:
+                raise ScreeningUnavailableError(
+                    f"Sanctions screening incomplete: {len(failures)} provider(s) "
+                    f"unavailable (first error: {failures[0]}); manual review required"
+                )
+            
+            # Cache results (only real, complete screening results)
             self.cache[cache_key] = (hits, datetime.now())
             
             return hits
             
+        except ScreeningUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"Sanctions screening failed: {e}")
-            return []
+            raise ScreeningUnavailableError(
+                f"Sanctions screening failed: {e}; manual review required"
+            ) from e
     
     async def _screen_ofac(self, name: str, country: str, entity_type: str) -> List[Dict[str, Any]]:
-        """Screen against OFAC SDN list via real API with pattern fallback"""
+        """Screen against OFAC SDN list via real API (raises when unavailable)"""
         hits = []
 
-        try:
-            headers = {}
-            if self.ofac_api_key:
-                headers["Authorization"] = f"Bearer {self.ofac_api_key}"
+        headers = {}
+        if self.ofac_api_key:
+            headers["Authorization"] = f"Bearer {self.ofac_api_key}"
 
-            api_result = await _http_get_with_retry(
-                f"{self.ofac_endpoint}/search",
-                params={"name": name, "country": country, "type": entity_type},
-                headers=headers,
-            )
+        api_result = await _http_get_with_retry(
+            f"{self.ofac_endpoint}/search",
+            params={"name": name, "country": country, "type": entity_type},
+            headers=headers,
+        )
 
-            if api_result and api_result.get("results"):
-                for entry in api_result["results"]:
-                    hits.append({
-                        "list_name": "OFAC SDN",
-                        "match_strength": entry.get("score", 0.0),
-                        "entity_name": name,
-                        "list_entry": entry.get("matched_name", ""),
-                        "country": country,
-                        "reason": entry.get("program", "OFAC match"),
-                        "list_url": "https://sanctionslist.ofac.treas.gov/",
-                        "screened_at": datetime.utcnow().isoformat(),
-                    })
-                return hits
+        if api_result is None:
+            raise ScreeningUnavailableError("OFAC API unreachable after retries")
 
-            normalized_name = self._normalize_name(name)
-            high_risk_countries = [
-                "IRAN", "NORTH KOREA", "SYRIA", "CUBA", "VENEZUELA",
-                "RUSSIA", "BELARUS", "MYANMAR", "ZIMBABWE",
-            ]
-
-            if country.upper() in high_risk_countries:
-                match_score = self._calculate_fuzzy_match(normalized_name, name)
-                if match_score > 0.7:
-                    hits.append({
-                        "list_name": "OFAC SDN",
-                        "match_strength": match_score,
-                        "entity_name": name,
-                        "list_entry": f"High-risk jurisdiction: {country}",
-                        "country": country,
-                        "reason": "Geographic risk - Enhanced due diligence required",
-                        "list_url": "https://sanctionslist.ofac.treas.gov/",
-                        "screened_at": datetime.utcnow().isoformat(),
-                    })
-
-        except Exception as e:
-            logger.error(f"OFAC screening error: {e}")
+        for entry in api_result.get("results") or []:
+            hits.append({
+                "list_name": "OFAC SDN",
+                "match_strength": entry.get("score", 0.0),
+                "entity_name": name,
+                "list_entry": entry.get("matched_name", ""),
+                "country": country,
+                "reason": entry.get("program", "OFAC match"),
+                "list_url": "https://sanctionslist.ofac.treas.gov/",
+                "screened_at": datetime.utcnow().isoformat(),
+            })
 
         return hits
     
     async def _screen_un(self, name: str, country: str, entity_type: str) -> List[Dict[str, Any]]:
-        """Screen against UN Consolidated List via real API with fallback"""
+        """Screen against UN Consolidated List via real API (raises when unavailable)"""
         hits = []
 
-        try:
-            api_result = await _http_get_with_retry(
-                f"{self.un_endpoint}/search",
-                params={"name": name, "country": country},
-            )
+        api_result = await _http_get_with_retry(
+            f"{self.un_endpoint}/search",
+            params={"name": name, "country": country},
+        )
 
-            if api_result and api_result.get("results"):
-                for entry in api_result["results"]:
-                    hits.append({
-                        "list_name": "UN Consolidated List",
-                        "match_strength": entry.get("score", 0.0),
-                        "entity_name": name,
-                        "list_entry": entry.get("matched_name", ""),
-                        "country": country,
-                        "reason": entry.get("regime", "UN Security Council sanctions"),
-                        "list_url": "https://www.un.org/securitycouncil/sanctions/",
-                        "screened_at": datetime.utcnow().isoformat(),
-                    })
-                return hits
+        if api_result is None:
+            raise ScreeningUnavailableError("UN sanctions API unreachable after retries")
 
-            normalized_name = self._normalize_name(name)
-            terrorism_keywords = ["al-qaeda", "taliban", "isis", "isil", "terrorist"]
-            for keyword in terrorism_keywords:
-                if keyword in normalized_name:
-                    hits.append({
-                        "list_name": "UN Consolidated List",
-                        "match_strength": 0.90,
-                        "entity_name": name,
-                        "list_entry": f"Keyword match: {keyword}",
-                        "country": country,
-                        "reason": "UN Security Council sanctions",
-                        "list_url": "https://www.un.org/securitycouncil/sanctions/",
-                        "screened_at": datetime.utcnow().isoformat(),
-                    })
-                    break
-
-        except Exception as e:
-            logger.error(f"UN screening error: {e}")
+        for entry in api_result.get("results") or []:
+            hits.append({
+                "list_name": "UN Consolidated List",
+                "match_strength": entry.get("score", 0.0),
+                "entity_name": name,
+                "list_entry": entry.get("matched_name", ""),
+                "country": country,
+                "reason": entry.get("regime", "UN Security Council sanctions"),
+                "list_url": "https://www.un.org/securitycouncil/sanctions/",
+                "screened_at": datetime.utcnow().isoformat(),
+            })
 
         return hits
     
     async def _screen_eu(self, name: str, country: str, entity_type: str) -> List[Dict[str, Any]]:
-        """Screen against EU Consolidated List via real API with fallback"""
+        """Screen against EU Consolidated List via real API (raises when unavailable)"""
         hits = []
 
-        try:
-            api_result = await _http_get_with_retry(
-                f"{self.eu_endpoint}/search",
-                params={"searchKey": name, "country": country},
-            )
+        api_result = await _http_get_with_retry(
+            f"{self.eu_endpoint}/search",
+            params={"searchKey": name, "country": country},
+        )
 
-            if api_result and api_result.get("results"):
-                for entry in api_result["results"]:
-                    hits.append({
-                        "list_name": "EU Consolidated List",
-                        "match_strength": entry.get("score", 0.0),
-                        "entity_name": name,
-                        "list_entry": entry.get("matched_name", ""),
-                        "country": country,
-                        "reason": entry.get("regulation", "EU restrictive measures"),
-                        "list_url": "https://www.sanctionsmap.eu/",
-                        "screened_at": datetime.utcnow().isoformat(),
-                    })
-                return hits
+        if api_result is None:
+            raise ScreeningUnavailableError("EU sanctions API unreachable after retries")
 
-            eu_sanctioned_countries = [
-                "RUSSIA", "BELARUS", "SYRIA", "IRAN", "NORTH KOREA",
-                "VENEZUELA", "MYANMAR", "ZIMBABWE", "LIBYA",
-            ]
+        for entry in api_result.get("results") or []:
+            hits.append({
+                "list_name": "EU Consolidated List",
+                "match_strength": entry.get("score", 0.0),
+                "entity_name": name,
+                "list_entry": entry.get("matched_name", ""),
+                "country": country,
+                "reason": entry.get("regulation", "EU restrictive measures"),
+                "list_url": "https://www.sanctionsmap.eu/",
+                "screened_at": datetime.utcnow().isoformat(),
+            })
 
-            if country.upper() in eu_sanctioned_countries:
-                hits.append({
-                    "list_name": "EU Consolidated List",
-                    "match_strength": 0.85,
-                    "entity_name": name,
-                    "list_entry": f"EU sanctions jurisdiction: {country}",
-                    "country": country,
-                    "reason": "EU restrictive measures",
-                    "list_url": "https://www.sanctionsmap.eu/",
-                    "screened_at": datetime.utcnow().isoformat(),
-                })
-
-        except Exception as e:
-            logger.error(f"EU screening error: {e}")
-
-        return hits
-    
-    async def _screen_local_lists(self, name: str, country: str, entity_type: str) -> List[Dict[str, Any]]:
-        """Screen against local/regional sanctions lists (e.g., Nigerian EFCC)"""
-        hits = []
-        
-        try:
-            # For Nigerian context, check EFCC watchlist patterns
-            if country.upper() in ['NIGERIA', 'NGN', 'NG']:
-                fraud_indicators = ['419', 'advance fee', 'yahoo', 'scam']
-                normalized_name = self._normalize_name(name)
-                
-                for indicator in fraud_indicators:
-                    if indicator in normalized_name:
-                        hits.append({
-                            "list_name": "EFCC Watchlist",
-                            "match_strength": 0.80,
-                            "entity_name": name,
-                            "list_entry": f"Fraud indicator: {indicator}",
-                            "country": country,
-                            "reason": "Local enforcement agency watchlist",
-                            "list_url": "https://efccnigeria.org/",
-                            "screened_at": datetime.utcnow().isoformat()
-                        })
-                        break
-                        
-        except Exception as e:
-            logger.error(f"Local list screening error: {e}")
-        
         return hits
     
     def _normalize_name(self, name: str) -> str:
@@ -298,12 +238,18 @@ class SanctionsScreeningService:
 
 class AdverseMediaScreeningService:
     """
-    Real adverse media screening service
+    Adverse media screening via a real news provider (NewsAPI-compatible).
+    Raises ScreeningUnavailableError when no provider is configured or the
+    provider is unreachable — never fabricates news articles.
     """
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.news_api_key = self.config.get('news_api_key', '')
+        self.news_api_key = os.getenv("NEWS_API_KEY", self.config.get('news_api_key', ''))
+        self.news_api_url = os.getenv(
+            "NEWS_API_URL",
+            self.config.get('news_api_url', 'https://newsapi.org/v2/everything')
+        )
         self.cache = {}
         self.cache_ttl = 7200  # 2 hours
     
@@ -317,6 +263,11 @@ class AdverseMediaScreeningService:
             
         Returns:
             List of adverse media articles
+            
+        Raises:
+            ScreeningUnavailableError: if no news provider is configured or
+                the provider cannot be reached. Callers must force manual
+                review.
         """
         # Check cache
         cache_key = hashlib.sha256(f"{name}:{entity_type}".encode()).hexdigest()
@@ -325,80 +276,75 @@ class AdverseMediaScreeningService:
             if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
                 return cached_data
         
-        articles = []
+        # Search for adverse keywords
+        adverse_keywords = [
+            'fraud', 'scam', 'investigation', 'lawsuit', 'criminal',
+            'corruption', 'bribery', 'money laundering', 'embezzlement',
+            'sanctions', 'penalty', 'fine', 'violation', 'misconduct'
+        ]
         
-        try:
-            # Search for adverse keywords
-            adverse_keywords = [
-                'fraud', 'scam', 'investigation', 'lawsuit', 'criminal',
-                'corruption', 'bribery', 'money laundering', 'embezzlement',
-                'sanctions', 'penalty', 'fine', 'violation', 'misconduct'
-            ]
-            
-            # Build search query
-            query = f'"{name}" AND ({" OR ".join(adverse_keywords)})'
-            
-            # Search news sources (would integrate with NewsAPI, Google News API, etc.)
-            articles = await self._search_news_sources(query, name, entity_type)
-            
-            # Cache results
-            self.cache[cache_key] = (articles, datetime.now())
-            
-            return articles
-            
-        except Exception as e:
-            logger.error(f"Adverse media screening failed: {e}")
-            return []
+        # Build search query
+        query = f'"{name}" AND ({" OR ".join(adverse_keywords)})'
+        
+        # Search news sources (raises when unavailable)
+        articles = await self._search_news_sources(query, name, entity_type)
+        
+        # Cache results (only real provider results)
+        self.cache[cache_key] = (articles, datetime.now())
+        
+        return articles
     
     async def _search_news_sources(self, query: str, name: str, entity_type: str) -> List[Dict[str, Any]]:
-        """Search multiple news sources"""
-        articles = []
+        """Search the configured news provider for real articles"""
+        if not self.news_api_key:
+            raise ScreeningUnavailableError(
+                "Adverse media provider not configured (NEWS_API_KEY missing); "
+                "manual review required"
+            )
         
-        try:
-            # In production, integrate with:
-            # - NewsAPI (newsapi.org)
-            # - Google News API
-            # - Dow Jones Factiva
-            # - LexisNexis
-            
-            # For now, implement pattern-based detection
-            adverse_patterns = {
-                'fraud': 0.95,
-                'investigation': 0.85,
-                'lawsuit': 0.80,
-                'criminal': 0.90,
-                'corruption': 0.95,
-                'money laundering': 0.95,
-                'sanctions': 0.90
-            }
-            
-            name_lower = name.lower()
-            for pattern, relevance in adverse_patterns.items():
-                if pattern in name_lower:
-                    articles.append({
-                        "title": f"{entity_type.capitalize()} {name} - {pattern.capitalize()} Related Activity",
-                        "source": "Financial News Aggregator",
-                        "date": (datetime.utcnow() - timedelta(days=15)).isoformat(),
-                        "relevance_score": relevance,
-                        "sentiment": "negative",
-                        "summary": f"Media reports indicate {pattern} related to {name}. Enhanced due diligence recommended.",
-                        "url": f"https://news.example.com/search?q={name.replace(' ', '+')}",
-                        "keywords": [pattern, entity_type, "compliance", "risk"]
-                    })
-            
-        except Exception as e:
-            logger.error(f"News search error: {e}")
+        result = await _http_get_with_retry(
+            self.news_api_url,
+            params={
+                "q": query,
+                "apiKey": self.news_api_key,
+                "language": "en",
+                "sortBy": "relevancy",
+                "pageSize": 20,
+            },
+        )
+        
+        if result is None:
+            raise ScreeningUnavailableError(
+                "Adverse media provider unreachable after retries; manual review required"
+            )
+        
+        articles = []
+        for article in result.get("articles") or []:
+            articles.append({
+                "title": article.get("title"),
+                "source": (article.get("source") or {}).get("name"),
+                "date": article.get("publishedAt"),
+                "relevance_score": None,
+                "sentiment": None,
+                "summary": article.get("description"),
+                "url": article.get("url"),
+                "keywords": [],
+            })
         
         return articles
 
 
 class PEPScreeningService:
     """
-    Politically Exposed Persons screening service
+    Politically Exposed Persons screening via a real PEP data provider.
+    Raises ScreeningUnavailableError when no provider is configured — never
+    guesses PEP status from name substrings.
     """
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
+        self.pep_api_url = os.getenv("PEP_API_URL", self.config.get('pep_api_url', ''))
+        self.pep_api_key = os.getenv("PEP_API_KEY", self.config.get('pep_api_key', ''))
         self.cache = {}
         self.cache_ttl = 86400  # 24 hours
     
@@ -411,7 +357,11 @@ class PEPScreeningService:
             nationality: Person's nationality
             
         Returns:
-            PEP status and details
+            PEP status and details from the real provider
+            
+        Raises:
+            ScreeningUnavailableError: if no PEP provider is configured or
+                reachable. Callers must force manual review.
         """
         # Check cache
         cache_key = hashlib.sha256(f"{name}:{nationality}".encode()).hexdigest()
@@ -420,54 +370,33 @@ class PEPScreeningService:
             if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
                 return cached_data
         
-        result = {"is_pep": False, "details": {}}
+        if not self.pep_api_url:
+            raise ScreeningUnavailableError(
+                "PEP screening provider not configured (PEP_API_URL missing); "
+                "manual review required"
+            )
         
-        try:
-            # Check against PEP indicators
-            pep_titles = [
-                'president', 'vice president', 'prime minister', 'minister',
-                'senator', 'congressman', 'representative', 'governor',
-                'mayor', 'ambassador', 'consul', 'judge', 'justice',
-                'general', 'admiral', 'colonel', 'commissioner',
-                'director general', 'ceo', 'chairman', 'board member'
-            ]
-            
-            name_lower = name.lower()
-            
-            # Check for PEP titles in name
-            for title in pep_titles:
-                if title in name_lower:
-                    result = {
-                        "is_pep": True,
-                        "details": {
-                            "position": title.title(),
-                            "country": nationality,
-                            "risk_level": "high",
-                            "source": "PEP Database - Title Match",
-                            "identified_at": datetime.utcnow().isoformat(),
-                            "requires_enhanced_dd": True,
-                            "approval_required": True
-                        }
-                    }
-                    break
-            
-            # Check for high-risk jurisdictions with enhanced PEP requirements
-            high_risk_jurisdictions = [
-                'RUSSIA', 'CHINA', 'IRAN', 'NORTH KOREA', 'VENEZUELA',
-                'SYRIA', 'BELARUS', 'MYANMAR', 'ZIMBABWE'
-            ]
-            
-            if nationality.upper() in high_risk_jurisdictions and not result["is_pep"]:
-                # Enhanced screening for high-risk jurisdictions
-                result["details"]["enhanced_screening_required"] = True
-                result["details"]["jurisdiction_risk"] = "high"
-            
-            # Cache result
-            self.cache[cache_key] = (result, datetime.now())
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"PEP screening failed: {e}")
-            return {"is_pep": False, "details": {"error": str(e)}}
-
+        headers = {}
+        if self.pep_api_key:
+            headers["Authorization"] = f"Bearer {self.pep_api_key}"
+        
+        api_result = await _http_get_with_retry(
+            f"{self.pep_api_url.rstrip('/')}/search",
+            params={"name": name, "nationality": nationality},
+            headers=headers,
+        )
+        
+        if api_result is None:
+            raise ScreeningUnavailableError(
+                "PEP screening provider unreachable after retries; manual review required"
+            )
+        
+        result = {
+            "is_pep": bool(api_result.get("is_pep")),
+            "details": api_result.get("details") or {},
+        }
+        
+        # Cache result (only real provider results)
+        self.cache[cache_key] = (result, datetime.now())
+        
+        return result

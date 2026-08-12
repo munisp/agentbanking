@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -53,6 +54,7 @@ type Config struct {
 	KafkaBrokers      string
 	RedisURL          string
 	KeycloakURL       string
+	KeycloakRealm     string
 	TigerBeetleURL    string
 	TemporalURL       string
 	DaprURL           string
@@ -72,6 +74,7 @@ func loadConfig() Config {
 		KafkaBrokers:      envOr("KAFKA_BROKERS", "localhost:9092"),
 		RedisURL:          envOr("REDIS_URL", "redis://localhost:6379/10"),
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),
+		KeycloakRealm:     envOr("KEYCLOAK_REALM", "agentbanking"),
 		TigerBeetleURL:    envOr("TIGERBEETLE_URL", "http://localhost:3001"),
 		TemporalURL:       envOr("TEMPORAL_URL", "http://localhost:7233"),
 		DaprURL:           envOr("DAPR_HTTP_URL", "http://localhost:3500"),
@@ -110,6 +113,7 @@ const (
 	FilingStatusAccepted  FilingStatus = "accepted_by_nfiu"
 	FilingStatusRejected  FilingStatus = "rejected_by_nfiu"
 	FilingStatusAmended   FilingStatus = "amended"
+	FilingStatusFailed    FilingStatus = "submission_failed"
 )
 
 type SuspicionIndicator string
@@ -264,22 +268,42 @@ func NewAppState(cfg Config) *AppState {
 
 // ── Middleware: JWT Validation (Keycloak) ────────────────────────────────────
 
+// validateToken verifies the bearer token against Keycloak's userinfo
+// endpoint. It fails CLOSED in every environment: any Keycloak error,
+// non-200 response, or missing configuration means unauthorized.
+func (s *AppState) validateToken(token string) bool {
+	if s.config.KeycloakURL == "" {
+		log.Printf("[auth] Keycloak URL not configured; rejecting request (fail closed)")
+		return false
+	}
+	url := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/userinfo",
+		strings.TrimSuffix(s.config.KeycloakURL, "/"), s.config.KeycloakRealm)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		log.Printf("[auth] Failed to build userinfo request: %v", err)
+		return false
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[auth] Keycloak userinfo request failed: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
 func (s *AppState) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
-			// In dev mode, allow unauthenticated access
-			if s.config.Environment == "development" {
-				next(w, r)
-				return
-			}
+			// No dev-mode bypass: authentication is required in ALL environments.
 			http.Error(w, `{"error":"unauthorized","message":"Bearer token required"}`, http.StatusUnauthorized)
 			return
 		}
-		// Validate with Keycloak (in production, verify JWT signature)
-		// For now, check token is non-empty and reasonably sized
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if len(token) < 10 {
+		if !s.validateToken(token) {
 			http.Error(w, `{"error":"invalid_token"}`, http.StatusUnauthorized)
 			return
 		}
@@ -390,6 +414,51 @@ func (s *AppState) signPayload(payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(s.config.HMACSecret))
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// submitToNFIU performs the real signed submission to the NFIU goAML portal
+// and returns the reference assigned by NFIU. It never invents a reference.
+func (s *AppState) submitToNFIU(payload []byte, signature string) (string, error) {
+	url := fmt.Sprintf("%s/reports", strings.TrimSuffix(s.config.NFIUEndpoint, "/"))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("failed to build NFIU request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Signature", signature)
+	req.Header.Set("Authorization", "Bearer "+s.config.NFIUAPIKey)
+	req.Header.Set("X-Institution-ID", s.config.NFIUInstitutionID)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("NFIU goAML request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("NFIU goAML returned HTTP %d", resp.StatusCode)
+	}
+
+	var nfiuResp struct {
+		Reference       string `json:"reference"`
+		NFIUReferenceID string `json:"nfiu_reference_id"`
+		ID              string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&nfiuResp); err != nil {
+		return "", fmt.Errorf("failed to decode NFIU response: %w", err)
+	}
+	ref := nfiuResp.Reference
+	if ref == "" {
+		ref = nfiuResp.NFIUReferenceID
+	}
+	if ref == "" {
+		ref = nfiuResp.ID
+	}
+	if ref == "" {
+		return "", fmt.Errorf("NFIU response did not include a submission reference")
+	}
+	return ref, nil
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -568,6 +637,14 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fail closed: never mark a regulatory filing submitted when the NFIU
+	// integration or signing key is not configured.
+	if s.config.NFIUEndpoint == "" || s.config.NFIUAPIKey == "" || s.config.HMACSecret == "" {
+		log.Printf("[goAML] Submission of filing %s refused: NFIU integration not configured", id)
+		http.Error(w, `{"error":"nfiu_not_configured","message":"NFIU goAML endpoint, API key, or HMAC secret is not configured; filing left pending"}`, http.StatusServiceUnavailable)
+		return
+	}
+
 	// Build goAML report
 	goamlReport := s.buildGoAMLReport(filing)
 	payload, _ := json.Marshal(goamlReport)
@@ -575,19 +652,36 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 	// Sign payload with HMAC
 	signature := s.signPayload(payload)
 
-	// Submit to NFIU (in production, this calls the real NFIU goAML API)
-	nfiuRef := fmt.Sprintf("NFIU-%s-%s-%d", s.config.NFIUInstitutionID, strings.ToUpper(reportType), time.Now().Unix())
+	// Real submission to the NFIU goAML portal
+	nfiuRef, err := s.submitToNFIU(payload, signature)
+	if err != nil {
+		// Keep the filing honest: mark submission_failed, never submitted.
+		s.mu.Lock()
+		now := time.Now()
+		filing.Status = FilingStatusFailed
+		filing.UpdatedAt = now
+		filing.AuditTrail = append(filing.AuditTrail, AuditEntry{
+			Action:    "submission_failed",
+			Actor:     "system",
+			Details:   fmt.Sprintf("NFIU submission failed: %v", err),
+			Timestamp: now,
+		})
+		s.mu.Unlock()
+		log.Printf("[goAML] NFIU submission failed for filing %s: %v", id, err)
+		http.Error(w, fmt.Sprintf(`{"error":"nfiu_submission_failed","message":"%v"}`, err), http.StatusBadGateway)
+		return
+	}
 
 	s.mu.Lock()
 	now := time.Now()
 	filing.Status = FilingStatusSubmitted
 	filing.SubmissionDate = &now
-	filing.NFIUReferenceID = nfiuRef
+	filing.NFIUReferenceID = nfiuRef // reference assigned by NFIU, never invented
 	filing.UpdatedAt = now
 	filing.AuditTrail = append(filing.AuditTrail, AuditEntry{
 		Action:    "submitted_to_nfiu",
 		Actor:     "system",
-		Details:   fmt.Sprintf("Submitted with signature %s, NFIU ref: %s", signature[:16], nfiuRef),
+		Details:   fmt.Sprintf("Submitted with signature %s, NFIU ref: %s", shortSig(signature), nfiuRef),
 		Timestamp: now,
 	})
 	s.stats.Submitted++
@@ -613,7 +707,7 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 		"nfiu_reference":  nfiuRef,
 		"status":          "submitted_to_nfiu",
 		"submission_time": now.Format(time.RFC3339),
-		"signature":       signature[:16] + "...",
+		"signature":       shortSig(signature) + "...",
 	})
 }
 
@@ -875,6 +969,13 @@ func totalAmount(txns []TransactionInfo) float64 {
 		total += t.Amount
 	}
 	return total
+}
+
+func shortSig(signature string) string {
+	if len(signature) > 16 {
+		return signature[:16]
+	}
+	return signature
 }
 
 func generateID() string {

@@ -24,26 +24,12 @@ interface CacheSummary {
   memoryUsedMB: number;
 }
 
-const MOCK_SUMMARY: CacheSummary = { hitRate: 87.4, missRate: 12.6, totalKeys: 48320, memoryUsedMB: 312 };
-
-const MOCK_NAMESPACES: CacheNamespace[] = [
-  { namespace: "session", keys: 18200, avgTTL: 1800, hitRate: 94.1 },
-  { namespace: "kyc-profiles", keys: 9800, avgTTL: 86400, hitRate: 88.3 },
-  { namespace: "exchange-rates", keys: 42, avgTTL: 300, hitRate: 99.7 },
-  { namespace: "agent-limits", keys: 12400, avgTTL: 3600, hitRate: 81.5 },
-  { namespace: "otp-codes", keys: 7878, avgTTL: 120, hitRate: 72.0 },
-];
-
-const MOCK_MEMORY: MemoryPoint[] = Array.from({ length: 10 }, (_, i) => ({
-  time: `${i * 6}m`,
-  memoryMB: Math.round(280 + Math.random() * 80),
-}));
-
 const CacheManagementDashboard: React.FC = () => {
-  const [summary, setSummary] = useState<CacheSummary>(MOCK_SUMMARY);
+  const [summary, setSummary] = useState<CacheSummary | null>(null);
   const [namespaces, setNamespaces] = useState<CacheNamespace[]>([]);
   const [memoryData, setMemoryData] = useState<MemoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [flushTarget, setFlushTarget] = useState<string | null>(null);
   const [keyPattern, setKeyPattern] = useState("");
@@ -55,15 +41,16 @@ const CacheManagementDashboard: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/cache`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setSummary(d.summary ?? MOCK_SUMMARY);
-        setNamespaces(Array.isArray(d.namespaces) ? d.namespaces : MOCK_NAMESPACES);
-        setMemoryData(Array.isArray(d.memory) ? d.memory : MOCK_MEMORY);
-      } else { setSummary(MOCK_SUMMARY); setNamespaces(MOCK_NAMESPACES); setMemoryData(MOCK_MEMORY); }
-    } catch { setSummary(MOCK_SUMMARY); setNamespaces(MOCK_NAMESPACES); setMemoryData(MOCK_MEMORY); }
+        setSummary(d.summary ?? []);
+        setNamespaces(Array.isArray(d.namespaces) ? d.namespaces : []);
+        setMemoryData(Array.isArray(d.memory) ? d.memory : []);
+      } else { setError("Failed to load cache data."); }
+    } catch { setError("Failed to load cache data."); }
     finally { setLoading(false); }
   };
 
@@ -82,14 +69,21 @@ const CacheManagementDashboard: React.FC = () => {
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/cache/lookup?pattern=${encodeURIComponent(keyPattern)}`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) { const d = await res.json(); setLookupResult(`Found ${d.count ?? 0} keys`); }
-      else { setLookupResult("Pattern found 0 matching keys (demo)"); }
-    } catch { setLookupResult("Pattern found 0 matching keys (demo)"); }
+      else { setLookupResult("Lookup failed — cache service unavailable."); }
+    } catch { setLookupResult("Lookup failed — cache service unavailable."); }
   };
 
   const filtered = namespaces.filter(n => n.namespace.includes(search));
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -104,10 +98,10 @@ const CacheManagementDashboard: React.FC = () => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Hit Rate", value: `${summary.hitRate}%`, color: "text-emerald-600" },
-          { label: "Miss Rate", value: `${summary.missRate}%`, color: "text-red-500" },
-          { label: "Total Keys", value: summary.totalKeys.toLocaleString(), color: "text-blue-600" },
-          { label: "Memory Used", value: `${summary.memoryUsedMB} MB`, color: "text-purple-600" },
+          { label: "Hit Rate", value: summary ? `${summary.hitRate}%` : "—", color: "text-emerald-600" },
+          { label: "Miss Rate", value: summary ? `${summary.missRate}%` : "—", color: "text-red-500" },
+          { label: "Total Keys", value: summary ? summary.totalKeys.toLocaleString() : "—", color: "text-blue-600" },
+          { label: "Memory Used", value: summary ? `${summary.memoryUsedMB} MB` : "—", color: "text-purple-600" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-6">
             <p className="text-xs text-gray-500">{label}</p>

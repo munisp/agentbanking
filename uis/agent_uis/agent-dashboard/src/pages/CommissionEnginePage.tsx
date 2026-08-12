@@ -894,10 +894,13 @@ export default function CommissionEnginePage() {
           <TabsContent value="payouts" className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold">Commission Payouts</h2>
+              {/* No batch payout mutation exists on the backend — the button
+                  is disabled rather than firing a fake success toast. */}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => toast.success("Batch payout initiated")}
+                disabled
+                title="Unavailable — batch payout is not supported by the backend"
               >
                 <DollarSign className="h-4 w-4 mr-1" /> Batch Payout
               </Button>

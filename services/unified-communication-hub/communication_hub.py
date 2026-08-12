@@ -9,11 +9,6 @@ Central orchestration layer for all communication channels
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-
-apply_middleware(app)
-setup_logging("unified-communication-hub")
-app.include_router(metrics_router)
-
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -23,6 +18,10 @@ import asyncio
 import os
 
 app = FastAPI(title="Unified Communication Hub", version="2.0.0")
+
+apply_middleware(app)
+setup_logging("unified-communication-hub")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

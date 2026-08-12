@@ -10,9 +10,15 @@ The Rust core (compiled as a shared library) handles:
   - Memory-mapped I/O for large documents
 
 This Python service wraps the Rust library with a FastAPI interface.
+
+NOTE: This bridge fails LOUD. If the Rust shared library is not present
+(RUST_OCR_LIB), the engine stays uninitialized and every OCR request
+returns HTTP 503. No fabricated OCR text, regions, or confidence values
+are ever returned.
 """
 
 import asyncio
+import base64
 import ctypes
 import json
 import logging
@@ -37,7 +43,7 @@ app = FastAPI(title="POS-54agent Rust OCR Bridge", version="1.0.0")
 class RustOCREngine:
     """
     Interface to the Rust OCR shared library.
-    
+
     The Rust library exposes these C-compatible functions:
       - ocr_init() -> *mut Engine
       - ocr_process(engine: *mut Engine, img_ptr: *const u8, img_len: usize, lang: *const c_char) -> *mut c_char
@@ -51,9 +57,11 @@ class RustOCREngine:
         self.lib = None
         self.engine = None
         self.initialized = False
+        self.init_error: Optional[str] = None
 
     def initialize(self):
-        """Load the Rust shared library."""
+        """Load the Rust shared library. Fails closed: on any error the engine
+        remains uninitialized and processing raises — there is no mock mode."""
         lib_path = os.getenv("RUST_OCR_LIB", "./target/release/libpos54_ocr.so")
         try:
             self.lib = ctypes.CDLL(lib_path)
@@ -66,59 +74,59 @@ class RustOCREngine:
                 ctypes.c_char_p,  # lang
             ]
             self.lib.ocr_process.restype = ctypes.c_char_p
+            self.lib.ocr_free.argtypes = [ctypes.c_char_p]
+            self.lib.ocr_free.restype = None
             self.engine = self.lib.ocr_init()
+            if not self.engine:
+                raise RuntimeError("ocr_init() returned a null engine handle")
             self.initialized = True
+            self.init_error = None
             logger.info("Rust OCR engine loaded successfully")
-        except OSError as e:
-            logger.warning(f"Rust OCR library not found ({e}), using mock mode")
-            self.initialized = True  # Mock mode
+        except (OSError, RuntimeError, AttributeError) as e:
+            self.lib = None
+            self.engine = None
+            self.initialized = False
+            self.init_error = f"Rust OCR library unavailable at {lib_path}: {e}"
+            logger.error(self.init_error)
+
+    def _require_engine(self):
+        if not self.initialized or not self.lib or not self.engine:
+            raise RuntimeError(
+                "Rust OCR engine is not initialized. "
+                f"{self.init_error or 'Shared library not loaded.'} "
+                "OCR cannot be performed."
+            )
 
     def process(self, image_bytes: bytes, lang: str = "eng") -> dict:
-        """Process a single image through Rust OCR."""
-        if self.lib and self.engine:
-            result_ptr = self.lib.ocr_process(
-                self.engine,
-                image_bytes,
-                len(image_bytes),
-                lang.encode("utf-8"),
-            )
-            if result_ptr:
-                result_json = ctypes.string_at(result_ptr).decode("utf-8")
-                self.lib.ocr_free(result_ptr)
-                return json.loads(result_json)
+        """Process a single image through Rust OCR.
 
-        # Mock response
-        return {
-            "text": "REPUBLIC OF KENYA\nNATIONAL IDENTITY CARD\nID NO: 12345678\nJOHN KAMAU MWANGI",
-            "confidence": 0.94,
-            "regions": [
-                {"text": "REPUBLIC OF KENYA", "confidence": 0.98, "bbox": [50, 20, 300, 50]},
-                {"text": "NATIONAL IDENTITY CARD", "confidence": 0.97, "bbox": [60, 55, 290, 80]},
-                {"text": "ID NO: 12345678", "confidence": 0.96, "bbox": [50, 100, 250, 125]},
-                {"text": "JOHN KAMAU MWANGI", "confidence": 0.94, "bbox": [50, 155, 280, 180]},
-            ],
-            "preprocessing": {
-                "deskew_angle": 1.2,
-                "contrast_enhanced": True,
-                "noise_removed": True,
-                "resolution_dpi": 300,
-            },
-            "performance": {
-                "preprocess_ms": 12.5,
-                "ocr_ms": 45.3,
-                "total_ms": 57.8,
-                "engine": "tesseract-5.3.4-rust-ffi",
-            },
-        }
+        Raises RuntimeError when the native engine is unavailable — never
+        returns fabricated OCR output.
+        """
+        self._require_engine()
+        result_ptr = self.lib.ocr_process(
+            self.engine,
+            image_bytes,
+            len(image_bytes),
+            lang.encode("utf-8"),
+        )
+        if not result_ptr:
+            raise RuntimeError("Rust ocr_process returned a null result")
+        try:
+            result_json = ctypes.string_at(result_ptr).decode("utf-8")
+        finally:
+            self.lib.ocr_free(result_ptr)
+        return json.loads(result_json)
 
     def batch_process(self, image_list: list[bytes], lang: str = "eng") -> list[dict]:
         """Process multiple images in parallel using Rust Rayon."""
+        self._require_engine()
         return [self.process(img, lang) for img in image_list]
 
     def preprocess(self, image_bytes: bytes, flags: int = 0xFF) -> dict:
         """
-        Preprocess image using Rust image processing pipeline.
-        
+        Preprocess image using the Rust image processing pipeline.
+
         Flags (bitfield):
           0x01 - Deskew
           0x02 - Denoise
@@ -127,18 +135,22 @@ class RustOCREngine:
           0x10 - Border removal
           0x20 - Resolution upscaling
           0xFF - All preprocessing
+
+        Raises RuntimeError when the native engine is unavailable.
         """
-        return {
-            "processed_image_size": len(image_bytes),
-            "deskew_angle": 1.2,
-            "noise_level_before": 0.15,
-            "noise_level_after": 0.02,
-            "contrast_ratio_before": 0.65,
-            "contrast_ratio_after": 0.92,
-            "resolution_original": 150,
-            "resolution_upscaled": 300,
-            "processing_time_ms": 18.5,
-        }
+        self._require_engine()
+        if not hasattr(self.lib, "ocr_preprocess"):
+            raise RuntimeError("Rust library does not expose ocr_preprocess")
+        self.lib.ocr_preprocess.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
+        self.lib.ocr_preprocess.restype = ctypes.c_char_p
+        result_ptr = self.lib.ocr_preprocess(image_bytes, len(image_bytes), flags)
+        if not result_ptr:
+            raise RuntimeError("Rust ocr_preprocess returned a null result")
+        try:
+            result_json = ctypes.string_at(result_ptr).decode("utf-8")
+        finally:
+            self.lib.ocr_free(result_ptr)
+        return json.loads(result_json)
 
 
 # ── Rust Source Reference ─────────────────────────────────────────────────────
@@ -177,28 +189,6 @@ pub extern "C" fn ocr_process(
     // 3. Run Tesseract OCR
     // 4. Extract text regions with bounding boxes
     // 5. Return JSON result
-    let result = serde_json::json!({
-        "text": "extracted text",
-        "confidence": 0.95,
-        "regions": []
-    });
-    CString::new(result.to_string()).unwrap().into_raw()
-}
-
-#[no_mangle]
-pub extern "C" fn ocr_batch_process(
-    engine: *mut Engine,
-    paths: *const *const c_char,
-    count: usize,
-) -> *mut c_char {
-    // Process images in parallel using Rayon
-    let results: Vec<_> = (0..count)
-        .into_par_iter()
-        .map(|i| {
-            // Process each image
-        })
-        .collect();
-    CString::new(serde_json::to_string(&results).unwrap()).unwrap().into_raw()
 }
 """
 
@@ -218,6 +208,15 @@ class RustOCRRequest(BaseModel):
 @app.on_event("startup")
 async def startup():
     rust_engine.initialize()
+    if not rust_engine.initialized:
+        logger.error(
+            "Rust OCR Bridge started WITHOUT the native library — "
+            "all OCR requests will return 503"
+        )
+
+
+def _engine_unavailable_503(e: Exception) -> HTTPException:
+    return HTTPException(status_code=503, detail=str(e))
 
 
 @app.post("/ocr/process")
@@ -226,17 +225,32 @@ async def process_document(req: RustOCRRequest):
     start = time.monotonic()
     request_id = str(uuid.uuid4())
 
-    import base64
     if req.image_base64:
-        image_bytes = base64.b64decode(req.image_base64)
+        try:
+            image_bytes = base64.b64decode(req.image_base64)
+        except Exception as e:
+            raise HTTPException(400, f"Invalid base64 image data: {e}")
+    elif req.image_url:
+        import urllib.request
+        try:
+            with urllib.request.urlopen(req.image_url, timeout=15) as resp:
+                image_bytes = resp.read()
+        except Exception as e:
+            raise HTTPException(502, f"Failed to download image from URL: {e}")
     else:
-        image_bytes = b"mock_image"
+        raise HTTPException(400, "Provide image_base64 or image_url")
 
     # Preprocess
-    preprocess_result = rust_engine.preprocess(image_bytes, req.preprocess_flags)
+    try:
+        preprocess_result = rust_engine.preprocess(image_bytes, req.preprocess_flags)
+    except RuntimeError as e:
+        raise _engine_unavailable_503(e)
 
     # OCR
-    ocr_result = rust_engine.process(image_bytes, req.language)
+    try:
+        ocr_result = rust_engine.process(image_bytes, req.language)
+    except RuntimeError as e:
+        raise _engine_unavailable_503(e)
 
     return {
         "request_id": request_id,
@@ -250,19 +264,25 @@ async def process_document(req: RustOCRRequest):
 @app.post("/ocr/batch")
 async def batch_process(images: list[str], language: str = "eng"):
     """Batch process multiple documents in parallel via Rust Rayon."""
-    import base64
-    image_list = [base64.b64decode(img) for img in images]
-    results = rust_engine.batch_process(image_list, language)
+    try:
+        image_list = [base64.b64decode(img) for img in images]
+    except Exception as e:
+        raise HTTPException(400, f"Invalid base64 image data: {e}")
+    try:
+        results = rust_engine.batch_process(image_list, language)
+    except RuntimeError as e:
+        raise _engine_unavailable_503(e)
     return {"results": results, "count": len(results)}
 
 
 @app.get("/health")
 async def health():
     return {
-        "status": "healthy",
+        "status": "healthy" if rust_engine.initialized else "degraded",
         "service": "rust-ocr-bridge",
         "engine_initialized": rust_engine.initialized,
         "rust_lib_loaded": rust_engine.lib is not None,
+        "engine_error": rust_engine.init_error,
     }
 
 

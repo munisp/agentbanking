@@ -122,12 +122,20 @@ message_history: List[Dict] = []
 
 # Helper Functions
 async def send_to_channel(channel: Channel, message: Message) -> Dict:
-    """Send message to specific channel"""
+    """Send message to specific channel.
+
+    A 2xx from the channel service means the message was ACCEPTED for sending
+    (sent), NOT that it was delivered. The 'delivered' counter is only
+    incremented from explicit provider delivery receipts - either a provider
+    response body that states status='delivered', or an asynchronous receipt
+    posted by the provider to the /delivery-receipt endpoint. This keeps the
+    delivery-rate metric honest instead of a fabricated ~100%.
+    """
     try:
         service_url = CHANNEL_SERVICES.get(channel)
         if not service_url:
             return {"success": False, "error": "Channel not configured"}
-        
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             # Different channels have different endpoints
             if channel == Channel.EMAIL:
@@ -159,15 +167,23 @@ async def send_to_channel(channel: Channel, message: Message) -> Dict:
                     f"{service_url}/send",
                     json=message.dict()
                 )
-            
+
             if response.status_code in [200, 201]:
                 channel_stats[channel]["sent"] += 1
-                channel_stats[channel]["delivered"] += 1
+                # Delivered is NEVER inferred from send acceptance. Only an
+                # explicit provider receipt counts.
+                provider_status = ""
+                try:
+                    provider_status = str(response.json().get("status", "")).lower()
+                except Exception:
+                    provider_status = ""
+                if provider_status == "delivered":
+                    channel_stats[channel]["delivered"] += 1
                 return {"success": True, "channel": channel.value, "response": response.json()}
             else:
                 channel_stats[channel]["failed"] += 1
                 return {"success": False, "channel": channel.value, "error": response.text}
-    
+
     except Exception as e:
         channel_stats[channel]["failed"] += 1
         return {"success": False, "channel": channel.value, "error": str(e)}
@@ -175,11 +191,11 @@ async def send_to_channel(channel: Channel, message: Message) -> Dict:
 async def send_with_fallback(message: Message, channels: List[Channel]) -> Dict:
     """Send message with automatic fallback to next channel if one fails"""
     results = []
-    
+
     for channel in channels:
         result = await send_to_channel(channel, message)
         results.append(result)
-        
+
         if result["success"]:
             return {
                 "success": True,
@@ -187,7 +203,7 @@ async def send_with_fallback(message: Message, channels: List[Channel]) -> Dict:
                 "attempts": len(results),
                 "results": results
             }
-    
+
     return {
         "success": False,
         "message": "All channels failed",
@@ -199,13 +215,13 @@ def get_customer_preferred_channels(customer_id: str) -> List[Channel]:
     """Get customer's preferred communication channels"""
     if customer_id in customer_preferences:
         return customer_preferences[customer_id].preferred_channels
-    
+
     # Default preferences based on message type
     return [Channel.WHATSAPP, Channel.SMS, Channel.EMAIL]
 
 def select_optimal_channel(message: Message, available_channels: List[Channel]) -> List[Channel]:
     """Intelligently select best channels based on message type and priority"""
-    
+
     # Priority-based channel selection
     if message.priority == MessagePriority.URGENT:
         # For urgent messages, use instant channels
@@ -214,7 +230,7 @@ def select_optimal_channel(message: Message, available_channels: List[Channel]) 
         priority_channels = [Channel.WHATSAPP, Channel.TELEGRAM, Channel.SMS, Channel.MESSENGER]
     else:
         priority_channels = available_channels
-    
+
     # Message type specific channels
     type_preferences = {
         MessageType.ORDER_CONFIRMATION: [Channel.WHATSAPP, Channel.EMAIL, Channel.TELEGRAM],
@@ -223,15 +239,15 @@ def select_optimal_channel(message: Message, available_channels: List[Channel]) 
         MessageType.PROMOTIONAL: [Channel.EMAIL, Channel.WHATSAPP, Channel.TELEGRAM, Channel.INSTAGRAM],
         MessageType.SUPPORT: [Channel.WHATSAPP, Channel.TELEGRAM, Channel.MESSENGER]
     }
-    
+
     preferred = type_preferences.get(message.message_type, available_channels)
-    
+
     # Combine and deduplicate
     combined = []
     for channel in priority_channels + preferred:
         if channel in available_channels and channel not in combined:
             combined.append(channel)
-    
+
     return combined[:3]  # Top 3 channels
 
 # API Endpoints
@@ -252,16 +268,16 @@ async def health_check():
 @app.post("/send")
 async def send_message(multi_msg: MultiChannelMessage, background_tasks: BackgroundTasks):
     """Send message through specified channels with fallback"""
-    
+
     # Get customer preferences
     customer_channels = get_customer_preferred_channels(multi_msg.message.recipient_id)
-    
+
     # Merge with requested channels
     final_channels = multi_msg.channels if multi_msg.channels else customer_channels
-    
+
     # Select optimal channels
     optimal_channels = select_optimal_channel(multi_msg.message, final_channels)
-    
+
     if multi_msg.fallback_enabled:
         result = await send_with_fallback(multi_msg.message, optimal_channels)
     else:
@@ -273,7 +289,7 @@ async def send_message(multi_msg: MultiChannelMessage, background_tasks: Backgro
             "channels_used": [r["channel"] for r in results if r["success"]],
             "results": results
         }
-    
+
     # Log message
     message_history.append({
         "timestamp": datetime.now().isoformat(),
@@ -282,8 +298,37 @@ async def send_message(multi_msg: MultiChannelMessage, background_tasks: Backgro
         "channels": [c.value for c in optimal_channels],
         "result": result
     })
-    
+
     return result
+
+@app.post("/delivery-receipt")
+async def record_delivery_receipt(
+    channel: Channel,
+    status: str,
+    message_ref: Optional[str] = None,
+    provider: Optional[str] = None
+):
+    """Provider delivery receipt webhook.
+
+    Providers (WhatsApp/SMS/etc.) call this endpoint when a message is
+    actually delivered (or fails). This is the ONLY asynchronous path that
+    increments the 'delivered' counter, so delivery rates reflect real
+    provider confirmations rather than send acceptances.
+    """
+    normalized = status.lower()
+    if normalized == "delivered":
+        channel_stats[channel]["delivered"] += 1
+
+    message_history.append({
+        "timestamp": datetime.now().isoformat(),
+        "type": "delivery_receipt",
+        "channel": channel.value,
+        "provider": provider,
+        "message_ref": message_ref,
+        "status": normalized
+    })
+
+    return {"recorded": True, "channel": channel.value, "status": normalized}
 
 @app.post("/send/order-confirmation")
 async def send_order_confirmation(
@@ -295,7 +340,7 @@ async def send_order_confirmation(
     channels: Optional[List[Channel]] = None
 ):
     """Send order confirmation through optimal channels"""
-    
+
     message = Message(
         recipient_id=customer_id,
         recipient_name=customer_name,
@@ -309,13 +354,13 @@ async def send_order_confirmation(
         },
         priority=MessagePriority.HIGH
     )
-    
+
     multi_msg = MultiChannelMessage(
         message=message,
         channels=channels or [],
         fallback_enabled=True
     )
-    
+
     return await send_message(multi_msg, BackgroundTasks())
 
 @app.post("/send/shipping-update")
@@ -327,7 +372,7 @@ async def send_shipping_update(
     channels: Optional[List[Channel]] = None
 ):
     """Send shipping update through optimal channels"""
-    
+
     message = Message(
         recipient_id=customer_id,
         recipient_name=customer_name,
@@ -339,13 +384,13 @@ async def send_shipping_update(
         },
         priority=MessagePriority.NORMAL
     )
-    
+
     multi_msg = MultiChannelMessage(
         message=message,
         channels=channels or [],
         fallback_enabled=True
     )
-    
+
     return await send_message(multi_msg, BackgroundTasks())
 
 @app.post("/preferences")
@@ -363,16 +408,21 @@ async def get_preferences(customer_id: str):
 
 @app.get("/stats")
 async def get_stats():
-    """Get communication statistics across all channels"""
+    """Get communication statistics across all channels.
+
+    'delivered' reflects only provider delivery receipts; it will typically be
+    lower than 'sent' until providers post receipts to /delivery-receipt.
+    """
     total_sent = sum(stats["sent"] for stats in channel_stats.values())
     total_failed = sum(stats["failed"] for stats in channel_stats.values())
     total_delivered = sum(stats["delivered"] for stats in channel_stats.values())
-    
+
     return {
         "total_messages": total_sent,
         "total_delivered": total_delivered,
         "total_failed": total_failed,
         "delivery_rate": (total_delivered / total_sent * 100) if total_sent > 0 else 0,
+        "delivery_rate_note": "delivered counts only provider delivery receipts, not send acceptances",
         "by_channel": {channel.value: stats for channel, stats in channel_stats.items()},
         "message_history_count": len(message_history)
     }
@@ -404,7 +454,7 @@ async def list_channels():
 async def check_channels_health():
     """Check health status of all channel services"""
     health_status = {}
-    
+
     async def check_service(channel: Channel, url: str):
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -412,15 +462,15 @@ async def check_channels_health():
                 return channel.value, response.status_code == 200
         except:
             return channel.value, False
-    
+
     tasks = [check_service(channel, url) for channel, url in CHANNEL_SERVICES.items()]
     results = await asyncio.gather(*tasks)
-    
+
     for channel_name, is_healthy in results:
         health_status[channel_name] = "healthy" if is_healthy else "unhealthy"
-    
+
     healthy_count = sum(1 for status in health_status.values() if status == "healthy")
-    
+
     return {
         "overall_health": f"{healthy_count}/{len(Channel)} channels healthy",
         "channels": health_status
@@ -441,13 +491,13 @@ async def broadcast_message(
     background_tasks: BackgroundTasks
 ):
     """Broadcast message to multiple channels simultaneously"""
-    
+
     tasks = [send_to_channel(channel, message) for channel in target_channels]
     results = await asyncio.gather(*tasks)
-    
+
     successful = [r for r in results if r["success"]]
     failed = [r for r in results if not r["success"]]
-    
+
     return {
         "success": len(successful) > 0,
         "successful_channels": len(successful),
@@ -458,4 +508,3 @@ async def broadcast_message(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8060)
-

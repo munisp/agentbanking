@@ -16,6 +16,8 @@ import hashlib
 import base64
 import logging
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone, date as date_type
 from typing import Optional, Any
 
@@ -26,7 +28,7 @@ from pydantic import BaseModel, Field
 
 POSTGRES_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/pos_shell")
 LAKEHOUSE_PATH = os.getenv("LAKEHOUSE_PATH", "/var/lib/54agent/lakehouse")
-MOJALOOP_HUB_URL = os.getenv("MOJALOOP_HUB_URL", "http://mojaloop-hub:4003")
+MOJALOOP_HUB_URL = os.getenv("MOJALOOP_HUB_URL", "")
 MOJALOOP_FSP_ID = os.getenv("MOJALOOP_FSP_ID", "54agent-fsp")
 PORT = int(os.getenv("LAKEHOUSE_MOJALOOP_PORT", "8050"))
 
@@ -96,7 +98,8 @@ async def health():
         "service": "lakehouse-mojaloop-sidecar",
         "version": "1.0.0",
         "lakehouse_path": LAKEHOUSE_PATH,
-        "mojaloop_hub": MOJALOOP_HUB_URL,
+        "mojaloop_hub": MOJALOOP_HUB_URL or None,
+        "mojaloop_hub_configured": bool(MOJALOOP_HUB_URL),
         "fsp_id": MOJALOOP_FSP_ID,
     }
 
@@ -159,17 +162,18 @@ async def snapshot_commission(req: SnapshotRequest):
             duration_ms=duration_ms, checksum=checksum,
         )
     except Exception as e:
-        logger.warning(f"Commission snapshot failed (generating sample): {e}")
-        row_count = _write_sample_snapshot(table_path, "commission_ledger", req.format)
+        # Fail loud: never substitute sample data for a failed snapshot.
+        logger.error(f"Commission snapshot failed: {e}")
         duration_ms = int((time.monotonic() - t0) * 1000)
         _log_sync_to_db(
             job_id=snapshot_id, bucket="54link-lakehouse",
             object_key=f"commission/{req.date}/commission_ledger.{req.format}",
-            table_source="commission_ledger", record_count=row_count,
+            table_source="commission_ledger", record_count=0,
             size_bytes=0, fmt=req.format, status="failed",
             partition_date=req.date, started_at=started_at,
             duration_ms=duration_ms, error_message=str(e),
         )
+        raise HTTPException(status_code=503, detail=f"Commission snapshot failed: {e}")
 
     logger.info(f"Commission snapshot: {snapshot_id} ({row_count} rows)")
 
@@ -221,17 +225,18 @@ async def snapshot_settlement(req: SnapshotRequest):
             duration_ms=duration_ms, checksum=checksum,
         )
     except Exception as e:
-        logger.warning(f"Settlement snapshot failed (generating sample): {e}")
-        row_count = _write_sample_snapshot(table_path, "settlement_audit", req.format)
+        # Fail loud: never substitute sample data for a failed snapshot.
+        logger.error(f"Settlement snapshot failed: {e}")
         duration_ms = int((time.monotonic() - t0) * 1000)
         _log_sync_to_db(
             job_id=snapshot_id, bucket="54link-lakehouse",
             object_key=f"settlement/{req.date}/settlement_audit.{req.format}",
-            table_source="audit_log", record_count=row_count,
+            table_source="audit_log", record_count=0,
             size_bytes=0, fmt=req.format, status="failed",
             partition_date=req.date, started_at=started_at,
             duration_ms=duration_ms, error_message=str(e),
         )
+        raise HTTPException(status_code=503, detail=f"Settlement snapshot failed: {e}")
 
     return SnapshotResponse(
         snapshot_id=snapshot_id,
@@ -282,17 +287,18 @@ async def snapshot_dispute(req: SnapshotRequest):
             duration_ms=duration_ms, checksum=checksum,
         )
     except Exception as e:
-        logger.warning(f"Dispute snapshot failed (generating sample): {e}")
-        row_count = _write_sample_snapshot(table_path, "disputes", req.format)
+        # Fail loud: never substitute sample data for a failed snapshot.
+        logger.error(f"Dispute snapshot failed: {e}")
         duration_ms = int((time.monotonic() - t0) * 1000)
         _log_sync_to_db(
             job_id=snapshot_id, bucket="54link-lakehouse",
             object_key=f"dispute/{req.date}/disputes.{req.format}",
-            table_source="disputes", record_count=row_count,
+            table_source="disputes", record_count=0,
             size_bytes=0, fmt=req.format, status="failed",
             partition_date=req.date, started_at=started_at,
             duration_ms=duration_ms, error_message=str(e),
         )
+        raise HTTPException(status_code=503, detail=f"Dispute snapshot failed: {e}")
 
     return SnapshotResponse(
         snapshot_id=snapshot_id,
@@ -361,22 +367,6 @@ async def _export_table_snapshot(
     return len(rows)
 
 
-def _write_sample_snapshot(output_path: str, table_name: str, fmt: str) -> int:
-    """Write a sample/empty snapshot when DB is unavailable."""
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
-    sample = pa.table({
-        "id": pa.array([1], type=pa.int64()),
-        "snapshot_type": pa.array(["sample"], type=pa.string()),
-        "created_at": pa.array([datetime.now(timezone.utc).isoformat()], type=pa.string()),
-    })
-
-    file_path = os.path.join(output_path, f"{table_name}.{fmt}")
-    pq.write_table(sample, file_path)
-    return 1
-
-
 def _file_checksum(file_path: str) -> Optional[str]:
     """Compute SHA-256 checksum of a file."""
     try:
@@ -410,10 +400,97 @@ class IlpTransferResponse(BaseModel):
     ilp_packet: str = Field(alias="ilpPacket")
     condition: str
     fulfilment: Optional[str] = None
-    state: str = "COMMITTED"
+    state: str = "RECEIVED"
 
     class Config:
         populate_by_name = True
+
+
+# ── Mojaloop: Hub Submission ─────────────────────────────────────────────
+
+def _submit_transfer_to_hub(transfer_id: str, req: IlpTransferRequest, ilp_data: dict) -> str:
+    """
+    Submit a prepared ILP transfer to the Mojaloop hub (FSPIOP POST /transfers).
+
+    Returns the transfer state reported by the hub (defaults to RECEIVED for
+    the asynchronous FSPIOP flow). Fails loud (502/503) on any hub failure —
+    never returns a fabricated COMMITTED state.
+    """
+    if not MOJALOOP_HUB_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Mojaloop hub is not configured (MOJALOOP_HUB_URL unset); transfer refused.",
+        )
+
+    payload = {
+        "transferId": transfer_id,
+        "payerFsp": req.payer_fsp,
+        "payeeFsp": req.payee_fsp,
+        "amount": {"amount": str(req.amount), "currency": req.currency},
+        "ilpPacket": ilp_data["packet"],
+        "condition": ilp_data["condition"],
+        "expiration": datetime.fromtimestamp(time.time() + 900, tz=timezone.utc).isoformat(),
+    }
+    http_req = urllib.request.Request(
+        url=f"{MOJALOOP_HUB_URL.rstrip('/')}/transfers",
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/vnd.interoperability.transfers+json;version=1.0",
+            "Accept": "application/vnd.interoperability.transfers+json;version=1.0",
+            "FSPIOP-Source": MOJALOOP_FSP_ID,
+            "FSPIOP-Destination": req.payee_fsp,
+        },
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Mojaloop hub rejected transfer {transfer_id}: HTTP {e.code}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Mojaloop hub unreachable for transfer {transfer_id}: {e}",
+        )
+
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        data = {}
+
+    # FSPIOP transfers complete asynchronously; only report a terminal state
+    # if the hub explicitly returned one.
+    return data.get("transferState", "RECEIVED")
+
+
+def _initiate_ilp_transfer(req: IlpTransferRequest, purpose: str, reference: str) -> IlpTransferResponse:
+    """Shared flow for commission/settlement/refund ILP transfers."""
+    transfer_id = str(uuid.uuid4())
+    ilp_data = _generate_ilp_packet(
+        amount=req.amount,
+        currency=req.currency,
+        destination=f"g.{req.payee_fsp}.{purpose}.{reference}",
+    )
+
+    logger.info(
+        f"[Mojaloop] {purpose} transfer {transfer_id}: "
+        f"{req.payer_fsp} -> {req.payee_fsp} ({req.amount} {req.currency})"
+    )
+
+    state = _submit_transfer_to_hub(transfer_id, req, ilp_data)
+
+    # Note: fulfilment is delivered asynchronously by the hub callback;
+    # it is intentionally None here and never fabricated.
+    return IlpTransferResponse(
+        transferId=transfer_id,
+        ilpPacket=ilp_data["packet"],
+        condition=ilp_data["condition"],
+        fulfilment=None,
+        state=state,
+    )
 
 
 # ── Mojaloop: Commission Transfer ────────────────────────────────────────
@@ -422,29 +499,9 @@ class IlpTransferResponse(BaseModel):
 async def mojaloop_commission_transfer(req: IlpTransferRequest):
     """
     Initiate an ILP transfer for cross-border commission settlement.
-    Generates ILP packet, condition, and fulfilment per Mojaloop spec.
+    Submits to the Mojaloop hub; state reflects the hub response.
     """
-    transfer_id = str(uuid.uuid4())
-    ilp_data = _generate_ilp_packet(
-        amount=req.amount,
-        currency=req.currency,
-        destination=f"g.{req.payee_fsp}.commission.{req.agent_code or 'unknown'}",
-    )
-
-    logger.info(
-        f"[Mojaloop] Commission transfer {transfer_id}: "
-        f"{req.payer_fsp} -> {req.payee_fsp} ({req.amount} {req.currency})"
-    )
-
-    # In production, this would call Mojaloop Hub API
-    # POST {MOJALOOP_HUB_URL}/transfers
-    return IlpTransferResponse(
-        transferId=transfer_id,
-        ilpPacket=ilp_data["packet"],
-        condition=ilp_data["condition"],
-        fulfilment=ilp_data["fulfilment"],
-        state="COMMITTED",
-    )
+    return _initiate_ilp_transfer(req, "commission", req.agent_code or "unknown")
 
 
 # ── Mojaloop: Settlement Transfer ────────────────────────────────────────
@@ -452,25 +509,7 @@ async def mojaloop_commission_transfer(req: IlpTransferRequest):
 @app.post("/mojaloop/settlement-transfer", response_model=IlpTransferResponse)
 async def mojaloop_settlement_transfer(req: IlpTransferRequest):
     """Initiate an ILP transfer for settlement disbursement."""
-    transfer_id = str(uuid.uuid4())
-    ilp_data = _generate_ilp_packet(
-        amount=req.amount,
-        currency=req.currency,
-        destination=f"g.{req.payee_fsp}.settlement.{req.transaction_ref or 'batch'}",
-    )
-
-    logger.info(
-        f"[Mojaloop] Settlement transfer {transfer_id}: "
-        f"{req.payer_fsp} -> {req.payee_fsp} ({req.amount} {req.currency})"
-    )
-
-    return IlpTransferResponse(
-        transferId=transfer_id,
-        ilpPacket=ilp_data["packet"],
-        condition=ilp_data["condition"],
-        fulfilment=ilp_data["fulfilment"],
-        state="COMMITTED",
-    )
+    return _initiate_ilp_transfer(req, "settlement", req.transaction_ref or "batch")
 
 
 # ── Mojaloop: Refund Transfer ────────────────────────────────────────────
@@ -478,25 +517,7 @@ async def mojaloop_settlement_transfer(req: IlpTransferRequest):
 @app.post("/mojaloop/refund-transfer", response_model=IlpTransferResponse)
 async def mojaloop_refund_transfer(req: IlpTransferRequest):
     """Initiate an ILP transfer for refund reversal."""
-    transfer_id = str(uuid.uuid4())
-    ilp_data = _generate_ilp_packet(
-        amount=req.amount,
-        currency=req.currency,
-        destination=f"g.{req.payee_fsp}.refund.{req.transaction_ref or 'unknown'}",
-    )
-
-    logger.info(
-        f"[Mojaloop] Refund transfer {transfer_id}: "
-        f"{req.payer_fsp} -> {req.payee_fsp} ({req.amount} {req.currency})"
-    )
-
-    return IlpTransferResponse(
-        transferId=transfer_id,
-        ilpPacket=ilp_data["packet"],
-        condition=ilp_data["condition"],
-        fulfilment=ilp_data["fulfilment"],
-        state="COMMITTED",
-    )
+    return _initiate_ilp_transfer(req, "refund", req.transaction_ref or "unknown")
 
 
 # ── Mojaloop: ILP Packet Generation ──────────────────────────────────────
@@ -541,14 +562,50 @@ class ParticipantLookupRequest(BaseModel):
 
 @app.post("/mojaloop/participants/lookup")
 async def lookup_participant(req: ParticipantLookupRequest):
-    """Look up a participant FSP by identifier (MSISDN, account, etc.)."""
-    # In production, calls Mojaloop Account Lookup Service
-    return {
-        "fspId": MOJALOOP_FSP_ID,
-        "identifier_type": req.identifier_type,
-        "identifier": req.identifier,
-        "name": f"Agent {req.identifier}",
-    }
+    """
+    Look up a participant FSP by identifier (MSISDN, account, etc.) via the
+    Mojaloop Account Lookup Service. Fails loud when the hub is not configured
+    or the participant is unknown — never fabricates a participant name.
+    """
+    if not MOJALOOP_HUB_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Mojaloop hub is not configured (MOJALOOP_HUB_URL unset); lookup refused.",
+        )
+
+    url = f"{MOJALOOP_HUB_URL.rstrip('/')}/participants/{req.identifier_type}/{req.identifier}"
+    http_req = urllib.request.Request(
+        url=url,
+        method="GET",
+        headers={
+            "Accept": "application/vnd.interoperability.participants+json;version=1.0",
+            "FSPIOP-Source": MOJALOOP_FSP_ID,
+        },
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise HTTPException(status_code=404, detail="Participant not found.")
+        raise HTTPException(status_code=502, detail=f"Mojaloop hub lookup failed: HTTP {e.code}")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Mojaloop hub unreachable: {e}")
+
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Mojaloop hub returned a malformed lookup response.")
+
+    # Async ALS flow: hub may answer 202 with the party delivered via callback.
+    if not data:
+        return {
+            "status": "lookup_accepted",
+            "identifier_type": req.identifier_type,
+            "identifier": req.identifier,
+            "note": "FSPIOP participant lookup is asynchronous; party info is delivered via callback.",
+        }
+    return data
 
 
 # ── Entry Point ───────────────────────────────────────────────────────────

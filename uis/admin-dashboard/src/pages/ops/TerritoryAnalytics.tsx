@@ -19,19 +19,12 @@ interface TerritoryData {
   coverage_gap: boolean;
 }
 
-const MOCK_TERRITORIES: TerritoryData[] = [
-  { id: "TER-001", name: "Lagos Island", state: "Lagos", zone: "south", active_agents: 84, total_agents: 92, monthly_volume: 48500000, transaction_count: 12400, avg_agent_utilization: 91, growth_rate: 12.4, top_service: "Cash In", coverage_gap: false },
-  { id: "TER-002", name: "Abuja Municipal", state: "FCT", zone: "central", active_agents: 62, total_agents: 70, monthly_volume: 38200000, transaction_count: 9800, avg_agent_utilization: 88, growth_rate: 8.2, top_service: "Transfer", coverage_gap: false },
-  { id: "TER-003", name: "Kano Central", state: "Kano", zone: "north", active_agents: 28, total_agents: 55, monthly_volume: 12400000, transaction_count: 3200, avg_agent_utilization: 51, growth_rate: -2.1, top_service: "Bill Payment", coverage_gap: true },
-  { id: "TER-004", name: "Port Harcourt", state: "Rivers", zone: "south", active_agents: 45, total_agents: 52, monthly_volume: 22100000, transaction_count: 5600, avg_agent_utilization: 86, growth_rate: 15.8, top_service: "Cash Out", coverage_gap: false },
-  { id: "TER-005", name: "Enugu North", state: "Enugu", zone: "east", active_agents: 18, total_agents: 40, monthly_volume: 7800000, transaction_count: 2100, avg_agent_utilization: 45, growth_rate: -5.3, top_service: "Cash In", coverage_gap: true },
-];
-
 const ZONE_COLORS: Record<string, string> = { north: "bg-amber-100 text-amber-700", south: "bg-blue-100 text-blue-700", east: "bg-green-100 text-green-700", west: "bg-purple-100 text-purple-700", central: "bg-gray-100 text-gray-700" };
 
 const TerritoryAnalytics: React.FC = () => {
   const [territories, setTerritories] = useState<TerritoryData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<TerritoryData | null>(null);
   const [zoneFilter, setZoneFilter] = useState("all");
 
@@ -41,10 +34,11 @@ const TerritoryAnalytics: React.FC = () => {
 
   const fetchTerritories = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/geospatial/api/v1/territories/analytics`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setTerritories(Array.isArray(d.territories) ? d.territories : MOCK_TERRITORIES); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setTerritories(Array.isArray(d.territories) ? d.territories : []);  } else { setError("Failed to load territory analytics."); }
+    } catch { setError("Failed to load territory analytics."); }
     finally { setLoading(false); }
   };
 
@@ -55,6 +49,13 @@ const TerritoryAnalytics: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchTerritories()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

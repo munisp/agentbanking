@@ -260,13 +260,29 @@ export const userNotifPreferencesRouter = router({
 
       return results;
     }),
+  // FAIL LOUD: the preference mutations/queries below previously echoed
+  // the input back (or returned hard-coded defaults) without persisting
+  // anything.
   updateQuietHours: protectedProcedure
     .input(z.object({ start: z.string(), end: z.string() }))
-    .mutation(async ({ input }) => ({ ...input, enabled: true })),
-  // Digest modes: "instant", "hourly", "daily"
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Quiet-hours preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
   updateDigestMode: protectedProcedure
     .input(z.object({ mode: z.enum(["instant", "hourly", "daily"]) }))
-    .mutation(async ({ input }) => ({ mode: input.mode })),
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Digest-mode preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
   bulkUpdate: protectedProcedure
     .input(
       z.object({
@@ -279,133 +295,59 @@ export const userNotifPreferencesRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => ({ updated: input.categories.length })),
-  resetToDefaults: protectedProcedure.mutation(async () => ({ reset: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Bulk preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
+  resetToDefaults: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Preference reset is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+  }),
+
   enableAllForChannel: protectedProcedure
     .input(z.object({ channel: z.string() }))
-    .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Channel preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
   getPreferences: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishuserNotifPreferencesMiddleware(
-      "updateQuietHours",
-      `${Date.now()}`,
-      { action: "updateQuietHours" }
-    ).catch(() => {});
-
-    // Middleware fan-out (fail-open)
-
-    await publishuserNotifPreferencesMiddleware(
-      "updateDigestMode",
-      `${Date.now()}`,
-      { action: "updateDigestMode" }
-    ).catch(() => {});
-
-    // Middleware fan-out (fail-open)
-
-    await publishuserNotifPreferencesMiddleware("bulkUpdate", `${Date.now()}`, {
-      action: "bulkUpdate",
-    }).catch(() => {});
-
-    // Middleware fan-out (fail-open)
-
-    await publishuserNotifPreferencesMiddleware(
-      "resetToDefaults",
-      `${Date.now()}`,
-      { action: "resetToDefaults" }
-    ).catch(() => {});
-
-    // Middleware fan-out (fail-open)
-
-    await publishuserNotifPreferencesMiddleware(
-      "enableAllForChannel",
-      `${Date.now()}`,
-      { action: "enableAllForChannel" }
-    ).catch(() => {});
-
-    return {
-      email: true,
-      sms: true,
-      push: true,
-      inApp: true,
-      quietHoursEnabled: false,
-      quietHoursStart: 22,
-      quietHoursEnd: 7,
-    };
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "User notification preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
+
   categories: protectedProcedure.query(async () => {
-    return {
-      categories: [
-        { id: "transactions", label: "Transactions", enabled: true },
-        { id: "security", label: "Security Alerts", enabled: true },
-        { id: "marketing", label: "Marketing", enabled: false },
-        { id: "system", label: "System Updates", enabled: true },
-      ],
-    };
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Notification category preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
+
   updateCategory: protectedProcedure
     .input(
       z.object({ categoryId: z.string().min(1).max(255), enabled: z.boolean() })
     )
-    .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      await writeAuditLog({
-        agentId:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.id ?? 0)
-            : 0,
-
-        agentCode:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.agentCode ?? "system")
-            : "system",
-
-        action: "MUTATION",
-
-        resource: "userNotifPreferences",
-
-        resourceId:
-          typeof input === "object" && input !== null && "id" in input
-            ? String((input as any).id)
-            : "new",
-
-        status: "success",
-
-        metadata: { input: typeof input === "object" ? input : {} },
-      });
-
-      // Middleware fan-out (fail-open)
-
-      await publishuserNotifPreferencesMiddleware(
-        "updateCategory",
-        `${Date.now()}`,
-        { action: "updateCategory" }
-      ).catch(() => {});
-
-      return {
-        success: true,
-        categoryId: input.categoryId,
-        enabled: input.enabled,
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Category preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 });

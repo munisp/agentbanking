@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 import { auditLog, notification_channels } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { validateInput } from "../lib/routerHelpers";
+
 import {
   validateAmount,
   validateStatusTransition,
@@ -17,15 +19,23 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { publishEvent } from "../kafkaClient";
+import { tbCreateTransfer } from "../tbClient";
+import { cacheSet } from "../redisClient";
+import { publishTxToFluvio } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
+import { dapr } from "../middleware/middlewareConnectors";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
+  pending_verification: ["email_verified"],
+  email_verified: ["profile_complete"],
+  profile_complete: ["active"],
+  active: ["suspended", "locked", "deactivated"],
+  suspended: ["active", "deactivated"],
+  locked: ["active", "deactivated"],
+  deactivated: ["reactivation_pending"],
+  reactivation_pending: ["active", "permanently_closed"],
+  permanently_closed: [],
 };
 
 // Notification categories (16 across 4 groups):
@@ -35,28 +45,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 // System: sys_maintenance, sys_update, sys_alert, sys_report
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
-function validateUsernotifpreferencesInput(
-  data: Record<string, unknown>
-): boolean {
-  if (!data) return false;
-  const requiredFields = Object.keys(data).filter(
-    k => data[k] !== undefined && data[k] !== null
-  );
-  if (requiredFields.length === 0) return false;
-  if (
-    typeof data.id === "number" &&
-    (data.id <= 0 || !Number.isFinite(data.id))
-  )
-    return false;
-  if (
-    typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
-  )
-    return false;
-  return true;
-}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -100,51 +88,6 @@ function logOperation(action: string, details: Record<string, unknown>) {
   );
 }
 
-// ── Data Integrity Constraints ─────────────────────────────────────────────
-const INTEGRITY_RULES_USERNOTIFPREFERENCES = {
-  validateId: (id: number) => id > 0 && Number.isFinite(id),
-  validateRange: (val: number, min: number, max: number) =>
-    val >= min && val <= max,
-  checkNotNull: (val: unknown): val is NonNullable<typeof val> =>
-    val !== null && val !== undefined,
-  isNotNull: (field: string, val: unknown) => {
-    if (val === null || val === undefined)
-      throw new Error(`${field} isNotNull constraint violated`);
-    return true;
-  },
-  checkEquality: (a: unknown, b: unknown) => a === b,
-};
-function applyIntegrityChecks(data: Record<string, unknown>) {
-  const errors: string[] = [];
-  for (const [key, val] of Object.entries(data)) {
-    if (
-      val === null &&
-      !["deletedAt", "archivedAt", "parentId"].includes(key)
-    ) {
-      // isNull check: certain fields should not be null
-    }
-  }
-  if (typeof data.id === "number") {
-    if (!INTEGRITY_RULES_USERNOTIFPREFERENCES.validateId(data.id))
-      errors.push("Invalid id");
-  }
-  if (typeof data.amount === "number") {
-    if (
-      !INTEGRITY_RULES_USERNOTIFPREFERENCES.validateRange(
-        data.amount,
-        0,
-        100_000_000
-      )
-    )
-      errors.push("Amount out of range");
-    // eq( check for exact match validation
-    // and( combined conditions
-    // gte( minimum threshold
-    // lte( maximum threshold
-  }
-  return errors;
-}
-
 // ── Error Handling ─────────────────────────────────────────────────────────
 function handleError(error: unknown, context: string): never {
   if (error instanceof TRPCError) throw error;
@@ -164,76 +107,6 @@ function validateRequired<T>(value: T | null | undefined, field: string): T {
   return value;
 }
 
-// ── Database Query Patterns ────────────────────────────────────────────────
-const _userNotifPreferences_db = {
-  async selectById(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const rows = await db
-        .select()
-        .from(table)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .limit(1);
-      return rows[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async selectAll(table: any, limit = 50) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return [];
-      return await db.select().from(table).limit(limit);
-    } catch {
-      return [];
-    }
-  },
-  async insertRecord(table: any, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .insert(table)
-        .values(data as any)
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async updateRecord(table: any, id: number, data: Record<string, unknown>) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return null;
-      const result = await db
-        .update(table)
-        .set(data as any)
-        .where((await import("drizzle-orm")).eq(table.id, id))
-        .returning();
-      return result[0] ?? null;
-    } catch {
-      return null;
-    }
-  },
-  async deleteRecord(table: any, id: number) {
-    try {
-      const db = await (await import("../db")).getDb();
-      if ((db as any)?._isNoop) return false;
-      await db
-        .delete(table)
-        .where((await import("drizzle-orm")).eq(table.id, id));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-// ── Transaction Patterns ───────────────────────────────────────────────────
-// withTransaction ensures atomic multi-step mutations
-// db.transaction() wraps sequential DB ops in a single transaction
-// .transaction() provides rollback on failure
 const _txPatterns = {
   wrapMutation: (...args: unknown[]) =>
     typeof withTransaction === "function"
@@ -248,13 +121,62 @@ const _txPatterns = {
   },
 };
 
+// ── Middleware Fan-Out (Kafka + TigerBeetle + Fluvio + Dapr + Lakehouse) ──
+async function publishuserNotifPreferencesMiddleware(
+  action: string,
+  ref: string,
+  payload: Record<string, unknown>
+) {
+  const topic = `platform.${action}` as any;
+  const ts = new Date().toISOString();
+
+  // 1. Kafka — event stream (fail-open)
+  publishEvent(topic, ref, { ...payload, action, timestamp: ts }).catch(
+    () => {}
+  );
+
+  // 2. TigerBeetle — GL journal entry (fail-open)
+  if (payload.amount && typeof payload.amount === "number") {
+    tbCreateTransfer({
+      debitAccountId: String(payload.debitAccount ?? "3001"),
+      creditAccountId: String(payload.creditAccount ?? "4001"),
+      amount: Math.round(Number(payload.amount) * 100),
+      ref,
+      txType: `platform_${action}`,
+      agentCode: String(payload.agentCode ?? "system"),
+    }).catch(() => {});
+  }
+
+  // 3. Fluvio — real-time fraud stream (fail-open)
+  publishTxToFluvio({
+    txRef: ref,
+    agentCode: String(payload.agentCode ?? "system"),
+    amount: Number(payload.amount ?? 0),
+    type: `platform_${action}`,
+    timestamp: Date.now(),
+  }).catch(() => {});
+
+  // 4. Dapr — service mesh pub/sub (fail-open)
+  dapr
+    .publishEvent("pubsub", topic, { ref, ...payload, timestamp: ts })
+    .catch(() => {});
+
+  // 5. Lakehouse — analytics ingestion (fail-open)
+  ingestToLakehouse("platform", {
+    ref,
+    action,
+    ...payload,
+    timestamp: ts,
+  }).catch(() => {});
+}
+
 export const userNotifPreferencesRouter = router({
   list: protectedProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        search: z.string().optional(),
+        search: z.string().min(1).max(500).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -338,13 +260,29 @@ export const userNotifPreferencesRouter = router({
 
       return results;
     }),
+  // FAIL LOUD: the preference mutations/queries below previously echoed
+  // the input back (or returned hard-coded defaults) without persisting
+  // anything.
   updateQuietHours: protectedProcedure
     .input(z.object({ start: z.string(), end: z.string() }))
-    .mutation(async ({ input }) => ({ ...input, enabled: true })),
-  // Digest modes: "instant", "hourly", "daily"
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Quiet-hours preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
   updateDigestMode: protectedProcedure
     .input(z.object({ mode: z.enum(["instant", "hourly", "daily"]) }))
-    .mutation(async ({ input }) => ({ mode: input.mode })),
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Digest-mode preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
   bulkUpdate: protectedProcedure
     .input(
       z.object({
@@ -357,54 +295,59 @@ export const userNotifPreferencesRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => ({ updated: input.categories.length })),
-  resetToDefaults: protectedProcedure.mutation(async () => ({ reset: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Bulk preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
+
+  resetToDefaults: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Preference reset is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+  }),
+
   enableAllForChannel: protectedProcedure
     .input(z.object({ channel: z.string() }))
-    .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
-  getPreferences: protectedProcedure.query(async () => {
-    return {
-      email: true,
-      sms: true,
-      push: true,
-      inApp: true,
-      quietHoursEnabled: false,
-      quietHoursStart: 22,
-      quietHoursEnd: 7,
-    };
-  }),
-  categories: protectedProcedure.query(async () => {
-    return {
-      categories: [
-        { id: "transactions", label: "Transactions", enabled: true },
-        { id: "security", label: "Security Alerts", enabled: true },
-        { id: "marketing", label: "Marketing", enabled: false },
-        { id: "system", label: "System Updates", enabled: true },
-      ],
-    };
-  }),
-  updateCategory: protectedProcedure
-    .input(z.object({ categoryId: z.string(), enabled: z.boolean() }))
-    .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "userNotifPreferences",
-        "mutation",
-        "Executed userNotifPreferences mutation"
-      );
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Channel preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+    }),
 
-      return {
-        success: true,
-        categoryId: input.categoryId,
-        enabled: input.enabled,
-      };
+  getPreferences: protectedProcedure.query(async () => {
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "User notification preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+  }),
+
+  categories: protectedProcedure.query(async () => {
+    // FAIL LOUD: previously returned a canned payload.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Notification category preferences is not wired to a real backend in this router; refusing to return a canned response.",
+    });
+  }),
+
+  updateCategory: protectedProcedure
+    .input(
+      z.object({ categoryId: z.string().min(1).max(255), enabled: z.boolean() })
+    )
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Category preference update is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
 });

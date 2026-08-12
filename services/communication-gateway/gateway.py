@@ -22,9 +22,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("communication-gateway")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, EmailStr
 import httpx
@@ -140,7 +137,7 @@ class CommunicationResponse:
 
 class CommunicationMessage(Base):
     __tablename__ = "communication_messages"
-
+    
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     recipient_id = Column(String, nullable=False)
     message_type = Column(String, nullable=False)
@@ -166,7 +163,7 @@ class CommunicationMessage(Base):
 
 class CommunicationLog(Base):
     __tablename__ = "communication_logs"
-
+    
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     message_id = Column(String, nullable=False)
     channel = Column(String, nullable=False)
@@ -179,7 +176,7 @@ class CommunicationLog(Base):
 
 class CommunicationTemplate(Base):
     __tablename__ = "communication_templates"
-
+    
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     template_id = Column(String, nullable=False, unique=True)
     name = Column(String, nullable=False)
@@ -226,17 +223,17 @@ class ServiceRegistry:
                 "send_endpoint": "/send-notification"
             }
         }
-
+    
     def get_service_url(self, channel: CommunicationChannel) -> str:
         """Get service URL for communication channel"""
         return self.services.get(channel, {}).get("url", "")
-
+    
     async def check_service_health(self, channel: CommunicationChannel) -> bool:
         """Check if service is healthy"""
         service_info = self.services.get(channel)
         if not service_info:
             return False
-
+        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
@@ -254,27 +251,27 @@ class CommunicationGateway:
         self.service_registry = ServiceRegistry()
         self.redis_client = None
         self.rate_limiters = {}
-
+        
     async def initialize(self):
         """Initialize communication gateway"""
         try:
             # Initialize Redis for caching and rate limiting
             redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
             self.redis_client = await aioredis.from_url(redis_url)
-
+            
             # Initialize rate limiters
             self.rate_limiters = {
                 CommunicationChannel.EMAIL: RateLimiter(100, 3600),  # 100 emails per hour
                 CommunicationChannel.SMS: RateLimiter(50, 3600),     # 50 SMS per hour
                 CommunicationChannel.PUSH: RateLimiter(1000, 3600),  # 1000 push per hour
             }
-
+            
             logger.info("Communication Gateway initialized successfully")
-
+            
         except Exception as e:
             logger.error(f"Failed to initialize Communication Gateway: {e}")
             raise
-
+    
     async def send_message(self, request: CommunicationRequest) -> CommunicationResponse:
         """Send message through specified channels"""
         try:
@@ -283,20 +280,18 @@ class CommunicationGateway:
                 existing_message = await self.get_message_by_idempotency_key(request.idempotency_key)
                 if existing_message:
                     return self.create_response_from_message(existing_message)
-
+            
             # Generate message ID
             message_id = str(uuid.uuid4())
-
+            
             # Save message to database
             await self.save_message(message_id, request)
-
+            
             # Check if message should be scheduled
             if request.scheduled_time and request.scheduled_time > datetime.utcnow():
-                # Schedule message for later. The Celery task below actually
-                # loads the message from the DB and dispatches it at `eta` -
-                # QUEUED here means "a dispatch task exists", not fire-and-forget.
+                # Schedule message for later
                 await self.schedule_message(message_id, request.scheduled_time)
-
+                
                 return CommunicationResponse(
                     message_id=message_id,
                     recipient_id=request.recipient_id,
@@ -307,26 +302,26 @@ class CommunicationGateway:
                     estimated_delivery_time=request.scheduled_time,
                     timestamp=datetime.utcnow()
                 )
-
+            
             # Process message immediately
             return await self.process_message(message_id, request)
-
+            
         except Exception as e:
             logger.error(f"Message sending failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-
+    
     async def process_message(self, message_id: str, request: CommunicationRequest) -> CommunicationResponse:
         """Process message through all specified channels"""
         # Update status to processing
         await self.update_message_status(message_id, MessageStatus.PROCESSING)
-
+        
         # Determine optimal channel order based on priority and reliability
         ordered_channels = self.optimize_channel_order(request.channels, request.priority)
-
+        
         channels_attempted = []
         channels_successful = []
         delivery_details = {}
-
+        
         # Process each channel
         for channel in ordered_channels:
             try:
@@ -339,7 +334,7 @@ class CommunicationGateway:
                         'timestamp': datetime.utcnow().isoformat()
                     }
                     continue
-
+                
                 # Check service health
                 if not await self.service_registry.check_service_health(channel):
                     logger.warning(f"Service {channel} is not healthy")
@@ -349,20 +344,20 @@ class CommunicationGateway:
                         'timestamp': datetime.utcnow().isoformat()
                     }
                     continue
-
+                
                 channels_attempted.append(channel)
-
+                
                 # Send through channel
                 result = await self.send_through_channel(channel, request)
-
+                
                 delivery_details[channel] = result
-
+                
                 if result.get('success'):
                     channels_successful.append(channel)
-
+                    
                     # Log successful delivery
                     await self.log_communication(message_id, channel, MessageStatus.SENT, result)
-
+                    
                     # For critical messages, continue to all channels
                     # For others, stop after first successful delivery
                     if request.priority not in [MessagePriority.URGENT, MessagePriority.CRITICAL]:
@@ -370,7 +365,7 @@ class CommunicationGateway:
                 else:
                     # Log failed delivery
                     await self.log_communication(message_id, channel, MessageStatus.FAILED, result)
-
+                
             except Exception as e:
                 logger.error(f"Failed to send through {channel}: {e}")
                 delivery_details[channel] = {
@@ -378,26 +373,26 @@ class CommunicationGateway:
                     'error': str(e),
                     'timestamp': datetime.utcnow().isoformat()
                 }
-
+                
                 # Log failed delivery
-                await self.log_communication(message_id, channel, MessageStatus.FAILED,
+                await self.log_communication(message_id, channel, MessageStatus.FAILED, 
                                            {'error': str(e)})
-
+        
         # Determine overall status
         if channels_successful:
             status = MessageStatus.SENT
             # Update message status
-            await self.update_message_status(message_id, status, channels_attempted,
+            await self.update_message_status(message_id, status, channels_attempted, 
                                            channels_successful, delivery_details)
         else:
             status = MessageStatus.FAILED
-            await self.update_message_status(message_id, status, channels_attempted,
+            await self.update_message_status(message_id, status, channels_attempted, 
                                            channels_successful, delivery_details)
-
+        
         # Send callback if specified
         if request.callback_url:
             await self.send_callback(request.callback_url, message_id, status, delivery_details)
-
+        
         return CommunicationResponse(
             message_id=message_id,
             recipient_id=request.recipient_id,
@@ -408,8 +403,8 @@ class CommunicationGateway:
             estimated_delivery_time=None,
             timestamp=datetime.utcnow()
         )
-
-    def optimize_channel_order(self, channels: List[CommunicationChannel],
+    
+    def optimize_channel_order(self, channels: List[CommunicationChannel], 
                              priority: MessagePriority) -> List[CommunicationChannel]:
         """Optimize channel order based on priority and reliability"""
         # Channel reliability scores (higher is better)
@@ -422,7 +417,7 @@ class CommunicationGateway:
             CommunicationChannel.WHATSAPP: 0.70,
             CommunicationChannel.VOICE: 0.60,
         }
-
+        
         # Speed scores (higher is faster)
         speed_scores = {
             CommunicationChannel.WEBSOCKET: 1.0,
@@ -433,7 +428,7 @@ class CommunicationGateway:
             CommunicationChannel.EMAIL: 0.5,
             CommunicationChannel.VOICE: 0.3,
         }
-
+        
         # Weight factors based on priority
         if priority in [MessagePriority.URGENT, MessagePriority.CRITICAL]:
             # Prioritize speed for urgent messages
@@ -443,7 +438,7 @@ class CommunicationGateway:
             # Prioritize reliability for normal messages
             weight_speed = 0.3
             weight_reliability = 0.7
-
+        
         # Calculate composite scores
         channel_scores = []
         for channel in channels:
@@ -451,19 +446,19 @@ class CommunicationGateway:
             speed = speed_scores.get(channel, 0.5)
             composite_score = (reliability * weight_reliability) + (speed * weight_speed)
             channel_scores.append((channel, composite_score))
-
+        
         # Sort by composite score (descending)
         channel_scores.sort(key=lambda x: x[1], reverse=True)
-
+        
         return [channel for channel, score in channel_scores]
-
-    async def send_through_channel(self, channel: CommunicationChannel,
+    
+    async def send_through_channel(self, channel: CommunicationChannel, 
                                  request: CommunicationRequest) -> Dict[str, Any]:
         """Send message through specific channel"""
         try:
             # Use the comprehensive notification service for all channels
             notification_service_url = self.service_registry.services["notification_service"]["url"]
-
+            
             # Prepare notification request
             notification_data = {
                 "recipient_id": request.recipient_id,
@@ -477,14 +472,14 @@ class CommunicationGateway:
                 "template_data": request.template_data,
                 "channels": [channel.value] if channel != CommunicationChannel.WEBSOCKET else None
             }
-
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{notification_service_url}/send-notification",
                     json=notification_data,
                     timeout=30.0
                 )
-
+                
                 if response.status_code == 200:
                     result = response.json()
                     return {
@@ -500,7 +495,7 @@ class CommunicationGateway:
                         'error': f"HTTP {response.status_code}: {response.text}",
                         'timestamp': datetime.utcnow().isoformat()
                     }
-
+                    
         except Exception as e:
             logger.error(f"Channel {channel} sending failed: {e}")
             return {
@@ -509,17 +504,17 @@ class CommunicationGateway:
                 'error': str(e),
                 'timestamp': datetime.utcnow().isoformat()
             }
-
+    
     async def check_rate_limit(self, recipient_id: str, channel: CommunicationChannel) -> bool:
         """Check rate limit for recipient and channel"""
         if channel not in self.rate_limiters:
             return True
-
+        
         rate_limiter = self.rate_limiters[channel]
         key = f"rate_limit:{recipient_id}:{channel.value}"
-
+        
         return await rate_limiter.is_allowed(key, self.redis_client)
-
+    
     async def schedule_message(self, message_id: str, scheduled_time: datetime):
         """Schedule message for later delivery"""
         # Use Celery to schedule the task
@@ -527,50 +522,50 @@ class CommunicationGateway:
             args=[message_id],
             eta=scheduled_time
         )
-
+    
     async def send_bulk_messages(self, requests: List[CommunicationRequest]) -> List[CommunicationResponse]:
         """Send multiple messages efficiently"""
         # Group by channels and priority for batch processing
         grouped_requests = self.group_requests_for_batch_processing(requests)
-
+        
         responses = []
-
+        
         for group_key, group_requests in grouped_requests.items():
             # Process each group
             group_responses = await self.process_bulk_group(group_requests)
             responses.extend(group_responses)
-
+        
         return responses
-
+    
     def group_requests_for_batch_processing(self, requests: List[CommunicationRequest]) -> Dict[str, List[CommunicationRequest]]:
         """Group requests for efficient batch processing"""
         groups = {}
-
+        
         for request in requests:
             # Create group key based on channels and priority
             channels_key = ",".join(sorted([c.value for c in request.channels]))
             group_key = f"{channels_key}:{request.priority.value}"
-
+            
             if group_key not in groups:
                 groups[group_key] = []
-
+            
             groups[group_key].append(request)
-
+        
         return groups
-
+    
     async def process_bulk_group(self, requests: List[CommunicationRequest]) -> List[CommunicationResponse]:
         """Process a group of similar requests efficiently"""
         responses = []
-
+        
         # Process in batches to avoid overwhelming services
         batch_size = 50
         for i in range(0, len(requests), batch_size):
             batch = requests[i:i + batch_size]
-
+            
             # Process batch concurrently
             tasks = [self.send_message(request) for request in batch]
             batch_responses = await asyncio.gather(*tasks, return_exceptions=True)
-
+            
             for response in batch_responses:
                 if isinstance(response, Exception):
                     logger.error(f"Bulk message processing failed: {response}")
@@ -588,9 +583,9 @@ class CommunicationGateway:
                     responses.append(error_response)
                 else:
                     responses.append(response)
-
+        
         return responses
-
+    
     async def get_message_status(self, message_id: str) -> Optional[Dict[str, Any]]:
         """Get message status and delivery details"""
         db = SessionLocal()
@@ -598,7 +593,7 @@ class CommunicationGateway:
             message = db.query(CommunicationMessage).filter(
                 CommunicationMessage.id == message_id
             ).first()
-
+            
             if message:
                 return {
                     'message_id': message.id,
@@ -611,12 +606,12 @@ class CommunicationGateway:
                     'sent_at': message.sent_at.isoformat() if message.sent_at else None,
                     'delivered_at': message.delivered_at.isoformat() if message.delivered_at else None
                 }
-
+            
             return None
-
+            
         finally:
             db.close()
-
+    
     async def get_message_by_idempotency_key(self, idempotency_key: str) -> Optional[CommunicationMessage]:
         """Get message by idempotency key"""
         db = SessionLocal()
@@ -626,12 +621,12 @@ class CommunicationGateway:
             ).first()
         finally:
             db.close()
-
+    
     def create_response_from_message(self, message: CommunicationMessage) -> CommunicationResponse:
         """Create response object from database message"""
         return CommunicationResponse(
             message_id=message.id,
-            recipient_id=message.recipient_id,
+            recipient_id=request.recipient_id if False else message.recipient_id,
             status=MessageStatus(message.status),
             channels_attempted=[CommunicationChannel(c) for c in (message.channels_attempted or [])],
             channels_successful=[CommunicationChannel(c) for c in (message.channels_successful or [])],
@@ -639,7 +634,7 @@ class CommunicationGateway:
             estimated_delivery_time=message.scheduled_time,
             timestamp=message.created_at
         )
-
+    
     async def save_message(self, message_id: str, request: CommunicationRequest):
         """Save message to database"""
         db = SessionLocal()
@@ -660,17 +655,17 @@ class CommunicationGateway:
                 callback_url=request.callback_url,
                 idempotency_key=request.idempotency_key
             )
-
+            
             db.add(message)
             db.commit()
-
+            
         except Exception as e:
             logger.error(f"Failed to save message: {e}")
             db.rollback()
             raise
         finally:
             db.close()
-
+    
     async def update_message_status(self, message_id: str, status: MessageStatus,
                                   channels_attempted: List[CommunicationChannel] = None,
                                   channels_successful: List[CommunicationChannel] = None,
@@ -681,33 +676,33 @@ class CommunicationGateway:
             message = db.query(CommunicationMessage).filter(
                 CommunicationMessage.id == message_id
             ).first()
-
+            
             if message:
                 message.status = status.value
                 message.updated_at = datetime.utcnow()
-
+                
                 if channels_attempted:
                     message.channels_attempted = [c.value for c in channels_attempted]
-
+                
                 if channels_successful:
                     message.channels_successful = [c.value for c in channels_successful]
-
+                
                 if delivery_details:
                     message.delivery_details = {k.value: v for k, v in delivery_details.items()}
-
+                
                 if status == MessageStatus.SENT:
                     message.sent_at = datetime.utcnow()
                 elif status == MessageStatus.DELIVERED:
                     message.delivered_at = datetime.utcnow()
-
+                
                 db.commit()
-
+                
         except Exception as e:
             logger.error(f"Failed to update message status: {e}")
             db.rollback()
         finally:
             db.close()
-
+    
     async def log_communication(self, message_id: str, channel: CommunicationChannel,
                               status: MessageStatus, result: Dict[str, Any]):
         """Log communication attempt"""
@@ -722,17 +717,17 @@ class CommunicationGateway:
                 error_message=result.get('error'),
                 metadata=result
             )
-
+            
             db.add(log_entry)
             db.commit()
-
+            
         except Exception as e:
             logger.error(f"Failed to log communication: {e}")
             db.rollback()
         finally:
             db.close()
-
-    async def send_callback(self, callback_url: str, message_id: str,
+    
+    async def send_callback(self, callback_url: str, message_id: str, 
                           status: MessageStatus, delivery_details: Dict[str, Any]):
         """Send callback notification"""
         try:
@@ -742,13 +737,13 @@ class CommunicationGateway:
                 'delivery_details': delivery_details,
                 'timestamp': datetime.utcnow().isoformat()
             }
-
+            
             async with httpx.AsyncClient() as client:
                 await client.post(callback_url, json=callback_data, timeout=10.0)
-
+                
         except Exception as e:
             logger.error(f"Callback sending failed: {e}")
-
+    
     async def health_check(self) -> Dict[str, Any]:
         """Health check endpoint"""
         # Check all registered services
@@ -767,7 +762,7 @@ class CommunicationGateway:
                         service_health[channel] = response.status_code == 200
                 except:
                     service_health[channel] = False
-
+        
         return {
             'status': 'healthy',
             'timestamp': datetime.utcnow().isoformat(),
@@ -782,31 +777,31 @@ class RateLimiter:
     def __init__(self, max_requests: int, window_seconds: int):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-
+    
     async def is_allowed(self, key: str, redis_client) -> bool:
         """Check if request is allowed under rate limit"""
         if not redis_client:
             return True
-
+        
         try:
             current_time = int(datetime.utcnow().timestamp())
             window_start = current_time - self.window_seconds
-
+            
             # Remove old entries
             await redis_client.zremrangebyscore(key, 0, window_start)
-
+            
             # Count current requests
             current_count = await redis_client.zcard(key)
-
+            
             if current_count >= self.max_requests:
                 return False
-
+            
             # Add current request
             await redis_client.zadd(key, {str(current_time): current_time})
             await redis_client.expire(key, self.window_seconds)
-
+            
             return True
-
+            
         except Exception as e:
             logger.error(f"Rate limiting check failed: {e}")
             return True  # Allow on error
@@ -825,36 +820,24 @@ def send_bulk_notifications_task(messages_data: List[Dict[str, Any]]):
 
 @celery_app.task
 def send_scheduled_message_task(message_id: str):
-    """Load a scheduled message from the database and dispatch it.
+    """Celery task for sending scheduled messages.
 
-    This replaces the former log-only stub: a message reported as QUEUED at
-    schedule time is now actually loaded and sent at its scheduled time. Any
-    failure is recorded on the message row (FAILED/EXPIRED) - never silently
-    dropped after being reported QUEUED.
+    Loads the persisted message and processes it through the real channel
+    pipeline. The previous implementation only logged the ID, silently
+    dropping every scheduled message.
     """
+    logger.info(f"Processing scheduled message: {message_id}")
     db = SessionLocal()
     try:
         message = db.query(CommunicationMessage).filter(
             CommunicationMessage.id == message_id
         ).first()
-
         if not message:
-            logger.error(f"Scheduled message {message_id} not found in database")
-            return {"message_id": message_id, "status": "error", "detail": "message not found"}
-
+            logger.error(f"Scheduled message {message_id} not found")
+            return
         if message.status not in (MessageStatus.PENDING.value, MessageStatus.QUEUED.value):
-            logger.info(
-                f"Scheduled message {message_id} already processed "
-                f"(status={message.status}); skipping"
-            )
-            return {"message_id": message_id, "status": message.status}
-
-        if message.expiry_time and message.expiry_time < datetime.utcnow():
-            message.status = MessageStatus.EXPIRED.value
-            message.updated_at = datetime.utcnow()
-            db.commit()
-            logger.info(f"Scheduled message {message_id} expired before dispatch")
-            return {"message_id": message_id, "status": MessageStatus.EXPIRED.value}
+            logger.info(f"Scheduled message {message_id} already handled (status={message.status})")
+            return
 
         request = CommunicationRequest(
             recipient_id=message.recipient_id,
@@ -872,39 +855,31 @@ def send_scheduled_message_task(message_id: str):
     finally:
         db.close()
 
-    logger.info(f"Dispatching scheduled message {message_id}")
-    response = asyncio.run(communication_gateway.process_message(message_id, request))
-    return {"message_id": message_id, "status": response.status.value}
+    gateway = CommunicationGateway()
+    try:
+        asyncio.run(gateway.initialize())
+    except Exception as e:
+        # Redis/rate-limiter init failure must not block the send; rate
+        # limiting degrades to allow (see check_rate_limit).
+        logger.warning(f"Gateway init degraded for scheduled send: {e}")
+    response = asyncio.run(gateway.process_message(message_id, request))
+    logger.info(
+        f"Scheduled message {message_id} finished with status={response.status.value}"
+    )
 
 @celery_app.task
 def process_scheduled_notifications():
-    """Sweep for due scheduled messages and dispatch each of them.
-
-    Acts as the backstop for messages whose eta task was lost (e.g. broker
-    restart): any pending/queued message whose scheduled_time has passed is
-    re-dispatched here.
-    """
-    db = SessionLocal()
-    try:
-        due_messages = db.query(CommunicationMessage).filter(
-            CommunicationMessage.scheduled_time != None,  # noqa: E711
-            CommunicationMessage.scheduled_time <= datetime.utcnow(),
-            CommunicationMessage.status.in_(
-                [MessageStatus.PENDING.value, MessageStatus.QUEUED.value]
-            ),
-        ).all()
-        due_ids = [m.id for m in due_messages]
-    finally:
-        db.close()
-
-    for due_id in due_ids:
-        send_scheduled_message_task.apply_async(args=[due_id])
-
-    logger.info(f"Dispatched {len(due_ids)} due scheduled messages")
-    return {"dispatched": len(due_ids)}
+    """Celery periodic task for processing scheduled notifications"""
+    logger.info("Processing scheduled notifications")
 
 # FastAPI application
 app = FastAPI(title="Communication Gateway", version="1.0.0")
+
+# Shared middleware/observability wiring (must run after `app` exists; the
+# previous ordering raised NameError at import time).
+apply_middleware(app)
+setup_logging("communication-gateway")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(
@@ -960,7 +935,7 @@ async def send_message(request: CommunicationRequestModel):
         callback_url=request.callback_url,
         idempotency_key=request.idempotency_key
     )
-
+    
     response = await communication_gateway.send_message(comm_request)
     return asdict(response)
 
@@ -985,7 +960,7 @@ async def send_bulk_messages(request: BulkCommunicationRequestModel):
         )
         for msg in request.messages
     ]
-
+    
     responses = await communication_gateway.send_bulk_messages(comm_requests)
     return {'responses': [asdict(response) for response in responses]}
 

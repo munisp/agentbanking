@@ -29,6 +29,13 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import {
+  getFreshRates,
+  getLiveRate,
+  getSpreads,
+  saveSpread,
+  applySpread,
+} from "../lib/fxRateFeed";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["processing", "cancelled"],
@@ -39,76 +46,76 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
 };
 
-const FX_RATES: Record<string, number> = {
-  // NGN corridors (Africa's largest economy)
-  "NGN-USD": 0.00063,
-  "USD-NGN": 1580,
-  "NGN-EUR": 0.00058,
-  "EUR-NGN": 1720,
-  "NGN-GBP": 0.0005,
-  "GBP-NGN": 2000,
-  "NGN-GHS": 0.0075,
-  "GHS-NGN": 133,
-  "NGN-XOF": 0.37,
-  "XOF-NGN": 2.7,
-  "NGN-KES": 0.085,
-  "KES-NGN": 11.76,
-  "NGN-ZAR": 0.012,
-  "ZAR-NGN": 83.33,
-  "NGN-EGP": 0.031,
-  "EGP-NGN": 32.26,
-  // Major cross-corridors
-  "USD-EUR": 0.92,
-  "EUR-USD": 1.09,
-  "USD-GBP": 0.79,
-  "GBP-USD": 1.27,
-  "USD-GHS": 11.9,
-  "GHS-USD": 0.084,
-  "USD-KES": 135.0,
-  "KES-USD": 0.0074,
-  "USD-ZAR": 18.5,
-  "ZAR-USD": 0.054,
-  "EUR-GBP": 0.86,
-  "GBP-EUR": 1.16,
-  // Africa intra-regional
-  "GHS-KES": 11.34,
-  "KES-GHS": 0.088,
-  "ZAR-KES": 7.3,
-  "KES-ZAR": 0.137,
-  "XOF-GHS": 0.02,
-  "GHS-XOF": 49.5,
-  // CBDC / stablecoin
-  "NGN-USDT": 0.00063,
-  "USDT-NGN": 1580,
-  "NGN-USDC": 0.00063,
-  "USDC-NGN": 1580,
-  "USD-USDT": 1.0,
-  "USDT-USD": 1.0,
-  // Additional African corridors
-  "NGN-TZS": 1.58,
-  "TZS-NGN": 0.63,
-  "NGN-UGX": 2.32,
-  "UGX-NGN": 0.43,
-  "NGN-RWF": 0.79,
-  "RWF-NGN": 1.27,
-  "NGN-ZMW": 0.017,
-  "ZMW-NGN": 59.0,
-};
-// 15 currencies: NGN, USD, EUR, GBP, GHS, XOF, KES, ZAR, EGP, USDT, USDC, TZS, UGX, RWF, ZMW
-// 48 active pairs (bidirectional corridors)
+// Supported corridor currencies. Exchange rates are NOT hardcoded — they
+// are resolved from the live FX rate feed (lib/fxRateFeed.ts) with a
+// DB-backed cache and staleness guard.
+const SUPPORTED_CURRENCIES = [
+  "NGN",
+  "USD",
+  "EUR",
+  "GBP",
+  "GHS",
+  "XOF",
+  "KES",
+  "ZAR",
+  "EGP",
+  "TZS",
+  "UGX",
+  "RWF",
+  "ZMW",
+];
+
+interface LivePair {
+  pair: string;
+  fromCurrency: string;
+  toCurrency: string;
+  rate: number;
+}
+
+/**
+ * Build live bidirectional corridor rates from the FX rate feed
+ * (NGN-based cross rates). Throws SERVICE_UNAVAILABLE when no fresh rate
+ * is available.
+ */
+async function buildLivePairs(): Promise<{
+  pairs: LivePair[];
+  fetchedAt: string;
+  source: string;
+}> {
+  const ngn = await getFreshRates("NGN");
+  const table: Record<string, number> = { NGN: 1, ...ngn.rates };
+  const currencies = SUPPORTED_CURRENCIES.filter(
+    c => typeof table[c] === "number" && table[c] > 0
+  );
+  const pairs: LivePair[] = [];
+  for (const f of currencies) {
+    for (const t of currencies) {
+      if (f === t) continue;
+      pairs.push({
+        pair: `${f}-${t}`,
+        fromCurrency: f,
+        toCurrency: t,
+        rate: table[t] / table[f],
+      });
+    }
+  }
+  return { pairs, fetchedAt: ngn.fetchedAt, source: ngn.source };
+}
 
 const getRates = protectedProcedure.query(async () => {
-  const rates = Object.entries(FX_RATES).map(([pair, rate]) => {
-    const [from, to] = pair.split("-");
-    return {
-      pair,
-      fromCurrency: from,
-      toCurrency: to,
-      rate,
-      inverseRate: Math.round((1 / rate) * 10000) / 10000,
-      updatedAt: new Date().toISOString(),
-    };
-  });
+  const { pairs, fetchedAt, source } = await buildLivePairs();
+  const spreads = await getSpreads();
+  const rates = pairs.map(p => ({
+    pair: p.pair,
+    fromCurrency: p.fromCurrency,
+    toCurrency: p.toCurrency,
+    rate: p.rate,
+    inverseRate: Math.round((1 / p.rate) * 10000) / 10000,
+    spreadPct: spreads[p.pair] ?? 0,
+    effectiveRate: applySpread(p.rate, spreads[p.pair] ?? 0),
+    updatedAt: fetchedAt,
+    source,
+  }));
   return { rates, total: rates.length };
 });
 
@@ -125,14 +132,13 @@ const convert = protectedProcedure
     const session = await getAgentFromCookie(ctx.req);
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-    const pairKey = `${input.fromCurrency}-${input.toCurrency}`;
-    const rate = FX_RATES[pairKey];
-    if (!rate) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Unsupported currency pair: ${pairKey}`,
-      });
-    }
+    const pairKey = `${input.fromCurrency.toUpperCase()}-${input.toCurrency.toUpperCase()}`;
+    // Live rate + persisted spread. getLiveRate throws BAD_REQUEST for
+    // unsupported pairs and SERVICE_UNAVAILABLE when no fresh rate exists.
+    const spreads = await getSpreads();
+    const spreadPct = spreads[pairKey] ?? 0;
+    const liveRate = await getLiveRate(input.fromCurrency, input.toCurrency);
+    const rate = applySpread(liveRate.rate, spreadPct);
 
     const convertedAmount = Math.round(input.amount * rate * 100) / 100;
     const feeResult = calculateFee(input.amount, "transfer");
@@ -181,12 +187,16 @@ const convert = protectedProcedure
               fromCurrency: input.fromCurrency,
               toCurrency: input.toCurrency,
               exchangeRate: rate,
+              baseRate: liveRate.rate,
+              spreadPct,
+              rateSource: liveRate.source,
+              rateFetchedAt: liveRate.fetchedAt,
               convertedAmount,
             },
           })
           .returning();
 
-        // GL: Debit FX Source, Credit FX Destination
+        // GL: Debit FX Conversion Payable, Credit Agent Float
         await db.insert(gl_journal_entries).values({
           entryNumber: `JE-${ref}`,
           description: `FX ${input.fromCurrency} → ${input.toCurrency} @ ${rate}`,
@@ -226,15 +236,38 @@ const convert = protectedProcedure
       { agentCode: session.agentCode }
     ).catch(() => {});
 
-    // TigerBeetle dual-ledger
-    tbCreateTransfer({
-      debitAccountId: "2001",
+    // TigerBeetle dual-ledger — mirrors the GL entry above (Debit FX
+    // Conversion Payable 3002 / Credit Agent Float 2001; the previous
+    // debit-2001/credit-2001 self-transfer was a no-op). Fail-open is not
+    // allowed on the ledger path: when the sidecar is unreachable the
+    // transaction is queued with an explicit pending_ledger status
+    // (visible to callers) for replay.
+    let ledgerStatus: "posted" | "pending_ledger" = "posted";
+    const tbResult = await tbCreateTransfer({
+      debitAccountId: "3002",
       creditAccountId: "2001",
       amount: Math.round(input.amount * 100),
       ref,
       txType: "fx_exchange",
       agentCode: session.agentCode,
-    }).catch(() => {});
+    });
+    if (!tbResult) {
+      ledgerStatus = "pending_ledger";
+      console.warn(
+        `[TB] Sidecar unavailable — FX exchange ${ref} queued with status pending_ledger`
+      );
+      try {
+        const db = (await getDb())!;
+        if (db) {
+          await db
+            .update(transactions)
+            .set({ status: "pending_ledger" })
+            .where(eq(transactions.id, txRecord.id));
+        }
+      } catch (markErr) {
+        console.error("[TB] Failed to mark FX exchange pending_ledger:", markErr);
+      }
+    }
 
     // Fluvio + Dapr + Redis + Lakehouse
     publishTxToFluvio({
@@ -270,11 +303,17 @@ const convert = protectedProcedure
       success: true,
       ref,
       transactionId: txRecord.id,
+      status: ledgerStatus === "posted" ? "success" : "pending_ledger",
+      ledgerStatus,
       fromCurrency: input.fromCurrency,
       toCurrency: input.toCurrency,
       sourceAmount: input.amount,
       convertedAmount,
       exchangeRate: rate,
+      baseRate: liveRate.rate,
+      spreadPct,
+      rateSource: liveRate.source,
+      rateFetchedAt: liveRate.fetchedAt,
       fee: feeResult.fee,
       timestamp: new Date().toISOString(),
     };
@@ -349,12 +388,13 @@ const getStats = publicProcedure
         .where(sql`${transactions.type} = 'FX Exchange'`)
         .orderBy(desc(transactions.id))
         .limit(5);
-      const corridors = Object.keys(FX_RATES);
+      // Live corridors from the FX rate feed (fails loud when unavailable)
+      const { pairs, fetchedAt } = await buildLivePairs();
+      const corridors = pairs.map(p => p.pair);
       const currencies = new Set<string>();
-      for (const c of corridors) {
-        const [from, to] = c.split("-");
-        currencies.add(from);
-        currencies.add(to);
+      for (const p of pairs) {
+        currencies.add(p.fromCurrency);
+        currencies.add(p.toCurrency);
       }
       return {
         supportedCurrencies: currencies.size,
@@ -363,7 +403,7 @@ const getStats = publicProcedure
         totalExchanges: total,
         recentExchanges: recent,
         corridors,
-        lastRateUpdate: new Date().toISOString(),
+        lastRateUpdate: fetchedAt,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -384,18 +424,21 @@ const getCorridors = protectedProcedure
   )
   .query(async ({ input }) => {
     try {
-      const db = (await getDb())!;
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
-      const corridors = Object.entries(FX_RATES)
-        .slice(offset, offset + lim)
-        .map(([pair, rate]) => {
-          const [from, to] = pair.split("-");
-          return { pair, fromCurrency: from, toCurrency: to, rate };
-        });
+      // Live corridors from the FX rate feed (fails loud when unavailable)
+      const { pairs, fetchedAt, source } = await buildLivePairs();
+      const corridors = pairs.slice(offset, offset + lim).map(p => ({
+        pair: p.pair,
+        fromCurrency: p.fromCurrency,
+        toCurrency: p.toCurrency,
+        rate: p.rate,
+        rateFetchedAt: fetchedAt,
+        rateSource: source,
+      }));
       return {
         items: corridors,
-        total: Object.keys(FX_RATES).length,
+        total: pairs.length,
         page: input.page ?? 1,
         limit: lim,
       };
@@ -436,33 +479,53 @@ const setSpread = protectedProcedure
     const commission = calculateCommission(fees.fee, "transfer");
     const tax = calculateTax(fees.fee, "vat");
     try {
-      const db = (await getDb())!;
       const spreadData = input.data ?? {};
-      const pair = spreadData.pair as string;
-      const spread = Number(spreadData.spread ?? 0);
+      const pair = String(spreadData.pair ?? "").toUpperCase();
+      const spread = Number(spreadData.spread ?? NaN);
 
-      if (pair && FX_RATES[pair] !== undefined && spread >= 0) {
-        // In production, update spread in DB. For now, log the adjustment.
-        await writeAuditLog({
-          action: "mutation",
-          resource: "multiCurrencyExchange",
-          status: "success",
-          metadata: {
-            pair,
-            spread,
-            input: JSON.stringify(input).slice(0, 500),
-          },
+      if (!/^[A-Z]{3}-[A-Z]{3}$/.test(pair)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "setSpread: data.pair must be a currency pair like NGN-USD",
         });
-        return {
-          success: true,
-          pair,
-          baseRate: FX_RATES[pair],
-          spread,
-          effectiveRate: FX_RATES[pair] * (1 + spread / 100),
-          message: "Spread updated",
-        };
       }
-      return { success: true, message: "No changes applied" };
+      if (!Number.isFinite(spread) || spread < 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "setSpread: data.spread must be a non-negative number (percent)",
+        });
+      }
+
+      // Validate the pair against the live feed (throws BAD_REQUEST when
+      // the pair is unsupported, SERVICE_UNAVAILABLE when rates are down).
+      const [fromCcy, toCcy] = pair.split("-");
+      const liveRate = await getLiveRate(fromCcy, toCcy);
+
+      // Persist the spread to system_config — never returns success
+      // without persisting.
+      const persistedSpreads = await saveSpread(pair, spread);
+
+      await writeAuditLog({
+        action: "mutation",
+        resource: "multiCurrencyExchange",
+        status: "success",
+        metadata: {
+          pair,
+          spread,
+          persisted: true,
+          input: JSON.stringify(input).slice(0, 500),
+        },
+      });
+      return {
+        success: true,
+        pair,
+        baseRate: liveRate.rate,
+        spread,
+        effectiveRate: applySpread(liveRate.rate, spread),
+        persistedSpreads,
+        rateFetchedAt: liveRate.fetchedAt,
+        message: "Spread updated and persisted",
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

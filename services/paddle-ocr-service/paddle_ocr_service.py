@@ -11,6 +11,11 @@ Endpoints:
   POST /ocr/utility-bill  — Utility bill address/name extraction
   POST /ocr/business-doc  — Business registration document parsing
   GET  /health            — Health check
+
+NOTE: This service never returns fabricated OCR output. If the PaddleOCR
+engine is not installed/configured, extraction endpoints return HTTP 503.
+MRZ check digits are verified per ICAO 9303; no fixture data is served on
+live paths.
 """
 
 import asyncio
@@ -117,77 +122,116 @@ class PaddleOCREngine:
     def __init__(self):
         self.initialized = False
         self.ocr = None
-        self.det_model = None
-        self.rec_model = None
-        self.cls_model = None
+        self.init_error: Optional[str] = None
 
     async def initialize(self):
-        """Lazy-load PaddleOCR models."""
+        """Lazy-load PaddleOCR models. Fails closed: no mock fallback."""
         if self.initialized:
             return
         try:
-            # In production, import paddleocr
-            # from paddleocr import PaddleOCR
-            # self.ocr = PaddleOCR(
-            #     use_angle_cls=True,
-            #     lang='en',
-            #     use_gpu=True,
-            #     det_model_dir='./models/det/en',
-            #     rec_model_dir='./models/rec/en',
-            #     cls_model_dir='./models/cls',
-            #     det_db_thresh=0.3,
-            #     det_db_box_thresh=0.6,
-            #     det_db_unclip_ratio=1.5,
-            #     rec_batch_num=6,
-            #     max_text_length=25,
-            #     use_space_char=True,
-            # )
+            from paddleocr import PaddleOCR
+            self.ocr = PaddleOCR(
+                use_angle_cls=True,
+                lang=os.getenv("PADDLE_OCR_LANG", "en"),
+                use_gpu=os.getenv("PADDLE_OCR_USE_GPU", "false").lower() == "true",
+                det_model_dir=os.getenv("PADDLE_OCR_DET_MODEL_DIR") or None,
+                rec_model_dir=os.getenv("PADDLE_OCR_REC_MODEL_DIR") or None,
+                cls_model_dir=os.getenv("PADDLE_OCR_CLS_MODEL_DIR") or None,
+                det_db_thresh=0.3,
+                det_db_box_thresh=0.6,
+                det_db_unclip_ratio=1.5,
+                rec_batch_num=6,
+                max_text_length=25,
+                use_space_char=True,
+                show_log=False,
+            )
             self.initialized = True
+            self.init_error = None
             logger.info("PaddleOCR engine initialized (models loaded)")
         except Exception as e:
-            logger.warning(f"PaddleOCR not available, using mock mode: {e}")
-            self.initialized = True
+            self.init_error = str(e)
+            self.ocr = None
+            self.initialized = False
+            logger.error(f"PaddleOCR engine unavailable: {e}")
 
     async def extract_text(self, image_bytes: bytes, lang: str = "en") -> list[TextRegion]:
-        """Run OCR on image bytes, return text regions with bounding boxes."""
+        """Run OCR on image bytes, return text regions with bounding boxes.
+
+        Raises HTTP 503 when the OCR engine is unavailable — never returns
+        canned/fixture text for real requests.
+        """
         await self.initialize()
 
-        # In production:
-        # import numpy as np
-        # from PIL import Image
-        # img = np.array(Image.open(io.BytesIO(image_bytes)))
-        # result = self.ocr.ocr(img, cls=True)
-        # regions = []
-        # for line in result[0]:
-        #     bbox = [line[0][0][0], line[0][0][1], line[0][2][0], line[0][2][1]]
-        #     text = line[1][0]
-        #     conf = line[1][1]
-        #     regions.append(TextRegion(text=text, confidence=conf, bbox=bbox))
+        if not self.initialized or self.ocr is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "OCR engine unavailable: "
+                    f"{self.init_error or 'PaddleOCR is not installed or failed to initialize'}. "
+                    "Text extraction cannot be performed."
+                ),
+            )
 
-        # Mock response for development
-        return [
-            TextRegion(text="REPUBLIC OF KENYA", confidence=0.98, bbox=[50, 20, 300, 50]),
-            TextRegion(text="NATIONAL IDENTITY CARD", confidence=0.97, bbox=[60, 55, 290, 80]),
-            TextRegion(text="ID NO: 12345678", confidence=0.96, bbox=[50, 100, 250, 125]),
-            TextRegion(text="FULL NAME", confidence=0.95, bbox=[50, 130, 150, 150]),
-            TextRegion(text="JOHN KAMAU MWANGI", confidence=0.94, bbox=[50, 155, 280, 180]),
-            TextRegion(text="DATE OF BIRTH", confidence=0.95, bbox=[50, 190, 180, 210]),
-            TextRegion(text="15/03/1990", confidence=0.93, bbox=[50, 215, 180, 240]),
-            TextRegion(text="SEX: M", confidence=0.96, bbox=[200, 215, 270, 240]),
-            TextRegion(text="DISTRICT OF BIRTH", confidence=0.94, bbox=[50, 250, 200, 270]),
-            TextRegion(text="NAIROBI", confidence=0.95, bbox=[50, 275, 150, 300]),
-            TextRegion(text="DATE OF ISSUE", confidence=0.93, bbox=[50, 310, 180, 330]),
-            TextRegion(text="20/06/2015", confidence=0.92, bbox=[50, 335, 180, 360]),
-        ]
+        import numpy as np
+        from PIL import Image
+
+        try:
+            img = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+
+        try:
+            result = self.ocr.ocr(img, cls=True)
+        except Exception as e:
+            logger.error(f"PaddleOCR inference failed: {e}")
+            raise HTTPException(status_code=503, detail=f"OCR inference failed: {e}")
+
+        regions: list[TextRegion] = []
+        for page in result or []:
+            for line in page or []:
+                bbox_pts = line[0]
+                text = line[1][0]
+                conf = float(line[1][1])
+                xs = [p[0] for p in bbox_pts]
+                ys = [p[1] for p in bbox_pts]
+                regions.append(TextRegion(
+                    text=text,
+                    confidence=conf,
+                    bbox=[min(xs), min(ys), max(xs), max(ys)],
+                ))
+        return regions
 
     def assess_image_quality(self, image_bytes: bytes) -> float:
-        """Assess image quality (blur, lighting, resolution)."""
-        # In production, use cv2 Laplacian variance for blur detection
-        # img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
-        # laplacian_var = cv2.Laplacian(img, cv2.CV_64F).var()
-        # brightness = np.mean(img)
-        # score = min(1.0, laplacian_var / 500) * 0.6 + min(1.0, brightness / 128) * 0.4
-        return 0.87  # Mock
+        """Assess image quality (blur, lighting, resolution) using real image
+        statistics — Laplacian-variance blur estimate, brightness balance and
+        resolution adequacy. Raises HTTP 400 for undecodable images."""
+        import numpy as np
+        from PIL import Image
+
+        try:
+            img = np.array(Image.open(io.BytesIO(image_bytes)).convert("L"), dtype=np.float64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+
+        # Laplacian variance (blur detection) via a 3x3 kernel, no cv2 dependency
+        padded = np.pad(img, 1, mode="edge")
+        lap = (
+            padded[:-2, 1:-1]
+            + padded[1:-1, :-2]
+            - 4.0 * padded[1:-1, 1:-1]
+            + padded[1:-1, 2:]
+            + padded[2:, 1:-1]
+        )
+        laplacian_var = float(lap.var())
+        brightness = float(img.mean())
+        pixels = int(img.shape[0] * img.shape[1])
+
+        blur_score = min(1.0, laplacian_var / 500.0)
+        brightness_score = max(0.0, 1.0 - abs(brightness - 128.0) / 128.0)
+        resolution_score = min(1.0, pixels / float(640 * 480))
+
+        score = 0.5 * blur_score + 0.3 * brightness_score + 0.2 * resolution_score
+        return round(max(0.0, min(1.0, score)), 4)
 
 
 # ── Field Extraction Pipelines ────────────────────────────────────────────────
@@ -236,7 +280,11 @@ class PassportExtractor:
     MRZ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 
     def extract_mrz(self, regions: list[TextRegion]) -> Optional[MRZData]:
-        """Extract and parse Machine Readable Zone from passport."""
+        """Extract and parse Machine Readable Zone from passport.
+
+        Returns None when no MRZ lines are detected — no fabricated
+        passport data is ever returned.
+        """
         mrz_lines = []
         for region in regions:
             text = region.text.replace(" ", "").upper()
@@ -244,23 +292,15 @@ class PassportExtractor:
                 mrz_lines.append(text)
 
         if len(mrz_lines) < 2:
-            # Mock MRZ for development
-            return MRZData(
-                raw_lines=["P<KENSMITH<<JOHN<<<<<<<<<<<<<<<<<<<<<<<<<<<<", "A12345678KEN9003155M2510153<<<<<<<<<<<<<<04"],
-                document_type="P",
-                country_code="KEN",
-                surname="SMITH",
-                given_names="JOHN",
-                document_number="A12345678",
-                nationality="KEN",
-                date_of_birth="900315",
-                sex="M",
-                expiry_date="251015",
-                check_digits_valid=True,
-            )
+            logger.info("No MRZ lines detected in OCR output; skipping MRZ parse")
+            return None
 
         # Parse TD3 (passport) MRZ
         line1, line2 = mrz_lines[0], mrz_lines[1]
+        if len(line1) < 44 or len(line2) < 44:
+            logger.warning("MRZ lines shorter than TD3 length (44); cannot parse reliably")
+            return None
+
         return MRZData(
             raw_lines=[line1, line2],
             document_type=line1[0],
@@ -277,20 +317,51 @@ class PassportExtractor:
         )
 
     def _verify_check_digits(self, line2: str) -> bool:
-        """Verify MRZ check digits using ICAO 9303 algorithm."""
+        """Verify MRZ check digits using the ICAO 9303 algorithm (TD3).
+
+        Checks, in order:
+          1. Document number   — line2[0:9]   vs line2[9]
+          2. Date of birth     — line2[13:19] vs line2[19]
+          3. Expiry date       — line2[21:27] vs line2[27]
+          4. Personal number   — line2[28:42] vs line2[42]
+          5. Composite         — line2[0:10] + line2[13:20] + line2[21:43] vs line2[43]
+        Weights cycle 7-3-1; '<' counts as 0; letters map A=10..Z=35.
+        """
+        if len(line2) < 44:
+            return False
+
         weights = [7, 3, 1]
-        def check(data: str, expected: str) -> bool:
+
+        def compute(data: str) -> int:
             total = 0
             for i, c in enumerate(data):
                 if c == "<":
                     val = 0
                 elif c.isdigit():
                     val = int(c)
-                else:
+                elif "A" <= c <= "Z":
                     val = ord(c) - ord("A") + 10
+                else:
+                    return -1  # invalid character -> fail check
                 total += val * weights[i % 3]
-            return str(total % 10) == expected
-        # Simplified check
+            return total % 10
+
+        def expected_digit(ch: str) -> Optional[int]:
+            return int(ch) if ch.isdigit() else None
+
+        checks = [
+            (line2[0:9], expected_digit(line2[9])),                                     # document number
+            (line2[13:19], expected_digit(line2[19])),                                  # date of birth
+            (line2[21:27], expected_digit(line2[27])),                                  # expiry date
+            (line2[28:42], expected_digit(line2[42])),                                  # personal number
+            (line2[0:10] + line2[13:20] + line2[21:43], expected_digit(line2[43])),     # composite
+        ]
+
+        for data, expected in checks:
+            if expected is None:
+                return False
+            if compute(data) != expected:
+                return False
         return True
 
 
@@ -404,14 +475,21 @@ async def extract_document(req: OCRRequest):
 
     # Get image bytes
     if req.image_base64:
-        image_bytes = base64.b64decode(req.image_base64)
+        try:
+            image_bytes = base64.b64decode(req.image_base64)
+        except Exception as e:
+            raise HTTPException(400, f"Invalid base64 image data: {e}")
     elif req.image_url:
-        # In production, download from URL
-        image_bytes = b"mock_image_data"
+        import urllib.request
+        try:
+            with urllib.request.urlopen(req.image_url, timeout=15) as resp:
+                image_bytes = resp.read()
+        except Exception as e:
+            raise HTTPException(502, f"Failed to download image from URL: {e}")
     else:
         raise HTTPException(400, "Provide image_base64 or image_url")
 
-    # Run OCR
+    # Run OCR (raises 503 if the engine is unavailable — never returns fixtures)
     regions = await ocr_engine.extract_text(image_bytes, req.language)
     quality = ocr_engine.assess_image_quality(image_bytes)
 
@@ -446,6 +524,10 @@ async def extract_document(req: OCRRequest):
         warnings.append("Low image quality — results may be inaccurate")
     if avg_conf < 0.80:
         warnings.append("Low OCR confidence — manual review recommended")
+    if doc_type == DocumentType.PASSPORT and mrz is None:
+        warnings.append("No MRZ detected — unable to verify passport machine-readable zone")
+    if mrz is not None and not mrz.check_digits_valid:
+        warnings.append("MRZ check digit verification failed (ICAO 9303) — possible forgery or OCR error")
 
     result = OCRResult(
         request_id=request_id,
@@ -492,10 +574,11 @@ async def extract_business_doc(req: OCRRequest):
 @app.get("/health")
 async def health():
     return {
-        "status": "healthy",
+        "status": "healthy" if ocr_engine.initialized else "degraded",
         "service": "paddle-ocr",
         "version": "2.0.0",
         "engine_initialized": ocr_engine.initialized,
+        "engine_error": ocr_engine.init_error,
         "supported_languages": ["en", "fr", "sw", "ar", "zh", "hi", "pt", "es"],
         "supported_documents": [dt.value for dt in DocumentType],
     }

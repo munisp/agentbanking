@@ -9,14 +9,9 @@ import { PageErrorBoundary } from "@/components/ErrorBoundary";
 import { useState, useMemo } from "react";
 import {
   Wallet,
-  TrendingUp,
   AlertTriangle,
-  ArrowUpRight,
-  ArrowDownRight,
   Search,
-  Download,
   Plus,
-  RefreshCw,
   DollarSign,
   BarChart3,
 } from "lucide-react";
@@ -37,7 +32,6 @@ function FloatContent() {
     isLoading,
     isError,
     error,
-    refetch,
   } = trpc.floatManagement.list.useQuery(undefined, {
     retry: 1,
   });
@@ -45,16 +39,17 @@ function FloatContent() {
   const [showTopUp, setShowTopUp] = useState(false);
 
   const floatData = useMemo(
-    () => ((liveData as any[]) ?? []) as any[],
+    () => (Array.isArray(liveData) ? (liveData as any[]) : []),
     [liveData]
   );
+  const hasData = floatData.length > 0;
 
   const filtered = useMemo(() => {
     return floatData.filter(f => {
       if (
         search &&
-        !String(f.name ?? "").toLowerCase().includes(search.toLowerCase()) &&
-        !String(f.agentId ?? "").includes(search)
+        !f.name.toLowerCase().includes(search.toLowerCase()) &&
+        !f.agentId.includes(search)
       )
         return false;
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
@@ -62,40 +57,24 @@ function FloatContent() {
     });
   }, [floatData, search, statusFilter]);
 
-  const totalFloat = floatData.reduce((s: any, f: any) => s + (f.balance ?? 0), 0);
-  const totalLimit = floatData.reduce((s: any, f: any) => s + (f.limit ?? 0), 0);
-  const criticalCount = floatData.filter(
-    (f: any) => f.status === "critical"
-  ).length;
-  const avgUtilization =
-    floatData.length > 0
-      ? floatData.reduce((s: any, f: any) => s + (f.utilized ?? 0), 0) /
-        floatData.length
-      : null;
+  const totalFloat = floatData.reduce((s: any, f: any) => s + f.balance, 0);
+  const totalLimit = floatData.reduce((s: any, f: any) => s + f.limit, 0);
+  const criticalCount = floatData.filter(f => f.status === "critical").length;
+  const avgUtilization = hasData
+    ? floatData.reduce((s: any, f: any) => s + f.utilized, 0) / floatData.length
+    : null;
 
   if (isError) {
     return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Float Management</h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor and manage agent float balances
+      <div className="p-6">
+        <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-6 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+          <h2 className="text-lg font-semibold text-red-700 dark:text-red-400">
+            Failed to load float data
+          </h2>
+          <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+            {error?.message || "An unexpected error occurred."}
           </p>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 p-6 text-center space-y-3">
-          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto" />
-          <p className="font-medium text-red-700 dark:text-red-400">
-            Unable to load float data
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {(error as any)?.message ?? "The float service is unavailable."}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-sm"
-          >
-            <RefreshCw className="h-4 w-4" /> Retry
-          </button>
         </div>
       </div>
     );
@@ -125,10 +104,10 @@ function FloatContent() {
             <Wallet className="h-4 w-4" /> Total Float
           </div>
           <div className="text-2xl font-bold">
-            {isLoading ? "—" : formatNaira(totalFloat)}
+            {hasData ? formatNaira(totalFloat) : "—"}
           </div>
           <div className="text-xs text-muted-foreground">
-            {isLoading ? "" : `of ${formatNaira(totalLimit)} limit`}
+            {hasData ? `of ${formatNaira(totalLimit)} limit` : "No data"}
           </div>
         </div>
         <div className="rounded-lg border bg-card p-5">
@@ -136,14 +115,10 @@ function FloatContent() {
             <BarChart3 className="h-4 w-4" /> Avg Utilization
           </div>
           <div className="text-2xl font-bold">
-            {isLoading || avgUtilization === null
-              ? "—"
-              : `${avgUtilization.toFixed(1)}%`}
+            {avgUtilization !== null ? `${avgUtilization.toFixed(1)}%` : "—"}
           </div>
           <div className="text-xs text-muted-foreground">
-            {avgUtilization === null && !isLoading
-              ? "No agents"
-              : "Healthy range"}
+            {avgUtilization !== null ? "Across active agents" : "No data"}
           </div>
         </div>
         <div className="rounded-lg border bg-card p-5">
@@ -151,18 +126,18 @@ function FloatContent() {
             <AlertTriangle className="h-4 w-4" /> Critical Agents
           </div>
           <div className="text-2xl font-bold text-red-500">
-            {isLoading ? "—" : criticalCount}
+            {hasData ? criticalCount : "—"}
           </div>
-          <div className="text-xs text-red-500">Need immediate top-up</div>
+          <div className="text-xs text-muted-foreground">
+            {hasData ? "Need immediate top-up" : "No data"}
+          </div>
         </div>
         <div className="rounded-lg border bg-card p-5">
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
             <DollarSign className="h-4 w-4" /> Today's Top-Ups
           </div>
           <div className="text-2xl font-bold">—</div>
-          <div className="text-xs text-muted-foreground">
-            Top-up summary not available
-          </div>
+          <div className="text-xs text-muted-foreground">No data available</div>
         </div>
       </div>
 
@@ -206,25 +181,28 @@ function FloatContent() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr className="border-t">
-                <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                  Loading float positions…
+              <tr>
+                <td
+                  colSpan={7}
+                  className="p-6 text-center text-muted-foreground"
+                >
+                  Loading float data…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
-              <tr className="border-t">
-                <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                  {floatData.length === 0
-                    ? "No float positions recorded yet."
-                    : "No agents match the current filters."}
+              <tr>
+                <td
+                  colSpan={7}
+                  className="p-6 text-center text-muted-foreground"
+                >
+                  {hasData
+                    ? "No agents match the current filters."
+                    : "No float data available."}
                 </td>
               </tr>
             ) : (
               filtered.map(f => (
-                <tr
-                  key={f.id ?? f.agentId}
-                  className="border-t hover:bg-muted/30"
-                >
+                <tr key={f.id} className="border-t hover:bg-muted/30">
                   <td className="p-3">
                     <div className="font-medium">{f.name}</div>
                     <div className="text-xs text-muted-foreground">
@@ -232,30 +210,28 @@ function FloatContent() {
                     </div>
                   </td>
                   <td className="p-3 text-right font-mono font-medium">
-                    {formatNaira(f.balance ?? 0)}
+                    {formatNaira(f.balance)}
                   </td>
                   <td className="p-3 text-right font-mono text-muted-foreground">
-                    {formatNaira(f.limit ?? 0)}
+                    {formatNaira(f.limit)}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${(f.utilized ?? 0) > 90 ? "bg-red-500" : (f.utilized ?? 0) > 70 ? "bg-yellow-500" : "bg-green-500"}`}
-                          style={{ width: `${f.utilized ?? 0}%` }}
+                          className={`h-full rounded-full ${f.utilized > 90 ? "bg-red-500" : f.utilized > 70 ? "bg-yellow-500" : "bg-green-500"}`}
+                          style={{ width: `${f.utilized}%` }}
                         />
                       </div>
                       <span className="text-xs w-10 text-right">
-                        {f.utilized ?? 0}%
+                        {f.utilized}%
                       </span>
                     </div>
                   </td>
                   <td className="p-3 text-right text-xs text-muted-foreground">
-                    {f.topUpAmount != null ? formatNaira(f.topUpAmount) : "—"}
+                    {formatNaira(f.topUpAmount)}
                     <br />
-                    {f.lastTopUp
-                      ? new Date(f.lastTopUp).toLocaleDateString()
-                      : ""}
+                    {new Date(f.lastTopUp).toLocaleDateString()}
                   </td>
                   <td className="p-3 text-center">
                     <span

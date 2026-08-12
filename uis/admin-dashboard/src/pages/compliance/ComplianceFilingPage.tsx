@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Scale, Search, RefreshCw, Plus, Eye, Clock, FileText, Send } from "lucide-react";
+import { Scale, Search, RefreshCw, Plus, Eye, Clock, FileText, Send, AlertTriangle } from "lucide-react";
 import { getTenantHeadersFromStorage } from "../../services/tenant";
 
 const CORE_URL = import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
@@ -13,21 +13,29 @@ const STATUS_COLORS: Record<string, string> = {
   overdue: "bg-red-500/20 text-red-700",
 };
 
-const MOCK_STATS = { totalFilings: 42, submitted: 18, pending: 12, overdue: 3 };
-const MOCK_FILINGS = [
-  { id: "f1", filing_type: "cbn_returns", period: "2025-Q1", due_date: "2025-04-15", status: "submitted", submitted_at: "2025-04-14T10:00:00Z" },
-  { id: "f2", filing_type: "nibss_report", period: "2025-03", due_date: "2025-03-31", status: "accepted", submitted_at: "2025-03-30T09:00:00Z" },
-  { id: "f3", filing_type: "aml_filing", period: "2025-Q1", due_date: "2025-04-30", status: "draft", submitted_at: null },
-  { id: "f4", filing_type: "tax_return", period: "2024", due_date: "2025-03-31", status: "overdue", submitted_at: null },
-  { id: "f5", filing_type: "efcc_report", period: "2025-01", due_date: "2025-02-15", status: "accepted", submitted_at: "2025-02-14T15:00:00Z" },
-];
+interface Filing {
+  id: string;
+  filing_type: string;
+  period: string;
+  due_date: string | null;
+  status: string;
+  submitted_at: string | null;
+  [key: string]: any;
+}
 
-type Filing = typeof MOCK_FILINGS[number];
+interface FilingStats {
+  totalFilings: number;
+  submitted: number;
+  pending: number;
+  overdue: number;
+}
 
 export default function ComplianceFilingPage() {
-  const [stats, setStats] = useState(MOCK_STATS);
-  const [filings, setFilings] = useState<Filing[]>(MOCK_FILINGS);
+  const [stats, setStats] = useState<FilingStats | null>(null);
+  const [filings, setFilings] = useState<Filing[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
@@ -38,36 +46,55 @@ export default function ComplianceFilingPage() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [sRes, fRes] = await Promise.all([
         fetch(`${CORE_URL}/compliance/api/v1/filings/stats`, { headers: getTenantHeadersFromStorage() }),
         fetch(`${CORE_URL}/compliance/api/v1/filings?limit=100`, { headers: getTenantHeadersFromStorage() }),
       ]);
-      if (sRes.ok) setStats(await sRes.json());
-      if (fRes.ok) setFilings(await fRes.json());
-    } catch { /* use mock */ }
-    finally { setLoading(false); }
+      if (!fRes.ok) throw new Error(`Failed to load filings (HTTP ${fRes.status})`);
+      const filingsJson = await fRes.json();
+      setFilings(Array.isArray(filingsJson) ? filingsJson : []);
+      if (sRes.ok) {
+        setStats(await sRes.json());
+      } else {
+        setStats(null);
+      }
+    } catch (err: any) {
+      setFilings([]);
+      setStats(null);
+      setLoadError(err?.message ?? "Unable to load compliance filings.");
+    } finally { setLoading(false); }
   };
 
   const createFiling = async () => {
+    setActionError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/filings`, {
         method: "POST",
         headers: { ...getTenantHeadersFromStorage(), "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (res.ok) { setShowCreate(false); load(); }
-    } catch { setShowCreate(false); }
+      if (!res.ok) throw new Error(`Failed to create filing (HTTP ${res.status})`);
+      setShowCreate(false);
+      load();
+    } catch (err: any) {
+      setActionError(err?.message ?? "Could not create the filing. The compliance service may be unavailable.");
+    }
   };
 
   const submitFiling = async (id: string) => {
+    setActionError(null);
     try {
-      await fetch(`${CORE_URL}/compliance/api/v1/filings/${id}/submit`, {
+      const res = await fetch(`${CORE_URL}/compliance/api/v1/filings/${id}/submit`, {
         method: "POST",
         headers: getTenantHeadersFromStorage(),
       });
+      if (!res.ok) throw new Error(`Failed to submit filing (HTTP ${res.status})`);
       load();
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      setActionError(err?.message ?? "Could not submit the filing. No submission was recorded.");
+    }
   };
 
   const filtered = filings.filter(f => {
@@ -89,16 +116,35 @@ export default function ComplianceFilingPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{loadError} No filing data is shown because live data could not be retrieved.</span>
+          </div>
+          <button onClick={load} className="flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-medium">
+            <RefreshCw className="h-3 w-3" /> Retry
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-2 text-sm text-red-700">
+          <AlertTriangle className="h-4 w-4" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: "Total Filings", value: stats.totalFilings, icon: FileText, color: "text-indigo-600" },
-          { label: "Submitted", value: stats.submitted, icon: Send, color: "text-blue-600" },
-          { label: "Pending", value: stats.pending, icon: Clock, color: "text-amber-600" },
-          { label: "Overdue", value: stats.overdue, icon: Scale, color: "text-red-600" },
+          { label: "Total Filings", value: stats?.totalFilings, icon: FileText, color: "text-indigo-600" },
+          { label: "Submitted", value: stats?.submitted, icon: Send, color: "text-blue-600" },
+          { label: "Pending", value: stats?.pending, icon: Clock, color: "text-amber-600" },
+          { label: "Overdue", value: stats?.overdue, icon: Scale, color: "text-red-600" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <div className="flex items-center gap-2"><s.icon className={`h-4 w-4 ${s.color}`} /><p className="text-xs text-gray-500">{s.label}</p></div>
-            <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+            <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value ?? "—"}</p>
           </div>
         ))}
       </div>
@@ -120,8 +166,16 @@ export default function ComplianceFilingPage() {
             {["Filing Type", "Period", "Due Date", "Status", "Submitted", "Actions"].map(h => <th key={h} className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">{h}</th>)}
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="p-8 text-center text-gray-400">No filings found</td></tr>
+            {loading ? (
+              <tr><td colSpan={6} className="p-8 text-center text-gray-400">Loading filings…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="p-8 text-center text-gray-400">
+                {loadError
+                  ? "Filing data unavailable — resolve the error above and retry."
+                  : filings.length === 0
+                    ? "No compliance filings on record. Filings you create will appear here."
+                    : "No filings match the current filters."}
+              </td></tr>
             ) : filtered.map(f => (
               <tr key={f.id} className="hover:bg-gray-50/50">
                 <td className="py-3 px-4 font-medium text-gray-800">{f.filing_type?.replace(/_/g, " ")}</td>

@@ -1,4 +1,8 @@
+import json
 import logging
+import os
+import urllib.error
+import urllib.request
 from typing import List, Optional
 from decimal import Decimal
 
@@ -178,6 +182,57 @@ class TransactionService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.account_service = AccountService(db)
+        # Simulation of on-chain settlement is only allowed when explicitly
+        # enabled AND outside production. In production the only way to create
+        # a deposit/withdrawal/transfer is via the configured settlement gateway.
+        self.simulation_mode = os.getenv("STABLECOIN_SIMULATION_MODE", "false").lower() == "true"
+        self.environment = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "production")).lower()
+        self.settlement_gateway_url = os.getenv("STABLECOIN_SETTLEMENT_GATEWAY_URL", "").strip() or None
+        if self.simulation_mode and self.environment == "production":
+            raise RuntimeError(
+                "STABLECOIN_SIMULATION_MODE=true is forbidden in production: "
+                "simulated on-chain settlement must never run against live funds"
+            )
+
+    def _settle_onchain(self, stablecoin: Stablecoin, transaction_in: TransactionCreate, amount: Decimal) -> dict:
+        """Submit the operation to the configured on-chain settlement gateway.
+
+        Returns the gateway-reported settlement (status + tx_hash). Raises
+        loudly when the gateway is unavailable — settlement is never fabricated.
+        """
+        tx_type = transaction_in.transaction_type
+        payload = {
+            "transaction_type": tx_type.value if hasattr(tx_type, "value") else str(tx_type),
+            "account_id": transaction_in.account_id,
+            "stablecoin_id": transaction_in.stablecoin_id,
+            "contract_address": stablecoin.contract_address,
+            "amount": str(amount),
+            "destination_address": transaction_in.destination_address,
+        }
+        request = urllib.request.Request(
+            f"{self.settlement_gateway_url.rstrip('/')}/settlements",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            logger.error(f"Settlement gateway call failed: {e}")
+            raise ServiceException(
+                detail=f"On-chain settlement gateway unavailable: {e}",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        confirmed = (
+            bool(data.get("confirmed"))
+            or str(data.get("status", "")).upper() == TransactionStatus.COMPLETED.value
+        )
+        return {
+            "status": TransactionStatus.COMPLETED.value if confirmed else TransactionStatus.PENDING.value,
+            "tx_hash": data.get("tx_hash"),
+        }
 
     def create_transaction(self, transaction_in: TransactionCreate) -> Transaction:
         logger.info(f"Creating transaction of type {transaction_in.transaction_type} for account {transaction_in.account_id}")
@@ -194,19 +249,46 @@ class TransactionService:
 
         amount = Decimal(str(transaction_in.amount))
         
-        # Transaction Management (Simulated Balance Update)
+        if not self.simulation_mode and not self.settlement_gateway_url:
+            # Never mark deposits/withdrawals/transfers complete from database
+            # writes alone: without a chain settlement path we fail loudly.
+            raise ServiceException(
+                detail=(
+                    "On-chain settlement is not configured "
+                    "(STABLECOIN_SETTLEMENT_GATEWAY_URL is unset) and simulation mode "
+                    "is disabled. Refusing to record a fabricated settlement."
+                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         try:
+            settlement = None
+            if not self.simulation_mode:
+                settlement = self._settle_onchain(db_stablecoin, transaction_in, amount)
+
             # 1. Create the transaction record
             db_transaction = Transaction(**transaction_in.model_dump(exclude_none=True))
-            db_transaction.status = TransactionStatus.COMPLETED.value # Assume instant completion for DEPOSIT/TRANSFER/WITHDRAWAL
+            if self.simulation_mode:
+                db_transaction.status = TransactionStatus.COMPLETED.value
+                settled = True
+            else:
+                db_transaction.status = settlement["status"]
+                if settlement.get("tx_hash"):
+                    db_transaction.tx_hash = settlement["tx_hash"]
+                settled = settlement["status"] == TransactionStatus.COMPLETED.value
+
+            if settled:
+                import datetime as _dt
+                db_transaction.completed_at = _dt.datetime.utcnow()
             
-            # 2. Update account balance based on transaction type
-            if transaction_in.transaction_type == TransactionType.DEPOSIT:
-                db_account.balance += amount
-            elif transaction_in.transaction_type == TransactionType.WITHDRAWAL or transaction_in.transaction_type == TransactionType.TRANSFER:
-                if db_account.balance < amount:
-                    raise InsufficientBalanceException(db_account.id, amount)
-                db_account.balance -= amount
+            # 2. Update account balance only for confirmed settlements
+            if settled:
+                if transaction_in.transaction_type == TransactionType.DEPOSIT:
+                    db_account.balance += float(amount)
+                elif transaction_in.transaction_type == TransactionType.WITHDRAWAL or transaction_in.transaction_type == TransactionType.TRANSFER:
+                    if db_account.balance < amount:
+                        raise InsufficientBalanceException(db_account.id, amount)
+                    db_account.balance -= float(amount)
             
             # 3. Commit both changes in a single transaction
             self.db.add(db_transaction)
@@ -215,10 +297,13 @@ class TransactionService:
             self.db.refresh(db_transaction)
             self.db.refresh(db_account)
             
-            logger.info(f"Transaction {db_transaction.id} completed. New balance for account {db_account.id}: {db_account.balance}")
+            logger.info(
+                f"Transaction {db_transaction.id} recorded with status {db_transaction.status}. "
+                f"Balance for account {db_account.id}: {db_account.balance}"
+            )
             return db_transaction
             
-        except InsufficientBalanceException:
+        except (InsufficientBalanceException, ServiceException):
             self.db.rollback()
             raise
         except Exception as e:

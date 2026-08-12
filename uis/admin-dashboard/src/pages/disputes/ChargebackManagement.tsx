@@ -91,7 +91,7 @@ const ChargebackManagement: React.FC = () => {
           ? (res as { chargebacks?: Chargeback[]; data?: Chargeback[] })
           : {};
       const data: Chargeback[] =
-        payload.chargebacks ?? payload.data ?? generateMockChargebacks();
+        payload.chargebacks ?? payload.data ?? [];
       setChargebacks(data);
 
       setStats({
@@ -365,14 +365,5 @@ const ChargebackManagement: React.FC = () => {
   );
 };
 
-function generateMockChargebacks(): Chargeback[] {
-  return [
-    { id: "1", chargeback_ref: "CB-20250421-001", transaction_ref: "TXN-20250415-334", agent_name: "Emeka Obi", amount: 15000, reason_code: "4853", reason_label: "Cardholder Dispute", card_network: "visa", status: "received", response_deadline: "2025-05-21", evidence_submitted: false, created_at: "2025-04-21T10:00:00Z" },
-    { id: "2", chargeback_ref: "CB-20250419-002", transaction_ref: "TXN-20250410-228", agent_name: "Fatima Sule", amount: 8500, reason_code: "4837", reason_label: "No Cardholder Authorization", card_network: "mastercard", status: "responded", response_deadline: "2025-05-04", evidence_submitted: true, created_at: "2025-04-19T14:30:00Z" },
-    { id: "3", chargeback_ref: "CB-20250418-003", transaction_ref: "TXN-20250405-112", agent_name: "Chidi Nwosu", amount: 25000, reason_code: "4855", reason_label: "Non-receipt of Merchandise", card_network: "verve", status: "won", response_deadline: "2025-05-18", evidence_submitted: true, created_at: "2025-04-18T09:00:00Z" },
-    { id: "4", chargeback_ref: "CB-20250416-004", transaction_ref: "TXN-20250401-089", agent_name: "Aisha Bello", amount: 5000, reason_code: "4863", reason_label: "Cardholder Does Not Recognize", card_network: "visa", status: "lost", response_deadline: "2025-05-16", evidence_submitted: false, refund_amount: 5000, created_at: "2025-04-16T11:00:00Z" },
-    { id: "5", chargeback_ref: "CB-20250414-005", transaction_ref: "TXN-20250399-067", agent_name: "Tunde Adeyemi", amount: 32000, reason_code: "12.1", reason_label: "EMV Liability Shift", card_network: "mastercard", status: "split", response_deadline: "2025-05-29", evidence_submitted: true, refund_amount: 16000, created_at: "2025-04-14T15:00:00Z" },
-  ];
-}
 
 export default ChargebackManagement;

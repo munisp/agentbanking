@@ -78,7 +78,7 @@ async def send_telegram_message(chat_id: int, text: str, reply_markup: Optional[
             }
             if reply_markup:
                 payload["reply_markup"] = json.dumps(reply_markup)
-            
+
             response = await client.post(
                 f"{TELEGRAM_API_URL}/sendMessage",
                 json=payload
@@ -100,7 +100,7 @@ async def send_telegram_photo(chat_id: int, photo_url: str, caption: str, reply_
             }
             if reply_markup:
                 payload["reply_markup"] = json.dumps(reply_markup)
-            
+
             response = await client.post(
                 f"{TELEGRAM_API_URL}/sendPhoto",
                 json=payload
@@ -111,24 +111,20 @@ async def send_telegram_photo(chat_id: int, photo_url: str, caption: str, reply_
         return None
 
 async def get_products():
-    """Fetch products from e-commerce service"""
+    """Fetch products from e-commerce service.
+
+    Raises RuntimeError when the catalog API is unreachable or returns an
+    error. There is deliberately NO fallback to hardcoded sample products -
+    showing customers fake inventory is worse than showing an error.
+    """
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{ECOMMERCE_API_URL}/products")
-            if response.status_code == 200:
-                return response.json().get("products", [])
-    except:
-        pass
-    
-    # Fallback to sample products
-    return [
-        {"id": "1", "name": "Premium Rice (50kg)", "price": 45000, "description": "High-quality rice", "stock": 50},
-        {"id": "2", "name": "Cooking Oil (5L)", "price": 8500, "description": "Pure vegetable oil", "stock": 120},
-        {"id": "3", "name": "Detergent Powder (2kg)", "price": 3200, "description": "Powerful cleaning", "stock": 80},
-        {"id": "4", "name": "Tomato Paste (70g x 50)", "price": 12000, "description": "Rich tomato flavor", "stock": 60},
-        {"id": "5", "name": "Sugar (2kg)", "price": 1800, "description": "Pure white sugar", "stock": 100},
-        {"id": "6", "name": "Bathing Soap (Pack of 12)", "price": 2400, "description": "Fresh fragrance", "stock": 150}
-    ]
+    except Exception as e:
+        raise RuntimeError(f"Product catalog unavailable: {e}")
+    if response.status_code != 200:
+        raise RuntimeError(f"Product catalog returned HTTP {response.status_code}")
+    return response.json().get("products", [])
 
 def create_main_menu_keyboard():
     """Create main menu inline keyboard"""
@@ -147,25 +143,25 @@ def create_products_keyboard(products: List[dict], page: int = 0):
     items_per_page = 5
     start = page * items_per_page
     end = start + items_per_page
-    
+
     for product in products[start:end]:
         keyboard.append([{
             "text": f"{product['name']} - ₦{product['price']:,.0f}",
             "callback_data": f"product_{product['id']}"
         }])
-    
+
     # Pagination buttons
     nav_buttons = []
     if page > 0:
         nav_buttons.append({"text": "⬅️ Previous", "callback_data": f"page_{page-1}"})
     if end < len(products):
         nav_buttons.append({"text": "Next ➡️", "callback_data": f"page_{page+1}"})
-    
+
     if nav_buttons:
         keyboard.append(nav_buttons)
-    
+
     keyboard.append([{"text": "🏠 Main Menu", "callback_data": "main_menu"}])
-    
+
     return {"inline_keyboard": keyboard}
 
 def create_product_detail_keyboard(product_id: str):
@@ -212,19 +208,37 @@ What would you like to do?
 
 async def handle_browse_products(chat_id: int):
     """Handle browse products action"""
-    products = await get_products()
+    try:
+        products = await get_products()
+    except RuntimeError as e:
+        print(f"Catalog error: {e}")
+        await send_telegram_message(
+            chat_id,
+            "⚠️ Our product catalog is temporarily unavailable. Please try again in a few minutes.",
+            create_main_menu_keyboard()
+        )
+        return
     message = "🛍️ <b>Our Products</b>\n\nSelect a product to view details:"
     await send_telegram_message(chat_id, message, create_products_keyboard(products))
 
 async def handle_product_detail(chat_id: int, product_id: str):
     """Handle product detail view"""
-    products = await get_products()
+    try:
+        products = await get_products()
+    except RuntimeError as e:
+        print(f"Catalog error: {e}")
+        await send_telegram_message(
+            chat_id,
+            "⚠️ Our product catalog is temporarily unavailable. Please try again in a few minutes.",
+            create_main_menu_keyboard()
+        )
+        return
     product = next((p for p in products if p['id'] == product_id), None)
-    
+
     if not product:
         await send_telegram_message(chat_id, "❌ Product not found")
         return
-    
+
     message = f"""
 <b>{product['name']}</b>
 
@@ -235,7 +249,7 @@ async def handle_product_detail(chat_id: int, product_id: str):
 
 Select quantity and add to cart:
 """
-    
+
     if product.get('image_url'):
         await send_telegram_photo(chat_id, product['image_url'], message, create_product_detail_keyboard(product_id))
     else:
@@ -243,19 +257,28 @@ Select quantity and add to cart:
 
 async def handle_add_to_cart(chat_id: int, user_id: int, product_id: str, quantity: int = 1):
     """Handle add to cart action"""
-    products = await get_products()
+    try:
+        products = await get_products()
+    except RuntimeError as e:
+        print(f"Catalog error: {e}")
+        await send_telegram_message(
+            chat_id,
+            "⚠️ Our product catalog is temporarily unavailable. Please try again in a few minutes.",
+            create_main_menu_keyboard()
+        )
+        return
     product = next((p for p in products if p['id'] == product_id), None)
-    
+
     if not product:
         await send_telegram_message(chat_id, "❌ Product not found")
         return
-    
+
     if chat_id not in user_carts:
         user_carts[chat_id] = []
-    
+
     # Check if product already in cart
     existing_item = next((item for item in user_carts[chat_id] if item.product_id == product_id), None)
-    
+
     if existing_item:
         existing_item.quantity += quantity
     else:
@@ -265,7 +288,7 @@ async def handle_add_to_cart(chat_id: int, user_id: int, product_id: str, quanti
             quantity=quantity,
             price=product['price']
         ))
-    
+
     message = f"✅ Added {quantity}x {product['name']} to cart!"
     await send_telegram_message(chat_id, message, create_main_menu_keyboard())
 
@@ -274,30 +297,69 @@ async def handle_view_cart(chat_id: int):
     if chat_id not in user_carts or not user_carts[chat_id]:
         await send_telegram_message(chat_id, "🛒 Your cart is empty", create_main_menu_keyboard())
         return
-    
+
     cart_items = user_carts[chat_id]
     total = sum(item.quantity * item.price for item in cart_items)
-    
+
     message = "🛒 <b>Your Cart</b>\n\n"
     for item in cart_items:
         message += f"• {item.product_name}\n"
         message += f"  {item.quantity}x ₦{item.price:,.0f} = ₦{item.quantity * item.price:,.0f}\n\n"
-    
+
     message += f"<b>Total: ₦{total:,.0f}</b>"
-    
+
     await send_telegram_message(chat_id, message, create_cart_keyboard())
 
 async def handle_checkout(chat_id: int, user_id: int, username: str):
-    """Handle checkout action"""
+    """Handle checkout action.
+
+    The order is submitted to the e-commerce service FIRST. The customer only
+    sees "Order Confirmed!" after the order service has actually accepted the
+    order; otherwise the cart is preserved and an error message is sent.
+    """
     if chat_id not in user_carts or not user_carts[chat_id]:
         await send_telegram_message(chat_id, "🛒 Your cart is empty", create_main_menu_keyboard())
         return
-    
+
     cart_items = user_carts[chat_id]
     total = sum(item.quantity * item.price for item in cart_items)
-    
-    # Create order
+
     order_id = f"TG-{datetime.now().strftime('%Y%m%d%H%M%S')}-{user_id}"
+
+    # Submit order to e-commerce service before confirming anything.
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{ECOMMERCE_API_URL}/orders",
+                json={
+                    "order_id": order_id,
+                    "channel": "telegram",
+                    "customer": {"name": username, "telegram_id": user_id},
+                    "items": [item.dict() for item in cart_items],
+                    "total": total
+                }
+            )
+    except Exception as e:
+        print(f"Order submission failed (service unreachable): {e}")
+        await send_telegram_message(
+            chat_id,
+            "⚠️ We couldn't place your order right now because the order service is unreachable. "
+            "Your cart has been saved - please try again shortly.",
+            create_cart_keyboard()
+        )
+        return
+
+    if response.status_code not in (200, 201):
+        print(f"Order submission rejected: HTTP {response.status_code}: {response.text}")
+        await send_telegram_message(
+            chat_id,
+            f"⚠️ Your order could not be placed (order service returned HTTP {response.status_code}). "
+            "Your cart has been saved - please try again later or contact support.",
+            create_cart_keyboard()
+        )
+        return
+
+    # Order accepted by the backend - only now record and confirm.
     order = TelegramOrder(
         chat_id=chat_id,
         user_id=user_id,
@@ -307,10 +369,10 @@ async def handle_checkout(chat_id: int, user_id: int, username: str):
         status="confirmed"
     )
     orders_db[order_id] = order
-    
+
     # Clear cart
     user_carts[chat_id] = []
-    
+
     # Send confirmation
     message = f"""
 🎉 <b>Order Confirmed!</b>
@@ -324,33 +386,17 @@ We'll send you tracking updates via Telegram.
 
 Thank you for shopping with us! 🙏
 """
-    
+
     await send_telegram_message(chat_id, message, create_main_menu_keyboard())
-    
-    # Send order to e-commerce service
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ECOMMERCE_API_URL}/orders",
-                json={
-                    "order_id": order_id,
-                    "channel": "telegram",
-                    "customer": {"name": username, "telegram_id": user_id},
-                    "items": [item.dict() for item in cart_items],
-                    "total": total
-                }
-            )
-    except:
-        pass
 
 async def handle_my_orders(chat_id: int, user_id: int):
     """Handle my orders action"""
     user_orders = [order for order in orders_db.values() if order.user_id == user_id]
-    
+
     if not user_orders:
         await send_telegram_message(chat_id, "📦 You have no orders yet", create_main_menu_keyboard())
         return
-    
+
     message = "📦 <b>Your Orders</b>\n\n"
     for order_id, order in list(orders_db.items())[-5:]:  # Last 5 orders
         if order.user_id == user_id:
@@ -358,7 +404,7 @@ async def handle_my_orders(chat_id: int, user_id: int):
             message += f"Total: ₦{order.total:,.0f}\n"
             message += f"Status: {order.status.upper()}\n"
             message += f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
-    
+
     await send_telegram_message(chat_id, message, create_main_menu_keyboard())
 
 async def handle_help(chat_id: int):
@@ -403,7 +449,7 @@ async def telegram_webhook(request: Request):
     """Handle Telegram webhook updates"""
     try:
         data = await request.json()
-        
+
         # Handle message
         if "message" in data:
             message = data["message"]
@@ -411,14 +457,14 @@ async def telegram_webhook(request: Request):
             user_id = message["from"]["id"]
             username = message["from"].get("username", message["from"].get("first_name", "User"))
             text = message.get("text", "")
-            
+
             if text == "/start":
                 await handle_start_command(chat_id, username)
             elif text == "/help":
                 await handle_help(chat_id)
             else:
                 await send_telegram_message(chat_id, "Please use the menu buttons below:", create_main_menu_keyboard())
-        
+
         # Handle callback query (button press)
         elif "callback_query" in data:
             query = data["callback_query"]
@@ -426,14 +472,14 @@ async def telegram_webhook(request: Request):
             user_id = query["from"]["id"]
             username = query["from"].get("username", query["from"].get("first_name", "User"))
             callback_data = query["data"]
-            
+
             # Answer callback query
             async with httpx.AsyncClient() as client:
                 await client.post(
                     f"{TELEGRAM_API_URL}/answerCallbackQuery",
                     json={"callback_query_id": query["id"]}
                 )
-            
+
             # Handle different callbacks
             if callback_data == "main_menu":
                 await handle_start_command(chat_id, username)
@@ -456,9 +502,9 @@ async def telegram_webhook(request: Request):
                 await handle_my_orders(chat_id, user_id)
             elif callback_data == "help":
                 await handle_help(chat_id)
-        
+
         return {"status": "ok"}
-    
+
     except Exception as e:
         print(f"Webhook error: {e}")
         return {"status": "error", "message": str(e)}
@@ -496,7 +542,7 @@ async def get_stats():
     total_orders = len(orders_db)
     total_revenue = sum(order.total for order in orders_db.values())
     active_users = len(set(order.user_id for order in orders_db.values()))
-    
+
     return {
         "total_orders": total_orders,
         "total_revenue": total_revenue,
@@ -507,4 +553,3 @@ async def get_stats():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8041)
-

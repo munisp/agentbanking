@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,12 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
+	tb "github.com/tigerbeetle/tigerbeetle-go"
+	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -26,18 +29,22 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// Service fronts a real TigerBeetle cluster. There is NO in-memory ledger —
+// every account/transfer read or write goes to the cluster via the official
+// tigerbeetle-go client, and the service refuses to start without a connection.
 type Service struct {
 	Name      string
 	Version   string
 	StartTime time.Time
 
-	mu       sync.RWMutex
-	accounts map[uint64]*TBAccount
-	transfers map[uint64]*TBTransfer
+	tbClient  tb.Client
+	addresses []string
 
-	requestsTotal   int64
-	requestsSuccess int64
-	requestsFailed  int64
+	accountsCreated  int64
+	transfersCreated int64
+	requestsTotal    int64
+	requestsSuccess  int64
+	requestsFailed   int64
 }
 
 type TBAccount struct {
@@ -79,6 +86,43 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// u128ToU64 converts a TigerBeetle Uint128 back to the uint64 identifier used
+// by this API (TigerBeetle stores uint64s little-endian in the low 8 bytes).
+func u128ToU64(u tbtypes.Uint128) uint64 {
+	return binary.LittleEndian.Uint64(u[0:8])
+}
+
+func accountFromTB(a tbtypes.Account) TBAccount {
+	return TBAccount{
+		ID:             u128ToU64(a.ID),
+		UserData:       a.UserData64,
+		Ledger:         a.Ledger,
+		Code:           a.Code,
+		Flags:          a.Flags,
+		DebitsPending:  u128ToU64(a.DebitsPending),
+		DebitsPosted:   u128ToU64(a.DebitsPosted),
+		CreditsPending: u128ToU64(a.CreditsPending),
+		CreditsPosted:  u128ToU64(a.CreditsPosted),
+		Timestamp:      int64(a.Timestamp),
+	}
+}
+
+func transferFromTB(t tbtypes.Transfer) TBTransfer {
+	return TBTransfer{
+		ID:              u128ToU64(t.ID),
+		DebitAccountID:  u128ToU64(t.DebitAccountID),
+		CreditAccountID: u128ToU64(t.CreditAccountID),
+		UserData:        t.UserData64,
+		PendingID:       u128ToU64(t.PendingID),
+		Timeout:         uint64(t.Timeout),
+		Ledger:          t.Ledger,
+		Code:            t.Code,
+		Flags:           t.Flags,
+		Amount:          u128ToU64(t.Amount),
+		Timestamp:       int64(t.Timestamp),
+	}
+}
+
 func main() {
 
 	// ── OpenTelemetry ────────────────────────────────────────────────────────────
@@ -96,12 +140,36 @@ func main() {
 		defer cancel()
 		_ = shutdownTracer(ctx)
 	}()
+
+	// ── TigerBeetle cluster connection (required) ────────────────────────────────
+	rawAddresses := os.Getenv("TB_ADDRESSES")
+	if rawAddresses == "" {
+		rawAddresses = os.Getenv("TIGERBEETLE_ADDR")
+	}
+	if rawAddresses == "" {
+		log.Fatal("TB_ADDRESSES is not set; refusing to start without a TigerBeetle cluster")
+	}
+	addresses := strings.Split(rawAddresses, ",")
+	clusterID, err := strconv.ParseUint(os.Getenv("TB_CLUSTER_ID"), 10, 64)
+	if os.Getenv("TB_CLUSTER_ID") == "" {
+		clusterID = 0
+	} else if err != nil {
+		log.Fatalf("Invalid TB_CLUSTER_ID: %v", err)
+	}
+
+	tbClient, err := tb.NewClient(tbtypes.ToUint128(clusterID), addresses)
+	if err != nil {
+		log.Fatalf("Refusing to start: cannot connect to TigerBeetle cluster at %v: %v", addresses, err)
+	}
+	defer tbClient.Close()
+	log.Printf("Connected to TigerBeetle cluster %d at %v", clusterID, addresses)
+
 	service := &Service{
 		Name:      "tigerbeetle-core",
 		Version:   "1.0.0",
 		StartTime: time.Now(),
-		accounts:  make(map[uint64]*TBAccount),
-		transfers: make(map[uint64]*TBTransfer),
+		tbClient:  tbClient,
+		addresses: addresses,
 	}
 
 	router := mux.NewRouter()
@@ -127,18 +195,15 @@ func main() {
 }
 
 func (s *Service) healthHandler(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	accountCount := len(s.accounts)
-	transferCount := len(s.transfers)
-	s.mu.RUnlock()
-
 	response := map[string]interface{}{
-		"status":          "healthy",
-		"service":         s.Name,
-		"timestamp":       time.Now(),
-		"uptime":          time.Since(s.StartTime).String(),
-		"accounts_count":  accountCount,
-		"transfers_count": transferCount,
+		"status":              "healthy",
+		"service":             s.Name,
+		"timestamp":           time.Now(),
+		"uptime":              time.Since(s.StartTime).String(),
+		"backend":             "tigerbeetle",
+		"tigerbeetle_cluster": s.addresses,
+		"accounts_created":    atomic.LoadInt64(&s.accountsCreated),
+		"transfers_created":   atomic.LoadInt64(&s.transfersCreated),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -166,17 +231,12 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	accountCount := len(s.accounts)
-	transferCount := len(s.transfers)
-	s.mu.RUnlock()
-
 	metrics := map[string]interface{}{
 		"requests_total":    atomic.LoadInt64(&s.requestsTotal),
 		"requests_success":  atomic.LoadInt64(&s.requestsSuccess),
 		"requests_failed":   atomic.LoadInt64(&s.requestsFailed),
-		"accounts_total":    accountCount,
-		"transfers_total":   transferCount,
+		"accounts_created":  atomic.LoadInt64(&s.accountsCreated),
+		"transfers_created": atomic.LoadInt64(&s.transfersCreated),
 		"uptime_seconds":    int(time.Since(s.StartTime).Seconds()),
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -194,13 +254,41 @@ func (s *Service) createAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	for i := range accounts {
-		accounts[i].Timestamp = time.Now().UnixNano()
-		s.accounts[accounts[i].ID] = &accounts[i]
+	tbAccounts := make([]tbtypes.Account, 0, len(accounts))
+	for _, a := range accounts {
+		if a.ID == 0 {
+			atomic.AddInt64(&s.requestsFailed, 1)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_request", Message: "account ID must be non-zero"})
+			return
+		}
+		tbAccounts = append(tbAccounts, tbtypes.Account{
+			ID:         tbtypes.ToUint128(a.ID),
+			UserData64: a.UserData,
+			Ledger:     a.Ledger,
+			Code:       a.Code,
+			Flags:      a.Flags,
+		})
 	}
-	s.mu.Unlock()
 
+	results, err := s.tbClient.CreateAccounts(tbAccounts)
+	if err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "tigerbeetle_unreachable", Message: err.Error()})
+		return
+	}
+	if len(results) > 0 {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":   "tigerbeetle_accounts_rejected",
+			"details": fmt.Sprintf("%v", results),
+		})
+		return
+	}
+
+	atomic.AddInt64(&s.accountsCreated, int64(len(accounts)))
 	atomic.AddInt64(&s.requestsSuccess, 1)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -221,11 +309,14 @@ func (s *Service) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	account, exists := s.accounts[id]
-	s.mu.RUnlock()
-
-	if !exists {
+	accounts, err := s.tbClient.LookupAccounts([]tbtypes.Uint128{tbtypes.ToUint128(id)})
+	if err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "tigerbeetle_unreachable", Message: err.Error()})
+		return
+	}
+	if len(accounts) == 0 {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("account %d not found", id)})
@@ -234,7 +325,7 @@ func (s *Service) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	atomic.AddInt64(&s.requestsSuccess, 1)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(account)
+	json.NewEncoder(w).Encode(accountFromTB(accounts[0]))
 }
 
 func (s *Service) getBalanceHandler(w http.ResponseWriter, r *http.Request) {
@@ -248,17 +339,21 @@ func (s *Service) getBalanceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	account, exists := s.accounts[id]
-	s.mu.RUnlock()
-
-	if !exists {
+	accounts, err := s.tbClient.LookupAccounts([]tbtypes.Uint128{tbtypes.ToUint128(id)})
+	if err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "tigerbeetle_unreachable", Message: err.Error()})
+		return
+	}
+	if len(accounts) == 0 {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("account %d not found", id)})
 		return
 	}
 
+	account := accountFromTB(accounts[0])
 	balance := int64(account.CreditsPosted) - int64(account.DebitsPosted)
 	available := balance - int64(account.CreditsPending) + int64(account.DebitsPending)
 
@@ -286,22 +381,46 @@ func (s *Service) createTransferHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.mu.Lock()
-	for i := range transfers {
-		transfers[i].Timestamp = time.Now().UnixNano()
-		s.transfers[transfers[i].ID] = &transfers[i]
-
-		debit, dOk := s.accounts[transfers[i].DebitAccountID]
-		credit, cOk := s.accounts[transfers[i].CreditAccountID]
-		if dOk {
-			debit.DebitsPosted += transfers[i].Amount
+	tbTransfers := make([]tbtypes.Transfer, 0, len(transfers))
+	for _, t := range transfers {
+		if t.ID == 0 || t.Amount == 0 {
+			atomic.AddInt64(&s.requestsFailed, 1)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid_request", Message: "transfer ID and amount must be non-zero"})
+			return
 		}
-		if cOk {
-			credit.CreditsPosted += transfers[i].Amount
-		}
+		tbTransfers = append(tbTransfers, tbtypes.Transfer{
+			ID:              tbtypes.ToUint128(t.ID),
+			DebitAccountID:  tbtypes.ToUint128(t.DebitAccountID),
+			CreditAccountID: tbtypes.ToUint128(t.CreditAccountID),
+			UserData64:      t.UserData,
+			PendingID:       tbtypes.ToUint128(t.PendingID),
+			Timeout:         uint32(t.Timeout),
+			Ledger:          t.Ledger,
+			Code:            t.Code,
+			Flags:           t.Flags,
+			Amount:          tbtypes.ToUint128(t.Amount),
+		})
 	}
-	s.mu.Unlock()
 
+	results, err := s.tbClient.CreateTransfers(tbTransfers)
+	if err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "tigerbeetle_unreachable", Message: err.Error()})
+		return
+	}
+	if len(results) > 0 {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":   "tigerbeetle_transfers_rejected",
+			"details": fmt.Sprintf("%v", results),
+		})
+		return
+	}
+
+	atomic.AddInt64(&s.transfersCreated, int64(len(transfers)))
 	atomic.AddInt64(&s.requestsSuccess, 1)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -322,11 +441,14 @@ func (s *Service) getTransferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	transfer, exists := s.transfers[id]
-	s.mu.RUnlock()
-
-	if !exists {
+	transfers, err := s.tbClient.LookupTransfers([]tbtypes.Uint128{tbtypes.ToUint128(id)})
+	if err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "tigerbeetle_unreachable", Message: err.Error()})
+		return
+	}
+	if len(transfers) == 0 {
 		atomic.AddInt64(&s.requestsFailed, 1)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "not_found", Message: fmt.Sprintf("transfer %d not found", id)})
@@ -335,7 +457,7 @@ func (s *Service) getTransferHandler(w http.ResponseWriter, r *http.Request) {
 
 	atomic.AddInt64(&s.requestsSuccess, 1)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(transfer)
+	json.NewEncoder(w).Encode(transferFromTB(transfers[0]))
 }
 
 // initTracer initialises the OTLP trace exporter.
@@ -409,4 +531,3 @@ func gracefulShutdown(serviceName string, srv *http.Server, cleanup func(context
 	}
 	slog.Info("Server stopped gracefully", "service", serviceName)
 }
-

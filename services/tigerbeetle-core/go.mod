@@ -7,6 +7,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.19.0
+	github.com/tigerbeetle/tigerbeetle-go v0.16.78
 )
 
 require (

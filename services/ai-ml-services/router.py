@@ -1,5 +1,6 @@
 import uuid
 import logging
+import pickle
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -8,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from config import get_db
 from models import (
-    MLModel, MLModelActivityLog, MLModelCreate, MLModelUpdate, 
+    MLModel, MLModelActivityLog, MLModelCreate, MLModelUpdate,
     MLModelResponse, MLModelActivityLogResponse, ModelStatus, LogAction
 )
 
@@ -37,31 +38,76 @@ def log_activity(db: Session, model_id: uuid.UUID, action: LogAction, user_id: O
         details=details
     )
     db.add(log_entry)
-    # Note: The log entry is committed with the main transaction in the endpoint, 
+    # Note: The log entry is committed with the main transaction in the endpoint,
     # or separately if needed. Here, we rely on the endpoint's commit.
+
+
+# --- Model artifact loading (required for scoring) ---
+
+def _load_artifact(model_uri: str):
+    """
+    Load a trained model artifact from disk (joblib or pickle).
+    Returns (estimator, feature_names_or_none). Raises RuntimeError on any
+    failure — scoring must fail loud, never fabricate a score.
+    """
+    if not model_uri:
+        raise RuntimeError("model has no model_uri artifact configured")
+    try:
+        try:
+            import joblib  # type: ignore
+            artifact = joblib.load(model_uri)
+        except ImportError:
+            with open(model_uri, "rb") as fh:
+                artifact = pickle.load(fh)
+    except Exception as exc:
+        raise RuntimeError(f"failed to load model artifact '{model_uri}': {exc}")
+
+    feature_names = None
+    estimator = artifact
+    if isinstance(artifact, dict):
+        estimator = artifact.get("model")
+        feature_names = artifact.get("feature_names")
+    if estimator is None or not hasattr(estimator, "predict"):
+        raise RuntimeError("model artifact does not provide a predict() method")
+    return estimator, feature_names
+
+
+def _build_feature_vector(transaction_data: dict, feature_names: Optional[List[str]]):
+    """Build a numeric feature vector from the transaction payload."""
+    if feature_names:
+        missing = [f for f in feature_names if f not in transaction_data]
+        if missing:
+            raise RuntimeError(f"transaction is missing required features: {missing}")
+        return [float(transaction_data[f]) for f in feature_names]
+    numeric_keys = sorted(
+        k for k, v in transaction_data.items() if isinstance(v, (int, float))
+    )
+    if not numeric_keys:
+        raise RuntimeError("transaction contains no numeric features to score")
+    return [float(transaction_data[k]) for k in numeric_keys]
 
 # --- CRUD Endpoints for MLModel ---
 
 @router.post(
-    "/", 
-    response_model=MLModelResponse, 
+    "/",
+    response_model=MLModelResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new Machine Learning Model"
 )
 def create_model(model_in: MLModelCreate, db: Session = Depends(get_db)):
     """
     Registers a new Machine Learning Model in the system.
-    
-    The model is initially set to 'Training' status. A unique constraint 
+
+    The model is initially set to 'Training' status. A unique constraint
     is enforced on the combination of `tenant_id`, `name`, and `version`.
     """
     try:
         db_model = MLModel(**model_in.model_dump())
         db.add(db_model)
-        
+
         # Log the creation activity
         log_activity(db, db_model.id, LogAction.CREATE, details=f"Model created with initial status: {db_model.status.value}")
-        
+
         db.commit()
         db.refresh(db_model)
         logger.info(f"Model created: {db_model.id} for tenant {db_model.tenant_id}")
@@ -81,7 +127,7 @@ def create_model(model_in: MLModelCreate, db: Session = Depends(get_db)):
         )
 
 @router.get(
-    "/{model_id}", 
+    "/{model_id}",
     response_model=MLModelResponse,
     summary="Retrieve a Machine Learning Model by ID"
 )
@@ -92,13 +138,13 @@ def read_model(model_id: uuid.UUID, db: Session = Depends(get_db)):
     db_model = db.query(MLModel).filter(MLModel.id == model_id).first()
     if db_model is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
     return db_model
 
 @router.get(
-    "/", 
+    "/",
     response_model=List[MLModelResponse],
     summary="List all Machine Learning Models with filtering"
 )
@@ -111,23 +157,23 @@ def list_models(
     db: Session = Depends(get_db)
 ):
     """
-    Retrieves a list of Machine Learning Models, with optional filtering 
+    Retrieves a list of Machine Learning Models, with optional filtering
     by tenant ID, status, and active flag. Supports pagination.
     """
     query = db.query(MLModel)
-    
+
     if tenant_id:
         query = query.filter(MLModel.tenant_id == tenant_id)
     if status:
         query = query.filter(MLModel.status == status)
     if is_active is not None:
         query = query.filter(MLModel.is_active == is_active)
-        
+
     models = query.offset(skip).limit(limit).all()
     return models
 
 @router.patch(
-    "/{model_id}", 
+    "/{model_id}",
     response_model=MLModelResponse,
     summary="Update an existing Machine Learning Model"
 )
@@ -139,12 +185,12 @@ def update_model(model_id: uuid.UUID, model_in: MLModelUpdate, db: Session = Dep
     db_model = db.query(MLModel).filter(MLModel.id == model_id).first()
     if db_model is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
 
     update_data = model_in.model_dump(exclude_unset=True)
-    
+
     # Check for integrity violation before applying changes
     if 'name' in update_data or 'version' in update_data:
         # Check if the new combination of tenant_id, name, and version already exists for another model
@@ -166,7 +212,7 @@ def update_model(model_id: uuid.UUID, model_in: MLModelUpdate, db: Session = Dep
     try:
         # Log the update activity
         log_activity(db, db_model.id, LogAction.UPDATE, details=f"Model updated with fields: {list(update_data.keys())}")
-        
+
         db.add(db_model)
         db.commit()
         db.refresh(db_model)
@@ -180,7 +226,7 @@ def update_model(model_id: uuid.UUID, model_in: MLModelUpdate, db: Session = Dep
         )
 
 @router.delete(
-    "/{model_id}", 
+    "/{model_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a Machine Learning Model"
 )
@@ -191,17 +237,17 @@ def delete_model(model_id: uuid.UUID, db: Session = Depends(get_db)):
     db_model = db.query(MLModel).filter(MLModel.id == model_id).first()
     if db_model is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
 
     # Activity logs are set to cascade delete, but we can log the deletion itself
     log_activity(db, model_id, LogAction.ARCHIVE, details="Model marked for deletion.")
-    
+
     db.delete(db_model)
     db.commit()
-    logger.info(f"Model deleted: {model_id}")
-    return 
+    logger.info(f"Model deleted: {db_model.id}")
+    return
 
 # --- Business-Specific Endpoints ---
 
@@ -218,23 +264,21 @@ def deploy_model(model_id: uuid.UUID, db: Session = Depends(get_db)):
     db_model = db.query(MLModel).filter(MLModel.id == model_id).first()
     if db_model is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
-        
+
     if db_model.status == ModelStatus.DEPLOYED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Model is already deployed."
         )
 
-    # Simulate deployment logic (e.g., calling an external deployment service)
-    # For this implementation, we just update the status
     db_model.status = ModelStatus.DEPLOYED
     db_model.is_active = True
-    
+
     log_activity(db, db_model.id, LogAction.DEPLOY, details="Model deployment initiated and status updated to DEPLOYED.")
-    
+
     db.add(db_model)
     db.commit()
     db.refresh(db_model)
@@ -243,47 +287,74 @@ def deploy_model(model_id: uuid.UUID, db: Session = Depends(get_db)):
 
 @router.post(
     "/{model_id}/score",
-    summary="Simulate scoring a transaction with the model"
+    summary="Score a transaction with the model's trained artifact"
 )
 def score_transaction(model_id: uuid.UUID, transaction_data: dict, db: Session = Depends(get_db)):
     """
-    Executes using the deployed model to score a transaction.
-    The actual scoring logic would be complex, involving model loading and inference.
+    Scores a transaction by loading the model's trained artifact from
+    `model_uri` and running real inference.
+
+    Fail-loud contract:
+      - unknown model                       -> 404
+      - model not deployed / inactive       -> 400
+      - artifact missing/unloadable         -> 503
+      - malformed transaction features      -> 422
+    A random or hardcoded score is NEVER returned.
     """
     db_model = db.query(MLModel).filter(MLModel.id == model_id).first()
     if db_model is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
-        
+
     if db_model.status != ModelStatus.DEPLOYED or not db_model.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Model is not deployed or is inactive and cannot be used for scoring."
         )
 
-    # --- Simulated Scoring Logic ---
-    # In a real system, this would involve:
-    # 1. Loading the model artifact from `db_model.model_uri`.
-    # 2. Preprocessing `transaction_data`.
-    # 3. Running inference.
-    
-    # Simple simulation:
-    import random
-    score = random.uniform(0.0, 1.0)
-    is_fraud = score > 0.85
-    
-    log_activity(db, db_model.id, LogAction.SCORE, details=f"Transaction scored. Score: {score:.4f}, Fraud: {is_fraud}")
-    
-    db.commit() # Commit the log entry
-    
+    try:
+        estimator, feature_names = _load_artifact(db_model.model_uri)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    try:
+        vector = _build_feature_vector(transaction_data, feature_names)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    try:
+        if hasattr(estimator, "predict_proba"):
+            proba = estimator.predict_proba([vector])[0]
+            score = float(max(proba))
+            positive_idx = int(list(getattr(estimator, "classes_", [0, 1])).index(1)) \
+                if 1 in list(getattr(estimator, "classes_", [])) else len(proba) - 1
+            positive_score = float(proba[positive_idx])
+        else:
+            prediction_raw = estimator.predict([vector])[0]
+            score = None
+            positive_score = float(prediction_raw)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"model inference failed: {exc}",
+        )
+
+    is_fraud = positive_score > 0.5
+
+    log_activity(db, db_model.id, LogAction.SCORE, details=f"Transaction scored. Score: {positive_score:.4f}, Fraud: {is_fraud}")
+
+    db.commit()  # Commit the log entry
+
     return {
         "model_id": model_id,
-        "score": score,
+        "score": positive_score,
+        "confidence": score,
         "prediction": "FRAUD" if is_fraud else "NOT_FRAUD",
         "model_version": db_model.version,
-        "input_data_hash": hash(str(transaction_data)) # Simple way to reference input
+        "scoring_method": "model_artifact",
+        "input_data_hash": hash(str(transaction_data))  # Simple way to reference input
     }
 
 # --- Activity Log Endpoints ---
@@ -294,7 +365,7 @@ def score_transaction(model_id: uuid.UUID, transaction_data: dict, db: Session =
     summary="Retrieve activity logs for a specific model"
 )
 def get_model_logs(
-    model_id: uuid.UUID, 
+    model_id: uuid.UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=100),
     db: Session = Depends(get_db)
@@ -305,12 +376,12 @@ def get_model_logs(
     # Check if model exists first
     if not db.query(MLModel).filter(MLModel.id == model_id).first():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"MLModel with ID {model_id} not found"
         )
-        
+
     logs = db.query(MLModelActivityLog).filter(MLModelActivityLog.model_id == model_id)\
                .order_by(MLModelActivityLog.timestamp.desc())\
                .offset(skip).limit(limit).all()
-               
+
     return logs

@@ -1,8 +1,14 @@
 import logging
-from typing import Annotated, Optional
+import os
+import json
+import secrets
+import urllib.request
+import urllib.error
+from typing import Annotated, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Body, Query
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, conint, constr
 from slowapi import Limiter, _rate_limit_ext1
 from slowapi.util import get_ip_addr
@@ -13,54 +19,132 @@ from slowapi.util import get_ip_addr
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Mock Limiter for demonstration. In a real app, this would be configured globally.
-# Assuming a global limiter instance is available as 'limiter'
+# Limiter instance (configured globally in the main application).
 limiter = Limiter(key_func=get_ip_addr)
 
-# Mock Authentication Dependency
-async def get_current_user(token: str = Body(..., embed=True)) -> str:
+# Authentication Dependency (real JWT validation - fail closed)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
+
+    Fails closed: when the JWT secret or library is unavailable, requests
+    are rejected with 503 instead of falling back to a static token.
     """
-    Mock dependency to simulate user authentication.
-    In a real application, this would validate a JWT or API key.
-    """
-    if not token or token != "valid_auth_token":
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    # Return a mock user ID
-    return "user_123"
 
-# Mock Service Layer
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
+    """Validate the bearer JWT and return the authenticated user ID (sub claim)."""
+    claims = _decode_jwt(token)
+    subject = claims.get("sub")
+    if not subject:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing a subject claim",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return str(subject)
+
+# Service Layer
 class PhoneVerificationService:
     """
-    Mock service layer for phone verification logic.
-    In a real application, this would interact with a database and an SMS gateway.
+    Service layer for phone verification logic.
+
+    OTPs are generated with a cryptographically secure RNG and delivered via
+    the SMS gateway configured with SMS_GATEWAY_URL / SMS_GATEWAY_API_KEY.
+    When no gateway is configured, sending fails loud (HTTP 503) - an OTP is
+    never silently "sent".
     """
     def __init__(self):
-        # Mock storage: {phone_number: {"otp": "123456", "sent_at": datetime, "verified": bool, "attempts": int}}
+        # Storage backend: {phone_number: {"otp_hash": str, "sent_at": datetime, "verified": bool, "attempts": int}}
+        # In production this should be a shared store (e.g. Redis/DB); the
+        # in-process dict is only acceptable for a single-worker deployment.
         self.storage = {}
+        self.gateway_url = os.environ.get("SMS_GATEWAY_URL", "").rstrip("/")
+        self.gateway_api_key = os.environ.get("SMS_GATEWAY_API_KEY", "")
+
+    @staticmethod
+    def _hash_otp(otp: str) -> str:
+        import hashlib
+        return hashlib.sha256(otp.encode("utf-8")).hexdigest()
+
+    def _send_sms(self, phone_number: str, message: str) -> None:
+        """Deliver an SMS through the configured gateway; fail loud otherwise."""
+        if not self.gateway_url:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="SMS gateway is not configured (set SMS_GATEWAY_URL); OTP cannot be delivered.",
+            )
+        headers = {"Content-Type": "application/json"}
+        if self.gateway_api_key:
+            headers["Authorization"] = f"Bearer {self.gateway_api_key}"
+        request = urllib.request.Request(
+            f"{self.gateway_url}/messages",
+            method="POST",
+            data=json.dumps({"to": phone_number, "message": message}).encode("utf-8"),
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if response.status >= 400:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"SMS gateway rejected the message (status {response.status}).",
+                    )
+        except urllib.error.URLError as exc:
+            logger.error(f"SMS gateway unreachable: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="SMS gateway is unreachable; OTP was not delivered.",
+            )
 
     def send_otp(self, phone_number: str) -> bool:
-        """Simulates sending an OTP and storing it."""
+        """Generates a random OTP, delivers it via SMS and stores its hash."""
         if phone_number in self.storage and (datetime.now() - self.storage[phone_number]["sent_at"]) < timedelta(seconds=60):
             logger.warning(f"Rate limit hit for sending OTP to {phone_number}")
             return False # Too soon to resend
 
-        otp = "123456" # In a real app, this would be a random, secure number
+        otp = f"{secrets.randbelow(1000000):06d}"
+
+        # Deliver first; only persist the OTP when delivery succeeded.
+        self._send_sms(phone_number, f"Your verification code is {otp}. It expires in 5 minutes.")
+
         self.storage[phone_number] = {
-            "otp": otp,
+            "otp_hash": self._hash_otp(otp),
             "sent_at": datetime.now(),
             "verified": False,
             "attempts": 0
         }
-        logger.info(f"OTP {otp} sent to {phone_number}")
-        # Simulate SMS gateway call here
+        logger.info(f"OTP delivered to {phone_number}")
         return True
 
     def verify_otp(self, phone_number: str, otp: str) -> bool:
-        """Simulates verifying the OTP."""
+        """Verifies the OTP against the stored hash."""
         if phone_number not in self.storage:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -84,7 +168,7 @@ class PhoneVerificationService:
             )
 
         record["attempts"] += 1
-        if record["otp"] == otp:
+        if secrets.compare_digest(record["otp_hash"], self._hash_otp(otp)):
             record["verified"] = True
             logger.info(f"Phone number {phone_number} verified successfully.")
             return True
@@ -108,7 +192,6 @@ class PhoneVerificationService:
 # Dependency Injection for Service
 def get_verification_service() -> PhoneVerificationService:
     """Dependency to inject the verification service."""
-    # In a real app, this would be a singleton or a request-scoped dependency
     return PhoneVerificationService()
 
 # --- Pydantic Models ---
@@ -181,7 +264,6 @@ def log_verification_event(phone_number: str, event_type: str):
     or database without blocking the API response.
     """
     logger.info(f"BACKGROUND TASK: Logging event '{event_type}' for phone: {phone_number}")
-    # In a real app, this would call an external logging/analytics service
 
 # --- Endpoints ---
 
@@ -197,7 +279,6 @@ async def send_otp(
     request: SendOtpRequest,
     background_tasks: BackgroundTasks,
     service: Annotated[PhoneVerificationService, Depends(get_verification_service)],
-    # The current_user dependency is applied at the router level, but we can access it here if needed
 ):
     """
     Handles the request to send an OTP.
@@ -207,6 +288,7 @@ async def send_otp(
     :param service: Dependency-injected verification service.
     :return: An OtpResponse indicating success or failure.
     :raises HTTPException 429: If the rate limit for resending is hit (e.g., less than 60s since last send).
+    :raises HTTPException 503: If no SMS gateway is configured.
     """
     phone_number = request.phone_number
     logger.info(f"Attempting to send OTP to {phone_number}")
@@ -297,7 +379,6 @@ async def check_status(
             detail="No verification record found for this phone number."
         )
 
-    # Mocking last_sent_at for the response, as the mock service doesn't expose it easily
     last_sent_at = service.storage.get(phone_number, {}).get("sent_at")
 
     return VerificationStatusResponse(
@@ -366,6 +447,6 @@ async def clear_verification(
 # - PUT/GET (List): Not applicable, as the service manages individual verification states, not a collection.
 # - CORS: Handled at the main application level (app.py), not typically in the router file itself.
 # - Logging: Basic logging is included.
-# - Rate Limiting: Included using a mock `slowapi` decorator.
-# - Authentication: Included via `Depends(get_current_user)` at the router level.
+# - Rate Limiting: Included using the configured `slowapi` limiter.
+# - Authentication: Real JWT validation via `Depends(get_current_user)` at the router level.
 # - Proper status codes, Pydantic models, docstrings, and error handling are included.

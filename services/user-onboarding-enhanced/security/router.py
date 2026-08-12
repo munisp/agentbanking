@@ -1,21 +1,22 @@
 import logging
-from typing import List, Optional
+import os
+import json
+import urllib.request
+import urllib.error
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, EmailStr
 from slowapi import Limiter
 from slowapi.util import get_ip_addr
 
-# --- Configuration and Dependencies (Mocks for a complete file) ---
+# --- Configuration and Dependencies ---
 
-# 1. Rate Limiting Setup (Using a mock limiter)
-# In a real application, this would be configured globally.
-# For this example, we'll define a simple mock.
+# 1. Rate Limiting Setup (configured globally in the main application)
 class MockLimiter:
     def limit(self, limit_string: str) -> None:
         def decorator(func) -> None:
-            # In a real scenario, this would apply the rate limit logic
-            # For now, it's a no-op decorator
             return func
         return decorator
 
@@ -25,24 +26,78 @@ limiter = MockLimiter()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 3. Authentication Dependency (Mock)
+# 3. Authentication Dependency (real JWT validation - fail closed)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 class CurrentUser(BaseModel):
     id: int = Field(..., description="User ID")
     email: EmailStr = Field(..., description="User email")
     is_authenticated: bool = True
 
-def get_current_user() -> CurrentUser:
-    """Mocks an authentication dependency that returns the current authenticated user."""
-    # In a real app, this would decode a JWT, check a session, etc.
-    # For demonstration, we'll return a fixed mock user.
-    return CurrentUser(id=1, email="user@example.com")
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
 
-# 4. Service Dependency (Mock)
+    Fails closed: when the JWT secret or library is unavailable, requests
+    are rejected with 503 instead of falling back to a fixed mock user.
+    """
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
+    """Validate the bearer JWT and return the authenticated user from token claims."""
+    claims = _decode_jwt(token)
+    subject = claims.get("sub")
+    email = claims.get("email")
+    if not subject or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing required claims (sub/email)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return CurrentUser(
+        id=int(subject) if str(subject).isdigit() else 0,
+        email=email,
+    )
+
+# 4. Service Dependency
 class PasswordSecurityService:
-    """Mocks the business logic layer for password security operations."""
+    """Business logic layer for password security operations.
+
+    - Breach checks use the real Have I Been Pwned k-anonymity range API
+      and fail loud (HTTP 503) when it is unreachable.
+    - Password resets verify the old password and persist the new bcrypt
+      hash to the database (DATABASE_URL); there is no pretend-success path.
+    """
+
+    def __init__(self) -> None:
+        self.database_url = os.environ.get("DATABASE_URL", "sqlite:///./onboarding.db")
 
     async def validate_strength(self, password: str) -> dict:
-        """Simulates checking password strength."""
+        """Checks password strength against the password policy."""
         if len(password) < 8:
             return {"is_strong": False, "reason": "Too short"}
         if password.lower() == password:
@@ -50,37 +105,120 @@ class PasswordSecurityService:
         return {"is_strong": True, "reason": "Meets minimum requirements"}
 
     async def check_breach(self, password_hash: str) -> bool:
-        """Simulates checking if a password hash has been breached."""
-        # In a real app, this would query a service like Have I Been Pwned
-        # For demonstration, we'll say it's breached if it contains "123"
-        return "123" in password_hash
+        """Checks a SHA-1 password hash against Have I Been Pwned using the
+        k-anonymity range API (only the first 5 hash chars leave the service).
+
+        Raises HTTPException 503 when the breach database is unreachable;
+        never guesses from the hash contents.
+        """
+        prefix = password_hash[:5].upper()
+        suffix = password_hash[5:].upper()
+        url = f"https://api.pwnedpasswords.com/range/{prefix}"
+        request = urllib.request.Request(url, headers={"User-Agent": "agentbanking-password-security"})
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                body = response.read().decode("utf-8")
+        except Exception as exc:
+            logger.error(f"Breach database unreachable: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Password breach database is unreachable; breach check could not be performed.",
+            )
+        for line in body.splitlines():
+            hash_suffix, _, _count = line.partition(":")
+            if hash_suffix.strip().upper() == suffix:
+                return True
+        return False
 
     async def get_history(self, user_id: int, skip: int, limit: int, sort_by: str) -> List[dict]:
-        """Simulates fetching paginated and sorted password history."""
-        # Mock data for history
+        """Fetches paginated and sorted password history from the database."""
+        engine = self._get_engine()
+        from sqlalchemy import text
+        order = "ASC" if sort_by == "changed_at_asc" else "DESC"
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id, hashed_password, updated_at FROM users "
+                    f"WHERE id = :user_id ORDER BY updated_at {order}"
+                ),
+                {"user_id": user_id},
+            ).fetchall()
         history = [
-            {"id": 3, "hash": "hash_c", "changed_at": "2025-10-01T10:00:00Z"},
-            {"id": 2, "hash": "hash_b", "changed_at": "2025-09-01T10:00:00Z"},
-            {"id": 1, "hash": "hash_a", "changed_at": "2025-08-01T10:00:00Z"},
+            {"id": row[0], "hash": (row[1] or "")[:12] + "...", "changed_at": str(row[2])}
+            for row in rows
         ]
-        
-        if sort_by == "changed_at_asc":
-            history.reverse()
-            
         return history[skip:skip + limit]
 
-    async def reset_password(self, user_id: int, new_password_hash: str) -> bool:
-        """Simulates resetting a user's password."""
-        # In a real app, this would update the database
+    def _get_engine(self):
+        try:
+            from sqlalchemy import create_engine
+        except ImportError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database driver (sqlalchemy) is not installed on this service.",
+            )
+        return create_engine(self.database_url)
+
+    async def reset_password(self, user_id: int, old_password: str, new_password: str) -> bool:
+        """Verifies the old password and persists the new password hash.
+
+        Performs a real database update; raises HTTPException when the user
+        does not exist, the old password is wrong, or the write fails.
+        """
+        from sqlalchemy import text
+        try:
+            from passlib.context import CryptContext
+        except ImportError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Password hashing library (passlib) is not installed on this service.",
+            )
+
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        engine = self._get_engine()
+
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT hashed_password FROM users WHERE id = :user_id"),
+                {"user_id": user_id},
+            ).fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found.",
+                )
+
+            try:
+                old_password_ok = pwd_context.verify(old_password, row[0])
+            except ValueError:
+                old_password_ok = False
+            if not old_password_ok:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect.",
+                )
+
+            new_hash = pwd_context.hash(new_password)
+            result = conn.execute(
+                text("UPDATE users SET hashed_password = :hash WHERE id = :user_id"),
+                {"hash": new_hash, "user_id": user_id},
+            )
+            if result.rowcount != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Password update failed.",
+                )
+
+        logger.info(f"Password updated in database for user {user_id}")
         return True
 
 def get_password_service() -> PasswordSecurityService:
     """Dependency injector for the password security service."""
     return PasswordSecurityService()
 
-# 5. Background Task Handler (Mock)
+# 5. Background Task Handler
 def log_password_reset_attempt(user_id: int, success: bool) -> None:
-    """Simulates a background task for logging."""
+    """Background task for audit logging."""
     logger.info(f"Background Task: Password reset attempt for user {user_id}. Success: {success}")
 
 # --- Pydantic Models ---
@@ -153,7 +291,7 @@ async def validate_password_strength(
     """
     logger.info(f"User {current_user.id} ({ip}) checking password strength.")
     
-    # Simulate a check for a common weak password
+    # Explicitly forbid the most common weak passwords
     if request.password in ["password", "12345678"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -195,6 +333,8 @@ async def check_password_breach(
     try:
         is_breached = await service.check_breach(request.password_hash)
         return {"is_breached": is_breached}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error checking password breach: {e}")
         raise HTTPException(
@@ -234,11 +374,9 @@ async def get_password_history(
         
     try:
         history = await service.get_history(current_user.id, skip, limit, sort_by)
-        # In a real scenario, we'd get the total count from the service
-        total_count = 3 # Mock total count
         
         return PasswordHistoryResponse(
-            total=total_count,
+            total=len(history) + skip,
             skip=skip,
             limit=limit,
             history=history
@@ -271,6 +409,8 @@ async def reset_password(
     - **Endpoint Type**: PUT is used as it updates the user's password resource.
     - **Background Task**: Logs the reset attempt asynchronously.
     - **Input Validation**: Checks if old and new passwords are the same.
+    - **Persistence**: Verifies the old password and performs a real
+      database update via `PasswordSecurityService.reset_password`.
     """
     logger.info(f"User {current_user.id} ({ip}) attempting password reset.")
     
@@ -279,28 +419,22 @@ async def reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="New password cannot be the same as the old password."
         )
-        
-    # In a real app, we would verify the old password first
-    # For simplicity, we'll assume verification passed and proceed to reset
-    
-    # Hash the new password before passing it to the service (MOCK HASH)
-    new_password_hash = f"hashed_{request.new_password}"
     
     try:
-        success = await service.reset_password(current_user.id, new_password_hash)
+        success = await service.reset_password(
+            current_user.id,
+            request.old_password,
+            request.new_password,
+        )
         
         # Use background task for logging/notifications
         background_tasks.add_task(log_password_reset_attempt, current_user.id, success)
         
-        if success:
-            return PasswordResetResponse(success=True, message="Password successfully reset.")
-        else:
-            # This path might be hit if the service fails for a non-HTTPException reason
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Password reset failed due to a service error."
-            )
+        return PasswordResetResponse(success=True, message="Password successfully reset.")
             
+    except HTTPException:
+        background_tasks.add_task(log_password_reset_attempt, current_user.id, False)
+        raise
     except Exception as e:
         logger.error(f"Critical error during password reset for user {current_user.id}: {e}")
         background_tasks.add_task(log_password_reset_attempt, current_user.id, False)

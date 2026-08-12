@@ -9,6 +9,7 @@ import { validateInput } from "../lib/routerHelpers";
 import {
   fetchFrankfurterSnapshot,
   fetchFrankfurterTimeseries,
+  getFreshFxSnapshot,
   persistFxSnapshot,
 } from "../lib/fxRateFeed";
 
@@ -393,14 +394,21 @@ export const fxRatesRouter = router({
       action: "currencies",
     }).catch(() => {});
 
+    // Real currency list from the fresh live snapshot — never an empty or
+    // fabricated list. Throws SERVICE_UNAVAILABLE when no fresh rates exist.
+    const snapshot = await getFreshFxSnapshot();
+    const currencies = [
+      { code: snapshot.base, rate: 1 },
+      ...Object.entries(snapshot.rates).map(([code, rate]) => ({
+        code,
+        rate,
+      })),
+    ];
     return {
-      currencies: [] as Array<{
-        code: string;
-        name: string;
-        symbol: string;
-        rate: number;
-      }>,
-      baseCurrency: "NGN",
+      currencies,
+      baseCurrency: snapshot.base,
+      fetchedAt: snapshot.fetchedAt,
+      source: snapshot.source,
     };
   }),
   refresh: protectedProcedure.mutation(async () => {
@@ -460,7 +468,13 @@ export const fxRatesRouter = router({
         .object({ id: z.string().optional(), query: z.string().optional() })
         .optional()
     )
-    .query(async ({ input }) => {
-      return { data: null, timestamp: new Date().toISOString() };
+    .query(async () => {
+      // Legacy endpoint with no meaningful input mapping — fail loud instead
+      // of returning a null stub. Use fxRates.getHistorical for real data.
+      throw new TRPCError({
+        code: "METHOD_NOT_SUPPORTED",
+        message:
+          "fxRates.historical is not implemented — use fxRates.getHistorical for live ECB timeseries data.",
+      });
     }),
 });

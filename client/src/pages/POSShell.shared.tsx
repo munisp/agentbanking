@@ -886,7 +886,7 @@ export type MotionChallengeType =
 
 // Liveness challenge pool for multi-challenge active verification
 
-const KYC_CHALLENGE_POOL: Array<{
+export const KYC_CHALLENGE_POOL: Array<{
   type: MotionChallengeType;
   instruction: string;
 }> = [

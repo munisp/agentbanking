@@ -75,19 +75,11 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   rejected: [],
   archived: [],
 };
-// ─── Commission & loyalty rates ───────────────────────────────────────────────
-const COMMISSION_RATES: Record<string, number> = {
-  "Cash In": 0.003,
-  "Cash Out": 0.005,
-  Transfer: 0.004,
-  "Card Payment": 0.002,
-  "QR Payment": 0.002,
-  "NFC Payment": 0.002,
-  Airtime: 0.015,
-  "Bill Payment": 0.01,
-  "Nano Loan": 0.02,
-  Insurance: 0.05,
-};
+// ─── Loyalty rates ────────────────────────────────────────────────────────────
+// Commission rates are NOT hardcoded here: they must come from an active
+// commission_rules row (optionally cached in Redis). A missing configured
+// rate is a hard failure — silently applying a fabricated fallback rate
+// misstates agent earnings.
 
 const LOYALTY_RATES: Record<string, number> = {
   "Cash In": 1,
@@ -613,36 +605,60 @@ export const transactionsRouter = router({
 
         // ── Core processing ────────────────────────────────────────────────────
         const ref = generateRef();
-        // Look up commission rate: Redis cache → DB → hardcoded fallback
-        let commissionRate = COMMISSION_RATES[input.type] ?? 0;
+        // Look up commission rate: Redis cache → DB commission_rules.
+        // NO hardcoded fallback: a missing configured rate is a hard failure —
+        // silently applying a fabricated rate misstates agent earnings.
+        let commissionRate: number | null = null;
+        const commissionCacheKey = `commission_rate:${input.type}`;
+        let commissionCacheSet:
+          | ((key: string, value: string, ttlSeconds?: number) => Promise<boolean>)
+          | null = null;
         try {
-          const cacheKey = `commission_rate:${input.type}`;
           const { cacheGet, cacheSet } = await import("../redisClient");
-          const cached = await cacheGet(cacheKey);
+          commissionCacheSet = cacheSet;
+          const cached = await cacheGet(commissionCacheKey);
           if (cached !== null) {
-            commissionRate = Number(cached);
-          } else {
-            const db = (await getDb())!;
-            if (db) {
-              const ruleRows = await db
-                .select({ value: commissionRules.value })
-                .from(commissionRules)
-                .where(
-                  and(
-                    eq(commissionRules.txType, input.type),
-                    eq(commissionRules.isActive, true)
-                  )
+            const n = Number(cached);
+            if (Number.isFinite(n) && n >= 0) commissionRate = n;
+          }
+        } catch (cacheErr) {
+          console.warn(
+            "[Commission] Rate cache lookup failed, falling back to DB:",
+            (cacheErr as Error).message
+          );
+        }
+        if (commissionRate === null) {
+          const db = (await getDb())!;
+          if (db) {
+            const ruleRows = await db
+              .select({ value: commissionRules.value })
+              .from(commissionRules)
+              .where(
+                and(
+                  eq(commissionRules.txType, input.type),
+                  eq(commissionRules.isActive, true)
                 )
-                .limit(1);
-              if (ruleRows.length > 0) {
-                commissionRate = Number(ruleRows[0].value);
+              )
+              .limit(1);
+            if (ruleRows.length > 0) {
+              const n = Number(ruleRows[0].value);
+              if (Number.isFinite(n) && n >= 0) {
+                commissionRate = n;
                 // Cache for 5 minutes — rules change infrequently
-                await cacheSet(cacheKey, String(commissionRate), 300);
+                if (commissionCacheSet) {
+                  commissionCacheSet(commissionCacheKey, String(n), 300).catch(
+                    () => {}
+                  );
+                }
               }
             }
           }
-        } catch {
-          /* fail-open: use hardcoded fallback */
+        }
+        if (commissionRate === null) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `No active commission rule configured for transaction type "${input.type}" — transaction rejected instead of applying a fabricated fallback rate`,
+          });
         }
         // ── Sprint 70: Business Rules Engine Integration ──────────────────
         let commission = Math.round(input.amount * commissionRate * 100) / 100;
@@ -734,14 +750,28 @@ export const transactionsRouter = router({
           agentCode: agent.agentCode,
         });
 
-        if (tbResult) {
-          console.log(
-            `[TB] Transfer committed: ${tbResult.id} (syncStatus=${tbResult.syncStatus})`
+        if (!tbResult) {
+          // Ledger write failed — reject BEFORE any Postgres row or float
+          // movement. Returning success here would persist a PostgreSQL-only
+          // transaction invisible to the TigerBeetle dual ledger while the
+          // caller believes the books balanced.
+          console.error(
+            `[TB] Ledger write failed for ${ref} — rejecting transaction (no Postgres-only success)`
           );
-        } else {
-          console.warn(
-            `[TB] Sidecar unavailable — transaction ${ref} persisted to PostgreSQL only`
-          );
+          await writeAuditLog({
+            agentId: agent.id,
+            agentCode: agent.agentCode,
+            action: "TRANSACTION_REJECTED_LEDGER_UNAVAILABLE",
+            resource: "transaction",
+            resourceId: ref,
+            status: "failure",
+            metadata: { type: input.type, amount: input.amount },
+          });
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "Ledger service unavailable — transaction rejected and no funds moved. Please retry shortly.",
+          });
         }
 
         const tx = await createTransaction({

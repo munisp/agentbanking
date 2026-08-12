@@ -429,7 +429,10 @@ export const dataThresholdAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataThresholdAlerts.acknowledge is not available in this deployment",
+      });
     }),
 
   create: protectedProcedure
@@ -437,7 +440,10 @@ export const dataThresholdAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataThresholdAlerts.create is not available in this deployment",
+      });
     }),
 
   delete: protectedProcedure
@@ -445,7 +451,10 @@ export const dataThresholdAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataThresholdAlerts.delete is not available in this deployment",
+      });
     }),
 
   events: protectedProcedure.query(async () => {
@@ -465,7 +474,10 @@ export const dataThresholdAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataThresholdAlerts.simulateCheck is not available in this deployment",
+      });
     }),
 
   toggleStatus: protectedProcedure
@@ -473,7 +485,10 @@ export const dataThresholdAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataThresholdAlerts.toggleStatus is not available in this deployment",
+      });
     }),
   update: protectedProcedure
     .input(z.object({ id: z.string(), threshold: z.number().optional() }))

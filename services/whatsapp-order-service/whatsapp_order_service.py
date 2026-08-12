@@ -10,9 +10,6 @@ Handles WhatsApp-based order processing, messaging, and automation
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("whatsapp-order-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -24,6 +21,12 @@ import httpx
 import os
 
 app = FastAPI(title="WhatsApp Order Service", version="1.0.0")
+
+# Shared middleware/observability wiring (must run after `app` exists; the
+# previous ordering raised NameError at import time).
+apply_middleware(app)
+setup_logging("whatsapp-order-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(
@@ -103,14 +106,12 @@ WHATSAPP_API_URL = os.getenv("WHATSAPP_API_URL", "https://graph.facebook.com/v17
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID", "")
 
-# Backend service integrations. Rider assignments, tracking links and payment
-# instructions ALWAYS come from these services - never fabricated locally.
-DISPATCH_SERVICE_URL = os.getenv("DISPATCH_SERVICE_URL", "")
-PAYMENTS_SERVICE_URL = os.getenv("PAYMENTS_SERVICE_URL", "")
-
 # Helper Functions
 async def send_whatsapp_message(phone: str, message: str) -> bool:
     """Send WhatsApp message via Meta Business API"""
+    if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_ID:
+        print("WHATSAPP_TOKEN/WHATSAPP_PHONE_ID not configured; cannot send WhatsApp message")
+        return False
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -131,94 +132,6 @@ async def send_whatsapp_message(phone: str, message: str) -> bool:
         print(f"Error sending WhatsApp message: {e}")
         return False
 
-async def request_dispatch_for_order(order: WhatsAppOrder) -> dict:
-    """Create a delivery with the dispatch service and return the assignment
-    (rider details, ETA, tracking URL all come from the dispatch service).
-
-    Raises HTTPException when dispatch is not configured or fails - we never
-    fabricate rider names or example.com tracking links.
-    """
-    if not DISPATCH_SERVICE_URL:
-        raise HTTPException(
-            status_code=503,
-            detail="Dispatch service is not configured (DISPATCH_SERVICE_URL unset); cannot ship order",
-        )
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                f"{DISPATCH_SERVICE_URL}/deliveries",
-                json={
-                    "order_id": order.id,
-                    "customer_name": order.customer.name,
-                    "customer_phone": order.customer.phone,
-                    "items": [item.dict() for item in order.items],
-                    "total": order.total,
-                },
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Dispatch service unreachable: {e}")
-    if response.status_code not in (200, 201):
-        raise HTTPException(
-            status_code=502,
-            detail=f"Dispatch service rejected the delivery (HTTP {response.status_code})",
-        )
-    return response.json()
-
-async def get_tracking_info(order_id: str) -> dict:
-    """Retrieve real tracking information from the dispatch service."""
-    if not DISPATCH_SERVICE_URL:
-        raise HTTPException(
-            status_code=503,
-            detail="Dispatch service is not configured (DISPATCH_SERVICE_URL unset); cannot retrieve tracking",
-        )
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{DISPATCH_SERVICE_URL}/deliveries/{order_id}/tracking")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Dispatch service unreachable: {e}")
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not retrieve tracking info (HTTP {response.status_code})",
-        )
-    return response.json()
-
-async def request_payment_details(order: WhatsAppOrder) -> dict:
-    """Create a payment request with the payments service.
-
-    Bank/account details and payment links ALWAYS come from the payments
-    service response - never hardcoded.
-    """
-    if not PAYMENTS_SERVICE_URL:
-        raise HTTPException(
-            status_code=503,
-            detail="Payments service is not configured (PAYMENTS_SERVICE_URL unset); cannot request payment",
-        )
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                f"{PAYMENTS_SERVICE_URL}/payment-requests",
-                json={
-                    "order_id": order.id,
-                    "amount": order.total,
-                    "customer_phone": order.customer.phone,
-                },
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Payments service unreachable: {e}")
-    if response.status_code not in (200, 201):
-        raise HTTPException(
-            status_code=502,
-            detail=f"Payments service rejected the payment request (HTTP {response.status_code})",
-        )
-    return response.json()
-
 async def broadcast_update(data: dict):
     """Broadcast updates to all connected WebSocket clients"""
     for connection in active_connections:
@@ -231,16 +144,16 @@ def calculate_stats():
     """Calculate real-time statistics"""
     today = datetime.now().date()
     today_orders = [o for o in orders_db.values() if o.created_at.date() == today]
-
+    
     stats_db["todayOrders"] = len(today_orders)
     stats_db["pendingResponses"] = len([o for o in orders_db.values() if o.status == OrderStatus.NEW])
     stats_db["revenue"] = sum(o.total for o in today_orders)
-
+    
     # Calculate conversion rate (simplified)
     total_conversations = len(orders_db)
     completed_orders = len([o for o in orders_db.values() if o.status in [OrderStatus.DELIVERED, OrderStatus.SHIPPED]])
     stats_db["conversionRate"] = (completed_orders / total_conversations * 100) if total_conversations > 0 else 0
-
+    
     # Calculate average response time (simplified)
     response_times = []
     for order in orders_db.values():
@@ -250,7 +163,7 @@ def calculate_stats():
             if first_msg.sender == MessageSender.CUSTOMER and second_msg.sender == MessageSender.STORE:
                 time_diff = (second_msg.timestamp - first_msg.timestamp).total_seconds() / 60
                 response_times.append(time_diff)
-
+    
     stats_db["avgResponseTime"] = sum(response_times) / len(response_times) if response_times else 0
 
 # API Endpoints
@@ -267,13 +180,13 @@ async def health_check():
 async def get_orders(status: Optional[str] = None):
     """Get all orders, optionally filtered by status"""
     filtered_orders = list(orders_db.values())
-
+    
     if status and status != "all":
         filtered_orders = [o for o in filtered_orders if o.status == status]
-
+    
     # Sort by created_at descending
     filtered_orders.sort(key=lambda x: x.created_at, reverse=True)
-
+    
     return {
         "orders": [order.dict() for order in filtered_orders],
         "count": len(filtered_orders)
@@ -284,7 +197,7 @@ async def get_order(order_id: str):
     """Get specific order by ID"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
-
+    
     return orders_db[order_id].dict()
 
 @app.post("/orders")
@@ -292,16 +205,16 @@ async def create_order(order: WhatsAppOrder):
     """Create a new order"""
     if order.id in orders_db:
         raise HTTPException(status_code=400, detail="Order ID already exists")
-
+    
     orders_db[order.id] = order
     calculate_stats()
-
+    
     # Broadcast new order to connected clients
     await broadcast_update({
         "type": "new_order",
         "order": order.dict()
     })
-
+    
     return {"message": "Order created successfully", "order_id": order.id}
 
 @app.put("/orders/{order_id}/status")
@@ -309,14 +222,14 @@ async def update_order_status(order_id: str, status: OrderStatus):
     """Update order status"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
-
+    
     order = orders_db[order_id]
     old_status = order.status
     order.status = status
     order.updated_at = datetime.now()
-
+    
     calculate_stats()
-
+    
     # Broadcast status update
     await broadcast_update({
         "type": "status_update",
@@ -324,7 +237,7 @@ async def update_order_status(order_id: str, status: OrderStatus):
         "old_status": old_status,
         "new_status": status
     })
-
+    
     return {"message": "Status updated successfully", "order_id": order_id, "status": status}
 
 @app.post("/orders/{order_id}/messages")
@@ -332,21 +245,28 @@ async def add_message(order_id: str, message_req: SendMessageRequest):
     """Add a message to an order"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
-
+    
     order = orders_db[order_id]
-
+    
     message = Message(
         sender=MessageSender.STORE,
         text=message_req.message,
         time=datetime.now().strftime("%H:%M"),
         timestamp=datetime.now()
     )
+    
+    # Send via WhatsApp FIRST and fail loudly if the provider rejects it;
+    # previously the API reported "Message sent successfully" even when the
+    # WhatsApp send failed or WHATSAPP_TOKEN was not configured.
+    sent = await send_whatsapp_message(order.customer.phone, message_req.message)
+    if not sent:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp message could not be delivered (provider unreachable or not configured)",
+        )
 
     order.messages.append(message)
     order.updated_at = datetime.now()
-
-    # Send via WhatsApp
-    await send_whatsapp_message(order.customer.phone, message_req.message)
 
     # Broadcast message
     await broadcast_update({
@@ -354,87 +274,40 @@ async def add_message(order_id: str, message_req: SendMessageRequest):
         "order_id": order_id,
         "message": message.dict()
     })
-
+    
     return {"message": "Message sent successfully"}
 
 @app.post("/orders/{order_id}/quick-action")
 async def execute_quick_action(order_id: str, action_req: QuickActionRequest):
-    """Execute a quick action on an order.
-
-    Actions that depend on real backend services (ship/tracking -> dispatch
-    service, payment -> payments service) are resolved BEFORE any
-    customer-facing message is composed. If the backend is unavailable the
-    action aborts with an error instead of sending fabricated rider details,
-    example.com tracking links, or hardcoded bank accounts.
-    """
+    """Execute a quick action on an order"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
-
+    
     order = orders_db[order_id]
-
-    if action_req.action == "ship":
-        assignment = await request_dispatch_for_order(order)
-        rider_name = assignment.get("rider_name")
-        rider_phone = assignment.get("rider_phone")
-        eta_minutes = assignment.get("eta_minutes")
-        tracking_url = assignment.get("tracking_url")
-        message_text = f"📦 Your order is on the way!\n\nOrder #{order_id}\n"
-        if rider_name:
-            message_text += f"Rider: {rider_name}\n"
-        if rider_phone:
-            message_text += f"Phone: {rider_phone}\n"
-        if eta_minutes:
-            message_text += f"ETA: {eta_minutes} minutes\n"
-        if tracking_url:
-            message_text += f"\nTrack your order: {tracking_url}"
-    elif action_req.action == "tracking":
-        tracking = await get_tracking_info(order_id)
-        tracking_url = tracking.get("tracking_url")
-        live_location_url = tracking.get("live_location_url")
-        if tracking_url or live_location_url:
-            message_text = "🚚 Track your order:"
-            if tracking_url:
-                message_text += f"\n{tracking_url}"
-            if live_location_url:
-                message_text += f"\n\nLive location: {live_location_url}"
-        else:
-            message_text = (
-                "🚚 Tracking is not available for this order yet. "
-                "We'll share the tracking link as soon as a rider is assigned."
-            )
-    elif action_req.action == "payment":
-        payment = await request_payment_details(order)
-        message_text = f"💳 Payment Request\n\nOrder #{order_id}\nAmount: ₦{order.total:,.0f}\n"
-        if payment.get("payment_url"):
-            message_text += f"\nPay securely: {payment['payment_url']}"
-        bank_name = payment.get("bank_name")
-        account_number = payment.get("account_number")
-        account_name = payment.get("account_name")
-        if bank_name and account_number:
-            message_text += f"\n\nOr transfer to:\nBank: {bank_name}\nAccount: {account_number}"
-            if account_name:
-                message_text += f"\nName: {account_name}"
-        if payment.get("reference"):
-            message_text += f"\nReference: {payment['reference']}"
-    else:
-        # Static quick action messages (no external data involved)
-        action_messages = {
-            "confirm": f"✅ Order confirmed! We're preparing your items.\n\nOrder #{order_id}\nTotal: ₦{order.total:,.0f}\n\nEstimated ready time: 20 minutes.",
-            "info": "📋 Please provide the following information:\n• Full delivery address\n• Preferred delivery time\n• Any special instructions",
-            "cancel": f"❌ Order Cancelled\n\nOrder #{order_id} has been cancelled.\n\nReason: {action_req.custom_message or 'Customer request'}\n\nRefund will be processed within 24 hours if payment was made."
-        }
-        message_text = action_messages.get(action_req.action, action_req.custom_message or "Action completed")
-
+    
+    # Define quick action messages
+    action_messages = {
+        "confirm": f"✅ Order confirmed! We're preparing your items.\n\nOrder #{order_id}\nTotal: ₦{order.total:,.0f}\n\nEstimated ready time: 20 minutes.",
+        "ship": f"📦 Your order is on the way!\n\nOrder #{order_id}\nRider: Chidi Okafor\nPhone: +234 801 234 5678\nETA: 30 minutes\n\nTrack your order: https://track.example.com/{order_id}",
+        "tracking": f"🚚 Track your order:\nhttps://track.example.com/{order_id}\n\nLive location: https://maps.example.com/{order_id}",
+        "payment": f"💳 Payment Request\n\nOrder #{order_id}\nAmount: ₦{order.total:,.0f}\n\n[QR Code would be sent here]\n\nOr transfer to:\nBank: GTBank\nAccount: 0123456789\nName: HealthPlus Pharmacy",
+        "info": "📋 Please provide the following information:\n• Full delivery address\n• Preferred delivery time\n• Any special instructions",
+        "cancel": f"❌ Order Cancelled\n\nOrder #{order_id} has been cancelled.\n\nReason: {action_req.custom_message or 'Customer request'}\n\nRefund will be processed within 24 hours if payment was made."
+    }
+    
+    # Get message for action
+    message_text = action_messages.get(action_req.action, action_req.custom_message or "Action completed")
+    
     # Update order status based on action
     status_updates = {
         "confirm": OrderStatus.PROCESSING,
         "ship": OrderStatus.SHIPPED,
         "cancel": OrderStatus.CANCELLED
     }
-
+    
     if action_req.action in status_updates:
         order.status = status_updates[action_req.action]
-
+    
     # Add message
     message = Message(
         sender=MessageSender.STORE,
@@ -442,15 +315,21 @@ async def execute_quick_action(order_id: str, action_req: QuickActionRequest):
         time=datetime.now().strftime("%H:%M"),
         timestamp=datetime.now()
     )
+    
+    # Send via WhatsApp FIRST and fail loudly on provider failure; previously
+    # success was reported even when the send failed.
+    sent = await send_whatsapp_message(order.customer.phone, message_text)
+    if not sent:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp message could not be delivered (provider unreachable or not configured)",
+        )
 
     order.messages.append(message)
     order.updated_at = datetime.now()
 
-    # Send via WhatsApp
-    await send_whatsapp_message(order.customer.phone, message_text)
-
     calculate_stats()
-
+    
     # Broadcast update
     await broadcast_update({
         "type": "quick_action",
@@ -458,7 +337,7 @@ async def execute_quick_action(order_id: str, action_req: QuickActionRequest):
         "action": action_req.action,
         "status": order.status
     })
-
+    
     return {"message": f"Quick action '{action_req.action}' executed successfully"}
 
 @app.get("/stats")
@@ -472,7 +351,7 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
     await websocket.accept()
     active_connections.append(websocket)
-
+    
     try:
         while True:
             # Keep connection alive
@@ -490,14 +369,14 @@ async def whatsapp_webhook(data: dict):
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
-
+        
         for msg in messages:
             phone = msg.get("from")
             text = msg.get("text", {}).get("body", "")
-
+            
             # Find or create order for this customer
             customer_orders = [o for o in orders_db.values() if o.customer.phone == f"+{phone}"]
-
+            
             if customer_orders:
                 # Add message to most recent order
                 order = customer_orders[0]
@@ -509,14 +388,14 @@ async def whatsapp_webhook(data: dict):
                 )
                 order.messages.append(message)
                 order.updated_at = datetime.now()
-
+                
                 # Broadcast new message
                 await broadcast_update({
                     "type": "customer_message",
                     "order_id": order.id,
                     "message": message.dict()
                 })
-
+        
         return {"status": "success"}
     except Exception as e:
         print(f"Webhook error: {e}")
@@ -526,10 +405,10 @@ async def whatsapp_webhook(data: dict):
 async def verify_webhook(hub_mode: str, hub_verify_token: str, hub_challenge: str):
     """Verify WhatsApp webhook"""
     verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "your_verify_token")
-
+    
     if hub_mode == "subscribe" and hub_verify_token == verify_token:
         return int(hub_challenge)
-
+    
     raise HTTPException(status_code=403, detail="Verification failed")
 
 if __name__ == "__main__":

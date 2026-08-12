@@ -2,12 +2,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import {
-  transactions,
-  agents,
-  gl_journal_entries,
-  systemConfig,
-} from "../../drizzle/schema";
+import { transactions, agents, gl_journal_entries } from "../../drizzle/schema";
 import { publishEvent } from "../kafkaClient";
 import { tbCreateTransfer } from "../tbClient";
 import { cacheSet } from "../redisClient";
@@ -20,11 +15,7 @@ import crypto from "crypto";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
-import {
-  getFreshFxSnapshot,
-  getLivePairRate,
-  pairRateFromSnapshot,
-} from "../lib/fxRateFeed";
+import { getAllLiveFxRates, getLiveFxRate } from "../lib/fxRates";
 
 import {
   validateAmount,
@@ -49,44 +40,21 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
 };
 
-// Supported corridor pairs (configuration, not rates). Live rates come from
-// the Frankfurter/ECB feed via fxRateFeed — the hardcoded rate table was removed.
-const SUPPORTED_PAIRS: string[] = [
-  "NGN-USD", "USD-NGN", "NGN-EUR", "EUR-NGN", "NGN-GBP", "GBP-NGN",
-  "NGN-GHS", "GHS-NGN", "NGN-XOF", "XOF-NGN", "NGN-KES", "KES-NGN",
-  "NGN-ZAR", "ZAR-NGN", "NGN-EGP", "EGP-NGN", "USD-EUR", "EUR-USD",
-  "USD-GBP", "GBP-USD", "USD-GHS", "GHS-USD", "USD-KES", "KES-USD",
-  "USD-ZAR", "ZAR-USD", "EUR-GBP", "GBP-EUR", "GHS-KES", "KES-GHS",
-  "ZAR-KES", "KES-ZAR", "XOF-GHS", "GHS-XOF", "NGN-USDT", "USDT-NGN",
-  "NGN-USDC", "USDC-NGN", "USD-USDT", "USDT-USD", "NGN-TZS", "TZS-NGN",
-  "NGN-UGX", "UGX-NGN", "NGN-RWF", "RWF-NGN", "NGN-ZMW", "ZMW-NGN",
-];
-// 15 currencies: NGN, USD, EUR, GBP, GHS, XOF, KES, ZAR, EGP, USDT, USDC, TZS, UGX, RWF, ZMW
-// 48 active pairs (bidirectional corridors)
+// Base currency for the corridor/rate listings. All rates are fetched live
+// from the Frankfurter/ECB feed — there is no hardcoded rate table on any path.
+const FX_LIST_BASE = "EUR";
 
 const getRates = protectedProcedure.query(async () => {
-  // Live snapshot from the Frankfurter/ECB feed — throws SERVICE_UNAVAILABLE
-  // when no fresh rates exist. Pairs the feed does not cover report rate:null.
-  const snapshot = await getFreshFxSnapshot();
-  const rates = SUPPORTED_PAIRS.map(pair => {
-    const [from, to] = pair.split("-");
-    const rate = pairRateFromSnapshot(snapshot, from, to);
-    return {
-      pair,
-      fromCurrency: from,
-      toCurrency: to,
-      rate,
-      available: rate !== null,
-      inverseRate: rate !== null ? Math.round((1 / rate) * 10000) / 10000 : null,
-      updatedAt: snapshot.fetchedAt,
-    };
-  });
-  return {
-    rates,
-    total: rates.length,
-    source: snapshot.source,
-    fetchedAt: snapshot.fetchedAt,
-  };
+  const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
+  const out = Object.entries(rates).map(([to, rate]) => ({
+    pair: `${base}-${to}`,
+    fromCurrency: base,
+    toCurrency: to,
+    rate,
+    inverseRate: Math.round((1 / rate) * 10000) / 10000,
+    updatedAt: fetchedAt,
+  }));
+  return { rates: out, total: out.length };
 });
 
 const convert = protectedProcedure
@@ -102,17 +70,12 @@ const convert = protectedProcedure
     const session = await getAgentFromCookie(ctx.req);
     if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-    const pairKey = `${input.fromCurrency}-${input.toCurrency}`;
-    if (!SUPPORTED_PAIRS.includes(pairKey)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Unsupported currency pair: ${pairKey}`,
-      });
-    }
-    // Live rate with staleness guard — SERVICE_UNAVAILABLE when the feed is
-    // unreachable with no fresh cache, and no hardcoded table fallback ever.
-    const fx = await getLivePairRate(input.fromCurrency, input.toCurrency);
-    const rate = fx.rate;
+    // Live ECB reference rate (Frankfurter) — hard-fails on unknown pairs,
+    // feed outage, or stale rates. No conversion happens at a fabricated rate.
+    const { rate, fetchedAt: rateFetchedAt } = await getLiveFxRate(
+      input.fromCurrency,
+      input.toCurrency
+    );
 
     const convertedAmount = Math.round(input.amount * rate * 100) / 100;
     const feeResult = calculateFee(input.amount, "transfer");
@@ -161,7 +124,7 @@ const convert = protectedProcedure
               fromCurrency: input.fromCurrency,
               toCurrency: input.toCurrency,
               exchangeRate: rate,
-              rateFetchedAt: fx.fetchedAt,
+              exchangeRateFetchedAt: rateFetchedAt,
               convertedAmount,
             },
           })
@@ -207,33 +170,17 @@ const convert = protectedProcedure
       { agentCode: session.agentCode }
     ).catch(() => {});
 
-    // TigerBeetle dual-ledger — mirrors the GL entry (debit FX Conversion
-    // Payable 3002, credit Agent Float 2001). If the sidecar is down the
-    // transaction is explicitly marked pending_ledger, never plain success.
-    const tbResult = await tbCreateTransfer({
+    // TigerBeetle dual-ledger — mirrors the GL posting above:
+    // Debit FX Conversion Payable (3002), Credit Agent Float (2001).
+    // (Previously debited and credited 2001 — a self-transfer that moved nothing.)
+    tbCreateTransfer({
       debitAccountId: "3002",
       creditAccountId: "2001",
       amount: Math.round(input.amount * 100),
       ref,
       txType: "fx_exchange",
       agentCode: session.agentCode,
-    }).catch(() => null);
-    let ledgerStatus = "success";
-    if (!tbResult) {
-      ledgerStatus = "pending_ledger";
-      try {
-        const db = (await getDb())!;
-        await db
-          .update(transactions)
-          .set({ status: "pending_ledger" })
-          .where(eq(transactions.id, txRecord.id));
-      } catch (e) {
-        console.error(
-          `[FX] Failed to mark ${ref} pending_ledger:`,
-          (e as Error).message
-        );
-      }
-    }
+    }).catch(() => {});
 
     // Fluvio + Dapr + Redis + Lakehouse
     publishTxToFluvio({
@@ -267,8 +214,6 @@ const convert = protectedProcedure
 
     return {
       success: true,
-      status: ledgerStatus,
-      ledgerPosted: Boolean(tbResult),
       ref,
       transactionId: txRecord.id,
       fromCurrency: input.fromCurrency,
@@ -276,6 +221,7 @@ const convert = protectedProcedure
       sourceAmount: input.amount,
       convertedAmount,
       exchangeRate: rate,
+      exchangeRateFetchedAt: rateFetchedAt,
       fee: feeResult.fee,
       timestamp: new Date().toISOString(),
     };
@@ -350,13 +296,10 @@ const getStats = publicProcedure
         .where(sql`${transactions.type} = 'FX Exchange'`)
         .orderBy(desc(transactions.id))
         .limit(5);
-      const corridors = SUPPORTED_PAIRS;
-      const currencies = new Set<string>();
-      for (const c of corridors) {
-        const [from, to] = c.split("-");
-        currencies.add(from);
-        currencies.add(to);
-      }
+      // Live corridor list from the ECB reference feed (hard-fails on outage)
+      const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
+      const corridors = Object.keys(rates).map(to => `${base}-${to}`);
+      const currencies = new Set<string>([base, ...Object.keys(rates)]);
       return {
         supportedCurrencies: currencies.size,
         activePairs: corridors.length,
@@ -364,7 +307,7 @@ const getStats = publicProcedure
         totalExchanges: total,
         recentExchanges: recent,
         corridors,
-        lastRateUpdate: new Date().toISOString(),
+        lastRateUpdate: fetchedAt,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -385,27 +328,21 @@ const getCorridors = protectedProcedure
   )
   .query(async ({ input }) => {
     try {
-      const db = (await getDb())!;
       const lim = input.limit ?? 10;
       const offset = ((input.page ?? 1) - 1) * lim;
-      const snapshot = await getFreshFxSnapshot().catch(() => null);
-      const corridors = SUPPORTED_PAIRS.slice(offset, offset + lim).map(
-        pair => {
-          const [from, to] = pair.split("-");
-          const rate = snapshot ? pairRateFromSnapshot(snapshot, from, to) : null;
-          return {
-            pair,
-            fromCurrency: from,
-            toCurrency: to,
-            rate,
-            available: rate !== null,
-            fetchedAt: snapshot?.fetchedAt ?? null,
-          };
-        }
-      );
+      // Live corridor list from the ECB reference feed (hard-fails on outage)
+      const { base, rates, fetchedAt } = await getAllLiveFxRates(FX_LIST_BASE);
+      const all = Object.entries(rates).map(([to, rate]) => ({
+        pair: `${base}-${to}`,
+        fromCurrency: base,
+        toCurrency: to,
+        rate,
+        updatedAt: fetchedAt,
+      }));
+      const corridors = all.slice(offset, offset + lim);
       return {
         items: corridors,
-        total: SUPPORTED_PAIRS.length,
+        total: all.length,
         page: input.page ?? 1,
         limit: lim,
       };
@@ -445,79 +382,24 @@ const setSpread = protectedProcedure
     const fees = calculateFee(txAmount, "transfer");
     const commission = calculateCommission(fees.fee, "transfer");
     const tax = calculateTax(fees.fee, "vat");
-    try {
-      const db = (await getDb())!;
-      const session = await getAgentFromCookie(ctx.req);
-      const spreadData = input.data ?? {};
-      const pair = spreadData.pair as string;
-      const spread = Number(spreadData.spread ?? 0);
-
-      if (!pair || !SUPPORTED_PAIRS.includes(pair)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Unsupported currency pair for spread: ${pair}`,
-        });
-      }
-      if (!Number.isFinite(spread) || spread < 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Spread must be a non-negative number (percent)",
-        });
-      }
-
-      // Persist the spread to system_config — a spread update that stores
-      // nothing must not report success.
-      const spreadRecord = {
-        pair,
-        spreadPercent: spread,
-        updatedAt: new Date().toISOString(),
-        updatedBy: session?.agentCode ?? "unknown",
-      };
-      await db
-        .insert(systemConfig)
-        .values({
-          key: `fx_spread:${pair}`,
-          value: JSON.stringify(spreadRecord),
-        })
-        .onConflictDoUpdate({
-          target: systemConfig.key,
-          set: { value: JSON.stringify(spreadRecord), updatedAt: new Date() },
-        });
-
-      await writeAuditLog({
-        action: "mutation",
-        resource: "multiCurrencyExchange",
-        status: "success",
-        metadata: {
-          pair,
-          spread,
-          input: JSON.stringify(input).slice(0, 500),
-        },
-      });
-
-      // Effective rate uses the live base rate when the feed covers the pair.
-      const fx = await getLivePairRate(
-        pair.split("-")[0],
-        pair.split("-")[1]
-      ).catch(() => null);
-      const baseRate = fx?.rate ?? null;
-      return {
-        success: true,
-        persisted: true,
-        pair,
-        baseRate,
-        spread,
-        effectiveRate: baseRate !== null ? baseRate * (1 + spread / 100) : null,
-        message: "Spread updated",
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    // There is no spread store wired to this router. The previous
+    // implementation logged an audit row and returned success while
+    // persisting nothing — silent mockware. Fail loud instead.
+    await writeAuditLog({
+      action: "mutation",
+      resource: "multiCurrencyExchange",
+      status: "failure",
+      metadata: {
+        reason:
+          "setSpread rejected: no spread persistence store is configured",
+        input: JSON.stringify(input).slice(0, 500),
+      },
+    });
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "FX spread updates are not implemented: no spread store is configured for this service. Refusing to report success without persisting anything.",
+    });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

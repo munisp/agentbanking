@@ -3,10 +3,15 @@
 // identifies discrepancies, triggers Temporal workflows for resolution, and
 // exports reconciliation reports to Lakehouse for long-term analytics.
 // Integrates with: Temporal, PostgreSQL, Lakehouse, Redis, Kafka, Dapr, APISIX
+//
+// Fail-loud doctrine: a reconciliation run whose data sources are empty or
+// unreachable FAILS the run and raises a critical alert. No hardcoded fallback
+// metrics are ever persisted or published.
 package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,10 +19,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 
 	"syscall"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+var db *sql.DB
 
 type Config struct {
 	Port              string
@@ -99,12 +109,12 @@ type ReconciliationReport struct {
 }
 
 type DiscrepancyAlert struct {
-	Period      string  `json:"period"`
-	Metric      string  `json:"metric"`
-	Projected   float64 `json:"projected"`
-	Actual      float64 `json:"actual"`
-	VariancePct float64 `json:"variancePct"`
-	Severity    string  `json:"severity"`
+	Period      string    `json:"period"`
+	Metric      string    `json:"metric"`
+	Projected   float64   `json:"projected"`
+	Actual      float64   `json:"actual"`
+	VariancePct float64   `json:"variancePct"`
+	Severity    string    `json:"severity"`
 	Timestamp   time.Time `json:"timestamp"`
 }
 
@@ -220,11 +230,20 @@ func (re *ReconciliationEngine) publishReconMiddleware(eventType string, period 
 func (re *ReconciliationEngine) RunReconciliation(ctx context.Context, period string) (*ReconciliationReport, error) {
 	log.Printf("[Reconciliation] Starting for period %s", period)
 
-	// Fetch projected metrics from financial model configuration
-	projected := re.fetchProjectedMetrics(period)
+	// Fetch projected metrics from financial model configuration.
+	// A missing/empty source FAILS the run — never fall back to hardcoded numbers.
+	projected, err := re.fetchProjectedMetrics(period)
+	if err != nil {
+		re.failRun(period, fmt.Sprintf("projected metrics unavailable: %v", err))
+		return nil, fmt.Errorf("reconciliation failed for %s: projected metrics unavailable: %w", period, err)
+	}
 
 	// Fetch actual metrics from billing ledger (PostgreSQL aggregation)
-	actual := re.fetchActualMetrics(period)
+	actual, err := re.fetchActualMetrics(period)
+	if err != nil {
+		re.failRun(period, fmt.Sprintf("actual metrics unavailable: %v", err))
+		return nil, fmt.Errorf("reconciliation failed for %s: actual metrics unavailable: %w", period, err)
+	}
 
 	// Calculate variances
 	revenueVar := calculateVariance(projected.PlatformRevenue, actual.PlatformRevenue)
@@ -277,66 +296,68 @@ func (re *ReconciliationEngine) RunReconciliation(ctx context.Context, period st
 	return &report, nil
 }
 
-func (re *ReconciliationEngine) fetchProjectedMetrics(period string) ProjectedMetrics {
-	if db != nil {
-		var p ProjectedMetrics
-		p.Period = period
-		err := db.QueryRow(
-			`SELECT COALESCE(SUM(projected_tx_count), 0), COALESCE(SUM(projected_volume), 0),
-				COALESCE(SUM(projected_platform_revenue), 0), COALESCE(SUM(projected_client_revenue), 0),
-				COALESCE(COUNT(DISTINCT agent_id), 0)
-			 FROM billing_projections WHERE period = $1`, period,
-		).Scan(&p.Transactions, &p.GrossVolume, &p.PlatformRevenue, &p.ClientRevenue, &p.AgentCount)
-		if err == nil && p.Transactions > 0 {
-			if p.AgentCount > 0 {
-				p.TxPerAgent = float64(p.Transactions) / float64(p.AgentCount)
-			}
-			p.BillingModel = "revenue_share"
-			return p
-		}
-	}
-	// Fallback to default projections
-	return ProjectedMetrics{
-		Period:          period,
-		Transactions:    1500000,
-		GrossVolume:     45000000000,
-		PlatformRevenue: 2800000000,
-		ClientRevenue:   7200000000,
-		AgentCount:      5000,
-		TxPerAgent:      300,
-		BillingModel:    "revenue_share",
-	}
+// failRun records a critical alert and publishes a "failed" event when a
+// reconciliation run cannot obtain real source data.
+func (re *ReconciliationEngine) failRun(period string, reason string) {
+	log.Printf("[Reconciliation] FAILED for %s: %s", period, reason)
+	re.persistAlert(DiscrepancyAlert{
+		Period:      period,
+		Metric:      "data_source_missing",
+		Projected:   0,
+		Actual:      0,
+		VariancePct: 0,
+		Severity:    "critical",
+		Timestamp:   time.Now(),
+	})
+	re.publishReconMiddleware("failed", period, map[string]interface{}{
+		"period": period,
+		"reason": reason,
+	})
 }
 
-func (re *ReconciliationEngine) fetchActualMetrics(period string) ActualMetrics {
-	if db != nil {
-		var a ActualMetrics
-		a.Period = period
-		err := db.QueryRow(
-			`SELECT COUNT(*), COALESCE(SUM(amount), 0),
-				COALESCE(SUM(platform_fee), 0), COALESCE(SUM(agent_commission), 0),
-				COALESCE(COUNT(DISTINCT agent_id), 0)
-			 FROM transactions
-			 WHERE status = 'success'
-			   AND TO_CHAR(created_at, 'YYYY-MM') = $1`, period,
-		).Scan(&a.Transactions, &a.GrossVolume, &a.PlatformRevenue, &a.ClientRevenue, &a.AgentCount)
-		if err == nil && a.Transactions > 0 {
-			if a.AgentCount > 0 {
-				a.TxPerAgent = float64(a.Transactions) / float64(a.AgentCount)
-			}
-			return a
-		}
+func (re *ReconciliationEngine) fetchProjectedMetrics(period string) (ProjectedMetrics, error) {
+	var p ProjectedMetrics
+	p.Period = period
+	err := db.QueryRow(
+		`SELECT COALESCE(SUM(projected_tx_count), 0), COALESCE(SUM(projected_volume), 0),
+			COALESCE(SUM(projected_platform_revenue), 0), COALESCE(SUM(projected_client_revenue), 0),
+			COALESCE(COUNT(DISTINCT agent_id), 0)
+		 FROM billing_projections WHERE period = $1`, period,
+	).Scan(&p.Transactions, &p.GrossVolume, &p.PlatformRevenue, &p.ClientRevenue, &p.AgentCount)
+	if err != nil {
+		return p, fmt.Errorf("querying billing_projections: %w", err)
 	}
-	// Fallback to default actuals
-	return ActualMetrics{
-		Period:          period,
-		Transactions:    1423000,
-		GrossVolume:     42690000000,
-		PlatformRevenue: 2650000000,
-		ClientRevenue:   6850000000,
-		AgentCount:      4800,
-		TxPerAgent:      296,
+	if p.Transactions == 0 {
+		return p, fmt.Errorf("no projection rows in billing_projections for period %s", period)
 	}
+	if p.AgentCount > 0 {
+		p.TxPerAgent = float64(p.Transactions) / float64(p.AgentCount)
+	}
+	p.BillingModel = "revenue_share"
+	return p, nil
+}
+
+func (re *ReconciliationEngine) fetchActualMetrics(period string) (ActualMetrics, error) {
+	var a ActualMetrics
+	a.Period = period
+	err := db.QueryRow(
+		`SELECT COUNT(*), COALESCE(SUM(amount), 0),
+			COALESCE(SUM(platform_fee), 0), COALESCE(SUM(agent_commission), 0),
+			COALESCE(COUNT(DISTINCT agent_id), 0)
+		 FROM transactions
+		 WHERE status = 'success'
+		   AND TO_CHAR(created_at, 'YYYY-MM') = $1`, period,
+	).Scan(&a.Transactions, &a.GrossVolume, &a.PlatformRevenue, &a.ClientRevenue, &a.AgentCount)
+	if err != nil {
+		return a, fmt.Errorf("querying transactions: %w", err)
+	}
+	if a.Transactions == 0 {
+		return a, fmt.Errorf("no successful transactions found for period %s", period)
+	}
+	if a.AgentCount > 0 {
+		a.TxPerAgent = float64(a.Transactions) / float64(a.AgentCount)
+	}
+	return a, nil
 }
 
 func (re *ReconciliationEngine) generateInsights(proj ProjectedMetrics, actual ActualMetrics, revVar, volVar, agentVar float64) []string {
@@ -358,10 +379,22 @@ func (re *ReconciliationEngine) generateInsights(proj ProjectedMetrics, actual A
 	return insights
 }
 
+// triggerDiscrepancyWorkflow hands the discrepancy to the resolution pipeline.
+// The Temporal worker for this task queue consumes the reconciliation.discrepancy
+// topic (published via Dapr/Kafka below) and starts the resolution workflow.
+// Failures are logged loudly, never swallowed.
 func (re *ReconciliationEngine) triggerDiscrepancyWorkflow(report ReconciliationReport) {
-	log.Printf("[Temporal] Triggering discrepancy resolution workflow for period %s", report.Period)
-	// In production: start Temporal workflow that notifies finance team,
-	// creates investigation ticket, and schedules follow-up reconciliation
+	log.Printf("[Temporal] Dispatching discrepancy resolution for period %s (task queue %s/%s)",
+		report.Period, re.config.TemporalNamespace, re.config.TemporalTaskQueue)
+	re.publishReconMiddleware("discrepancy", report.Period, map[string]interface{}{
+		"period":               report.Period,
+		"status":               string(report.Status),
+		"revenue_variance_pct": report.RevenueVariancePct,
+		"volume_variance_pct":  report.VolumeVariancePct,
+		"agent_variance_pct":   report.AgentVariancePct,
+		"task_queue":           re.config.TemporalTaskQueue,
+		"namespace":            re.config.TemporalNamespace,
+	})
 }
 
 func (re *ReconciliationEngine) createAlert(report ReconciliationReport, revVar, volVar float64) {
@@ -403,7 +436,9 @@ func (re *ReconciliationEngine) StartScheduler(ctx context.Context) {
 			return
 		case <-ticker.C:
 			period := fmt.Sprintf("%d-%02d", time.Now().Year(), time.Now().Month())
-			re.RunReconciliation(ctx, period)
+			if _, err := re.RunReconciliation(ctx, period); err != nil {
+				log.Printf("[Scheduler] Reconciliation error: %v", err)
+			}
 		}
 	}
 }
@@ -500,6 +535,21 @@ func (re *ReconciliationEngine) handleGetAlerts(w http.ResponseWriter, r *http.R
 func main() {
 	cfg := loadConfig()
 	log.Printf("Starting Revenue Reconciler on port %s", cfg.Port)
+
+	// PostgreSQL is the only source of projected/actual metrics — refuse to start
+	// without it rather than reconcile against fabricated fallback numbers.
+	if cfg.PostgresURL == "" {
+		log.Fatal("POSTGRES_URL is required; refusing to start without real data sources")
+	}
+	var err error
+	db, err = sql.Open("pgx", cfg.PostgresURL)
+	if err != nil {
+		log.Fatalf("Cannot initialise PostgreSQL driver: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Cannot connect to PostgreSQL (%v); refusing to start", err)
+	}
+	defer db.Close()
 
 	engine := NewReconciliationEngine(cfg)
 

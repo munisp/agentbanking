@@ -26,28 +26,6 @@ interface InstrumentedService {
   traceVolume: number;
 }
 
-const MOCK_SUMMARY: OtelSummary = {
-  tracesEnabled: true, tracesExporter: "https://otel.54agent.upi.dev:4317", samplingRate: 10,
-  metricsEnabled: true, scrapeIntervalSeconds: 15,
-  logsEnabled: true, logLevel: "info",
-};
-
-const MOCK_EXPORTERS: ExporterConfig[] = [
-  { name: "primary-otlp", type: "OTLP", endpoint: "https://otel.54agent.upi.dev:4317", status: "active" },
-  { name: "jaeger-tracing", type: "Jaeger", endpoint: "http://jaeger.internal:14268/api/traces", status: "active" },
-  { name: "prometheus-metrics", type: "Prometheus", endpoint: "http://prometheus.internal:9090/metrics", status: "active" },
-  { name: "backup-otlp", type: "OTLP", endpoint: "https://backup-otel.54agent.upi.dev:4317", status: "error" },
-];
-
-const MOCK_SERVICES: InstrumentedService[] = [
-  { service: "core-banking-api", traceVolume: 142000 },
-  { service: "agent-service", traceVolume: 88400 },
-  { service: "kyc-service", traceVolume: 21300 },
-  { service: "notification-service", traceVolume: 64800 },
-  { service: "settlement-worker", traceVolume: 9200 },
-  { service: "webhook-dispatcher", traceVolume: 18700 },
-];
-
 const EXPORTER_TYPE_STYLES: Record<string, string> = {
   OTLP: "bg-blue-100 text-blue-700",
   Jaeger: "bg-purple-100 text-purple-700",
@@ -55,10 +33,11 @@ const EXPORTER_TYPE_STYLES: Record<string, string> = {
 };
 
 const OpenTelemetryConfig: React.FC = () => {
-  const [summary, setSummary] = useState<OtelSummary>(MOCK_SUMMARY);
+  const [summary, setSummary] = useState<OtelSummary | null>(null);
   const [exporters, setExporters] = useState<ExporterConfig[]>([]);
   const [services, setServices] = useState<InstrumentedService[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [testingExporter, setTestingExporter] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, string>>({});
 
@@ -68,15 +47,16 @@ const OpenTelemetryConfig: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/otel-config`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setSummary(d.summary ?? MOCK_SUMMARY);
-        setExporters(Array.isArray(d.exporters) ? d.exporters : MOCK_EXPORTERS);
-        setServices(Array.isArray(d.services) ? d.services : MOCK_SERVICES);
-      } else { setSummary(MOCK_SUMMARY); setExporters(MOCK_EXPORTERS); setServices(MOCK_SERVICES); }
-    } catch { setSummary(MOCK_SUMMARY); setExporters(MOCK_EXPORTERS); setServices(MOCK_SERVICES); }
+        setSummary(d.summary ?? []);
+        setExporters(Array.isArray(d.exporters) ? d.exporters : []);
+        setServices(Array.isArray(d.services) ? d.services : []);
+      } else { setError("Failed to load OpenTelemetry configuration."); }
+    } catch { setError("Failed to load OpenTelemetry configuration."); }
     finally { setLoading(false); }
   };
 
@@ -89,7 +69,7 @@ const OpenTelemetryConfig: React.FC = () => {
       });
       const result = res.ok ? "Connection OK" : "Connection failed";
       setTestResults(prev => ({ ...prev, [exporterName]: result }));
-    } catch { setTestResults(prev => ({ ...prev, [exporterName]: "Unreachable (demo)" })); }
+    } catch { setTestResults(prev => ({ ...prev, [exporterName]: "Unreachable" })); }
     finally { setTestingExporter(null); }
   };
 
@@ -97,6 +77,13 @@ const OpenTelemetryConfig: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -109,6 +96,7 @@ const OpenTelemetryConfig: React.FC = () => {
         </button>
       </div>
 
+      {summary ? (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 space-y-2">
           <div className="flex items-center gap-2 mb-1">
@@ -143,6 +131,9 @@ const OpenTelemetryConfig: React.FC = () => {
           <p className="text-xs text-gray-500">Log Level <span className="font-semibold text-blue-600 uppercase">{summary.logLevel}</span></p>
         </div>
       </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm p-6 text-sm text-gray-500">No telemetry summary data available.</div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="font-semibold text-gray-900 mb-4">Exporter Configurations</h2>

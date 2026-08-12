@@ -9,14 +9,14 @@ class Settings(BaseSettings):
     # Application Settings
     PROJECT_NAME: str = "Compliance-KYC Service"
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = "super-secret-key-for-testing-only" # Should be loaded from environment in production
+    # No default: the signing secret must be provided via the environment.
+    SECRET_KEY: str = Field(..., description="JWT signing secret (required, from environment)")
     
     # Logging Settings
     LOG_LEVEL: str = "INFO"
     
     # Security Settings
-    # A simple mock for demonstration. In a real app, this would involve proper JWT/OAuth2 settings.
-    MOCK_AUTH_ENABLED: bool = True 
+    JWT_ALGORITHM: str = "HS256"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

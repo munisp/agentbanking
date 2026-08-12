@@ -31,18 +31,20 @@ class AuthenticationException(HTTPException):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-# --- Security Utilities (Placeholders) ---
+# --- Security Utilities ---
 
-# NOTE: In a real application, these would be implemented using libraries like passlib and python-jose
+from passlib.context import CryptContext
+
+# Real bcrypt password hashing (requires the ``passlib[bcrypt]`` extra).
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 def get_password_hash(password: str) -> str:
-    """Placeholder for password hashing."""
-    # Using a simple placeholder for demonstration. Replace with proper hashing (e.g., bcrypt)
-    return f"hashed_{password}"
+    """Hash a plaintext password with bcrypt."""
+    return _pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Placeholder for password verification."""
-    # Using a simple placeholder for demonstration. Replace with proper verification
-    return get_password_hash(plain_password) == hashed_password
+    """Verify a plaintext password against a bcrypt hash."""
+    return _pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:
     """

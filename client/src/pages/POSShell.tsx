@@ -998,61 +998,329 @@ export default function POSShell() {
             style={{ background: BORDER }}
           >
             <div
-              className="h-full rounded-full transition-all duration-500"
+              className="h-full rounded-full transition-all"
               style={{
                 width: `${Math.min((terminal.txToday / terminal.txTarget) * 100, 100)}%`,
-                background: BLUE,
+                background:
+                  terminal.txToday >= terminal.txTarget ? GREEN : BLUE,
               }}
             />
           </div>
-          <span
-            className="text-xs font-bold"
-            style={{
-              color: successTier === "Excellent" ? GREEN : GOLD,
-              fontFamily: MONO,
-            }}
-          >
-            {successRatePct != null ? `${successRatePct}%` : "—"}
-          </span>
+          {terminal.txToday >= terminal.txTarget && (
+            <span className="text-xs" style={{ color: GREEN }}>
+              🎯
+            </span>
+          )}
         </div>
       </div>
 
-      {/* ── Tile Grid (P1: DndContext wrapper) ── */}
+      {/* ── Performance Dashboard Tile (P3) ── */}
+      <div
+        className="mx-3 mt-2 rounded-xl p-3 flex items-center gap-3"
+        style={{ background: CARD, border: `1px solid ${BORDER}` }}
+      >
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-1">
+            <span className="text-sm">🔥</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: GOLD, fontFamily: MONO }}
+            >
+              {gamification.streak != null ? `${gamification.streak}d` : "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-sm">🏆</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: BLUE, fontFamily: MONO }}
+            >
+              {gamification.rank != null ? `#${gamification.rank}` : "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-sm">⚡</span>
+            <span
+              className="text-xs font-bold"
+              style={{ color: GREEN, fontFamily: MONO }}
+            >
+              {gamification.weeklyProgress ?? "—"}/{gamification.weeklyTarget ?? "—"}
+            </span>
+          </div>
+        </div>
+        {/* Mini progress ring */}
+        <svg width="28" height="28" viewBox="0 0 28 28">
+          <circle
+            cx="14"
+            cy="14"
+            r="11"
+            fill="none"
+            stroke={BORDER}
+            strokeWidth="3"
+          />
+          <circle
+            cx="14"
+            cy="14"
+            r="11"
+            fill="none"
+            stroke={BLUE}
+            strokeWidth="3"
+            strokeDasharray={`${gamification.weeklyProgress != null && gamification.weeklyTarget ? (gamification.weeklyProgress / gamification.weeklyTarget) * 69.1 : 0} 69.1`}
+            strokeLinecap="round"
+            transform="rotate(-90 14 14)"
+          />
+        </svg>
+      </div>
+
+      {/* ── EOD Widget (P3) ── */}
+      <EODWidget
+        txCount={terminal.txToday}
+        floatBalance={terminal.floatBalance ?? 0}
+        onReconcile={() => navigate("EODReconcile")}
+        onPrintSummary={() => toast.success("Printing day summary...")}
+      />
+
+      {/* ── Tile Grid with DnD (P1: drag-and-drop) ── */}
       <PullToRefresh
+        className="flex-1"
         onRefresh={async () => {
-          window.location.reload();
+          toast.success("Refreshed");
         }}
-        disabled={editMode || showQuickEntry}
-        className="flex-1 overflow-y-auto"
-        style={{ background: BG }}
       >
         <DndContext
           sensors={dndSensors}
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext items={layout} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-4 gap-2 p-4 grid-tile-enter">
-              {visibleTiles.map((tile: any) => (
-                <SortableTile
-                  key={tile.id}
-                  tile={tile}
-                  editMode={editMode}
-                  isOnline={isOnline}
-                  onPress={t => navigate(t.screen, t.id)}
-                  customSize={tileCustom.sizes[tile.id]}
-                  customColor={tileCustom.colors[tile.id]}
-                  liveData={tileLiveData[tile.id]}
-                />
-              ))}
+          <SortableContext
+            items={visibleTiles.map(t => t.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-4 gap-2 p-3 auto-rows-auto">
+              {visibleTiles.map((tile: any) => {
+                const actions = TILE_QUICK_ACTIONS[tile.id] || [];
+                return (
+                  <TileContextMenu
+                    key={tile.id}
+                    disabled={editMode}
+                    actions={[
+                      ...actions.map(a => ({
+                        label: a.label,
+                        icon: a.icon,
+                        action: () =>
+                          navigate(a.screenOverride || tile.screen, tile.id),
+                      })),
+                      ...(editMode
+                        ? [
+                            {
+                              label: "Change Size",
+                              icon: "📐",
+                              action: () => setShowSizeChooser(tile.id),
+                            },
+                            {
+                              label: "Change Color",
+                              icon: "🎨",
+                              action: () => setShowTileThemer(tile.id),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  >
+                    <SortableTile
+                      tile={tile}
+                      editMode={editMode}
+                      isOnline={isOnline}
+                      onPress={t => navigate(t.screen, t.id)}
+                      customSize={tileCustom.sizes[tile.id]}
+                      customColor={tileCustom.colors[tile.id]}
+                      liveData={tileLiveData[tile.id]}
+                    />
+                  </TileContextMenu>
+                );
+              })}
+              {/* Add tile button */}
+              <button
+                onClick={() => setShowEditor(true)}
+                className="col-span-1 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 touch-target"
+                style={{ background: CARD, border: `2px dashed ${BORDER}` }}
+                aria-label="Add new tile"
+              >
+                <span className="text-xl text-gray-600">+</span>
+                <span
+                  className="text-xs text-gray-600"
+                  style={{ fontFamily: DISP, fontSize: 10 }}
+                >
+                  Add
+                </span>
+              </button>
             </div>
           </SortableContext>
         </DndContext>
       </PullToRefresh>
 
-      {/* ── Live Ticker ── */}
+      {/* ── Edit Mode Toggle (P0: touch targets, P2: presets) ── */}
       <div
-        className="flex-shrink-0 overflow-hidden"
+        className="flex items-center justify-between px-4 py-2 flex-shrink-0 safe-bottom"
+        style={{ borderTop: `1px solid ${BORDER}` }}
+      >
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              haptic("tap");
+              setEditMode(e => !e);
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+            style={{
+              background: editMode ? "oklch(0.60 0.22 25 / 0.2)" : CARD,
+              color: editMode ? RED : "#9ca3af",
+              border: `1px solid ${editMode ? RED : BORDER}`,
+            }}
+          >
+            {editMode
+              ? t("done_editing", "✓ Done Editing")
+              : t("edit_layout", "✏ Edit Layout")}
+          </button>
+          {editMode && (
+            <>
+              <button
+                onClick={() => setShowPresets(true)}
+                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+                style={{
+                  background: CARD,
+                  color: BLUE,
+                  border: `1px solid ${BORDER}`,
+                }}
+                aria-label="Layout presets"
+              >
+                📐 Presets
+              </button>
+              <button
+                onClick={() => {
+                  setLayout(DEFAULT_LAYOUT);
+                  setTileCustom({
+                    order: [],
+                    sizes: {},
+                    colors: {},
+                    groups: {},
+                    preset: "full",
+                  });
+                  saveTileCustomizations({
+                    order: [],
+                    sizes: {},
+                    colors: {},
+                    groups: {},
+                    preset: "full",
+                  });
+                  haptic("success");
+                  toast.success("Layout reset to default");
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
+                style={{
+                  background: CARD,
+                  color: "#6b7280",
+                  border: `1px solid ${BORDER}`,
+                }}
+                aria-label="Reset layout"
+              >
+                ↺ Reset
+              </button>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Paper level indicator (P2: status bar enhancement) */}
+          <div
+            className="flex items-center gap-1"
+            title={terminal.paperLevel != null ? `Paper: ${terminal.paperLevel}%` : "Paper: unknown"}
+          >
+            <span
+              className="text-xs"
+              style={{ color: terminal.paperLevel == null || terminal.paperLevel > 20 ? "#6b7280" : RED }}
+            >
+              🧾
+            </span>
+            <span
+              className="text-xs"
+              style={{
+                color: terminal.paperLevel == null || terminal.paperLevel > 20 ? "#6b7280" : RED,
+                fontFamily: MONO,
+              }}
+            >
+              {terminal.paperLevel != null ? `${terminal.paperLevel}%` : "—"}
+            </span>
+          </div>
+          <div
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: wsStatus === "connected" ? GREEN : GOLD }}
+          />
+          <span className="text-xs text-gray-500" style={{ fontFamily: MONO }}>
+            {TERMINAL_UNKNOWN.model ?? "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Pending Sync Banner (Rust offline-queue) ── */}
+      {pendingQueueCount > 0 && (
+        <button
+          onClick={generateHomeUssdCodes}
+          className="px-4 py-1.5 flex items-center gap-2 flex-shrink-0 w-full text-left transition-all active:opacity-80"
+          style={{
+            background: "oklch(0.78 0.18 80 / 0.12)",
+            borderTop: `1px solid ${GOLD}44`,
+          }}
+        >
+          <span style={{ color: GOLD, fontFamily: DISP, fontSize: 11 }}>
+            ⏳ {pendingQueueCount} transaction{pendingQueueCount > 1 ? "s" : ""}{" "}
+            pending sync
+          </span>
+          {!isOnline && (
+            <span
+              className="ml-auto text-xs font-bold"
+              style={{ color: GOLD, fontFamily: MONO }}
+            >
+              {generatingHomeUssd ? "Generating…" : "📞 USSD Fallback"}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* ── Success Rate Badge (Python analytics) ── */}
+      {successRatePct !== null && (
+        <div
+          className="px-4 py-1 flex items-center gap-2 flex-shrink-0"
+          style={{
+            background: "oklch(0.08 0.01 240)",
+            borderTop: `1px solid ${BORDER}`,
+          }}
+        >
+          <span
+            className="text-xs"
+            style={{ color: "#4b5563", fontFamily: DISP }}
+          >
+            7-day success rate:
+          </span>
+          <span
+            className="text-xs font-bold"
+            style={{
+              color:
+                successTier === "Excellent"
+                  ? GREEN
+                  : successTier === "Good"
+                    ? BLUE
+                    : successTier === "Fair"
+                      ? GOLD
+                      : RED,
+              fontFamily: MONO,
+            }}
+          >
+            {successRatePct.toFixed(1)}% — {successTier}
+          </span>
+        </div>
+      )}
+
+      {/* ── Live Ticker (P0: safe-bottom for home button bar) ── */}
+      <div
+        className="flex-shrink-0 overflow-hidden py-1.5 px-4 safe-bottom"
         style={{
           background: "oklch(0.07 0.01 240)",
           borderTop: `1px solid ${BORDER}`,
@@ -1060,99 +1328,45 @@ export default function POSShell() {
       >
         <div
           ref={tickerRef}
-          className="whitespace-nowrap py-1.5 px-4"
+          className="flex items-center gap-6 whitespace-nowrap"
           style={{
-            transform: `translateX(${tickerPos}px)`,
-            fontFamily: MONO,
-            fontSize: 11,
+            transform: `translateX(${tickerPos % (tickerText.length * 8)}px)`,
+            transition: "none",
           }}
         >
-          {tickerText ? (
-            <span style={{ color: "#6b7280" }}>{tickerText}&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;{tickerText}</span>
-          ) : (
-            <span style={{ color: "#4b5563" }}>Live stats appear here once today's data loads…</span>
-          )}
+          {[...liveTickerItems, ...liveTickerItems].map((t, i) => (
+            <div key={i} className="flex items-center gap-1.5 flex-shrink-0">
+              <span
+                className="text-xs font-bold"
+                style={{ color: "#4b5563", fontFamily: MONO }}
+              >
+                {t.label}
+              </span>
+              <span
+                className="text-xs font-bold text-white"
+                style={{ fontFamily: MONO }}
+              >
+                {t.value}
+              </span>
+              <span
+                className="text-xs"
+                style={{ color: t.up ? GREEN : RED, fontFamily: MONO }}
+              >
+                {t.change}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── Bottom Bar ── */}
-      <div
-        className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{
-          background: "oklch(0.07 0.01 240)",
-          borderTop: `1px solid ${BORDER}`,
-        }}
-      >
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              haptic("micro");
-              setEditMode(!editMode);
-            }}
-            className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
-            style={{
-              background: editMode ? BLUE : CARD,
-              color: editMode ? "white" : "#9ca3af",
-              border: `1px solid ${editMode ? BLUE : BORDER}`,
-            }}
-            aria-pressed={editMode}
-          >
-            {editMode ? "Done" : "Edit"}
-          </button>
-          <button
-            onClick={() => setShowPresets(true)}
-            className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
-            style={{
-              background: CARD,
-              color: "#9ca3af",
-              border: `1px solid ${BORDER}`,
-            }}
-          >
-            Layouts
-          </button>
-          <button
-            onClick={() => setShowLanguageSelector(true)}
-            className="px-3 py-2 rounded-xl text-xs font-semibold transition-all touch-target"
-            style={{
-              background: CARD,
-              color: "#9ca3af",
-              border: `1px solid ${BORDER}`,
-            }}
-          >
-            🌐
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {/* EOD Widget — Sprint 74 */}
-          <EODWidget onOpen={() => navigate("EODReconcile", "eod-reconcile")} />
-          {/* Logout — Sprint 74: F9 */}
-          <button
-            onClick={() => {
-              storeLogout();
-              toast.success("Signed out");
-              window.location.href = "/pos-login";
-            }}
-            className="p-2 rounded-xl transition-all active:scale-95"
-            style={{ background: CARD, border: `1px solid ${BORDER}` }}
-            title="Sign out"
-          >
-            <span className="text-sm">⏻</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ── Modals ── */}
+      {/* ── Overlays ── */}
       {showEditor && (
         <TileEditorSheet
           layout={layout}
           onClose={() => setShowEditor(false)}
           onSave={ids => {
             setLayout(ids);
-            setTileCustom(c => {
-              const updated = { ...c, order: ids };
-              saveTileCustomizations(updated);
-              return updated;
-            });
+            toast.success("Layout saved");
           }}
         />
       )}
@@ -1165,20 +1379,59 @@ export default function POSShell() {
       {showUSSD && <USSDSimulator onClose={() => setShowUSSD(false)} />}
       {showArch && <ArchitecturePanel onClose={() => setShowArch(false)} />}
       {showFraudDash && (
-        <div className="fixed inset-0 z-50" style={{ background: BG }}>
-          <FraudDashboard onClose={() => setShowFraudDash(false)} />
+        <div
+          className="fixed inset-0 z-50 overflow-hidden"
+          style={{ maxWidth: 430, margin: "0 auto" }}
+        >
+          <FraudDashboard />
+          <button
+            onClick={() => setShowFraudDash(false)}
+            className="absolute top-3 right-3 z-50 w-8 h-8 rounded-full flex items-center justify-center text-white font-bold"
+            style={{
+              background: "oklch(0.22 0.015 240)",
+              border: "1px solid oklch(0.30 0.015 240)",
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
       {showLiveChat && (
-        <div className="fixed inset-0 z-50" style={{ background: BG }}>
-          <LiveChatSupport onClose={() => setShowLiveChat(false)} />
+        <div
+          className="fixed inset-0 z-50 overflow-hidden"
+          style={{ maxWidth: 430, margin: "0 auto" }}
+        >
+          <LiveChatSupport onBack={() => setShowLiveChat(false)} />
         </div>
       )}
       {showLoyalty && (
-        <div className="fixed inset-0 z-50" style={{ background: BG }}>
-          <LoyaltySystem onClose={() => setShowLoyalty(false)} />
+        <div
+          className="fixed inset-0 z-50 overflow-hidden"
+          style={{ maxWidth: 430, margin: "0 auto" }}
+        >
+          <LoyaltySystem onBack={() => setShowLoyalty(false)} />
         </div>
       )}
+
+      {/* ── Offline USSD Bottom-Sheet Modal ── */}
+      <OfflineUssdModal
+        showOfflineUssd={showOfflineUssd}
+        setShowOfflineUssd={setShowOfflineUssd}
+        homeUssdCodes={homeUssdCodes}
+        terminal={terminal}
+        printUssdHome={printUssdHome}
+      />
+
+      {/* ── Quick Entry Modal (P1: transaction quick-entry) ── */}
+      <QuickEntryModal
+        showQuickEntry={showQuickEntry}
+        setShowQuickEntry={setShowQuickEntry}
+        quickEntryAmount={quickEntryAmount}
+        setQuickEntryDirection={setQuickEntryDirection}
+        navigate={navigate}
+      />
+
+      {/* ── Layout Presets Modal (P2) ── */}
       {showPresets && (
         <div
           className="fixed inset-0 z-50 flex flex-col justify-end"
@@ -1195,12 +1448,12 @@ export default function POSShell() {
             className="rounded-t-3xl p-5 flex flex-col gap-3"
             style={{ background: BG, border: `1px solid ${BORDER}` }}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div
                 className="text-base font-black text-white"
                 style={{ fontFamily: DISP }}
               >
-                Layout Presets
+                📐 Layout Presets
               </div>
               <button
                 onClick={() => setShowPresets(false)}
@@ -1210,97 +1463,41 @@ export default function POSShell() {
                 ✕
               </button>
             </div>
-            {LAYOUT_PRESETS.map((preset: any) => (
+            {LAYOUT_PRESETS.map(p => (
               <button
-                key={preset.id}
-                onClick={() => applyPreset(preset)}
-                disabled={preset.id === "custom"}
-                className="flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-95 disabled:opacity-50"
+                key={p.id}
+                onClick={() => applyPreset(p)}
+                className="w-full p-4 rounded-2xl flex items-center gap-3 text-left transition-all active:scale-98 touch-target"
                 style={{
                   background:
-                    tileCustom.preset === preset.id
-                      ? "oklch(0.60 0.22 260 / 0.2)"
+                    tileCustom.preset === p.id
+                      ? `oklch(0.60 0.22 260 / 0.15)`
                       : CARD,
-                  border: `1px solid ${tileCustom.preset === preset.id ? BLUE : BORDER}`,
+                  border: `1px solid ${tileCustom.preset === p.id ? BLUE : BORDER}`,
                 }}
               >
+                <span className="text-2xl">{p.icon}</span>
                 <div className="flex-1">
                   <div
                     className="text-sm font-bold text-white"
                     style={{ fontFamily: DISP }}
                   >
-                    {preset.name}
+                    {p.name}
                   </div>
-                  <div
-                    className="text-xs text-gray-400"
-                    style={{ fontFamily: DISP }}
-                  >
-                    {preset.description}
-                  </div>
+                  <div className="text-xs text-gray-400">{p.description}</div>
                 </div>
-                {tileCustom.preset === preset.id && (
-                  <span className="text-xs font-bold" style={{ color: BLUE }}>
-                    Active
-                  </span>
-                )}
+                <span
+                  className="text-xs"
+                  style={{ color: "#6b7280", fontFamily: MONO }}
+                >
+                  {p.tileIds.length} tiles
+                </span>
               </button>
             ))}
           </div>
         </div>
       )}
-      {showLanguageSelector && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col justify-end"
-          style={{
-            maxWidth: 430,
-            margin: "0 auto",
-            background: "oklch(0.04 0.01 240 / 0.85)",
-          }}
-          onClick={e => {
-            if (e.target === e.currentTarget) setShowLanguageSelector(false);
-          }}
-        >
-          <div
-            className="rounded-t-3xl p-5 flex flex-col gap-3"
-            style={{ background: BG, border: `1px solid ${BORDER}` }}
-          >
-            <div className="flex items-center justify-between">
-              <div
-                className="text-base font-black text-white"
-                style={{ fontFamily: DISP }}
-              >
-                {t("language.select", "Select Language")}
-              </div>
-              <button
-                onClick={() => setShowLanguageSelector(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ background: CARD, color: "#9ca3af" }}
-              >
-                ✕
-              </button>
-            </div>
-            {[
-              { code: "en", label: "English" },
-              { code: "ha", label: "Hausa" },
-              { code: "yo", label: "Yorùbá" },
-              { code: "ig", label: "Igbo" },
-              { code: "pcm", label: "Nigerian Pidgin" },
-            ].map(lang => (
-              <button
-                key={lang.code}
-                onClick={() => {
-                  setShowLanguageSelector(false);
-                  toast.success(`Language: ${lang.label}`);
-                }}
-                className="w-full py-3.5 rounded-2xl text-sm font-bold text-white text-left px-4 transition-all active:scale-95"
-                style={{ background: CARD, border: `1px solid ${BORDER}` }}
-              >
-                {lang.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+
       {/* ── Tile Size Chooser (P2) ── */}
       {showSizeChooser && (
         <div
@@ -1322,30 +1519,30 @@ export default function POSShell() {
               className="text-base font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              Tile Size
+              📐 Tile Size
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {(["sm", "md", "lg", "wide"] as TileSize[]).map(size => (
+              {(["sm", "md", "lg", "wide"] as TileSize[]).map(s => (
                 <button
-                  key={size}
-                  onClick={() => changeTileSize(showSizeChooser, size)}
-                  className="py-3 rounded-xl text-xs font-bold uppercase transition-all active:scale-95"
+                  key={s}
+                  onClick={() => changeTileSize(showSizeChooser, s)}
+                  className="py-3 rounded-xl text-xs font-bold text-white uppercase transition-all active:scale-95 touch-target"
                   style={{
                     background:
-                      tileCustom.sizes[showSizeChooser] === size
+                      (tileCustom.sizes[showSizeChooser] || "md") === s
                         ? BLUE
                         : CARD,
-                    color: "white",
-                    border: `1px solid ${BORDER}`,
+                    border: `1px solid ${(tileCustom.sizes[showSizeChooser] || "md") === s ? BLUE : BORDER}`,
                   }}
                 >
-                  {size}
+                  {s}
                 </button>
               ))}
             </div>
           </div>
         </div>
       )}
+
       {/* ── Tile Color Themer (P3) ── */}
       {showTileThemer && (
         <div
@@ -1367,89 +1564,39 @@ export default function POSShell() {
               className="text-base font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              Tile Color
+              🎨 Tile Color
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {TILE_THEME_COLORS.map(theme => (
+              {TILE_THEME_COLORS.map(c => (
                 <button
-                  key={theme.name}
-                  onClick={() => changeTileColor(showTileThemer, theme.hue)}
-                  className="py-3 rounded-xl text-xs font-bold transition-all active:scale-95"
+                  key={c.name}
+                  onClick={() => changeTileColor(showTileThemer, c.hue)}
+                  className="py-3 rounded-xl text-xs font-bold text-white transition-all active:scale-95 touch-target"
                   style={{
-                    background:
-                      theme.hue >= 0
-                        ? `oklch(0.35 0.15 ${theme.hue})`
-                        : CARD,
-                    color: "white",
-                    border: `1px solid ${BORDER}`,
+                    background: c.hue >= 0 ? `oklch(0.45 0.18 ${c.hue})` : CARD,
+                    border: `1px solid ${c.hue >= 0 ? `oklch(0.55 0.20 ${c.hue})` : BORDER}`,
                   }}
                 >
-                  {theme.name}
+                  {c.name}
                 </button>
               ))}
             </div>
           </div>
         </div>
       )}
-      {/* ── Offline USSD Bottom-Sheet Modal ── */}
-      <OfflineUssdModal
-        showOfflineUssd={showOfflineUssd}
-        setShowOfflineUssd={setShowOfflineUssd}
-        homeUssdCodes={homeUssdCodes}
-        terminal={terminal}
-        printUssdHome={printUssdHome}
-      />
-      {/* ── Quick Entry Modal (P1) ── */}
-      <QuickEntryModal
-        showQuickEntry={showQuickEntry}
-        setShowQuickEntry={setShowQuickEntry}
-        quickEntryAmount={quickEntryAmount}
-        setQuickEntryDirection={setQuickEntryDirection}
-        navigate={navigate}
-      />
-      {/* ── USSD FAB (visible when offline with pending queue) ── */}
-      {storeOfflineQueue.length > 0 && (
-        <button
-          onClick={generateHomeUssdCodes}
-          disabled={generatingHomeUssd}
-          className="absolute z-40 w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90"
-          style={{
-            bottom: 96,
-            right: 16,
-            background: GOLD,
-            color: "#000",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-          }}
-          title="Generate USSD codes for offline transactions"
-        >
-          <span style={{ fontSize: 20 }}>
-            {generatingHomeUssd ? "⏳" : "📞"}
-          </span>
-          <span
-            className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
-            style={{ background: RED, color: "#fff" }}
-          >
-            {storeOfflineQueue.length}
-          </span>
-        </button>
-      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCREEN COMPONENTS
+// TIER 2 ENHANCEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// 1. Cash In ────────────────────────────────────────────────────────────────────
+// ── Receipt Printer Modal ─────────────────────────────────────────────────────
 
-export { FraudDashboardPanel } from "./POSShell.part1";
-export { FraudDashboardPanel as FraudPanel } from "./POSShell.part1";
-export { GamificationPanel as GamificationWidget } from "./POSShell.part10";
-export { DisputesPanel } from "./POSShell.part2";
-export { KYCVerifyScreen, UssdTransactionScreen } from "./POSShell.part4";
-export { FloatBalanceScreen, ReconciliationWizard, SuccessScreen, CarrierSwitchScreen } from "./POSShell.part5";
-export { ArchitecturePanel, NanoLoanScreen, MyLimitsScreen, NetworkTestScreen, ReceiptModal } from "./POSShell.part6";
-export { FraudAlertsScreen, ReversalScreen, CashOutScreen, PrinterTestScreen, TransferScreen, TxHistoryScreen, BiometricScreen } from "./POSShell.part7";
-export { ReconcileScreen, TerminalConfigScreen, AIFraudExplanationModal, SupervisorApprovalModal, CashInScreen, ScorecardScreen, USSDSimulator, CustomerLookupScreen } from "./POSShell.part8";
-export { AnalyticsScreen, FirmwareOTAScreen, TileEditorSheet, AMLCheckScreen, OpenAccountScreen, CommissionScreen, AirtimeScreen, ReceiptPrinterModal, DailyReportScreen } from "./POSShell.part9";
+export { MicroInsuranceScreen, NotificationPanel } from "./POSShell.part10";
+export { DisputesScreen } from "./POSShell.part3";
+export { ReconciliationWizard } from "./POSShell.part5";
+export { ArchitecturePanel, NanoLoanScreen } from "./POSShell.part6";
+export { AIFraudExplanationModal, SupervisorApprovalModal, USSDSimulator } from "./POSShell.part8";
+export { ReceiptPrinterModal } from "./POSShell.part9";

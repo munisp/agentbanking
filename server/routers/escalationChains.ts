@@ -349,12 +349,10 @@ export const escalationChainsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishescalationChainsMiddleware("resolveEvent", `${Date.now()}`, {
-        action: "resolveEvent",
-      }).catch(() => {});
-
-      return { success: true, eventId: input.eventId };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "escalationChains.resolveEvent is not available in this deployment",
+      });
     }),
   runEscalationCheck: protectedProcedure.mutation(async () => {
     // Middleware fan-out (fail-open)
@@ -371,12 +369,10 @@ export const escalationChainsRouter = router({
       z.object({ chainId: z.string().min(1).max(255), enabled: z.boolean() })
     )
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishescalationChainsMiddleware("toggleChain", `${Date.now()}`, {
-        action: "toggleChain",
-      }).catch(() => {});
-
-      return { success: true, chainId: input.chainId, enabled: input.enabled };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "escalationChains.toggleChain is not available in this deployment",
+      });
     }),
 });
 

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from database import get_db
@@ -14,13 +15,37 @@ from config import settings
 # Define the router
 kyc_router = APIRouter()
 
-# --- Dependency for Mock Authentication ---
-# In a real application, this would be a proper security dependency (e.g., OAuth2)
-async def mock_auth() -> bool:
-    if not settings.MOCK_AUTH_ENABLED:
-        # In a real app, raise HTTPException(status.HTTP_401_UNAUTHORIZED)
-        pass
-    return True
+# --- JWT Authentication Dependency ---
+# The previous mock_auth dependency always returned True (even its
+# "disabled" branch was a no-op pass), giving unauthenticated access to all
+# KYC records. Authentication is now a real JWT check on every endpoint.
+_bearer_scheme = HTTPBearer(auto_error=True)
+
+async def require_auth(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)
+) -> dict:
+    """Validate the Bearer JWT. Fails closed: 401 on any invalid token and
+    503 if the JWT library is unavailable."""
+    token = credentials.credentials
+    try:
+        import jwt  # PyJWT
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation is unavailable on this service"
+        )
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    return payload
 
 # --- KYC Record Endpoints ---
 
@@ -33,7 +58,7 @@ async def mock_auth() -> bool:
 async def create_kyc_record(
     record_in: KYCRecordCreate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Creates a new KYC record for a customer.
@@ -50,7 +75,7 @@ async def list_kyc_records(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=1000),
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Retrieves a list of all KYC records with pagination.
@@ -69,7 +94,7 @@ async def list_kyc_records(
 async def get_kyc_record(
     record_id: int,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Retrieves a single KYC record by its internal ID, including all associated documents and checks.
@@ -85,7 +110,7 @@ async def update_kyc_record(
     record_id: int,
     record_in: KYCRecordUpdate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Updates the status, risk score, reviewer, or rejection reason of an existing KYC record.
@@ -101,7 +126,7 @@ async def update_kyc_record(
 async def delete_kyc_record(
     record_id: int,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Deletes a KYC record and all associated documents and checks.
@@ -121,7 +146,7 @@ async def add_document_to_record(
     record_id: int,
     document_in: KYCDocumentCreate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Adds a new document (e.g., passport, ID) to an existing KYC record.
@@ -137,7 +162,7 @@ async def update_document_status(
     document_id: int,
     document_in: KYCDocumentUpdate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Manually updates the verification status of a specific document.
@@ -156,7 +181,7 @@ async def add_check_to_record(
     record_id: int,
     check_in: KYCCheckCreate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Adds a new compliance check (e.g., PEP, Sanctions) to an existing KYC record.
@@ -172,7 +197,7 @@ async def update_check_status(
     check_id: int,
     check_in: KYCCheckUpdate,
     kyc_service: KYCService = Depends(get_kyc_service),
-    auth: bool = Depends(mock_auth)
+    auth: dict = Depends(require_auth)
 ) -> None:
     """
     Updates the status and details of a specific compliance check.

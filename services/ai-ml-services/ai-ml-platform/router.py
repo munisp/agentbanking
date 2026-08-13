@@ -1,32 +1,134 @@
+import os
+import sys
 import uuid
-from typing import List, Annotated
+import logging
+from os.path import abspath, dirname, join
+from typing import List, Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from . import schemas, service
 from .database import get_db
 from .models import User as DBUser # Alias to avoid conflict with schemas.User
 
-# --- Security Dependencies (Placeholders) ---
+# Ensure the repo-level shared/ package (services/shared) is importable no
+# matter which directory layout the service is deployed with.
+for _p in (join(dirname(abspath(__file__)), ".."),
+           join(dirname(abspath(__file__)), "..", "..")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-# NOTE: In a real application, this would involve JWT decoding and database lookup
-def get_current_user(db: Session = Depends(get_db)) -> DBUser:
-    """
-    Placeholder dependency to simulate getting the current authenticated user.
-    For simplicity, it currently returns the first user found in the database.
-    In a real app, this would decode a JWT token and fetch the user.
-    """
-    # For demonstration, let's assume a user is always authenticated if one exists
-    user = db.query(DBUser).first()
+log = logging.getLogger(__name__)
+
+# --- Security Dependencies (fail-closed) ---
+#
+# Every request must carry a valid Keycloak-issued RS256 JWT bearer token,
+# validated against the realm JWKS via services/shared/keycloak_auth.py (the
+# repo-standard module — same Keycloak pattern as goaml-integration-go).
+#   - missing / malformed / expired / invalid token        -> 401
+#   - valid token whose identity is not a provisioned user -> 401
+#   - auth subsystem misconfigured (module/settings)       -> 503
+# The previous placeholder (returning the FIRST user in the database as the
+# "current user" on every request) has been removed — no request is ever
+# silently authenticated as an arbitrary account.
+#
+# DEV-ONLY override: AI_ML_PLATFORM_DEV_AUTH_BYPASS=true skips JWT validation
+# and authenticates as AI_ML_PLATFORM_DEV_USER_EMAIL (must exist in the DB).
+# Honoured ONLY outside production; setting it in production hard-fails at
+# startup.
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
+IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
+DEV_AUTH_BYPASS = os.getenv("AI_ML_PLATFORM_DEV_AUTH_BYPASS", "").lower() == "true"
+
+if DEV_AUTH_BYPASS and IS_PRODUCTION:
+    raise RuntimeError(
+        "AI_ML_PLATFORM_DEV_AUTH_BYPASS=true is forbidden in production: "
+        "authentication must never be bypassed on live traffic."
+    )
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+_keycloak_auth = None
+
+
+def _get_keycloak_auth():
+    """Lazy-load the repo-standard Keycloak RS256/JWKS token validator."""
+    global _keycloak_auth
+    if _keycloak_auth is not None:
+        return _keycloak_auth
+    try:
+        from shared.keycloak_auth import KeycloakAuth
+    except ImportError as exc:
+        raise RuntimeError(
+            f"keycloak auth module unavailable ({exc}); authentication is misconfigured"
+        )
+    _keycloak_auth = KeycloakAuth(verify_audience=False)
+    return _keycloak_auth
+
+
+def _lookup_user_by_email(email: str, db: Session) -> DBUser:
+    user = db.query(DBUser).filter(DBUser.email == email).first()
     if not user:
-        # If no user exists, we can't authenticate, but we need a user for CRUD.
-        # This is a simplification. In a real app, unauthenticated users get 401.
-        # For now, we'll allow unauthenticated access to user creation/login.
-        # For other routes, we'll raise an exception if no user is found.
-        raise service.AuthenticationException(detail="Not authenticated")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token identity '{email}' is not a provisioned user.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
+
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> DBUser:
+    """
+    Authenticate the caller via a Keycloak RS256 JWT bearer token and return
+    the matching provisioned user. Fails CLOSED on every error path — a caller
+    is never silently mapped to an arbitrary account.
+    """
+    # DEV-only bypass (import-time guard above already forbids it in production).
+    if DEV_AUTH_BYPASS:
+        dev_email = os.getenv("AI_ML_PLATFORM_DEV_USER_EMAIL", "dev@example.com")
+        log.warning(f"DEV AUTH BYPASS active: authenticating as {dev_email} (non-production)")
+        return _lookup_user_by_email(dev_email, db)
+
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        auth = _get_keycloak_auth()
+    except RuntimeError as exc:
+        log.error(str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
+
+    try:
+        claims = auth.decode_token(credentials.credentials)
+    except Exception as exc:
+        # Expired token, bad signature, wrong issuer/audience — all fail closed.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    email = claims.get("email") or claims.get("preferred_username")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing an email/preferred_username identity claim.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return _lookup_user_by_email(email, db)
 
 # --- Routers ---
 

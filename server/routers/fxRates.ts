@@ -6,6 +6,15 @@ import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
+import {
+  fetchFrankfurterSnapshot,
+  fetchFrankfurterTimeseries,
+  getFreshFxSnapshot,
+  persistFxSnapshot,
+} from "../lib/fxRateFeed";
+
+/** Rates older than this are treated as stale on live conversion paths. */
+const FX_RATE_STALE_MS = 24 * 60 * 60 * 1000;
 
 import {
   validateAmount,
@@ -138,13 +147,29 @@ export const fxRatesRouter = router({
           .from(systemConfig)
           .where(eq(systemConfig.key, "fx_rates"))
           .limit(1);
-        const rates = config
-          ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0, GHS: 95.0, KES: 12.0 };
+        if (!config) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "No FX rates are stored. Run fxRates.refresh to pull live rates from the Frankfurter/ECB feed or set rates manually via fxRates.updateRates.",
+          });
+        }
+        const parsed = JSON.parse(String(config.value));
+        // Stored shape: { base, rates (units of `base` per 1 unit of X), fetchedAt, source }.
+        // Legacy flat maps are treated as NGN-based manual rates.
+        const rates: Record<string, number> = parsed.rates ?? parsed;
+        const rateBase: string = parsed.base ?? "NGN";
+        const lastUpdated = parsed.fetchedAt ?? config.updatedAt ?? null;
+        const stale = lastUpdated
+          ? Date.now() - new Date(lastUpdated).getTime() > FX_RATE_STALE_MS
+          : true;
         return {
-          baseCurrency: input?.baseCurrency ?? "NGN",
+          baseCurrency: input?.baseCurrency ?? rateBase,
+          rateBase,
           rates,
-          lastUpdated: config?.updatedAt ?? new Date(),
+          lastUpdated,
+          stale,
+          source: parsed.source ?? "manual",
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -171,11 +196,45 @@ export const fxRatesRouter = router({
           .from(systemConfig)
           .where(eq(systemConfig.key, "fx_rates"))
           .limit(1);
-        const rates: Record<string, number> = config
-          ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0 };
-        const fromRate = input.from === "NGN" ? 1 : (rates[input.from] ?? 1);
-        const toRate = input.to === "NGN" ? 1 : (rates[input.to] ?? 1);
+        if (!config) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "No FX rates are stored. Run fxRates.refresh to pull live rates from the Frankfurter/ECB feed.",
+          });
+        }
+        const parsed = JSON.parse(String(config.value));
+        const rateBase: string = parsed.base ?? "NGN";
+        const table: Record<string, number> = parsed.rates ?? parsed;
+        const fetchedAt = parsed.fetchedAt ?? config.updatedAt ?? null;
+        if (
+          !fetchedAt ||
+          Date.now() - new Date(fetchedAt).getTime() > FX_RATE_STALE_MS
+        ) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "Stored FX rates are stale — refresh from the live feed (fxRates.refresh) before converting.",
+          });
+        }
+        // `table` stores units of `rateBase` per 1 unit of currency X.
+        // Unknown currencies fail loud — no silent 1:1 conversion.
+        const perBase = (ccy: string): number | undefined =>
+          ccy === rateBase ? 1 : table[ccy];
+        const fromRate = perBase(input.from);
+        const toRate = perBase(input.to);
+        if (typeof fromRate !== "number" || !(fromRate > 0)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `No stored FX rate for currency ${input.from} (base ${rateBase}).`,
+          });
+        }
+        if (typeof toRate !== "number" || !(toRate > 0)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `No stored FX rate for currency ${input.to} (base ${rateBase}).`,
+          });
+        }
         const converted = (input.amount * fromRate) / toRate;
         return {
           from: input.from,
@@ -183,6 +242,8 @@ export const fxRatesRouter = router({
           amount: input.amount,
           convertedAmount: Math.round(converted * 100) / 100,
           rate: fromRate / toRate,
+          rateBase,
+          fetchedAt,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -220,12 +281,20 @@ export const fxRatesRouter = router({
       const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
+        // Manual (admin-set) rates — stored in the documented shape with an
+        // explicit base + fetchedAt so convert/getRates can reason about them.
+        const payload = {
+          base: "NGN",
+          rates: input.rates,
+          fetchedAt: new Date().toISOString(),
+          source: "manual",
+        };
         await db
           .insert(systemConfig)
-          .values({ key: "fx_rates", value: JSON.stringify(input.rates) })
+          .values({ key: "fx_rates", value: JSON.stringify(payload) })
           .onConflictDoUpdate({
             target: systemConfig.key,
-            set: { value: JSON.stringify(input.rates), updatedAt: new Date() },
+            set: { value: JSON.stringify(payload), updatedAt: new Date() },
           });
         await db.insert(auditLog).values({
           action: "fx_rates_updated",
@@ -299,20 +368,23 @@ export const fxRatesRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
-      // Frankfurter API (https://api.frankfurter.app) / ECB exchangerate data
-      const rates: { date: string; rate: number }[] = [];
-      const now = Date.now();
-      for (let i = input.days; i >= 0; i--) {
-        const d = new Date(now - i * 86400000);
-        rates.push({
-          date: d.toISOString().slice(0, 10),
-          rate: 1580 + Math.sin(i / 3) * 20,
-        });
-      }
+      // Live timeseries from the Frankfurter API (ECB reference rates).
+      // Unsupported currencies / feed failures fail loud — no fabricated data.
+      const base = input?.base ?? "NGN";
+      const target = input?.target ?? "USD";
+      const days = input?.days ?? 30;
+      const series = await fetchFrankfurterTimeseries(base, target, days).catch(
+        err => {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: `Historical FX rates unavailable from the Frankfurter/ECB feed for ${base}/${target}: ${err instanceof Error ? err.message : "unknown error"}`,
+          });
+        }
+      );
       return {
-        base: input.base,
-        target: input.target,
-        timeseries: rates,
+        base,
+        target,
+        timeseries: series,
         source: "frankfurter/ecb",
       };
     }),
@@ -322,14 +394,21 @@ export const fxRatesRouter = router({
       action: "currencies",
     }).catch(() => {});
 
+    // Real currency list from the fresh live snapshot — never an empty or
+    // fabricated list. Throws SERVICE_UNAVAILABLE when no fresh rates exist.
+    const snapshot = await getFreshFxSnapshot();
+    const currencies = [
+      { code: snapshot.base, rate: 1 },
+      ...Object.entries(snapshot.rates).map(([code, rate]) => ({
+        code,
+        rate,
+      })),
+    ];
     return {
-      currencies: [] as Array<{
-        code: string;
-        name: string;
-        symbol: string;
-        rate: number;
-      }>,
-      baseCurrency: "NGN",
+      currencies,
+      baseCurrency: snapshot.base,
+      fetchedAt: snapshot.fetchedAt,
+      source: snapshot.source,
     };
   }),
   refresh: protectedProcedure.mutation(async () => {
@@ -338,10 +417,49 @@ export const fxRatesRouter = router({
       action: "refresh",
     }).catch(() => {});
 
+    // Real refresh: pull latest rates from the Frankfurter/ECB feed and
+    // persist them. Fails loud when the feed is unreachable or empty.
+    const snapshot = await fetchFrankfurterSnapshot().catch(err => {
+      throw new TRPCError({
+        code: "SERVICE_UNAVAILABLE",
+        message: `FX rate refresh failed — Frankfurter/ECB feed unreachable: ${err instanceof Error ? err.message : "unknown error"}`,
+      });
+    });
+    await persistFxSnapshot(snapshot);
+
+    // Convert to storage shape: units of `base` per 1 unit of currency X.
+    const table: Record<string, number> = { [snapshot.base]: 1 };
+    for (const [ccy, perBaseUnit] of Object.entries(snapshot.rates)) {
+      if (typeof perBaseUnit === "number" && perBaseUnit > 0) {
+        table[ccy] = 1 / perBaseUnit;
+      }
+    }
+    const ratesUpdated = Object.keys(table).length - 1;
+    if (ratesUpdated <= 0) {
+      throw new TRPCError({
+        code: "SERVICE_UNAVAILABLE",
+        message: "FX rate refresh failed — feed returned zero usable rates.",
+      });
+    }
+    const payload = {
+      base: snapshot.base,
+      rates: table,
+      fetchedAt: snapshot.fetchedAt,
+      source: snapshot.source,
+    };
+    const db = (await getDb())!;
+    await db
+      .insert(systemConfig)
+      .values({ key: "fx_rates", value: JSON.stringify(payload) })
+      .onConflictDoUpdate({
+        target: systemConfig.key,
+        set: { value: JSON.stringify(payload), updatedAt: new Date() },
+      });
     return {
       success: true,
-      refreshedAt: new Date().toISOString(),
-      ratesUpdated: 0,
+      refreshedAt: snapshot.fetchedAt,
+      ratesUpdated,
+      source: snapshot.source,
     };
   }),
   historical: protectedProcedure
@@ -350,7 +468,13 @@ export const fxRatesRouter = router({
         .object({ id: z.string().optional(), query: z.string().optional() })
         .optional()
     )
-    .query(async ({ input }) => {
-      return { data: null, timestamp: new Date().toISOString() };
+    .query(async () => {
+      // Legacy endpoint with no meaningful input mapping — fail loud instead
+      // of returning a null stub. Use fxRates.getHistorical for real data.
+      throw new TRPCError({
+        code: "METHOD_NOT_SUPPORTED",
+        message:
+          "fxRates.historical is not implemented — use fxRates.getHistorical for live ECB timeseries data.",
+      });
     }),
 });

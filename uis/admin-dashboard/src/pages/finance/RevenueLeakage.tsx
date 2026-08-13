@@ -12,14 +12,6 @@ interface LeakageItem {
   assigned_to?: string;
 }
 
-const MOCK_LEAKAGES: LeakageItem[] = [
-  { id: "leak-001", category: "uncollected_fee", description: "Card maintenance fee not collected for 234 dormant accounts", amount: 117000, detected_at: "2024-11-28", status: "open" },
-  { id: "leak-002", category: "commission_overpay", description: "Agent ACE-0023 received duplicate commission for Nov batch", amount: 45000, transaction_ref: "TXN-20241128-0045", detected_at: "2024-11-29", status: "under_review", assigned_to: "Finance Team" },
-  { id: "leak-003", category: "failed_reversal", description: "3 failed NIP reversals stuck — funds debited but not returned", amount: 230000, detected_at: "2024-11-25", status: "open" },
-  { id: "leak-004", category: "double_credit", description: "Customer CNT-00812 received double credit on Nov 20 transfer", amount: 50000, transaction_ref: "TXN-20241120-0812", detected_at: "2024-11-21", status: "resolved" },
-  { id: "leak-005", category: "fee_waiver", description: "Bulk fee waivers approved without management sign-off", amount: 88500, detected_at: "2024-11-27", status: "under_review", assigned_to: "Compliance" },
-];
-
 const CAT_LABELS: Record<string, string> = {
   fee_waiver: "Fee Waiver", double_credit: "Double Credit", uncollected_fee: "Uncollected Fee",
   failed_reversal: "Failed Reversal", commission_overpay: "Commission Overpay",
@@ -30,7 +22,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const RevenueLeakage: React.FC = () => {
-  const [items, setItems] = useState<LeakageItem[]>(MOCK_LEAKAGES);
+  const [items, setItems] = useState<LeakageItem[]>([]);
   const [loading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -50,7 +42,7 @@ const RevenueLeakage: React.FC = () => {
           </h1>
           <p className="text-gray-500 text-sm mt-1">Identify and recover uncollected fees, duplicate credits and commission errors</p>
         </div>
-        <button onClick={() => setItems(MOCK_LEAKAGES)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
+        <button disabled title="No leakage data source is connected" className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm opacity-50 cursor-not-allowed">
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
       </div>
@@ -98,6 +90,8 @@ const RevenueLeakage: React.FC = () => {
           <tbody className="divide-y divide-gray-50">
             {loading ? (
               <tr><td colSpan={6} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" /></td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="text-center py-10 text-gray-400">No leakage items — no data source is connected.</td></tr>
             ) : filtered.map(item => (
               <tr key={item.id} className="hover:bg-gray-50/50">
                 <td className="py-3 px-4"><span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">{CAT_LABELS[item.category]}</span></td>

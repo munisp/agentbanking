@@ -30,47 +30,8 @@ export default function NetworkStatusScreen() {
   const [selectedMode, setSelectedMode] = useState("pos");
 
   // Mock predictive data based on current mode and history
-  const predictiveAnalytics = {
-    currentMode: selectedMode,
-    predictiveScore: 92.5,
-    confidence: "high",
-    historicalTrend: "improving",
-    recommendations: [
-      {
-        icon: "check-circle",
-        text: "Network conditions optimal for transactions",
-        severity: "success",
-      },
-      {
-        icon: "trending-up",
-        text: "Transaction success rate improved by 3.2% this week",
-        severity: "info",
-      },
-      {
-        icon: "information",
-        text: "Peak performance expected between 10 AM - 2 PM",
-        severity: "info",
-      },
-    ],
-    modePerformance: {
-      pos: { score: 92.5, txnCount: 847, avgResponseTime: 1.8, trend: "up" },
-      ussd: {
-        score: 88.3,
-        txnCount: 1234,
-        avgResponseTime: 2.1,
-        trend: "stable",
-      },
-      web: { score: 95.1, txnCount: 2156, avgResponseTime: 1.2, trend: "up" },
-      app: { score: 94.8, txnCount: 3421, avgResponseTime: 1.4, trend: "up" },
-    },
-    timeBasedPredictions: [
-      { time: "6-9 AM", score: 89, volume: "Low" },
-      { time: "9-12 PM", score: 94, volume: "High" },
-      { time: "12-3 PM", score: 96, volume: "Peak" },
-      { time: "3-6 PM", score: 91, volume: "Medium" },
-      { time: "6-9 PM", score: 87, volume: "Low" },
-    ],
-  };
+  // Predictive analytics are not provided by the backend yet — never fabricated.
+  const predictiveAnalytics = null;
 
   useEffect(() => {
     fetchPredictions();
@@ -245,7 +206,9 @@ export default function NetworkStatusScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Predictive Score Card */}
+      {predictiveAnalytics ? (
+        <>
+{/* Predictive Score Card */}
       <Card
         style={[
           styles.predictiveCard,
@@ -396,6 +359,18 @@ export default function NetworkStatusScreen() {
           ))}
         </Card.Content>
       </Card>
+        </>
+      ) : (
+        <Card style={styles.predictiveCard}>
+          <Card.Content>
+            <Text variant="bodyMedium" style={{ textAlign: "center", paddingVertical: 16 }}>
+              Predictive analytics are unavailable — the backend does not provide them yet.
+            </Text>
+          </Card.Content>
+        </Card>
+      )}
+
+      
 
       {/* Header Stats */}
       <View style={styles.statsContainer}>

@@ -11,8 +11,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import com.pos54agent.app.BuildConfig
+import com.pos54agent.app.data.api.BeneficiaryService
+import com.pos54agent.app.data.api.TransferService
+import com.pos54agent.app.data.api.QuoteRequest
+import com.pos54agent.app.data.api.TransferRequest
+import com.pos54agent.app.data.api.VerifyBeneficiaryRequest
+import com.pos54agent.app.data.api.AddBeneficiaryRequest
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.*
@@ -32,7 +46,10 @@ data class Beneficiary(
     val name: String,
     val bankName: String,
     val accountNumber: String,
-    val isLocal: Boolean
+    val isLocal: Boolean,
+    val bankCode: String = "",
+    val country: String = "NG",
+    val currency: String = "NGN"
 )
 
 /**
@@ -108,8 +125,12 @@ interface TransferRepository {
     suspend fun saveBeneficiaryLocally(beneficiary: Beneficiary)
 }
 
-// --- 3. Mock Repository Implementation (For demonstration) ---
+// --- 3. Repository Implementations ---
 
+/**
+ * Mock repository — for unit tests and Compose previews ONLY.
+ * Never used as a default on live paths.
+ */
 class MockTransferRepository : TransferRepository {
     private val localBeneficiaries = MutableStateFlow(
         listOf(
@@ -154,10 +175,179 @@ class MockTransferRepository : TransferRepository {
     }
 }
 
+
+/**
+ * Live repository backed by the real backend API (Retrofit TransferService /
+ * BeneficiaryService). All data returned to the UI comes from server responses;
+ * failures surface as honest errors.
+ */
+class LiveTransferRepository(
+    private val transferService: TransferService,
+    private val beneficiaryService: BeneficiaryService
+) : TransferRepository {
+
+    override suspend fun getBeneficiaries(): Flow<List<Beneficiary>> = flow {
+        val response = beneficiaryService.getBeneficiaries()
+        if (!response.isSuccessful) throw HttpException(response)
+        val list = response.body()?.data.orEmpty().map { api ->
+            Beneficiary(
+                id = api.id,
+                name = api.name,
+                bankName = api.bankName,
+                accountNumber = api.accountNumber,
+                isLocal = api.country.equals("NG", ignoreCase = true),
+                bankCode = api.bankCode,
+                country = api.country,
+                currency = api.currency
+            )
+        }
+        emit(list)
+    }
+
+    override suspend fun validateBeneficiary(accountNumber: String, bankCode: String): Result<Beneficiary> {
+        return try {
+            val response = beneficiaryService.verifyBeneficiary(
+                VerifyBeneficiaryRequest(accountNumber = accountNumber, bankCode = bankCode, country = "NG")
+            )
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.success) {
+                Result.success(
+                    Beneficiary(
+                        name = body.data.accountName,
+                        bankName = body.data.bankName,
+                        accountNumber = body.data.accountNumber,
+                        isLocal = true,
+                        bankCode = bankCode
+                    )
+                )
+            } else {
+                Result.failure(if (response.isSuccessful) IllegalArgumentException("Beneficiary could not be verified.") else HttpException(response))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getExchangeRate(sourceCurrency: String, targetCurrency: String): Result<Double> {
+        return try {
+            val response = transferService.getExchangeRates(sourceCurrency, targetCurrency)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.success) {
+                Result.success(body.data.rate)
+            } else {
+                Result.failure(if (response.isSuccessful) IOException("No rate returned.") else HttpException(response))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun calculateFee(amount: Double): Result<Double> {
+        return try {
+            val response = transferService.getQuote(
+                QuoteRequest(
+                    sourceCurrency = "USD",
+                    destinationCurrency = "NGN",
+                    amount = amount,
+                    transferSpeed = "standard"
+                )
+            )
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.success) {
+                Result.success(body.data.fee)
+            } else {
+                Result.failure(if (response.isSuccessful) IOException("No fee quote returned.") else HttpException(response))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun submitTransfer(transferData: TransferFormState): Result<String> {
+        return try {
+            // Obtain a fresh server quote — the server is the only source of
+            // rates/fees and the resulting quoteId binds the transfer.
+            val amount = transferData.amountToSend.toDoubleOrNull()
+                ?: return Result.failure(IllegalArgumentException("Invalid amount."))
+            val beneficiary = transferData.selectedBeneficiary
+                ?: return Result.failure(IllegalArgumentException("No beneficiary selected."))
+            val quoteResponse = transferService.getQuote(
+                QuoteRequest(
+                    sourceCurrency = "USD",
+                    destinationCurrency = beneficiary.currency,
+                    amount = amount,
+                    transferSpeed = "standard"
+                )
+            )
+            val quote = quoteResponse.body()
+            if (!quoteResponse.isSuccessful || quote == null || !quote.success) {
+                return Result.failure(if (quoteResponse.isSuccessful) IOException("Could not obtain a transfer quote.") else HttpException(quoteResponse))
+            }
+            val transferResponse = transferService.initiateTransfer(
+                TransferRequest(
+                    quoteId = quote.data.quoteId,
+                    beneficiaryId = beneficiary.id,
+                    sourceCurrency = "USD",
+                    destinationCurrency = beneficiary.currency,
+                    amount = amount,
+                    transferSpeed = "standard",
+                    paymentSystem = transferData.selectedPaymentMethod.lowercase().replace(" ", "_"),
+                    description = transferData.purpose
+                )
+            )
+            val body = transferResponse.body()
+            if (transferResponse.isSuccessful && body != null && body.success) {
+                // Real server-issued reference — never fabricated.
+                Result.success(body.data.reference)
+            } else {
+                Result.failure(if (transferResponse.isSuccessful) IOException("Transfer was not accepted by the server.") else HttpException(transferResponse))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun saveBeneficiaryLocally(beneficiary: Beneficiary) {
+        // Persist server-side; the beneficiary list is re-fetched from the backend.
+        beneficiaryService.addBeneficiary(
+            AddBeneficiaryRequest(
+                name = beneficiary.name,
+                accountNumber = beneficiary.accountNumber,
+                bankName = beneficiary.bankName,
+                bankCode = beneficiary.bankCode,
+                country = beneficiary.country,
+                currency = beneficiary.currency
+            )
+        )
+    }
+}
+
+/**
+ * Provides the default live repository for the compose-created ViewModel.
+ *
+ * Note: this builds a bare Retrofit against the configured backend base URL.
+ * Production wiring should prefer injecting the Hilt-provided
+ * [com.pos54agent.app.data.api.ApiClient] (which attaches the auth interceptor)
+ * and passing `apiClient.transferService` / `apiClient.beneficiaryService`.
+ */
+object SendMoneyRepositoryProvider {
+    private val retrofit: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    fun live(): TransferRepository = LiveTransferRepository(
+        transferService = retrofit.create(TransferService::class.java),
+        beneficiaryService = retrofit.create(BeneficiaryService::class.java)
+    )
+}
+
 // --- 4. ViewModel (State Management and Business Logic) ---
 
 class SendMoneyViewModel(
-    private val repository: TransferRepository = MockTransferRepository() // In a real app, use Hilt/Koin for injection
+    private val repository: TransferRepository = SendMoneyRepositoryProvider.live()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendMoneyUiState())
@@ -165,7 +355,6 @@ class SendMoneyViewModel(
 
     init {
         loadBeneficiaries()
-        // Simulate checking for offline mode
         _uiState.update { it.copy(offlineMode = false) }
     }
 
@@ -185,7 +374,7 @@ class SendMoneyViewModel(
             is SendMoneyEvent.SubmitTransfer -> submitTransfer()
             is SendMoneyEvent.SelectBeneficiary -> selectBeneficiary(event.beneficiary)
             is SendMoneyEvent.ValidateNewBeneficiary -> validateNewBeneficiary()
-            is SendMoneyEvent.AuthenticateWithBiometrics -> authenticateWithBiometrics()
+            is SendMoneyEvent.BiometricAuthResult -> onBiometricAuthResult(event.success)
             is SendMoneyEvent.ClearError -> _uiState.update { it.copy(error = null, successMessage = null) }
         }
     }
@@ -319,16 +508,18 @@ class SendMoneyViewModel(
         }
     }
 
-    private fun authenticateWithBiometrics() {
-        // In a real app, this would trigger BiometricPrompt
-        // For mock, we simulate success after a delay
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            kotlinx.coroutines.delay(1000)
-            _uiState.update { it.copy(isLoading = false) }
-            // Assuming successful biometric auth automatically fills PIN or confirms step 4
-            updateFormState { copy(transactionPin = "1234") }
+    /**
+     * Handles the result of the real platform BiometricPrompt shown by the UI layer.
+     * A successful device authentication authorizes submitting the transfer;
+     * nothing is auto-filled and no success is fabricated.
+     */
+    private fun onBiometricAuthResult(success: Boolean) {
+        if (success) {
             submitTransfer()
+        } else {
+            _uiState.update {
+                it.copy(formState = it.formState.copy(authError = "Biometric authentication failed or was cancelled."))
+            }
         }
     }
 
@@ -366,7 +557,7 @@ sealed class SendMoneyEvent {
     object SubmitTransfer : SendMoneyEvent()
     data class SelectBeneficiary(val beneficiary: Beneficiary) : SendMoneyEvent()
     object ValidateNewBeneficiary : SendMoneyEvent()
-    object AuthenticateWithBiometrics : SendMoneyEvent()
+    data class BiometricAuthResult(val success: Boolean) : SendMoneyEvent()
     object ClearError : SendMoneyEvent()
 }
 
@@ -704,9 +895,35 @@ fun AuthenticationStep(
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Biometric Authentication Button
+        // Biometric Authentication Button — launches the real platform prompt.
+        val context = LocalContext.current
         Button(
-            onClick = { onEvent(SendMoneyEvent.AuthenticateWithBiometrics) },
+            onClick = {
+                val activity = context as? FragmentActivity
+                if (activity == null) {
+                    onEvent(SendMoneyEvent.BiometricAuthResult(false))
+                } else {
+                    val executor = ContextCompat.getMainExecutor(activity)
+                    val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            onEvent(SendMoneyEvent.BiometricAuthResult(true))
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            onEvent(SendMoneyEvent.BiometricAuthResult(false))
+                        }
+                        override fun onAuthenticationFailed() {
+                            // Non-fatal: prompt stays visible for another attempt.
+                        }
+                    })
+                    // BIOMETRIC_STRONG with DEVICE_CREDENTIAL (passcode) fallback.
+                    val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("Authorize Transfer")
+                        .setSubtitle("Authenticate to send ${"%.2f".format(formState.totalToPay)} USD")
+                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                        .build()
+                    prompt.authenticate(promptInfo)
+                }
+            },
             colors = ButtonDefaults.outlinedButtonColors()
         ) {
             Text("Authenticate with Biometrics")

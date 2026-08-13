@@ -6,6 +6,15 @@ import { KycWorkflowResult } from "../types/workflow";
  * @returns
  */
 export function kycVerificationScore(verificationResult: KycWorkflowResult) {
+  // Fail closed: a failed face verification must never contribute to a
+  // passing score, regardless of any similarity value it carries.
+  if (
+    verificationResult.faceVerificationResult &&
+    verificationResult.faceVerificationResult.success === false
+  ) {
+    return 0;
+  }
+
   let faceVerificationScore = (verificationResult.faceVerificationResult?.similarity || 0) * 0.42;
 
   let dataVerificationScore = 0;

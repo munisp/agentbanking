@@ -42,6 +42,7 @@ use uuid::Uuid;
 struct Config {
     port: u16,
     sanctions_engine_url: String,
+    customer_service_url: String,
     kafka_brokers: String,
     redis_url: String,
     temporal_url: String,
@@ -57,6 +58,10 @@ impl Config {
             port: std::env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8214),
             sanctions_engine_url: std::env::var("SANCTIONS_ENGINE_URL")
                 .unwrap_or_else(|_| "http://localhost:8131".into()),
+            // No default: without a real customer source the batch job must
+            // fail loudly rather than fabricate screening results.
+            customer_service_url: std::env::var("CUSTOMER_SERVICE_URL")
+                .unwrap_or_else(|_| "".into()),
             kafka_brokers: std::env::var("KAFKA_BROKERS")
                 .unwrap_or_else(|_| "localhost:9092".into()),
             redis_url: std::env::var("REDIS_URL")
@@ -173,6 +178,23 @@ struct StartBatchRequest {
     triggered_by: Option<String>,
 }
 
+/// A customer loaded from the real customer service for screening.
+#[derive(Debug, Clone)]
+struct CustomerRecord {
+    id: String,
+    name: String,
+    bvn: Option<String>,
+}
+
+/// A match returned by the sanctions screening engine.
+#[derive(Debug, Clone)]
+struct EngineMatch {
+    list: Option<String>,
+    entity: Option<String>,
+    score: Option<f64>,
+    match_type: Option<String>,
+}
+
 // ── Application State ────────────────────────────────────────────────────────
 
 struct AppState {
@@ -210,17 +232,10 @@ async fn start_batch(
     });
     let triggered_by = req.triggered_by.unwrap_or_else(|| "manual".into());
 
-    // Simulate batch size based on scope
-    let total = match scope.as_str() {
-        "high_risk" => 500,
-        "new_since_last_run" => 150,
-        _ => 10000, // all customers
-    };
-
     let job = BatchJob {
         id: Uuid::new_v4().to_string(),
         status: BatchStatus::Running,
-        total_customers: total,
+        total_customers: 0, // populated after customers are really loaded
         screened: 0,
         matches_found: 0,
         critical_matches: 0,
@@ -240,93 +255,283 @@ async fn start_batch(
         jobs.push(job.clone());
     }
 
-    // Simulate batch processing (in production, this would iterate through
-    // all customers and call the sanctions engine for each)
+    // Run the real batch: load customers from the customer service and screen
+    // each one against the sanctions engine. The job is marked Failed (never
+    // Completed) if customers cannot be loaded.
     let state_clone = state.clone();
+    let scope_clone = scope.clone();
     tokio::spawn(async move {
-        simulate_batch_run(state_clone, job_id, total, &lists).await;
+        run_batch(state_clone, job_id, scope_clone, lists).await;
     });
 
     tracing::info!(
         scope = %scope,
-        total_customers = total,
-        lists_count = lists.len(),
         "Batch re-screening job started"
     );
 
     (StatusCode::ACCEPTED, Json(job))
 }
 
-async fn simulate_batch_run(state: Arc<AppState>, job_id: String, total: u64, lists: &[String]) {
-    // Simulate screening with synthetic matches
-    let match_rate = 0.002; // 0.2% match rate (realistic)
-    let expected_matches = (total as f64 * match_rate) as u64;
+/// Load the real customer list from the configured customer service.
+async fn load_customers(state: &Arc<AppState>, scope: &str) -> Result<Vec<CustomerRecord>, String> {
+    let base = state.config.customer_service_url.trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Err("CUSTOMER_SERVICE_URL is not configured; cannot load customers to screen".into());
+    }
+    let url = format!("{}/api/v1/customers?scope={}", base, scope);
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("customer service request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("customer service returned HTTP {}", resp.status()));
+    }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("customer service response decode failed: {e}"))?;
+    let items: Vec<serde_json::Value> = if let Some(arr) = body.get("customers").and_then(|v| v.as_array()) {
+        arr.clone()
+    } else if let Some(arr) = body.as_array() {
+        arr.clone()
+    } else {
+        return Err("unexpected customer service response shape (expected array or {customers: []})".into());
+    };
 
-    // Simulate progress
-    for i in 0..=10 {
-        let screened = (total * i) / 10;
-        let matches = (expected_matches * i) / 10;
+    let mut customers = Vec::new();
+    for item in items {
+        let id = item
+            .get("id")
+            .or_else(|| item.get("customer_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = item
+            .get("full_name")
+            .or_else(|| item.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() || name.is_empty() {
+            continue;
+        }
+        let bvn = item
+            .get("bvn")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        customers.push(CustomerRecord { id, name, bvn });
+    }
+    Ok(customers)
+}
 
+/// Screen one customer against the sanctions engine.
+async fn screen_customer(
+    client: &reqwest::Client,
+    engine_url: &str,
+    customer: &CustomerRecord,
+    lists: &[String],
+) -> Result<Vec<EngineMatch>, String> {
+    let url = format!("{}/screen/sanctions", engine_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "name": customer.name,
+            "bvn": customer.bvn,
+            "lists": lists,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("sanctions engine request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("sanctions engine returned HTTP {}", resp.status()));
+    }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("sanctions engine response decode failed: {e}"))?;
+    let items = body
+        .get("matches")
+        .and_then(|m| m.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for m in items {
+        out.push(EngineMatch {
+            list: m
+                .get("list")
+                .or_else(|| m.get("matched_list"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            entity: m
+                .get("entity")
+                .or_else(|| m.get("matched_entity"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            score: m
+                .get("score")
+                .or_else(|| m.get("similarity_score"))
+                .and_then(|v| v.as_f64()),
+            match_type: m
+                .get("match_type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        });
+    }
+    Ok(out)
+}
+
+fn severity_for_score(score: f64) -> MatchSeverity {
+    if score >= 0.95 {
+        MatchSeverity::Critical
+    } else if score >= 0.9 {
+        MatchSeverity::High
+    } else if score >= 0.7 {
+        MatchSeverity::Medium
+    } else {
+        MatchSeverity::Low
+    }
+}
+
+fn fail_job(state: &Arc<AppState>, job_id: &str, error: String) {
+    if let Ok(mut jobs) = state.jobs.write() {
+        if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
+            job.status = BatchStatus::Failed;
+            job.error = Some(error.clone());
+            job.completed_at = Some(Utc::now());
+            job.duration_seconds = Some((Utc::now() - job.started_at).num_seconds() as u64);
+        }
+    }
+    tracing::error!(job_id = %job_id, error = %error, "Batch re-screening failed");
+}
+
+/// Real batch run: iterate the actual customer table (via the customer
+/// service) and screen each customer against the sanctions engine. The job
+/// is only marked Completed after every customer was really screened; it is
+/// marked Failed if customers cannot be loaded or every screening errored.
+async fn run_batch(state: Arc<AppState>, job_id: String, scope: String, lists: Vec<String>) {
+    let customers = match load_customers(&state, &scope).await {
+        Ok(c) => c,
+        Err(e) => {
+            fail_job(&state, &job_id, e);
+            return;
+        }
+    };
+
+    if customers.is_empty() {
+        fail_job(
+            &state,
+            &job_id,
+            "zero customers loaded from customer service; refusing to report a \
+             completed screening of zero records".to_string(),
+        );
+        return;
+    }
+
+    let total = customers.len() as u64;
+    if let Ok(mut jobs) = state.jobs.write() {
+        if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
+            job.total_customers = total;
+        }
+    }
+
+    let client = reqwest::Client::new();
+    let mut matches_found: u64 = 0;
+    let mut critical_count: u64 = 0;
+    let mut screening_errors: u64 = 0;
+
+    for (idx, customer) in customers.iter().enumerate() {
+        match screen_customer(&client, &state.config.sanctions_engine_url, customer, &lists).await {
+            Ok(engine_matches) => {
+                for em in engine_matches {
+                    let score = em.score.unwrap_or(0.0);
+                    let severity = severity_for_score(score);
+                    if matches!(severity, MatchSeverity::Critical) {
+                        critical_count += 1;
+                    }
+                    matches_found += 1;
+                    let m = SanctionsMatch {
+                        id: Uuid::new_v4().to_string(),
+                        batch_job_id: job_id.clone(),
+                        customer_id: customer.id.clone(),
+                        customer_name: customer.name.clone(),
+                        customer_bvn: customer.bvn.clone(),
+                        matched_list: em.list.clone().unwrap_or_else(|| "unknown".into()),
+                        matched_entity: em.entity.clone().unwrap_or_else(|| "unknown".into()),
+                        similarity_score: score,
+                        severity,
+                        match_type: em
+                            .match_type
+                            .clone()
+                            .unwrap_or_else(|| if score >= 0.95 { "exact_name" } else { "fuzzy_name" }.into()),
+                        previous_status: "was_clean".into(),
+                        // Matches are only flagged for compliance review; this
+                        // job does not freeze accounts or file STRs itself.
+                        action_taken: "flagged".into(),
+                        found_at: Utc::now(),
+                        reviewed: false,
+                        reviewed_by: None,
+                    };
+                    if let Ok(mut matches) = state.matches.write() {
+                        matches.push(m);
+                    }
+                }
+            }
+            Err(e) => {
+                screening_errors += 1;
+                tracing::error!(
+                    job_id = %job_id,
+                    customer_id = %customer.id,
+                    error = %e,
+                    "Customer screening failed"
+                );
+            }
+        }
+
+        let screened = (idx + 1) as u64;
         if let Ok(mut jobs) = state.jobs.write() {
             if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
                 job.screened = screened;
-                job.matches_found = matches;
-                job.progress_percent = (i as f64) * 10.0;
+                job.matches_found = matches_found;
+                job.critical_matches = critical_count;
+                job.progress_percent = (screened as f64 / total as f64) * 100.0;
             }
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
-    // Generate synthetic matches for demonstration
-    let sample_matches = vec![
-        ("CUST-001", "John Adebayo", "OFAC_SDN", "John A. Adebayo", 0.95, MatchSeverity::Critical),
-        ("CUST-042", "Ibrahim Musa", "UN_CONSOLIDATED", "Ibrahim Moussa", 0.82, MatchSeverity::High),
-    ];
-
-    let mut critical_count = 0u64;
-    for (cid, cname, list, entity, score, severity) in &sample_matches {
-        if matches!(severity, MatchSeverity::Critical) {
-            critical_count += 1;
-        }
-        let m = SanctionsMatch {
-            id: Uuid::new_v4().to_string(),
-            batch_job_id: job_id.clone(),
-            customer_id: cid.to_string(),
-            customer_name: cname.to_string(),
-            customer_bvn: None,
-            matched_list: list.to_string(),
-            matched_entity: entity.to_string(),
-            similarity_score: *score,
-            severity: severity.clone(),
-            match_type: if *score >= 0.95 { "exact_name" } else { "fuzzy_name" }.into(),
-            previous_status: "was_clean".into(),
-            action_taken: if *score >= 0.95 { "frozen" } else { "flagged" }.into(),
-            found_at: Utc::now(),
-            reviewed: false,
-            reviewed_by: None,
-        };
-        if let Ok(mut matches) = state.matches.write() {
-            matches.push(m);
-        }
+    if screening_errors == total {
+        fail_job(
+            &state,
+            &job_id,
+            format!("all {total} customer screenings failed against the sanctions engine"),
+        );
+        return;
     }
 
-    // Mark job complete
+    // Mark job complete with the real counts
     if let Ok(mut jobs) = state.jobs.write() {
         if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
             job.status = BatchStatus::Completed;
             job.screened = total;
-            job.matches_found = sample_matches.len() as u64;
+            job.matches_found = matches_found;
             job.critical_matches = critical_count;
             job.progress_percent = 100.0;
             job.completed_at = Some(Utc::now());
             job.duration_seconds = Some((Utc::now() - job.started_at).num_seconds() as u64);
+            if screening_errors > 0 {
+                job.error = Some(format!(
+                    "{screening_errors} of {total} customer screenings failed; results are partial"
+                ));
+            }
         }
     }
 
     tracing::info!(
         job_id = %job_id,
         total = total,
-        matches = sample_matches.len(),
+        matches = matches_found,
+        screening_errors = screening_errors,
         "Batch re-screening completed"
     );
 }
@@ -385,6 +590,7 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         "total_matches": match_count,
         "integrations": {
             "sanctions_engine": state.config.sanctions_engine_url,
+            "customer_service": state.config.customer_service_url,
             "kafka": state.config.kafka_brokers,
             "temporal": state.config.temporal_url,
             "goaml": state.config.goaml_url,

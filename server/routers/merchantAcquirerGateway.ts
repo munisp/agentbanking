@@ -305,13 +305,9 @@ export const merchantAcquirerGatewayRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishmerchantAcquirerGatewayMiddleware(
-        "onboardMerchant",
-        `${Date.now()}`,
-        { action: "onboardMerchant" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "merchantAcquirerGateway.onboardMerchant is not available in this deployment",
+      });
     }),
 });

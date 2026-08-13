@@ -324,9 +324,14 @@ function detectCardType(cardNumber) {
  * @returns {Promise<Object>} Card data
  */
 export async function readCard(mode = CardReadingMode.NFC, timeout = 60) {
-  // If in simulation mode (Expo Go), use simulated reading
-  if (!NextGoCardReader || isSimulationMode) {
-    return simulateCardRead(mode, timeout);
+  // Simulated test cards are only ever used in development (Expo Go / __DEV__).
+  // In production builds without the reader hardware, fail loudly instead of
+  // returning fabricated card data on a live payment path.
+  if (!NextGoCardReader) {
+    if (isSimulationMode) {
+      return simulateCardRead(mode, timeout);
+    }
+    throw new Error("Card reader hardware is not available on this device.");
   }
 
   return new Promise((resolve, reject) => {

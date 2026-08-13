@@ -12,6 +12,16 @@ class ShieldApiClient {
   private _logger = logger;
 
   constructor() {
+    // TLS certificate verification is ON by default. It may ONLY be disabled
+    // via the explicit opt-in env var SHIELD_API_INSECURE_TLS=true (e.g. for a
+    // local dev stub with a self-signed cert). Never enable this in production:
+    // disabling verification exposes identity-verification traffic to MITM.
+    const insecureTls = readEnv("SHIELD_API_INSECURE_TLS") === "true";
+    if (insecureTls) {
+      this._logger.warn(
+        "WARNING: SHIELD_API_INSECURE_TLS=true — TLS certificate verification is DISABLED for the Shield identity client. Do not use in production."
+      );
+    }
     this._axiosInstance = axios.create({
       baseURL: this._baseUrl,
       headers: {
@@ -19,7 +29,7 @@ class ShieldApiClient {
         "x-api-key": this._apiKey,
       },
       httpsAgent: new https.Agent({
-        rejectUnauthorized: false,
+        rejectUnauthorized: !insecureTls,
       }),
     });
   }

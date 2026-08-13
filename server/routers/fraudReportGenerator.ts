@@ -256,6 +256,8 @@ export const fraudReportGeneratorRouter = router({
 
       return results;
     }),
+  // Previously returned a fabricated reportId + status "generating" without
+  // generating any report.
   generateReport: protectedProcedure
     .input(
       z.object({
@@ -264,95 +266,41 @@ export const fraudReportGeneratorRouter = router({
         type: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      await writeAuditLog({
-        agentId:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.id ?? 0)
-            : 0,
-
-        agentCode:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.agentCode ?? "system")
-            : "system",
-
-        action: "MUTATION",
-
-        resource: "fraudReportGenerator",
-
-        resourceId:
-          typeof input === "object" && input !== null && "id" in input
-            ? String((input as any).id)
-            : "new",
-
-        status: "success",
-
-        metadata: { input: typeof input === "object" ? input : {} },
-      });
-
-      // Middleware fan-out (fail-open)
-
-      await publishfraudReportGeneratorMiddleware(
-        "generateReport",
-        `${Date.now()}`,
-        { action: "generateReport" }
-      ).catch(() => {});
-
-      return {
-        reportId: `report-${Date.now()}`,
-        status: "generating" as const,
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report generation is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
+
+  // Previously returned status "completed" with an empty data payload for
+  // any reportId.
   getReport: protectedProcedure
     .input(z.object({ reportId: z.string().min(1).max(255) }))
-    .query(async ({ input }) => {
-      return {
-        id: input.reportId,
-        status: "completed" as const,
-        data: {},
-        generatedAt: new Date().toISOString(),
-      };
+    .query(async () => {
+      throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report retrieval is not wired to a real backend in this router; refusing to return a canned response.",
+    });
     }),
+
+  // Previously returned a canned empty report list.
   listReports: protectedProcedure.query(async () => {
-    return {
-      reports: [] as Array<{
-        id: string;
-        name: string;
-        status: string;
-        createdAt: string;
-      }>,
-      total: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud report listing is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
+
+  // Previously returned hard-coded zero stats regardless of fraudAlerts data.
   quickStats: protectedProcedure.query(async () => {
-    return {
-      totalCases: 0,
-      openCases: 0,
-      resolvedToday: 0,
-      avgResolutionTimeHours: 0,
-      totalLossPrevented: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Fraud case statistics is not wired to a real backend in this router; refusing to return a canned response.",
+    });
   }),
 });

@@ -1,6 +1,13 @@
+import { NonRetriableApplicationError } from "../middlewares/error";
+import { isKycSimulationMode } from "../utils/kycSimulationMode";
+
 /**
- * Verify document authenticity and extract data
- * This would integrate with OCR service
+ * Verify document authenticity and extract data.
+ *
+ * FAIL CLOSED: no OCR/document-verification provider is configured in this
+ * service. Unless KYC simulation mode is explicitly enabled (non-production
+ * only), this activity throws a non-retryable error instead of returning
+ * fabricated extraction data, so documents can never be auto-approved.
  */
 export async function verifyDocument(args: {
   frontImage: string;
@@ -19,19 +26,23 @@ export async function verifyDocument(args: {
   };
   confidence: number;
 }> {
+  if (!isKycSimulationMode()) {
+    throw new NonRetriableApplicationError(
+      "Document verification unavailable: no OCR/document-verification provider is configured for this environment.",
+    );
+  }
+
   try {
     // TODO: Integrate with OCR service to extract text from documents
     // TODO: Validate document authenticity (security features, etc.)
     // TODO: Check if document is expired
 
-    // For now, return mock verification
-    // In production, this should call the OCR service and validate the document
-    console.log("Document verification requested for:", args.documentType, args.country);
+    // Simulation-mode response only (KYC_SIMULATION_MODE=true, non-production).
+    console.log("[SIMULATION] Document verification requested for:", args.documentType, args.country);
 
     return {
       isValid: true,
       extractedData: {
-        // This should be extracted from the document images using OCR
         firstName: "John",
         lastName: "Doe",
         dateOfBirth: "1990-01-01",

@@ -389,6 +389,9 @@ export const agentDeviceFingerprintRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentDeviceFingerprint.verifyDevice is not available in this deployment",
+      });
     }),
 });

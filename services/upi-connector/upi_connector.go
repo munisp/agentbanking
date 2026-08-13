@@ -1,27 +1,32 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// --- Configuration ---
-// In a real application, these would be loaded from a secure config service
-const (
-	NPCI_API_BASE_URL = "https://api.npci.org/upi/v1" // This is a placeholder URL
-	PSP_MERCHANT_ID   = "YOUR_MERCHANT_ID"
-	PSP_API_KEY       = "YOUR_API_KEY"
-	PSP_API_SECRET    = "YOUR_API_SECRET"
+// --- Configuration (loaded from environment) ---
+var (
+	npciBaseURL    = os.Getenv("NPCI_API_BASE_URL")
+	pspMerchantID  = os.Getenv("PSP_MERCHANT_ID")
+	pspAPIKey      = os.Getenv("PSP_API_KEY")
+	pspAPISecret   = os.Getenv("PSP_API_SECRET")
+	simulationMode = os.Getenv("UPI_SIMULATION_MODE") == "true"
+	environment    = os.Getenv("ENVIRONMENT")
 )
+
+// npciConfigured reports whether a real NPCI switch integration is configured.
+func npciConfigured() bool {
+	return npciBaseURL != "" && pspMerchantID != "" && pspAPIKey != "" && pspAPISecret != ""
+}
 
 // --- Data Structures ---
 
@@ -45,10 +50,10 @@ type StatusRequest struct {
 }
 
 type StatusResponse struct {
-	Status        string `json:"status"`
-	TransactionID string `json:"transactionId"`
+	Status        string  `json:"status"`
+	TransactionID string  `json:"transactionId"`
 	Amount        float64 `json:"amount"`
-	Timestamp     string `json:"timestamp"`
+	Timestamp     string  `json:"timestamp"`
 }
 
 // --- UPI Service Logic ---
@@ -56,8 +61,16 @@ type StatusResponse struct {
 // generateSignature creates a signature for the request body as required by NPCI
 func generateSignature(requestBody []byte, timestamp string) string {
 	payload := fmt.Sprintf("%s|%s", string(requestBody), timestamp)
-	hash := sha256.Sum256([]byte(payload + PSP_API_SECRET))
+	hash := sha256.Sum256([]byte(payload + pspAPISecret))
 	return hex.EncodeToString(hash[:])
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ERROR", "message": message}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
 }
 
 // handlePaymentRequest processes an incoming payment request
@@ -76,27 +89,41 @@ func handlePaymentRequest(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received payment request: %+v", req)
 
-	// --- Mock NPCI Interaction ---
-	// In a real implementation, this section would make a signed HTTP request to the NPCI API.
-	// We are mocking the response for this demonstration.
-	npciTransID := uuid.New().String()
-	log.Printf("Simulating NPCI transaction with ID: %s", npciTransID)
+	if simulationMode {
+		// Simulated NPCI interaction — only reachable when UPI_SIMULATION_MODE=true
+		// and ENVIRONMENT != production (enforced in main).
+		npciTransID := uuid.New().String()
+		log.Printf("WARNING: simulating NPCI transaction with ID: %s (UPI_SIMULATION_MODE)", npciTransID)
 
-	time.Sleep(2 * time.Second) // Simulate network latency
+		time.Sleep(2 * time.Second) // Simulate network latency
 
-	// --- Send Response ---
-	resp := PaymentResponse{
-		Status:        "SUCCESS",
-		TransactionID: req.TransactionID,
-		NPCITransID:   npciTransID,
-		Message:       "Payment processed successfully",
+		resp := PaymentResponse{
+			Status:        "SIMULATED_SUCCESS",
+			TransactionID: req.TransactionID,
+			NPCITransID:   npciTransID,
+			Message:       "SIMULATED payment response (UPI_SIMULATION_MODE) — not a real NPCI authorization",
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("Error encoding payment response: %v", err)
+		}
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("Error encoding payment response: %v", err)
+	if !npciConfigured() {
+		log.Printf("Refusing payment %s: NPCI switch not configured", req.TransactionID)
+		writeJSONError(w, http.StatusServiceUnavailable,
+			"NPCI switch is not configured (set NPCI_API_BASE_URL, PSP_MERCHANT_ID, PSP_API_KEY, PSP_API_SECRET); refusing to fabricate a payment response")
+		return
 	}
+
+	// A certified NPCI/PSP switch integration is required to submit real payments.
+	// Fail loud rather than fabricate a transaction id or success status.
+	log.Printf("Refusing payment %s: real NPCI submission not implemented", req.TransactionID)
+	writeJSONError(w, http.StatusNotImplemented,
+		"NPCI payment submission is not implemented for the configured switch; refusing to fabricate a transaction id")
 }
 
 // handleStatusRequest processes a request to check the status of a transaction
@@ -115,25 +142,36 @@ func handleStatusRequest(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received status request for transaction: %s", req.OriginalTransactionID)
 
-	// --- Mock NPCI Status Check ---
-	// Again, this would be a real API call in a production system.
-	log.Printf("Simulating NPCI status check for transaction: %s", req.OriginalTransactionID)
+	if simulationMode {
+		log.Printf("WARNING: simulating NPCI status check for transaction: %s (UPI_SIMULATION_MODE)", req.OriginalTransactionID)
 
-	time.Sleep(1 * time.Second)
+		time.Sleep(1 * time.Second)
 
-	// --- Send Response ---
-	resp := StatusResponse{
-		Status:        "SUCCESS",
-		TransactionID: req.OriginalTransactionID,
-		Amount:        150.75, // Mocked amount
-		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		resp := StatusResponse{
+			Status:        "SIMULATED_SUCCESS",
+			TransactionID: req.OriginalTransactionID,
+			Amount:        150.75, // Simulated amount (UPI_SIMULATION_MODE)
+			Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("Error encoding status response: %v", err)
+		}
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("Error encoding status response: %v", err)
+	if !npciConfigured() {
+		log.Printf("Refusing status check %s: NPCI switch not configured", req.OriginalTransactionID)
+		writeJSONError(w, http.StatusServiceUnavailable,
+			"NPCI switch is not configured; refusing to fabricate a transaction status")
+		return
 	}
+
+	log.Printf("Refusing status check %s: real NPCI status query not implemented", req.OriginalTransactionID)
+	writeJSONError(w, http.StatusNotImplemented,
+		"NPCI status query is not implemented for the configured switch; refusing to fabricate a transaction status")
 }
 
 // healthCheck provides a simple health check endpoint
@@ -148,7 +186,15 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 func main() {
 	log.Println("--- Starting UPI Connector Service ---")
 
-	// In a real system, you would use a more robust router like Gorilla Mux or Chi
+	if simulationMode && environment == "production" {
+		log.Fatal("UPI_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production")
+	}
+	if simulationMode {
+		log.Println("WARNING: running with SIMULATED NPCI responses (non-production only)")
+	} else if !npciConfigured() {
+		log.Println("WARNING: NPCI switch not configured; /upi/payment and /upi/status will return 503")
+	}
+
 	http.HandleFunc("/upi/payment", handlePaymentRequest)
 	http.HandleFunc("/upi/status", handleStatusRequest)
 	http.HandleFunc("/health", healthCheck)
@@ -156,12 +202,7 @@ func main() {
 	port := ":5005"
 	log.Printf("Server listening on port %s", port)
 
-	// Example of how to call the service:
-	// curl -X POST -H "Content-Type: application/json" -d '{"transactionId": "TXN12345", "payeeVpa": "merchant@psp", "payerVpa": "customer@psp", "amount": 150.75, "transactionNote": "Test payment"}' http://localhost:5005/upi/payment
-	// curl -X POST -H "Content-Type: application/json" -d '{"originalTransactionId": "TXN12345"}' http://localhost:5005/upi/status
-
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
-

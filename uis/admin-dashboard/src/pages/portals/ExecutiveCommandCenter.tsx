@@ -33,35 +33,6 @@ interface Alert {
   time: string;
 }
 
-const MOCK_KPI: KPI = {
-  totalAgents: 12480, agentsMoM: 8.4, transactionVolume: 4820000000,
-  volumeVsYesterday: 12.3, revenueMTD: 94500000, revenueVsLastMonth: 5.7, activeCustomers: 389200,
-};
-
-const MOCK_WEEKLY: WeeklyData[] = [
-  { day: "Mon", revenue: 12400000, transactions: 42000 },
-  { day: "Tue", revenue: 15800000, transactions: 55000 },
-  { day: "Wed", revenue: 13200000, transactions: 47000 },
-  { day: "Thu", revenue: 17500000, transactions: 61000 },
-  { day: "Fri", revenue: 21000000, transactions: 73000 },
-  { day: "Sat", revenue: 18900000, transactions: 65000 },
-  { day: "Sun", revenue: 11200000, transactions: 38000 },
-];
-
-const MOCK_STATES: StateVolume[] = [
-  { state: "Lagos", volume: 1820000000 },
-  { state: "Abuja", volume: 940000000 },
-  { state: "Kano", volume: 620000000 },
-  { state: "Rivers", volume: 480000000 },
-  { state: "Ogun", volume: 310000000 },
-];
-
-const MOCK_ALERTS: Alert[] = [
-  { id: "a1", severity: "critical", message: "Settlement batch #SB-0912 failed — ₦38M unprocessed", time: "14 mins ago" },
-  { id: "a2", severity: "high", message: "NIBSS gateway latency >4s for 22 minutes", time: "1 hr ago" },
-  { id: "a3", severity: "medium", message: "Agent float pool below 15% threshold in Kano zone", time: "2 hrs ago" },
-];
-
 const SEV: Record<string, string> = {
   critical: "bg-red-100 text-red-700", high: "bg-amber-100 text-amber-700", medium: "bg-yellow-50 text-yellow-700",
 };
@@ -69,41 +40,46 @@ const SEV: Record<string, string> = {
 const fmt = (n: number) => n >= 1e9 ? `₦${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `₦${(n / 1e6).toFixed(1)}M` : n.toLocaleString();
 
 const ExecutiveCommandCenter: React.FC = () => {
-  const [kpi, setKpi] = useState<KPI>(MOCK_KPI);
+  const [kpi, setKpi] = useState<KPI | null>(null);
   const [weekly, setWeekly] = useState<WeeklyData[]>([]);
   const [states, setStates] = useState<StateVolume[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/portals/api/v1/executive/summary`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setKpi(d.kpi ?? MOCK_KPI);
-        setWeekly(d.weekly ?? MOCK_WEEKLY);
-        setStates(d.states ?? MOCK_STATES);
-        setAlerts(d.alerts ?? MOCK_ALERTS);
-      } else {
-        setWeekly(MOCK_WEEKLY); setStates(MOCK_STATES); setAlerts(MOCK_ALERTS);
-      }
-    } catch {
-      setWeekly(MOCK_WEEKLY); setStates(MOCK_STATES); setAlerts(MOCK_ALERTS);
-    } finally { setLoading(false); }
+        setKpi(d.kpi ?? null);
+        setWeekly(d.weekly ?? []);
+        setStates(d.states ?? []);
+        setAlerts(d.alerts ?? []);
+      } else { setError("Failed to load executive summary."); }
+    } catch { setError("Failed to load executive summary."); } finally { setLoading(false); }
   };
 
   const kpiCards = [
-    { label: "Total Agents", value: kpi.totalAgents.toLocaleString(), delta: `+${kpi.agentsMoM}% MoM`, icon: Users, color: "text-indigo-600" },
-    { label: "Transaction Volume (Today)", value: fmt(kpi.transactionVolume), delta: `+${kpi.volumeVsYesterday}% vs yesterday`, icon: Activity, color: "text-emerald-600" },
-    { label: "Revenue MTD", value: fmt(kpi.revenueMTD), delta: `+${kpi.revenueVsLastMonth}% vs last month`, icon: DollarSign, color: "text-blue-600" },
-    { label: "Active Customers", value: kpi.activeCustomers.toLocaleString(), delta: "Registered & transacting", icon: TrendingUp, color: "text-purple-600" },
+    { label: "Total Agents", value: kpi ? kpi.totalAgents.toLocaleString() : "—", delta: kpi ? `+${kpi.agentsMoM}% MoM` : "No data", icon: Users, color: "text-indigo-600" },
+    { label: "Transaction Volume (Today)", value: kpi ? fmt(kpi.transactionVolume) : "—", delta: kpi ? `+${kpi.volumeVsYesterday}% vs yesterday` : "No data", icon: Activity, color: "text-emerald-600" },
+    { label: "Revenue MTD", value: kpi ? fmt(kpi.revenueMTD) : "—", delta: kpi ? `+${kpi.revenueVsLastMonth}% vs last month` : "No data", icon: DollarSign, color: "text-blue-600" },
+    { label: "Active Customers", value: kpi ? kpi.activeCustomers.toLocaleString() : "—", delta: kpi ? "Registered & transacting" : "No data", icon: TrendingUp, color: "text-purple-600" },
   ];
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchAll()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Executive Command Center</h1>

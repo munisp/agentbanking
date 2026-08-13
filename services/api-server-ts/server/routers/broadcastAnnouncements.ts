@@ -364,7 +364,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.create is not available in this deployment",
+      });
     }),
 
   delete: protectedProcedure
@@ -372,7 +375,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.delete is not available in this deployment",
+      });
     }),
 
   stats: protectedProcedure.query(async () => {
@@ -384,7 +390,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.togglePin is not available in this deployment",
+      });
     }),
   dismiss: protectedProcedure
     .input(z.object({ id: z.string() }))

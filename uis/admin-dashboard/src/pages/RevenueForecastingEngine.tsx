@@ -9,29 +9,6 @@ interface ForecastPoint { month: string; actual: number | null; forecast: number
 interface SegmentForecast { segment: string; current: number; projected: number; growth: number; }
 interface Scenario { name: string; revenue: number; description: string; color: string; }
 
-const MOCK_FORECAST: ForecastPoint[] = [
-  { month: "Nov 25", actual: 18_400_000, forecast: 18_200_000 },
-  { month: "Dec 25", actual: 21_200_000, forecast: 21_500_000 },
-  { month: "Jan 26", actual: 19_800_000, forecast: 20_100_000 },
-  { month: "Feb 26", actual: 22_100_000, forecast: 21_800_000 },
-  { month: "Mar 26", actual: 23_400_000, forecast: 23_000_000 },
-  { month: "Apr 26", actual: 24_100_000, forecast: 24_500_000 },
-  { month: "May 26", actual: 16_200_000, forecast: 26_000_000 },
-  { month: "Jun 26", actual: null, forecast: 27_400_000 },
-  { month: "Jul 26", actual: null, forecast: 29_100_000 },
-  { month: "Aug 26", actual: null, forecast: 30_800_000 },
-  { month: "Sep 26", actual: null, forecast: 32_500_000 },
-  { month: "Oct 26", actual: null, forecast: 34_200_000 },
-];
-
-const MOCK_SEGMENTS: SegmentForecast[] = [
-  { segment: "Cash-In Fees", current: 8_200_000, projected: 9_100_000, growth: 11 },
-  { segment: "Cash-Out Fees", current: 6_800_000, projected: 7_400_000, growth: 9 },
-  { segment: "Bill Payment Commission", current: 3_100_000, projected: 3_800_000, growth: 22 },
-  { segment: "Remittance Fees", current: 2_400_000, projected: 3_200_000, growth: 33 },
-  { segment: "Float Interest", current: 1_900_000, projected: 2_100_000, growth: 11 },
-];
-
 const SCENARIOS: Scenario[] = [
   { name: "Pessimistic", revenue: 24_800_000, description: "10% agent churn, flat transaction growth", color: "text-red-600 bg-red-50 border-red-200" },
   { name: "Base", revenue: 27_400_000, description: "Steady 12% MoM growth, current agent base", color: "text-blue-600 bg-blue-50 border-blue-200" },
@@ -39,14 +16,16 @@ const SCENARIOS: Scenario[] = [
 ];
 
 const RevenueForecastingEngine: React.FC = () => {
-  const [forecast, setForecast] = useState<ForecastPoint[]>(MOCK_FORECAST);
-  const [segments, setSegments] = useState<SegmentForecast[]>(MOCK_SEGMENTS);
+  const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+  const [segments, setSegments] = useState<SegmentForecast[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchForecast(); }, []);
 
   const fetchForecast = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(
         `${CORE_URL}/api/analytics/revenue-forecast?entity_id=global&metric=revenue`,
@@ -54,12 +33,9 @@ const RevenueForecastingEngine: React.FC = () => {
       );
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setForecast(data.forecast || MOCK_FORECAST);
-      setSegments(data.segments || MOCK_SEGMENTS);
-    } catch {
-      setForecast(MOCK_FORECAST);
-      setSegments(MOCK_SEGMENTS);
-    } finally {
+      setForecast(Array.isArray(data.forecast) ? data.forecast : []);
+      setSegments(Array.isArray(data.segments) ? data.segments : []);
+    } catch { setError("Failed to load revenue forecast."); } finally {
       setLoading(false);
     }
   };
@@ -67,12 +43,18 @@ const RevenueForecastingEngine: React.FC = () => {
   const currentMonth = forecast.find((f) => f.actual && f.month.startsWith("May"))?.actual || 0;
   const projectedMonthEnd = forecast.find((f) => f.month.startsWith("May"))?.forecast || 0;
   const ytd = forecast.filter((f) => f.actual).reduce((a, f) => a + (f.actual || 0), 0);
-  const accuracy = 97.2;
 
   const fmt = (n: number) => `₦${(n / 1_000_000).toFixed(1)}M`;
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchForecast()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Revenue Forecasting Engine</h1>
@@ -88,7 +70,7 @@ const RevenueForecastingEngine: React.FC = () => {
           { label: "Current Month Revenue", value: fmt(currentMonth), icon: TrendingUp, color: "text-blue-600" },
           { label: "Projected Month-End", value: fmt(projectedMonthEnd), icon: Target, color: "text-green-600" },
           { label: "YTD Revenue", value: fmt(ytd), icon: BarChart3, color: "text-purple-600" },
-          { label: "Forecast Accuracy", value: `${accuracy}%`, icon: TrendingUp, color: "text-amber-600" },
+          { label: "Forecast Accuracy", value: "—", icon: TrendingUp, color: "text-amber-600" },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-6 flex items-center gap-4">
             <div className="p-3 bg-gray-50 rounded-lg"><Icon size={20} className={color} /></div>

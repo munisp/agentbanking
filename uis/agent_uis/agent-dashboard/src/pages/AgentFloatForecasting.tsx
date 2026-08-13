@@ -28,7 +28,6 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Clock,
-  TrendingUp,
   Wallet,
   Banknote,
   Building2,
@@ -47,96 +46,7 @@ type AgentForecast = {
   lastReplenished?: string;
 };
 
-const MOCK_AGENTS: AgentForecast[] = [
-  {
-    id: "AGT-001",
-    name: "Adebayo Ogundimu",
-    currentFloat: 450000,
-    predictedNeed: 820000,
-    shortfall: 370000,
-    risk: "high",
-    location: "Lagos - Ikeja",
-    avgDailyVolume: 780000,
-    lastReplenished: "2 days ago",
-  },
-  {
-    id: "AGT-002",
-    name: "Chioma Eze",
-    currentFloat: 280000,
-    predictedNeed: 650000,
-    shortfall: 370000,
-    risk: "critical",
-    location: "Abuja - Wuse",
-    avgDailyVolume: 620000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-003",
-    name: "Ibrahim Musa",
-    currentFloat: 1200000,
-    predictedNeed: 900000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kano - Nassarawa",
-    avgDailyVolume: 850000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-004",
-    name: "Fatima Bello",
-    currentFloat: 520000,
-    predictedNeed: 750000,
-    shortfall: 230000,
-    risk: "medium",
-    location: "Port Harcourt",
-    avgDailyVolume: 710000,
-    lastReplenished: "4 days ago",
-  },
-  {
-    id: "AGT-005",
-    name: "Emeka Nwosu",
-    currentFloat: 180000,
-    predictedNeed: 600000,
-    shortfall: 420000,
-    risk: "critical",
-    location: "Enugu - New Haven",
-    avgDailyVolume: 580000,
-    lastReplenished: "5 days ago",
-  },
-  {
-    id: "AGT-006",
-    name: "Aisha Yusuf",
-    currentFloat: 890000,
-    predictedNeed: 700000,
-    shortfall: 0,
-    risk: "low",
-    location: "Kaduna - Barnawa",
-    avgDailyVolume: 660000,
-    lastReplenished: "1 day ago",
-  },
-  {
-    id: "AGT-007",
-    name: "Oluwaseun Adeyemi",
-    currentFloat: 340000,
-    predictedNeed: 580000,
-    shortfall: 240000,
-    risk: "high",
-    location: "Ibadan - Bodija",
-    avgDailyVolume: 540000,
-    lastReplenished: "3 days ago",
-  },
-  {
-    id: "AGT-008",
-    name: "Grace Okafor",
-    currentFloat: 670000,
-    predictedNeed: 620000,
-    shortfall: 0,
-    risk: "low",
-    location: "Benin City",
-    avgDailyVolume: 600000,
-    lastReplenished: "2 days ago",
-  },
-];
+
 
 export default function AgentFloatForecasting() {
   const [selectedPeriod, setSelectedPeriod] = useState("7d");
@@ -189,13 +99,26 @@ export default function AgentFloatForecasting() {
 
   const handleConfirmReplenish = () => {
     if (!selectedAgent) return;
-    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount: 50000 });
+    const amount = Number(replenishAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid replenishment amount.");
+      return;
+    }
+    // User-confirmed amount from the dialog form — never a hardcoded value.
+    triggerReplenishment.mutate({ agentId: selectedAgent.id, amount });
   };
 
-  const agents = forecast.data?.forecasts ?? MOCK_AGENTS;
+  // Render only real backend forecasts — never fabricated agent float data.
+  const agents = (forecast.data?.forecasts as any[]) ?? [];
 
   return (
     <DashboardLayout>
+      {forecast.isError && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm flex items-center justify-between">
+          <span>Could not load float forecasts from the server.</span>
+          <button onClick={() => forecast.refetch()} className="underline">Retry</button>
+        </div>
+      )}
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -228,11 +151,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ₦{(stats.data?.totalFloat ?? 2450000000).toLocaleString()}
+                {stats.data?.totalFloat != null
+                  ? `₦${stats.data.totalFloat.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-green-500 flex items-center gap-1">
-                <TrendingUp className="h-3 w-3" />
-                +12.3% from last week
+              <p className="text-xs text-muted-foreground">
+                {stats.data ? "Current reported pool" : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -244,10 +168,12 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-500">
-                {stats.data?.stockoutRisk ?? 47}
+                {stats.data?.stockoutRisk ?? "—"}
               </div>
               <p className="text-xs text-muted-foreground">
-                of {stats.data?.agentsMonitored ?? 1250} active agents
+                {stats.data?.agentsMonitored != null
+                  ? `of ${stats.data.agentsMonitored} active agents`
+                  : "No data available"}
               </p>
             </CardContent>
           </Card>
@@ -259,9 +185,13 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-500">
-                ₦{(stats.data?.predictedDemand7d ?? 85000000).toLocaleString()}
+                {stats.data?.predictedDemand7d != null
+                  ? `₦${stats.data.predictedDemand7d.toLocaleString()}`
+                  : "—"}
               </div>
-              <p className="text-xs text-muted-foreground">Across 23 agents</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.data ? "Across monitored agents" : "No data available"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -272,7 +202,7 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                {stats.data?.avgAccuracy ?? 94.7}%
+                {stats.data?.avgAccuracy != null ? `${stats.data.avgAccuracy}%` : "—"}
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
             </CardContent>
@@ -284,18 +214,14 @@ export default function AgentFloatForecasting() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Agent Float Forecasts</CardTitle>
+              {/* Bulk replenish disabled: the backend exposes no endpoint that
+                  computes per-agent amounts, and a hardcoded amount would be
+                  fabricated. Replenish agents individually instead. */}
               <Button
-                onClick={() =>
-                  triggerReplenishment.mutate({
-                    agentId: "all-below-threshold",
-                    amount: 50000,
-                  })
-                }
-                disabled={triggerReplenishment.isPending}
+                disabled
+                title="Bulk auto-replenish is unavailable — replenish agents individually with a confirmed amount."
               >
-                {triggerReplenishment.isPending
-                  ? "Processing..."
-                  : "Auto-Replenish All"}
+                Auto-Replenish All
               </Button>
             </div>
           </CardHeader>

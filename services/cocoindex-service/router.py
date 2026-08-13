@@ -1,41 +1,34 @@
 """
 Router for cocoindex-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/cocoindex-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/cocoindex-service", tags=["cocoindex-service"])
 
+_UNAVAILABLE = (
+    "cocoindex-service endpoints are not served by this gateway router. "
+    "Use the standalone cocoindex-service service."
+)
+
+
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "cocoindex-service", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/snippets")
-async def add_snippet(snippet: CodeSnippet):
-    return {"status": "ok"}
 
-@router.post("/search")
-async def search_snippets(query: SearchQuery):
-    return {"status": "ok"}
-
-@router.get("/stats")
-async def get_stats():
-    return {"status": "ok"}
-
-@router.post("/analyze")
-async def analyze_code(code: str, language: str):
-    return {"status": "ok"}
-
-@router.get("/snippets/{snippet_id}")
-async def get_snippet(snippet_id: str):
-    return {"status": "ok"}
-
-@router.delete("/snippets/{snippet_id}")
-async def delete_snippet(snippet_id: str):
-    return {"status": "ok"}
-
-@router.post("/index/rebuild")
-async def rebuild_index(background_tasks: BackgroundTasks):
-    return {"status": "ok"}
-
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

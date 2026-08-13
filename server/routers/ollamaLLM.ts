@@ -428,22 +428,9 @@ export const ollamaLLMRouter = router({
   classifyTransactionMutation: protectedProcedure
     .input(z.object({}))
     .mutation(async () => {
-      try {
-        // Middleware fan-out (fail-open)
-        await publishollamaLLMMiddleware(
-          "classifyTransactionMutation",
-          `${Date.now()}`,
-          { action: "classifyTransactionMutation" }
-        ).catch(() => {});
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ollamaLLM.classifyTransactionMutation is not available in this deployment",
+      });
     }),
 });

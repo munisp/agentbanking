@@ -17,14 +17,6 @@ interface TicketItem {
   comments: { author: string; text: string; time: string }[];
 }
 
-const MOCK_TICKETS: TicketItem[] = [
-  { id: "TKT-001", title: "USSD transactions failing for MTN subscribers", requester: "Tunde Adebisi", priority: "Critical", category: "Technical", status: "Open", created: "2026-05-01", slaDeadline: "2026-05-02", assignee: "DevOps Team", comments: [{ author: "Tunde Adebisi", text: "Multiple agent complaints since 8am.", time: "08:15" }] },
-  { id: "TKT-002", title: "Commission payout discrepancy for April", requester: "Amaka Okonkwo", priority: "High", category: "Billing", status: "In Progress", created: "2026-04-30", slaDeadline: "2026-05-03", assignee: "Finance Team", comments: [{ author: "Finance Team", text: "Investigating ledger entries.", time: "14:00" }] },
-  { id: "TKT-003", title: "New agent KYC training materials needed", requester: "Seun Lawson", priority: "Medium", category: "Training", status: "Open", created: "2026-04-29", slaDeadline: "2026-05-06", assignee: "Training Team", comments: [] },
-  { id: "TKT-004", title: "AML flag on agent TXN-992 incorrect", requester: "Bayo Adeyemi", priority: "High", category: "Compliance", status: "Escalated", created: "2026-04-28", slaDeadline: "2026-04-30", assignee: "Compliance Team", comments: [{ author: "Compliance Team", text: "Escalated to CBN liaison for review.", time: "09:30" }] },
-  { id: "TKT-005", title: "POS terminal sync issue", requester: "Ngozi Eze", priority: "Low", category: "Technical", status: "Resolved", created: "2026-04-25", slaDeadline: "2026-04-28", assignee: "Support Team", comments: [{ author: "Support Team", text: "Resolved after firmware update.", time: "16:45" }] },
-];
-
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-100 text-red-700",
   High: "bg-orange-100 text-orange-700",
@@ -39,6 +31,7 @@ const HelpDesk: React.FC = () => {
   const [tickets, setTickets] = useState<TicketItem[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("Open");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [drawerTicket, setDrawerTicket] = useState<TicketItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", requester: "", priority: "Medium", category: "Technical" });
@@ -48,11 +41,12 @@ const HelpDesk: React.FC = () => {
 
   const fetchTickets = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/support/api/v1/helpdesk/tickets`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setTickets(Array.isArray(d.tickets) ? d.tickets : MOCK_TICKETS); }
-      else { setTickets(MOCK_TICKETS); }
-    } catch { setTickets(MOCK_TICKETS); }
+      if (res.ok) { const d = await res.json(); setTickets(Array.isArray(d.tickets) ? d.tickets : []); }
+      else { setError("Failed to load helpdesk tickets."); }
+    } catch { setError("Failed to load helpdesk tickets."); }
     finally { setLoading(false); }
   };
 
@@ -88,6 +82,13 @@ const HelpDesk: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchTickets()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

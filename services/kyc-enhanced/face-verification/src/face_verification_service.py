@@ -8,21 +8,34 @@ Features:
 - Multi-provider support (AWS Rekognition, Azure Face API, Face++)
 - Anti-spoofing detection
 - Quality checks (lighting, blur, occlusion)
+
+FAIL CLOSED: every provider client in this module calls the real upstream
+API (AWS Rekognition via boto3, Azure Face API via HTTPS). When the required
+credentials/SDK are not configured, the client raises
+VerificationProviderUnavailableError instead of returning fabricated
+"production" responses. Liveness checks have no server-side provider
+integrated yet and therefore always fail loud rather than returning a
+canned is_live=True verdict.
 """
 
 import asyncio
 import logging
-import base64
-import hashlib
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from enum import Enum
 from dataclasses import dataclass
 import aiohttp
-import json
 from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
+
+
+class VerificationProviderUnavailableError(RuntimeError):
+    """Raised when no real face/liveness verification provider is configured.
+
+    This error must never be swallowed and converted into a passing result;
+    callers must treat it as verification-unavailable (e.g. manual review).
+    """
 
 
 class FaceVerificationProvider(Enum):
@@ -88,13 +101,30 @@ class FaceMatchResult:
 
 
 class AWSRekognitionClient:
-    """AWS Rekognition face verification client"""
+    """AWS Rekognition face verification client (real boto3 calls).
+
+    Raises VerificationProviderUnavailableError when boto3 or credentials
+    are not configured; never returns fabricated comparison results.
+    """
     
     def __init__(self, region: str, access_key: str, secret_key: str) -> None:
+        if not access_key or not secret_key:
+            raise VerificationProviderUnavailableError(
+                "AWS Rekognition credentials are not configured; face verification is unavailable."
+            )
+        try:
+            import boto3
+        except ImportError as exc:
+            raise VerificationProviderUnavailableError(
+                "boto3 is required for AWS Rekognition face verification but is not installed."
+            ) from exc
         self.region = region
-        self.access_key = access_key
-        self.secret_key = secret_key
-        self.endpoint = f"https://rekognition.{region}.amazonaws.com"
+        self._client = boto3.client(
+            "rekognition",
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
     
     async def compare_faces(
         self,
@@ -113,280 +143,157 @@ class AWSRekognitionClient:
         Returns:
             Comparison result with similarity score
         """
-        # In production, this would use boto3
-        # For now, simulating AWS Rekognition response
-        
         logger.info("Comparing faces with AWS Rekognition")
         
-        # Simulate API call
-        await asyncio.sleep(0.5)
-        
-        # Production response from upstream API
-        return {
-            "FaceMatches": [{
-                "Similarity": 95.5,
-                "Face": {
-                    "Confidence": 99.9,
-                    "BoundingBox": {
-                        "Width": 0.4,
-                        "Height": 0.6,
-                        "Left": 0.3,
-                        "Top": 0.2
-                    },
-                    "Quality": {
-                        "Brightness": 75.0,
-                        "Sharpness": 85.0
-                    },
-                    "Pose": {
-                        "Pitch": 5.0,
-                        "Yaw": -3.0,
-                        "Roll": 2.0
-                    }
-                }
-            }],
-            "SourceImageFace": {
-                "Confidence": 99.8,
-                "BoundingBox": {
-                    "Width": 0.45,
-                    "Height": 0.65,
-                    "Left": 0.25,
-                    "Top": 0.15
-                }
-            }
-        }
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(
+                None,
+                lambda: self._client.compare_faces(
+                    SourceImage={"Bytes": source_image},
+                    TargetImage={"Bytes": target_image},
+                    SimilarityThreshold=similarity_threshold,
+                ),
+            )
+        except Exception as exc:
+            raise VerificationProviderUnavailableError(
+                f"AWS Rekognition CompareFaces failed: {exc}"
+            ) from exc
     
     async def detect_faces(self, image: bytes) -> Dict[str, Any]:
         """Detect faces and extract quality metrics"""
         logger.info("Detecting faces with AWS Rekognition")
         
-        await asyncio.sleep(0.3)
-        
-        return {
-            "FaceDetails": [{
-                "Confidence": 99.9,
-                "Quality": {
-                    "Brightness": 75.0,
-                    "Sharpness": 85.0
-                },
-                "Pose": {
-                    "Pitch": 5.0,
-                    "Yaw": -3.0,
-                    "Roll": 2.0
-                },
-                "BoundingBox": {
-                    "Width": 0.4,
-                    "Height": 0.6,
-                    "Left": 0.3,
-                    "Top": 0.2
-                }
-            }]
-        }
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(
+                None,
+                lambda: self._client.detect_faces(
+                    Image={"Bytes": image},
+                    Attributes=["ALL"],
+                ),
+            )
+        except Exception as exc:
+            raise VerificationProviderUnavailableError(
+                f"AWS Rekognition DetectFaces failed: {exc}"
+            ) from exc
 
 
 class AzureFaceAPIClient:
-    """Azure Face API client"""
+    """Azure Face API client (real HTTPS calls).
+
+    Raises VerificationProviderUnavailableError when the endpoint or
+    subscription key is not configured, or when the upstream call fails.
+    """
     
     def __init__(self, endpoint: str, subscription_key: str) -> None:
-        self.endpoint = endpoint
+        if not endpoint or not subscription_key:
+            raise VerificationProviderUnavailableError(
+                "Azure Face API endpoint/subscription key are not configured; face verification is unavailable."
+            )
+        self.endpoint = endpoint.rstrip("/")
         self.subscription_key = subscription_key
+    
+    async def _post(self, path: str, params: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        url = f"{self.endpoint}{path}"
+        headers = {
+            "Ocp-Apim-Subscription-Key": self.subscription_key,
+            "Content-Type": "application/json",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, params=params, json=payload) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise VerificationProviderUnavailableError(
+                        f"Azure Face API call to {path} failed with status {resp.status}: {body[:200]}"
+                    )
+                return await resp.json()
+    
+    async def detect(self, image_url: str) -> str:
+        """Detect a face and return its faceId."""
+        result = await self._post(
+            "/face/v1.0/detect",
+            params={"returnFaceId": "true"},
+            payload={"url": image_url},
+        )
+        if not result:
+            raise VerificationProviderUnavailableError(
+                "Azure Face API detected no face in the provided image."
+            )
+        return result[0]["faceId"]
     
     async def verify_faces(
         self,
         face_id_1: str,
         face_id_2: str
     ) -> Dict[str, Any]:
-        """Verify if two faces belong to same person"""
+        """Verify if two faces belong to same person (real API call)."""
         logger.info("Verifying faces with Azure Face API")
-        
-        await asyncio.sleep(0.5)
-        
-        return {
-            "isIdentical": True,
-            "confidence": 0.95
-        }
+        return await self._post(
+            "/face/v1.0/verify",
+            payload={"faceId1": face_id_1, "faceId2": face_id_2},
+        )
     
     async def detect_with_liveness(
         self,
         image: bytes,
         return_face_attributes: bool = True
     ) -> Dict[str, Any]:
-        """Detect face with liveness check"""
-        logger.info("Detecting face with liveness (Azure)")
+        """Liveness detection is not available through this integration.
         
-        await asyncio.sleep(0.6)
-        
-        return {
-            "faceId": "abc123",
-            "faceAttributes": {
-                "blur": {
-                    "blurLevel": "low",
-                    "value": 0.1
-                },
-                "exposure": {
-                    "exposureLevel": "goodExposure",
-                    "value": 0.7
-                },
-                "occlusion": {
-                    "foreheadOccluded": False,
-                    "eyeOccluded": False,
-                    "mouthOccluded": False
-                },
-                "headPose": {
-                    "pitch": 5.0,
-                    "yaw": -3.0,
-                    "roll": 2.0
-                }
-            },
-            "livenessScore": 0.98
-        }
+        Fail loud rather than returning a fabricated liveness score.
+        """
+        raise VerificationProviderUnavailableError(
+            "Azure liveness detection is not integrated; refusing to return a fabricated liveness verdict."
+        )
 
 
 class LivenessDetector:
-    """Liveness detection to prevent spoofing attacks"""
+    """Liveness detection to prevent spoofing attacks.
+    
+    FAIL CLOSED: no server-side liveness provider is integrated. Every check
+    raises VerificationProviderUnavailableError instead of returning a
+    fabricated is_live=True verdict.
+    """
     
     def __init__(self) -> None:
         self.min_confidence = 0.90
+    
+    def _unavailable(self, check: str) -> VerificationProviderUnavailableError:
+        return VerificationProviderUnavailableError(
+            f"Liveness check '{check}' is unavailable: no server-side liveness "
+            "detection provider is configured. Route to manual review instead."
+        )
     
     async def check_blink_detection(
         self,
         video_frames: List[bytes]
     ) -> LivenessResult:
-        """
-        Detect eye blinks in video frames
-        
-        Args:
-            video_frames: List of video frame images
-            
-        Returns:
-            Liveness result
-        """
-        logger.info(f"Checking blink detection across {len(video_frames)} frames")
-        
-        # Simulate blink detection
-        await asyncio.sleep(1.0)
-        
-        # In production, this would use computer vision to detect eye closure
-        blink_detected = True
-        blink_count = 2
-        confidence = 0.95
-        
-        return LivenessResult(
-            is_live=blink_detected,
-            confidence=confidence,
-            check_type=LivenessCheckType.BLINK_DETECTION,
-            details={
-                "blink_count": blink_count,
-                "frames_analyzed": len(video_frames),
-                "blink_timestamps": [0.5, 1.2]
-            },
-            timestamp=datetime.utcnow().isoformat()
-        )
+        """Detect eye blinks in video frames"""
+        raise self._unavailable(LivenessCheckType.BLINK_DETECTION.value)
     
     async def check_head_movement(
         self,
         video_frames: List[bytes]
     ) -> LivenessResult:
-        """
-        Detect head movement (left/right, up/down)
-        
-        Args:
-            video_frames: List of video frame images
-            
-        Returns:
-            Liveness result
-        """
-        logger.info(f"Checking head movement across {len(video_frames)} frames")
-        
-        await asyncio.sleep(1.0)
-        
-        # In production, this would track head pose across frames
-        movement_detected = True
-        yaw_range = 25.0  # degrees
-        pitch_range = 15.0  # degrees
-        confidence = 0.93
-        
-        return LivenessResult(
-            is_live=movement_detected,
-            confidence=confidence,
-            check_type=LivenessCheckType.HEAD_MOVEMENT,
-            details={
-                "yaw_range": yaw_range,
-                "pitch_range": pitch_range,
-                "frames_analyzed": len(video_frames),
-                "movement_pattern": "left-right-center"
-            },
-            timestamp=datetime.utcnow().isoformat()
-        )
+        """Detect head movement (left/right, up/down)"""
+        raise self._unavailable(LivenessCheckType.HEAD_MOVEMENT.value)
     
     async def check_smile_detection(
         self,
         neutral_image: bytes,
         smiling_image: bytes
     ) -> LivenessResult:
-        """
-        Detect smile (challenge-response)
-        
-        Args:
-            neutral_image: Image with neutral expression
-            smiling_image: Image with smile
-            
-        Returns:
-            Liveness result
-        """
-        logger.info("Checking smile detection")
-        
-        await asyncio.sleep(0.8)
-        
-        # In production, this would detect facial expressions
-        smile_detected = True
-        smile_confidence = 0.92
-        
-        return LivenessResult(
-            is_live=smile_detected,
-            confidence=smile_confidence,
-            check_type=LivenessCheckType.SMILE_DETECTION,
-            details={
-                "neutral_expression_confidence": 0.95,
-                "smile_expression_confidence": 0.92,
-                "expression_change_detected": True
-            },
-            timestamp=datetime.utcnow().isoformat()
-        )
+        """Detect smile (challenge-response)"""
+        raise self._unavailable(LivenessCheckType.SMILE_DETECTION.value)
     
     async def check_challenge_response(
         self,
         challenge: str,
         response_image: bytes
     ) -> LivenessResult:
-        """
-        Random challenge-response liveness check
-        
-        Args:
-            challenge: Challenge instruction (e.g., "turn left", "blink twice")
-            response_image: Image/video of user responding
-            
-        Returns:
-            Liveness result
-        """
-        logger.info(f"Checking challenge-response: {challenge}")
-        
-        await asyncio.sleep(1.0)
-        
-        # In production, this would verify user followed instructions
-        challenge_passed = True
-        confidence = 0.94
-        
-        return LivenessResult(
-            is_live=challenge_passed,
-            confidence=confidence,
-            check_type=LivenessCheckType.CHALLENGE_RESPONSE,
-            details={
-                "challenge": challenge,
-                "response_detected": True,
-                "response_accuracy": 0.94
-            },
-            timestamp=datetime.utcnow().isoformat()
-        )
+        """Random challenge-response liveness check"""
+        raise self._unavailable(LivenessCheckType.CHALLENGE_RESPONSE.value)
 
 
 class FaceVerificationService:
@@ -398,6 +305,9 @@ class FaceVerificationService:
     - Liveness detection
     - Quality checks
     - Anti-spoofing
+    
+    FAIL CLOSED: if the configured provider's credentials are missing, every
+    verification entry point raises VerificationProviderUnavailableError.
     """
     
     def __init__(
@@ -408,8 +318,10 @@ class FaceVerificationService:
     ) -> None:
         self.provider = provider
         self.liveness_detector = LivenessDetector()
+        self.aws_client: Optional[AWSRekognitionClient] = None
+        self.azure_client: Optional[AzureFaceAPIClient] = None
         
-        # Initialize provider clients
+        # Initialize provider clients only when real credentials are supplied.
         if provider == FaceVerificationProvider.AWS_REKOGNITION and aws_config:
             self.aws_client = AWSRekognitionClient(
                 region=aws_config.get("region", "us-east-1"),
@@ -422,6 +334,13 @@ class FaceVerificationService:
                 endpoint=azure_config.get("endpoint", ""),
                 subscription_key=azure_config.get("subscription_key", "")
             )
+    
+    def _require_aws_client(self) -> AWSRekognitionClient:
+        if not self.aws_client:
+            raise VerificationProviderUnavailableError(
+                "AWS Rekognition client is not configured; face verification is unavailable."
+            )
+        return self.aws_client
     
     async def verify_face_match(
         self,
@@ -441,6 +360,14 @@ class FaceVerificationService:
             Face match result
         """
         logger.info(f"Verifying face match using {self.provider.value}")
+        
+        if self.provider != FaceVerificationProvider.AWS_REKOGNITION:
+            raise VerificationProviderUnavailableError(
+                f"Provider {self.provider.value} is not configured for byte-image comparison; "
+                "face verification is unavailable."
+            )
+        
+        aws_client = self._require_aws_client()
         
         # Step 1: Check image quality
         selfie_quality = await self._check_image_quality(selfie_image)
@@ -469,26 +396,25 @@ class FaceVerificationService:
             )
         
         # Step 2: Compare faces
-        if self.provider == FaceVerificationProvider.AWS_REKOGNITION:
-            result = await self.aws_client.compare_faces(
-                selfie_image,
-                id_photo_image,
-                similarity_threshold
-            )
+        result = await aws_client.compare_faces(
+            selfie_image,
+            id_photo_image,
+            similarity_threshold
+        )
+        
+        if result.get("FaceMatches"):
+            match = result["FaceMatches"][0]
+            similarity = match["Similarity"]
+            confidence = match["Face"]["Confidence"] / 100.0
             
-            if result.get("FaceMatches"):
-                match = result["FaceMatches"][0]
-                similarity = match["Similarity"]
-                confidence = match["Face"]["Confidence"] / 100.0
-                
-                return FaceMatchResult(
-                    is_match=similarity >= similarity_threshold,
-                    similarity_score=similarity,
-                    confidence=confidence,
-                    selfie_quality=selfie_quality,
-                    id_photo_quality=id_quality,
-                    provider=self.provider
-                )
+            return FaceMatchResult(
+                is_match=similarity >= similarity_threshold,
+                similarity_score=similarity,
+                confidence=confidence,
+                selfie_quality=selfie_quality,
+                id_photo_quality=id_quality,
+                provider=self.provider
+            )
         
         # No match found
         return FaceMatchResult(
@@ -506,14 +432,10 @@ class FaceVerificationService:
         **kwargs
     ) -> LivenessResult:
         """
-        Perform liveness detection
+        Perform liveness detection.
         
-        Args:
-            check_type: Type of liveness check
-            **kwargs: Check-specific parameters
-            
-        Returns:
-            Liveness result
+        FAIL CLOSED: raises VerificationProviderUnavailableError because no
+        server-side liveness provider is integrated.
         """
         logger.info(f"Performing liveness check: {check_type.value}")
         
@@ -559,10 +481,15 @@ class FaceVerificationService:
             
         Returns:
             Complete verification result
+            
+        Raises:
+            VerificationProviderUnavailableError: when no real provider is
+                configured. Callers must treat this as verification
+                unavailable (e.g. manual review), never as a pass.
         """
         logger.info("Starting comprehensive face verification")
         
-        # Step 1: Face matching
+        # Step 1: Face matching (raises when provider unavailable)
         face_match = await self.verify_face_match(
             selfie_image,
             id_photo_image,
@@ -581,7 +508,9 @@ class FaceVerificationService:
                 "liveness": None
             }
         
-        # Step 2: Liveness detection (blink + head movement)
+        # Step 2: Liveness detection (blink + head movement).
+        # Raises VerificationProviderUnavailableError when no liveness
+        # provider is configured - verification can never pass without it.
         liveness_blink = await self.perform_liveness_check(
             LivenessCheckType.BLINK_DETECTION,
             video_frames=liveness_video_frames
@@ -654,10 +583,15 @@ class FaceVerificationService:
         }
     
     async def _check_image_quality(self, image: bytes) -> FaceQualityMetrics:
-        """Check image quality metrics"""
+        """Check image quality metrics using the configured provider.
+        
+        Raises VerificationProviderUnavailableError when no provider client
+        is configured; never returns fabricated "acceptable" metrics.
+        """
         
         if self.provider == FaceVerificationProvider.AWS_REKOGNITION:
-            result = await self.aws_client.detect_faces(image)
+            aws_client = self._require_aws_client()
+            result = await aws_client.detect_faces(image)
             
             if result.get("FaceDetails"):
                 face = result["FaceDetails"][0]
@@ -678,23 +612,23 @@ class FaceVerificationService:
                     pose_yaw=pose.get("Yaw", 0.0),
                     pose_roll=pose.get("Roll", 0.0)
                 )
+            
+            raise VerificationProviderUnavailableError(
+                "No face detected in image by AWS Rekognition."
+            )
         
-        # Default quality metrics
-        return FaceQualityMetrics(
-            brightness=75.0,
-            sharpness=80.0,
-            face_size=400,
-            face_confidence=0.95,
-            occlusion_score=0.1,
-            pose_pitch=0.0,
-            pose_yaw=0.0,
-            pose_roll=0.0
+        raise VerificationProviderUnavailableError(
+            f"Image quality check is unavailable for provider {self.provider.value}."
         )
 
 
 # Example usage
 async def example_usage() -> None:
-    """Example usage of face verification service"""
+    """Example usage of face verification service.
+    
+    Requires real AWS Rekognition credentials; raises
+    VerificationProviderUnavailableError otherwise (fail closed).
+    """
     
     # Initialize service
     service = FaceVerificationService(
@@ -711,22 +645,25 @@ async def example_usage() -> None:
     id_photo_image = b"id_photo_bytes"
     video_frames = [b"frame1", b"frame2", b"frame3"]
     
-    # Perform comprehensive verification
-    result = await service.comprehensive_verification(
-        selfie_image=selfie_image,
-        id_photo_image=id_photo_image,
-        liveness_video_frames=video_frames,
-        similarity_threshold=90.0
-    )
+    try:
+        # Perform comprehensive verification
+        result = await service.comprehensive_verification(
+            selfie_image=selfie_image,
+            id_photo_image=id_photo_image,
+            liveness_video_frames=video_frames,
+            similarity_threshold=90.0
+        )
+    except VerificationProviderUnavailableError as exc:
+        print(f"Face verification unavailable (fail closed): {exc}")
+        return
     
     if result["verified"]:
-        print("✅ Face verification passed!")
+        print("Face verification passed!")
         print(f"Similarity: {result['face_match']['similarity_score']:.1f}%")
         print(f"Confidence: {result['overall_confidence']:.2f}")
     else:
-        print(f"❌ Face verification failed: {result['reason']}")
+        print(f"Face verification failed: {result['reason']}")
 
 
 if __name__ == "__main__":
     asyncio.run(example_usage())
-

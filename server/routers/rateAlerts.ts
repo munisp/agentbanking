@@ -325,12 +325,10 @@ export const rateAlertsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("delete", `${Date.now()}`, {
-        action: "delete",
-      }).catch(() => {});
-
-      return { success: true, deletedId: input.id };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rateAlerts.delete is not available in this deployment",
+      });
     }),
 
   getCheckerStatus: protectedProcedure.query(async () => {
@@ -372,12 +370,10 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("rearm", `${Date.now()}`, {
-        action: "rearm",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rateAlerts.rearm is not available in this deployment",
+      });
     }),
 
   runCheck: protectedProcedure
@@ -385,12 +381,10 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("runCheck", `${Date.now()}`, {
-        action: "runCheck",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rateAlerts.runCheck is not available in this deployment",
+      });
     }),
 
   toggle: protectedProcedure
@@ -398,12 +392,10 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishrateAlertsMiddleware("toggle", `${Date.now()}`, {
-        action: "toggle",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rateAlerts.toggle is not available in this deployment",
+      });
     }),
   // Rate alert subscriptions with threshold logic
   subscribe: protectedProcedure

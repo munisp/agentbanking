@@ -408,6 +408,9 @@ export const disputesRouter = router({
   addMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return { success: true, id: input?.id ?? null };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "disputes.addMessage is not available in this deployment",
+      });
     }),
 });

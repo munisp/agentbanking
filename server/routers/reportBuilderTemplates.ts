@@ -172,7 +172,7 @@ export const reportBuilderTemplatesRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'rpt_builder_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'rpt_builder_%'}`)
       .limit(100);
     return {
       totalTemplates: rows.length,
@@ -197,7 +197,7 @@ export const reportBuilderTemplatesRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'rpt_builder_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'rpt_builder_%'}`)
           .limit(input?.limit ?? 20);
         let templates = rows.map(r => ({
           id: r.key.replace("rpt_builder_", ""),
@@ -353,36 +353,14 @@ export const reportBuilderTemplatesRouter = router({
         filters: z.record(z.string(), z.string()).optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const reportId = "RPT-" + crypto.randomUUID().toUpperCase();
-        await db.insert(auditLog).values({
-          action: "report_generated",
-          resource: "report_builder",
-          resourceId: reportId,
-          status: "success",
-          metadata: {
-            templateId: input.templateId,
-            dateRange: input.dateRange,
-          },
-        });
-        // Middleware fan-out (fail-open)
-        await publishreportBuilderTemplatesMiddleware(
-          "generateReport",
-          `${Date.now()}`,
-          { action: "generateReport" }
-        ).catch(() => {});
-
-        return { success: true, reportId, status: "generating" };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      // FAIL LOUD: previously inserted a "report_generated" audit row with
+      // status success and returned status "generating" without generating
+      // any report.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Report generation is not wired to a real backend in this router; refusing to return a canned response.",
+      });
     }),
 });

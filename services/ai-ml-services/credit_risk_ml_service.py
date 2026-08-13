@@ -1,20 +1,27 @@
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
-from shared.middleware import apply_middleware, ErrorResponse
-from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
 """
-Credit Risk ML Service with GNN
-Machine Learning + Graph Neural Network for credit risk assessment
+Credit Risk ML Service
+Serves credit-risk scores from a versioned, trained model artifact.
+
 Port: 8029
+
+Scoring doctrine:
+  - Scores are ONLY produced by a trained model artifact loaded from
+    CREDIT_RISK_MODEL_PATH (joblib/pickle; dict artifact with keys
+    {"model", "version", ...} or a bare estimator implementing predict_proba).
+  - If no artifact is configured or it fails to load, /api/credit-risk/score
+    answers HTTP 503 — no fabricated scores, no hardcoded formulas passed off
+    as an ML ensemble.
+  - The legacy hand-weighted heuristic is reachable ONLY when
+    CREDIT_RISK_ML_SIMULATION_MODE=true AND the environment is non-production;
+    enabling simulation in production hard-fails at startup.
+  - Network risk is a deterministic graph-propagation heuristic computed from
+    real guarantor/credit-history rows (not a GNN); DB failures fail loud (502).
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
-apply_middleware(app)
-setup_logging("credit-risk-ml-service")
-app.include_router(metrics_router)
-
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -25,7 +32,15 @@ import json
 import pickle
 
 import os
+
 app = FastAPI(title="Credit Risk ML Service", version="1.0.0")
+
+from shared.middleware import apply_middleware, ErrorResponse
+from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
+
+apply_middleware(app)
+setup_logging("credit-risk-ml-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,9 +53,74 @@ app.add_middleware(
 db_pool = None
 redis_client = None
 
-# ML models (will be loaded/trained)
+# ---------------------------------------------------------------------------
+# Model artifact loading (required for scoring)
+# ---------------------------------------------------------------------------
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
+IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
+SIMULATION_MODE = os.getenv("CREDIT_RISK_ML_SIMULATION_MODE", "").lower() == "true"
+
+if SIMULATION_MODE and IS_PRODUCTION:
+    raise RuntimeError(
+        "CREDIT_RISK_ML_SIMULATION_MODE=true is forbidden in production: "
+        "simulated credit scoring must never serve live traffic."
+    )
+
+MODEL_PATH = os.getenv("CREDIT_RISK_MODEL_PATH", "")
+MODEL_VERSION = "none"
 credit_model = None
-gnn_model = None
+_model_load_error: Optional[str] = None
+
+# Canonical feature order expected by the trained artifact.
+FEATURE_NAMES = [
+    "requested_amount",
+    "business_revenue",
+    "years_in_business",
+    "existing_loans",
+    "monthly_transactions",
+    "avg_transaction_value",
+    "payment_history_score",
+    "kyb_verification_score",
+    "guarantor_count",
+    "collateral_value",
+]
+
+
+def _load_model_artifact():
+    """Load the trained credit-risk model artifact. Returns (model, version)."""
+    global _model_load_error
+    if not MODEL_PATH:
+        _model_load_error = "CREDIT_RISK_MODEL_PATH is not configured"
+        return None, "none"
+    try:
+        try:
+            import joblib  # type: ignore
+            artifact = joblib.load(MODEL_PATH)
+        except ImportError:
+            with open(MODEL_PATH, "rb") as fh:
+                artifact = pickle.load(fh)
+        if isinstance(artifact, dict):
+            model = artifact.get("model")
+            version = str(artifact.get("version", "unknown"))
+        else:
+            model = artifact
+            version = "unknown"
+        if model is None or not hasattr(model, "predict_proba"):
+            _model_load_error = (
+                "model artifact does not provide predict_proba; a calibrated "
+                "probability estimator is required for credit scoring"
+            )
+            return None, "none"
+        return model, version
+    except Exception as exc:  # fail loud at request time, not silently
+        _model_load_error = f"failed to load model artifact: {exc}"
+        return None, "none"
+
+
+def _model_available() -> bool:
+    return credit_model is not None
+
 
 # ==================== MODELS ====================
 
@@ -66,31 +146,76 @@ class CreditScoreResponse(BaseModel):
     default_probability: float
     approved_limit: float
     interest_rate: float
-    confidence: float
+    confidence: Optional[float] = None
     factors: Dict[str, float]
     network_risk: Optional[float] = None
+    model_version: str = "none"
+    scoring_method: str = "model"
 
 class NetworkAnalysisRequest(BaseModel):
     agent_id: str
     depth: int = 2  # How many hops to analyze
 
-# ==================== ML FUNCTIONS ====================
+# ==================== SCORING ====================
 
-def calculate_credit_score_ml(features: Dict[str, float]) -> Dict[str, Any]:
+def _feature_vector(features: Dict[str, float]) -> List[float]:
+    return [float(features[name]) for name in FEATURE_NAMES]
+
+
+def _policy_for_score(credit_score: int) -> Dict[str, float]:
+    """Deterministic pricing/limit policy given a model-derived score."""
+    if credit_score >= 750:
+        return {"risk_category": "Excellent", "approval_rate": 1.0, "interest_rate": 8.5}
+    if credit_score >= 650:
+        return {"risk_category": "Good", "approval_rate": 0.8, "interest_rate": 12.0}
+    if credit_score >= 550:
+        return {"risk_category": "Fair", "approval_rate": 0.6, "interest_rate": 15.5}
+    return {"risk_category": "Poor", "approval_rate": 0.4, "interest_rate": 20.0}
+
+
+def score_with_model(features: Dict[str, float]) -> Dict[str, Any]:
+    """Score using the loaded trained artifact. Never called without a model."""
+    vector = np.array([_feature_vector(features)])
+    proba = credit_model.predict_proba(vector)[0]
+    classes = list(getattr(credit_model, "classes_", [0, 1]))
+    # Positive/default class: prefer an explicit 'default'/1 class label.
+    if 1 in classes:
+        default_idx = classes.index(1)
+    elif "default" in classes:
+        default_idx = classes.index("default")
+    else:
+        default_idx = len(classes) - 1
+    default_prob = float(proba[default_idx])
+    confidence = float(max(proba))
+
+    # Map probability of default onto the 300-850 score band.
+    credit_score = int(round(850 - default_prob * 550))
+    policy = _policy_for_score(credit_score)
+
+    return {
+        "credit_score": credit_score,
+        "risk_category": policy["risk_category"],
+        "default_probability": round(default_prob, 4),
+        "approved_limit": round(features["requested_amount"] * policy["approval_rate"], 2),
+        "interest_rate": policy["interest_rate"],
+        "confidence": round(confidence, 4),
+        "factors": {},
+        "scoring_method": "model",
+        "model_version": MODEL_VERSION,
+    }
+
+
+def score_with_simulation(features: Dict[str, float]) -> Dict[str, Any]:
     """
-    Machine Learning-based credit scoring
-    Uses ensemble of XGBoost + LightGBM + Neural Network
+    Legacy hand-weighted heuristic. SIMULATION ONLY — reachable exclusively
+    with CREDIT_RISK_ML_SIMULATION_MODE=true in a non-production environment.
     """
-    
-    # Feature engineering
     debt_to_revenue = features['existing_loans'] / max(features['business_revenue'], 1)
-    revenue_to_loan = features['business_revenue'] / max(features['requested_amount'], 1)
     transaction_consistency = features['monthly_transactions'] * features['avg_transaction_value']
-    
-    # Normalized features (0-1 scale)
+
     norm_features = {
-        'revenue_score': min(features['business_revenue'] / 50_000_000, 1.0),  # Cap at 50M
-        'years_score': min(features['years_in_business'] / 20, 1.0),  # Cap at 20 years
+        'revenue_score': min(features['business_revenue'] / 50_000_000, 1.0),
+        'years_score': min(features['years_in_business'] / 20, 1.0),
         'debt_ratio_score': max(1.0 - debt_to_revenue, 0),
         'payment_history': features['payment_history_score'] / 100,
         'kyb_score': features['kyb_verification_score'] / 100,
@@ -98,157 +223,92 @@ def calculate_credit_score_ml(features: Dict[str, float]) -> Dict[str, Any]:
         'collateral_score': min(features['collateral_value'] / features['requested_amount'], 1.0) if features['requested_amount'] > 0 else 0,
         'guarantor_score': min(features['guarantor_count'] / 3, 1.0),
     }
-    
-    # Weighted scoring (ML-inspired weights)
+
     weights = {
-        'revenue_score': 0.20,
-        'years_score': 0.10,
-        'debt_ratio_score': 0.15,
-        'payment_history': 0.25,
-        'kyb_score': 0.10,
-        'transaction_score': 0.10,
-        'collateral_score': 0.05,
-        'guarantor_score': 0.05,
+        'revenue_score': 0.20, 'years_score': 0.10, 'debt_ratio_score': 0.15,
+        'payment_history': 0.25, 'kyb_score': 0.10, 'transaction_score': 0.10,
+        'collateral_score': 0.05, 'guarantor_score': 0.05,
     }
-    
-    # Calculate weighted score
-    base_score = sum(norm_features[k] * weights[k] for k in weights.keys())
-    
-    # Convert to credit score range (300-850)
+    base_score = sum(norm_features[k] * weights[k] for k in weights)
     credit_score = int(300 + (base_score * 550))
-    
-    # Calculate default probability using logistic function
-    # P(default) = 1 / (1 + e^(k * (score - threshold)))
-    threshold = 650
-    k = 0.01
-    default_prob = 1 / (1 + np.exp(k * (credit_score - threshold)))
-    
-    # Risk category
-    if credit_score >= 750:
-        risk_category = "Excellent"
-        approval_rate = 1.0
-        interest_rate = 8.5
-    elif credit_score >= 650:
-        risk_category = "Good"
-        approval_rate = 0.8
-        interest_rate = 12.0
-    elif credit_score >= 550:
-        risk_category = "Fair"
-        approval_rate = 0.6
-        interest_rate = 15.5
-    else:
-        risk_category = "Poor"
-        approval_rate = 0.4
-        interest_rate = 20.0
-    
-    approved_limit = features['requested_amount'] * approval_rate
-    
-    # Confidence score (based on data completeness and consistency)
-    confidence = (
-        0.3 * (1.0 if features['payment_history_score'] > 0 else 0.5) +
-        0.3 * (1.0 if features['kyb_verification_score'] > 80 else 0.7) +
-        0.2 * (1.0 if features['years_in_business'] >= 2 else 0.6) +
-        0.2 * (1.0 if features['monthly_transactions'] > 10 else 0.7)
-    )
-    
+    default_prob = 1 / (1 + np.exp(0.01 * (credit_score - 650)))
+    policy = _policy_for_score(credit_score)
+
     return {
         'credit_score': credit_score,
-        'risk_category': risk_category,
-        'default_probability': round(default_prob, 4),
-        'approved_limit': round(approved_limit, 2),
-        'interest_rate': interest_rate,
-        'confidence': round(confidence, 2),
-        'factors': {
-            'revenue': round(norm_features['revenue_score'] * 100, 1),
-            'years': round(norm_features['years_score'] * 100, 1),
-            'debt_ratio': round(norm_features['debt_ratio_score'] * 100, 1),
-            'payment_history': round(norm_features['payment_history'], 1),
-            'kyb': round(norm_features['kyb_score'] * 100, 1),
-            'transactions': round(norm_features['transaction_score'] * 100, 1),
-            'collateral': round(norm_features['collateral_score'] * 100, 1),
-            'guarantors': round(norm_features['guarantor_score'] * 100, 1),
-        }
+        'risk_category': policy["risk_category"],
+        'default_probability': round(float(default_prob), 4),
+        'approved_limit': round(features['requested_amount'] * policy["approval_rate"], 2),
+        'interest_rate': policy["interest_rate"],
+        'confidence': None,  # heuristic simulation has no calibrated confidence
+        'factors': {k: round(v * 100, 1) for k, v in norm_features.items()},
+        'scoring_method': 'heuristic_simulation',
+        'model_version': 'simulation',
     }
 
-async def analyze_network_risk_gnn(agent_id: str, depth: int = 2) -> float:
+
+async def analyze_network_risk(agent_id: str, depth: int = 2) -> float:
     """
-    Graph Neural Network analysis for network-based credit risk
-    Analyzes agent's network (guarantors, business partners, transaction patterns)
+    Deterministic graph-propagation heuristic over the agent's real guarantor
+    network (agent_guarantors + agent_credit_history tables). Risk decays 50%
+    per hop. This is NOT a neural network; no weights are learned.
+    DB errors propagate — callers fail loud instead of silently scoring 0 risk.
     """
-    
-    try:
-        async with db_pool.acquire() as conn:
-            # Get agent's network (guarantors, partners)
-            network = await conn.fetch("""
-                WITH RECURSIVE agent_network AS (
-                    SELECT agent_id, guarantor_id, 1 as depth
-                    FROM agent_guarantors
-                    WHERE agent_id = $1
-                    
-                    UNION ALL
-                    
-                    SELECT ag.agent_id, ag.guarantor_id, an.depth + 1
-                    FROM agent_guarantors ag
-                    JOIN agent_network an ON ag.agent_id = an.guarantor_id
-                    WHERE an.depth < $2
-                )
-                SELECT DISTINCT agent_id, guarantor_id, depth
-                FROM agent_network
-            """, agent_id, depth)
-            
-            if not network:
-                return 0.0  # No network risk if isolated
-            
-            # Get credit scores of network members
-            network_ids = list(set([r['agent_id'] for r in network] + [r['guarantor_id'] for r in network]))
-            
-            network_scores = await conn.fetch("""
-                SELECT agent_id, credit_score, default_count
-                FROM agent_credit_history
-                WHERE agent_id = ANY($1)
-            """, network_ids)
-            
-            if not network_scores:
-                return 0.0
-            
-            # Calculate network risk using GNN-inspired aggregation
-            # Risk propagates through network with decay
-            total_risk = 0.0
-            decay_factor = 0.5  # Risk decays by 50% per hop
-            
-            for member in network_scores:
-                # Find depth of this member
-                member_depth = 1
-                for edge in network:
-                    if edge['guarantor_id'] == member['agent_id']:
-                        member_depth = edge['depth']
-                        break
-                
-                # Calculate member risk
-                member_score = member['credit_score'] if member['credit_score'] else 600
-                member_defaults = member['default_count'] if member['default_count'] else 0
-                
-                member_risk = (1 - (member_score - 300) / 550) + (member_defaults * 0.1)
-                
-                # Apply decay based on depth
-                propagated_risk = member_risk * (decay_factor ** member_depth)
-                total_risk += propagated_risk
-            
-            # Normalize network risk (0-1 scale)
-            network_risk = min(total_risk / len(network_scores), 1.0)
-            
-            return round(network_risk, 4)
-    
-    except Exception as e:
-        print(f"GNN analysis error: {e}")
-        return 0.0
+    async with db_pool.acquire() as conn:
+        network = await conn.fetch("""
+            WITH RECURSIVE agent_network AS (
+                SELECT agent_id, guarantor_id, 1 as depth
+                FROM agent_guarantors
+                WHERE agent_id = $1
+
+                UNION ALL
+
+                SELECT ag.agent_id, ag.guarantor_id, an.depth + 1
+                FROM agent_guarantors ag
+                JOIN agent_network an ON ag.agent_id = an.guarantor_id
+                WHERE an.depth < $2
+            )
+            SELECT DISTINCT agent_id, guarantor_id, depth
+            FROM agent_network
+        """, agent_id, depth)
+
+        if not network:
+            return 0.0  # genuinely isolated agent — no network risk
+
+        network_ids = list(set([r['agent_id'] for r in network] + [r['guarantor_id'] for r in network]))
+
+        network_scores = await conn.fetch("""
+            SELECT agent_id, credit_score, default_count
+            FROM agent_credit_history
+            WHERE agent_id = ANY($1)
+        """, network_ids)
+
+        if not network_scores:
+            return 0.0
+
+        total_risk = 0.0
+        decay_factor = 0.5
+
+        for member in network_scores:
+            member_depth = 1
+            for edge in network:
+                if edge['guarantor_id'] == member['agent_id']:
+                    member_depth = edge['depth']
+                    break
+
+            member_score = member['credit_score'] if member['credit_score'] else 600
+            member_defaults = member['default_count'] if member['default_count'] else 0
+            member_risk = (1 - (member_score - 300) / 550) + (member_defaults * 0.1)
+            total_risk += member_risk * (decay_factor ** member_depth)
+
+        return round(min(total_risk / len(network_scores), 1.0), 4)
 
 # ==================== DATABASE INITIALIZATION ====================
 
 async def init_db():
     """Initialize database tables"""
     global db_pool, redis_client
-    
+
     try:
         db_pool = await asyncpg.create_pool(
             host=os.getenv('DB_HOST', 'localhost'),
@@ -259,11 +319,10 @@ async def init_db():
             min_size=10,
             max_size=20
         )
-        
+
         redis_client = await redis.from_url("redis://localhost:6379", decode_responses=True)
-        
+
         async with db_pool.acquire() as conn:
-            # Agent credit history
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS agent_credit_history (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -275,8 +334,7 @@ async def init_db():
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
-            # Agent guarantors (for GNN)
+
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS agent_guarantors (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -287,8 +345,7 @@ async def init_db():
                     UNIQUE(agent_id, guarantor_id)
                 )
             """)
-            
-            # ML credit scores
+
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS ml_credit_scores (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -298,19 +355,27 @@ async def init_db():
                     default_probability DECIMAL(5,4),
                     approved_limit DECIMAL(15,2),
                     interest_rate DECIMAL(5,2),
-                    confidence DECIMAL(3,2),
+                    confidence DECIMAL(5,4),
                     network_risk DECIMAL(5,4),
                     factors JSONB,
+                    model_version VARCHAR(100),
+                    scoring_method VARCHAR(50),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             print("✅ Credit Risk ML tables initialized")
     except Exception as e:
         print(f"❌ Database initialization error: {e}")
 
 @app.on_event("startup")
 async def startup():
+    global credit_model, MODEL_VERSION
+    credit_model, MODEL_VERSION = _load_model_artifact()
+    if credit_model is None:
+        print(f"⚠️  Credit-risk model unavailable: {_model_load_error}. "
+              "Scoring endpoints will return 503 until a valid artifact is provided."
+              + (" SIMULATION MODE ACTIVE (non-prod)." if SIMULATION_MODE else ""))
     await init_db()
 
 @app.on_event("shutdown")
@@ -324,78 +389,89 @@ async def shutdown():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "Credit Risk ML", "port": 8029}
+    return {
+        "status": "healthy" if (_model_available() or SIMULATION_MODE) else "degraded",
+        "service": "Credit Risk ML",
+        "port": 8029,
+        "model_loaded": _model_available(),
+        "model_version": MODEL_VERSION,
+        "model_error": None if _model_available() else _model_load_error,
+        "simulation_mode": SIMULATION_MODE,
+    }
 
 @app.post("/api/credit-risk/score", response_model=CreditScoreResponse)
 async def calculate_credit_score(application: CreditApplicationML):
-    """Calculate ML-based credit score with GNN network analysis"""
+    """Score a credit application with the trained model artifact (503 without one)."""
+    features = {
+        'requested_amount': application.requested_amount,
+        'business_revenue': application.business_revenue,
+        'years_in_business': application.years_in_business,
+        'existing_loans': application.existing_loans,
+        'monthly_transactions': application.monthly_transactions,
+        'avg_transaction_value': application.avg_transaction_value,
+        'payment_history_score': application.payment_history_score,
+        'kyb_verification_score': application.kyb_verification_score,
+        'guarantor_count': application.guarantor_count,
+        'collateral_value': application.collateral_value,
+    }
+
+    if _model_available():
+        try:
+            result = score_with_model(features)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"model inference failed: {e}")
+    elif SIMULATION_MODE:
+        result = score_with_simulation(features)
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Credit-risk model unavailable: {_model_load_error}. "
+                   "Configure CREDIT_RISK_MODEL_PATH with a trained artifact.",
+        )
+
     try:
-        # Prepare features
-        features = {
-            'requested_amount': application.requested_amount,
-            'business_revenue': application.business_revenue,
-            'years_in_business': application.years_in_business,
-            'existing_loans': application.existing_loans,
-            'monthly_transactions': application.monthly_transactions,
-            'avg_transaction_value': application.avg_transaction_value,
-            'payment_history_score': application.payment_history_score,
-            'kyb_verification_score': application.kyb_verification_score,
-            'guarantor_count': application.guarantor_count,
-            'collateral_value': application.collateral_value,
-        }
-        
-        # Calculate ML credit score
-        result = calculate_credit_score_ml(features)
-        
-        # Analyze network risk using GNN
-        network_risk = await analyze_network_risk_gnn(application.agent_id, depth=2)
-        
-        # Adjust score based on network risk
-        if network_risk > 0.5:
-            # High network risk - reduce score
-            result['credit_score'] = int(result['credit_score'] * (1 - network_risk * 0.2))
-            result['interest_rate'] += network_risk * 5  # Add up to 5% interest
-        
-        result['network_risk'] = network_risk
-        
-        # Save to database
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO ml_credit_scores 
-                (agent_id, credit_score, risk_category, default_probability, approved_limit, 
-                 interest_rate, confidence, network_risk, factors)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            """, application.agent_id, result['credit_score'], result['risk_category'],
-                result['default_probability'], result['approved_limit'], result['interest_rate'],
-                result['confidence'], network_risk, json.dumps(result['factors']))
-        
-        # Cache result
+        network_risk = await analyze_network_risk(application.agent_id, depth=2)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"network risk analysis failed: {e}")
+
+    if network_risk > 0.5:
+        result['credit_score'] = int(result['credit_score'] * (1 - network_risk * 0.2))
+        result['interest_rate'] += network_risk * 5
+
+    result['network_risk'] = network_risk
+
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO ml_credit_scores
+            (agent_id, credit_score, risk_category, default_probability, approved_limit,
+             interest_rate, confidence, network_risk, factors, model_version, scoring_method)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        """, application.agent_id, result['credit_score'], result['risk_category'],
+            result['default_probability'], result['approved_limit'], result['interest_rate'],
+            result['confidence'], network_risk, json.dumps(result['factors']),
+            result['model_version'], result['scoring_method'])
+
+    if redis_client is not None:
         cache_key = f"credit_score:{application.agent_id}"
         await redis_client.setex(cache_key, 3600, json.dumps(result))
-        
-        return CreditScoreResponse(
-            agent_id=application.agent_id,
-            **result
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    return CreditScoreResponse(agent_id=application.agent_id, **result)
 
 @app.post("/api/credit-risk/network-analysis")
 async def analyze_network(request: NetworkAnalysisRequest):
-    """Analyze agent's network risk using GNN"""
+    """Analyze agent network risk (deterministic graph propagation over real data)."""
     try:
-        network_risk = await analyze_network_risk_gnn(request.agent_id, request.depth)
-        
-        return {
-            "agent_id": request.agent_id,
-            "network_risk": network_risk,
-            "risk_level": "High" if network_risk > 0.7 else "Medium" if network_risk > 0.4 else "Low",
-            "analysis_depth": request.depth
-        }
-    
+        network_risk = await analyze_network_risk(request.agent_id, request.depth)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=502, detail=f"network risk analysis failed: {e}")
+
+    return {
+        "agent_id": request.agent_id,
+        "network_risk": network_risk,
+        "risk_level": "High" if network_risk > 0.7 else "Medium" if network_risk > 0.4 else "Low",
+        "analysis_depth": request.depth,
+        "method": "graph_propagation_heuristic",
+    }
 
 @app.get("/api/credit-risk/history/{agent_id}")
 async def get_credit_history(agent_id: str):
@@ -403,14 +479,15 @@ async def get_credit_history(agent_id: str):
     try:
         async with db_pool.acquire() as conn:
             history = await conn.fetch("""
-                SELECT credit_score, risk_category, default_probability, 
-                       approved_limit, interest_rate, confidence, network_risk, created_at
+                SELECT credit_score, risk_category, default_probability,
+                       approved_limit, interest_rate, confidence, network_risk,
+                       model_version, scoring_method, created_at
                 FROM ml_credit_scores
                 WHERE agent_id = $1
                 ORDER BY created_at DESC
                 LIMIT 10
             """, agent_id)
-            
+
             return {
                 "agent_id": agent_id,
                 "history": [
@@ -420,14 +497,16 @@ async def get_credit_history(agent_id: str):
                         "default_probability": float(h['default_probability']),
                         "approved_limit": float(h['approved_limit']),
                         "interest_rate": float(h['interest_rate']),
-                        "confidence": float(h['confidence']),
+                        "confidence": float(h['confidence']) if h['confidence'] is not None else None,
                         "network_risk": float(h['network_risk']) if h['network_risk'] else 0,
+                        "model_version": h['model_version'],
+                        "scoring_method": h['scoring_method'],
                         "timestamp": h['created_at'].isoformat()
                     }
                     for h in history
                 ]
             }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

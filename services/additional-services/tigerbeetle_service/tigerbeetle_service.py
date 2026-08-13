@@ -4,6 +4,7 @@ High-performance financial accounting and ledger management
 """
 
 from typing import Dict, List, Optional, Tuple
+import os
 import uuid
 import time
 import hashlib
@@ -11,9 +12,11 @@ from enum import Enum
 from dataclasses import dataclass
 import logging
 
-# Note: In production, install tigerbeetle-python
-# pip install tigerbeetle-python
-# from tigerbeetle import Client, Account, Transfer, AccountFlags, TransferFlags
+try:
+    # pip install tigerbeetle
+    import tigerbeetle as tb
+except ImportError:
+    tb = None
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +109,31 @@ class TigerBeetleService:
         Args:
             cluster_id: TigerBeetle cluster ID
             addresses: List of replica addresses (e.g., ["127.0.0.1:3000"])
+        
+        Raises:
+            RuntimeError: If the tigerbeetle client library is not installed or
+                the cluster is unreachable. The ledger never runs in mock mode.
         """
+        if tb is None:
+            raise RuntimeError(
+                "The 'tigerbeetle' client library is not installed; "
+                "refusing to run the financial ledger in mock mode"
+            )
+
         self.cluster_id = cluster_id
         self.addresses = addresses
-        
-        # In production, initialize actual TigerBeetle client
-        # self.client = Client(cluster_id=cluster_id, addresses=addresses)
-        self.client = None  # Mock for now
+        self.client = tb.ClientSync(
+            cluster_id=cluster_id,
+            replica_addresses=list(addresses)
+        )
+
+        try:
+            # Connectivity check: fail fast when the cluster cannot be reached.
+            self.client.lookup_accounts([tb.id()])
+        except Exception as e:
+            raise RuntimeError(
+                f"TigerBeetle cluster unreachable at {addresses}: {e}"
+            )
         
         # Cache for account IDs
         self.account_cache: Dict[str, int] = {}
@@ -150,20 +171,27 @@ class TigerBeetleService:
         # Get account parameters
         ledger = self._get_ledger_code(currency)
         code = self._get_account_code(account_type)
-        flags = self._get_account_flags(account_type)
+        flags = tb.AccountFlags(self._get_account_flags(account_type))
         
-        # Create account in TigerBeetle
-        # In production:
-        # account = Account(
-        #     id=account_id,
-        #     ledger=ledger,
-        #     code=code,
-        #     flags=flags,
-        #     user_data=0
-        # )
-        # result = self.client.create_accounts([account])
-        # if result:
-        #     raise Exception(f"Failed to create account: {result}")
+        account = tb.Account(
+            id=account_id,
+            ledger=ledger,
+            code=code,
+            flags=flags
+        )
+        
+        try:
+            errors = self.client.create_accounts([account])
+        except Exception as e:
+            raise RuntimeError(f"TigerBeetle account creation failed (cluster error): {e}")
+        
+        # An EXISTING account (deterministic ID) is acceptable; anything else is fatal.
+        fatal_errors = [
+            err for err in errors
+            if "EXISTS" not in str(getattr(err, "result", "")).upper()
+        ]
+        if fatal_errors:
+            raise RuntimeError(f"Failed to create TigerBeetle account: {fatal_errors}")
         
         # Cache account ID
         self.account_cache[cache_key] = account_id
@@ -229,27 +257,21 @@ class TigerBeetleService:
         Returns:
             AccountBalance object or None if not found
         """
-        # In production:
-        # balances = self.client.get_account_balances([account_id])
-        # if not balances:
-        #     return None
-        # 
-        # balance = balances[0]
-        # return AccountBalance(
-        #     account_id=account_id,
-        #     debits_posted=balance.debits_posted,
-        #     credits_posted=balance.credits_posted,
-        #     debits_pending=balance.debits_pending,
-        #     credits_pending=balance.credits_pending
-        # )
+        try:
+            accounts = self.client.lookup_accounts([account_id])
+        except Exception as e:
+            raise RuntimeError(f"TigerBeetle balance lookup failed: {e}")
         
-        # Mock implementation
+        if not accounts:
+            return None
+        
+        account = accounts[0]
         return AccountBalance(
             account_id=account_id,
-            debits_posted=0,
-            credits_posted=100000,  # $1,000.00
-            debits_pending=0,
-            credits_pending=0
+            debits_posted=account.debits_posted,
+            credits_posted=account.credits_posted,
+            debits_pending=account.debits_pending,
+            credits_pending=account.credits_pending
         )
     
     def get_balance_by_user(
@@ -300,38 +322,41 @@ class TigerBeetleService:
             linked: Link to next transfer (atomic batch)
         
         Returns:
-            TransferResult
+            TransferResult (success only when TigerBeetle accepted the transfer)
         """
         transfer_id = self._generate_transfer_id()
         ledger = self._get_ledger_code(currency)
         
         # Determine flags
-        flags = 0
+        flags = tb.TransferFlags(0)
         if pending:
-            flags |= 1  # TransferFlags.PENDING
+            flags |= tb.TransferFlags.PENDING
         if linked:
-            flags |= 2  # TransferFlags.LINKED
+            flags |= tb.TransferFlags.LINKED
         
-        # Create transfer in TigerBeetle
-        # In production:
-        # transfer = Transfer(
-        #     id=transfer_id,
-        #     debit_account_id=from_account,
-        #     credit_account_id=to_account,
-        #     amount=amount,
-        #     ledger=ledger,
-        #     code=code.value,
-        #     flags=flags,
-        #     timestamp=int(time.time() * 1_000_000_000)
-        # )
-        # 
-        # result = self.client.create_transfers([transfer])
-        # if result:
-        #     return TransferResult(
-        #         transfer_id=transfer_id,
-        #         success=False,
-        #         error=str(result)
-        #     )
+        transfer = tb.Transfer(
+            id=transfer_id,
+            debit_account_id=from_account,
+            credit_account_id=to_account,
+            amount=amount,
+            ledger=ledger,
+            code=code.value,
+            flags=flags
+        )
+        
+        try:
+            errors = self.client.create_transfers([transfer])
+        except Exception as e:
+            raise RuntimeError(f"TigerBeetle transfer failed (cluster error): {e}")
+        
+        if errors:
+            error_codes = [str(getattr(err, "result", "")) for err in errors]
+            logger.error(f"TigerBeetle transfer rejected: {error_codes}")
+            return TransferResult(
+                transfer_id=transfer_id,
+                success=False,
+                error=str(errors)
+            )
         
         logger.info(
             f"Transfer created: id={transfer_id}, from={from_account}, "
@@ -390,9 +415,20 @@ class TigerBeetleService:
         Returns:
             True if successful
         """
-        # In production:
-        # result = self.client.post_pending_transfers([transfer_id])
-        # return not result
+        transfer = tb.Transfer(
+            id=self._generate_transfer_id(),
+            pending_id=transfer_id,
+            flags=tb.TransferFlags.POST_PENDING_TRANSFER
+        )
+        
+        try:
+            errors = self.client.create_transfers([transfer])
+        except Exception as e:
+            raise RuntimeError(f"TigerBeetle post-pending failed (cluster error): {e}")
+        
+        if errors:
+            logger.error(f"TigerBeetle post-pending rejected: {errors}")
+            return False
         
         logger.info(f"Posted pending transfer: {transfer_id}")
         return True
@@ -407,9 +443,20 @@ class TigerBeetleService:
         Returns:
             True if successful
         """
-        # In production:
-        # result = self.client.void_pending_transfers([transfer_id])
-        # return not result
+        transfer = tb.Transfer(
+            id=self._generate_transfer_id(),
+            pending_id=transfer_id,
+            flags=tb.TransferFlags.VOID_PENDING_TRANSFER
+        )
+        
+        try:
+            errors = self.client.create_transfers([transfer])
+        except Exception as e:
+            raise RuntimeError(f"TigerBeetle void-pending failed (cluster error): {e}")
+        
+        if errors:
+            logger.error(f"TigerBeetle void-pending rejected: {errors}")
+            return False
         
         logger.info(f"Voided pending transfer: {transfer_id}")
         return True
@@ -558,6 +605,13 @@ class TigerBeetleService:
         Returns:
             Total revenue in smallest currency unit
         """
+        if start_time is not None or end_time is not None:
+            # Never silently ignore the requested range and return a lifetime
+            # total as if it were the filtered figure.
+            raise NotImplementedError(
+                "Time-range revenue queries are not supported by this client yet"
+            )
+        
         account_id = self.get_account_id(
             stakeholder, currency, AccountType.REVENUE
         )
@@ -567,17 +621,6 @@ class TigerBeetleService:
         balance = self.get_balance(account_id)
         if balance is None:
             return 0
-        
-        # If time range specified, query transfers
-        if start_time is not None or end_time is not None:
-            # In production:
-            # transfers = self.client.get_account_transfers(
-            #     account_id,
-            #     start_timestamp=start_time,
-            #     end_timestamp=end_time
-            # )
-            # return sum(t.amount for t in transfers)
-            pass
         
         return balance.balance
     
@@ -660,6 +703,8 @@ class TigerBeetleService:
     
     def _generate_transfer_id(self) -> int:
         """Generate unique transfer ID"""
+        if tb is not None:
+            return tb.id()
         return int.from_bytes(uuid.uuid4().bytes, 'big')
     
     def _get_ledger_code(self, currency: str) -> int:
@@ -701,13 +746,20 @@ _tigerbeetle_service: Optional[TigerBeetleService] = None
 
 
 def get_tigerbeetle_service() -> TigerBeetleService:
-    """Get singleton TigerBeetle service instance"""
+    """Get singleton TigerBeetle service instance
+    
+    Raises:
+        RuntimeError: If the tigerbeetle client library is missing or the
+            configured cluster is unreachable.
+    """
     global _tigerbeetle_service
     
     if _tigerbeetle_service is None:
-        # In production, read from environment
-        cluster_id = 0
-        addresses = ["127.0.0.1:3000", "127.0.0.1:3001", "127.0.0.1:3002"]
+        cluster_id = int(os.getenv("TB_CLUSTER_ID", "0"))
+        addresses = os.getenv(
+            "TB_ADDRESSES",
+            "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002"
+        ).split(",")
         
         _tigerbeetle_service = TigerBeetleService(
             cluster_id=cluster_id,

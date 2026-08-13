@@ -150,7 +150,7 @@ const getTrialBalance = protectedProcedure
       });
     }
   });
-const getStats = publicProcedure
+const getStats = protectedProcedure
   .input(
     z.object({
       page: z.number().min(1).max(10000).optional(),
@@ -172,13 +172,13 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
+      // Previously returned fabricated financials (totalRevenue 4.56e9,
+      // netProfit 1.67e9, reportCount 156) to unauthenticated callers.
+      // Only reportCount/lastGenerated have a real source in this router.
       return {
-        totalRevenue: 4560000000,
-        totalExpenses: 2890000000,
-        netProfit: 1670000000,
-        profitMargin: 36.6,
-        reportCount: 156,
-        lastGenerated: new Date().toISOString(),
+        reportCount: Number(total),
+        lastGenerated:
+          (recent[0] as any)?.createdAt ?? new Date().toISOString(),
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

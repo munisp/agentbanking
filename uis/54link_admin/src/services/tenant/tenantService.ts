@@ -70,80 +70,6 @@ export interface GetAllTenantsResponse {
   tenants: Tenant[];
 }
 
-// COMMENTED OUT: User roles removed - app is only for 54link
-// export type UserRole = 'admin' | 'super_admin' | 'super_tenant';
-
-// 54link default data - no tenant config needed
-const LINK54_DEFAULT_DATA: Tenant = {
-  id: 1,
-  created_at: "2025-01-01T00:00:00.000Z",
-  updated_at: "2025-01-01T00:00:00.000Z",
-  deleted_at: null,
-  name: "54Link",
-  status: "active",
-  tenant_id: "bpmgd",
-  status_message: null,
-  contact: {
-    id: "54link-contact-id",
-    name: "54Link Admin",
-    email: "admin@54link.com",
-    phone: "+2340000000000",
-  },
-  branding: {
-    id: "54link-branding-id",
-    logo_url: "",
-    favicon_url: "",
-    primary_color: "#22c55e", // Green for 54Link
-    secondary_color: "#16a34a", // Darker green
-    domain: "54link.com",
-  },
-  billing: {
-    id: 1,
-    created_at: "2025-01-01T00:00:00.000Z",
-    updated_at: "2025-01-01T00:00:00.000Z",
-    deleted_at: null,
-    plan: "enterprise",
-  },
-  // 54link default feature flags - all enabled (must match backend FeatureFlag enum)
-  feature_flags: [
-    { id: "f1",  name: "auth",                  is_enabled: true, config: {} },
-    { id: "f2",  name: "user_management",        is_enabled: true, config: {} },
-    { id: "f3",  name: "accounts",               is_enabled: true, config: {} },
-    { id: "f4",  name: "payments",               is_enabled: true, config: {} },
-    { id: "f5",  name: "reporting",              is_enabled: true, config: {} },
-    { id: "f6",  name: "audit",                  is_enabled: true, config: {} },
-    { id: "f7",  name: "loans",                  is_enabled: true, config: {} },
-    { id: "f8",  name: "savings",                is_enabled: true, config: {} },
-    { id: "f9",  name: "lpo",                    is_enabled: true, config: {} },
-    { id: "f10", name: "dispute",                is_enabled: true, config: {} },
-    { id: "f11", name: "card_management",        is_enabled: true, config: {} },
-    { id: "f12", name: "teller",                 is_enabled: true, config: {} },
-    { id: "f13", name: "treasury",               is_enabled: true, config: {} },
-    { id: "f14", name: "fx",                     is_enabled: true, config: {} },
-    { id: "f15", name: "virtual_accounts",       is_enabled: true, config: {} },
-    { id: "f16", name: "fraud_detection",        is_enabled: true, config: {} },
-    { id: "f17", name: "risk_management",        is_enabled: true, config: {} },
-    { id: "f18", name: "chart_of_accounts",      is_enabled: true, config: {} },
-    { id: "f19", name: "reconciliation",         is_enabled: true, config: {} },
-    { id: "f20", name: "relationship_manager",   is_enabled: true, config: {} },
-    { id: "f21", name: "document_management",    is_enabled: true, config: {} },
-    { id: "f22", name: "communication_hub",      is_enabled: true, config: {} },
-    { id: "f23", name: "trade_finance",          is_enabled: true, config: {} },
-    { id: "f24", name: "erp_integration",        is_enabled: true, config: {} },
-    { id: "f25", name: "temporal_access",        is_enabled: true, config: {} },
-    { id: "f26", name: "employee_management",    is_enabled: true, config: {} },
-    { id: "f27", name: "merchant_management",    is_enabled: true, config: {} },
-    { id: "f28", name: "developer_platform",     is_enabled: true, config: {} },
-    { id: "f29", name: "salary_processing",      is_enabled: true, config: {} },
-    { id: "f30", name: "maker_checker",          is_enabled: true, config: {} },
-    { id: "f31", name: "cooperative_management", is_enabled: true, config: {} },
-  ],
-  // COMMENTED OUT: Role-based feature flags removed - app is only for 54link
-  // admin_feature_flags: [...],
-  // super_admin_feature_flags: [...],
-  // super_tenant_feature_flags: [...]
-};
-
 // All individual features available on the platform.
 // Used as the global catalog when the API is unavailable.
 // Must stay in sync with the backend FeatureFlag enum in services/tenant-management/src/utils/enums.ts
@@ -237,7 +163,7 @@ export const GLOBAL_FEATURE_CATALOG: Array<{ name: string; label: string }> = [
 ];
 
 class TenantService {
-  // private readonly TENANT_CONFIG_KEY = 'tenant_config';
+  private readonly TENANT_CONFIG_KEY = "tenant_config";
   private readonly TENANT_ID_KEY = "tenant_id";
 
   /**
@@ -258,11 +184,7 @@ class TenantService {
 
   /**
    * Get tenant_id from environment variable, localStorage, or URL
-   * COMMENTED OUT: Not using API calls for now
-   * Kept for when API calls are re-enabled
    */
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore - Kept for future use when API calls are re-enabled
   private getTenantId(): string | null {
     // First check environment variable
     const envTenantId = import.meta.env.VITE_TENANT_ID || "bpmgd";
@@ -302,7 +224,7 @@ class TenantService {
   async changeTenant(tenantId: string): Promise<Tenant> {
     this.setTenantId(tenantId);
     // Clear old config to force fresh fetch
-    // Removed call to non-existent removeTenantConfig
+    this.removeTenantConfig();
     // Fetch new tenant config
     return await this.getTenant(tenantId);
   }
@@ -356,7 +278,7 @@ class TenantService {
         // Clear tenant config if the deleted tenant is the current one
         const currentTenantId = this.getTenantId();
         if (currentTenantId === tenantId) {
-          // Removed call to non-existent removeTenantConfig
+          this.removeTenantConfig();
           localStorage.removeItem(this.TENANT_ID_KEY);
         }
         return;
@@ -410,7 +332,7 @@ class TenantService {
 
   /**
    * Fetch all global features available on the platform.
-   * Falls back to GLOBAL_FEATURE_CATALOG if the API is unavailable.
+   * Falls back to GLOBAL_FEATURE_CATALOG (all disabled) if the API is unavailable.
    */
   async getGlobalFeatures(): Promise<FeatureFlagConfig[]> {
     try {
@@ -441,85 +363,76 @@ class TenantService {
   }
 
   /**
-   * Get 54link default data - no tenant config needed
-   * @param _tenantId - Not used, kept for compatibility
+   * Fetch tenant config from the tenant-management API.
+   * Fails closed: throws when no tenant ID is resolvable or the API errors,
+   * so feature flags are never silently fabricated.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async getTenant(_tenantId?: string): Promise<Tenant> {
-    // Always return 54link default data - no storage needed
-    if (import.meta.env.DEV) {
-      console.log("Using 54link default data (no tenant config)");
-    }
-
-    return LINK54_DEFAULT_DATA;
-
-    /* COMMENTED OUT API CALL - Using mock data for now
+  async getTenant(tenantId?: string): Promise<Tenant> {
     const id = tenantId || this.getTenantId();
-    
+
     if (!id) {
-      throw new Error('Tenant ID is required. Please set VITE_TENANT_ID environment variable or call setTenantId() first.');
+      throw new Error(
+        "Tenant ID is required. Please set VITE_TENANT_ID environment variable or call setTenantId() first.",
+      );
     }
 
     try {
       const response = await apiClient.get<GetTenantResponse>(
-        `/tenant-management/tenant/${id}`
+        `/tenant-management/tenant/${id}`,
       );
 
-      if (response.data.message === 'success' && response.data.tenant) {
+      if (response.data.message === "success" && response.data.tenant) {
         const tenant = response.data.tenant;
-        
-        // Debug logging
+
         if (import.meta.env.DEV) {
-          console.log('Tenant API response:', response.data);
-          console.log('Tenant object to store:', tenant);
-          console.log('Feature flags in response:', tenant.feature_flags);
+          console.log("Tenant API response:", response.data);
         }
-        
+
         // Store tenant config in localStorage
         this.setTenantConfig(tenant);
         return tenant;
       }
 
-      throw new Error('Invalid response format from tenant API');
-    } catch (error: any) {
+      throw new Error("Invalid response format from tenant API");
+    } catch (error: unknown) {
       throw this.handleError(error);
     }
-    */
   }
 
   /**
-   * Get tenant config - always returns 54link default data
-   * No localStorage check - app is only for 54link
+   * Get cached tenant config from localStorage.
+   * Returns null when no real tenant config has been fetched — callers must
+   * treat null as "no tenant config" (fail closed: no features enabled).
    */
   getTenantConfig(): Tenant | null {
-    // Always return 54link default data - no tenant config needed
-    return LINK54_DEFAULT_DATA;
+    try {
+      const raw = localStorage.getItem(this.TENANT_CONFIG_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as Tenant;
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Set tenant config in localStorage
-   * COMMENTED OUT: Not used - app always uses 54link default data
    */
-  // setTenantConfig(tenant: Tenant): void {
-  //   localStorage.setItem(this.TENANT_CONFIG_KEY, JSON.stringify(tenant));
-  // }
+  setTenantConfig(tenant: Tenant): void {
+    localStorage.setItem(this.TENANT_CONFIG_KEY, JSON.stringify(tenant));
+  }
 
   /**
    * Remove tenant config from localStorage
-   * COMMENTED OUT: Not used - app always uses 54link default data
    */
-  // removeTenantConfig(): void {
-  //   localStorage.removeItem(this.TENANT_CONFIG_KEY);
-  //   localStorage.removeItem(this.TENANT_ID_KEY);
-  // }
+  removeTenantConfig(): void {
+    localStorage.removeItem(this.TENANT_CONFIG_KEY);
+  }
 
   /**
-   * Check if tenant config exists
-   * Always returns true since we always have 54link default data
+   * Check if a real tenant config has been fetched and cached
    */
   hasTenantConfig(): boolean {
-    // Always return true - we always have 54link default data
-    return true;
+    return this.getTenantConfig() !== null;
   }
 
   /**
@@ -532,27 +445,14 @@ class TenantService {
   }
 
   /**
-   * Get feature flags - always returns default feature flags (no role-based)
-   * COMMENTED OUT: Role-based feature flags removed - app is only for 54link
+   * Get feature flags from the cached tenant config.
+   * Fails closed: returns [] when no tenant config has been loaded.
    */
   getFeatureFlagsByRole(): FeatureFlagConfig[] {
     const tenant = this.getTenantConfig();
     if (!tenant) return [];
-    // Always return default feature flags
     return tenant.feature_flags || [];
   }
-
-  // COMMENTED OUT: User role methods removed - app is only for 54link
-  // /**
-  //  * Get current user role from localStorage
-  //  */
-  // getUserRole(): UserRole | null {
-  //   const role = localStorage.getItem('user_role');
-  //   if (role && ['admin', 'super_admin', 'super_tenant'].includes(role)) {
-  //     return role as UserRole;
-  //   }
-  //   return null;
-  // }
 
   /**
    * Handle API errors

@@ -46,10 +46,17 @@ export default function MLScoringDashboard() {
   };
 
   const handleBatchScore = () => {
-    const txns = Array.from({ length: 50 }, (_, i) => ({
-      transactionId: `BATCH-${Date.now()}-${i}`,
-      amount: Math.floor(Math.random() * 500000) + 1000,
-      agentId: `AGT-${String(Math.floor(Math.random() * 100) + 1).padStart(3, "0")}`,
+    // Re-score REAL recent transactions — never fabricated ones, which would
+    // pollute the scoring history/analytics shown on this dashboard.
+    const recent: any[] = (history.data as any)?.transactions ?? (history.data as any) ?? [];
+    if (!Array.isArray(recent) || recent.length === 0) {
+      alert("No real transactions available to batch-score yet.");
+      return;
+    }
+    const txns = recent.slice(0, 50).map((t: any) => ({
+      transactionId: t.transactionId ?? t.id,
+      amount: t.amount,
+      agentId: t.agentId,
     }));
     batchMut.mutate({ transactions: txns });
   };

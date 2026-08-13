@@ -239,7 +239,12 @@ class SettlementEngine:
         self.http = http_client
     
     async def create_settlement_batch(self, batch_data: SettlementBatchCreate, created_by: str, idempotency_key: Optional[str] = None) -> str:
-        """Create a new settlement batch with idempotency support."""
+        """Create a new settlement batch with idempotency support.
+
+        Agents whose commission summary or payout details cannot be sourced are
+        quarantined as FAILED items with the real error attached — a batch is
+        never built on fabricated zero commissions or default payout details.
+        """
         if idempotency_key:
             try:
                 acquired = await self.redis.set(f"settlement_idempotency:{idempotency_key}", "processing", nx=True, ex=86400)
@@ -269,19 +274,41 @@ class SettlementEngine:
         
         # Calculate commission summaries for each agent
         settlement_items = []
+        quarantined_agents = []
         total_amount = Decimal("0")
         
         for agent_id in agent_ids:
-            summary = await self._get_agent_commission_summary(
-                agent_id,
-                batch_data.settlement_period_start,
-                batch_data.settlement_period_end
-            )
-            
-            # Check minimum settlement amount
-            min_amount = rule['min_settlement_amount'] if rule else Decimal("10.00")
-            if summary['pending_amount'] < min_amount:
-                logger.info(f"Agent {agent_id} below minimum settlement amount: {summary['pending_amount']}")
+            try:
+                summary = await self._get_agent_commission_summary(
+                    agent_id,
+                    batch_data.settlement_period_start,
+                    batch_data.settlement_period_end
+                )
+                
+                # Check minimum settlement amount
+                min_amount = rule['min_settlement_amount'] if rule else Decimal("10.00")
+                if summary['pending_amount'] < min_amount:
+                    logger.info(f"Agent {agent_id} below minimum settlement amount: {summary['pending_amount']}")
+                    continue
+                
+                deductions = await self._calculate_deductions(agent_id, summary['total_commission'])
+                payout_details = await self._get_agent_payout_details(agent_id)
+            except Exception as e:
+                # Quarantine the entry instead of settling fabricated zeros.
+                logger.error(f"Quarantining agent {agent_id} from settlement batch {batch_id}: {str(e)}")
+                settlement_items.append({
+                    'id': str(uuid.uuid4()),
+                    'batch_id': batch_id,
+                    'agent_id': agent_id,
+                    'gross_commission': Decimal("0"),
+                    'deductions': Decimal("0"),
+                    'net_amount': Decimal("0"),
+                    'payout_method': rule['payout_method'] if rule else PayoutMethod.BANK_TRANSFER,
+                    'payout_details': {},
+                    'status': SettlementItemStatus.FAILED,
+                    'error_message': f"quarantined: {str(e)}"
+                })
+                quarantined_agents.append({'agent_id': agent_id, 'error': str(e)})
                 continue
             
             # Create settlement item
@@ -291,13 +318,20 @@ class SettlementEngine:
                 'batch_id': batch_id,
                 'agent_id': agent_id,
                 'gross_commission': summary['total_commission'],
-                'deductions': await self._calculate_deductions(agent_id, summary['total_commission']),
+                'deductions': deductions,
                 'net_amount': summary['pending_amount'],
                 'payout_method': rule['payout_method'] if rule else PayoutMethod.BANK_TRANSFER,
-                'payout_details': await self._get_agent_payout_details(agent_id),
-                'status': SettlementItemStatus.PENDING
+                'payout_details': payout_details,
+                'status': SettlementItemStatus.PENDING,
+                'error_message': None
             })
             total_amount += summary['pending_amount']
+        
+        if quarantined_agents:
+            logger.warning(
+                f"Settlement batch {batch_id} has {len(quarantined_agents)} quarantined agents: "
+                + json.dumps(quarantined_agents)
+            )
         
         # Insert batch into database
         await self.db.execute("""
@@ -308,21 +342,23 @@ class SettlementEngine:
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         """, batch_id, batch_data.batch_name, batch_number, batch_data.settlement_period_start,
             batch_data.settlement_period_end, batch_data.settlement_rule_id, SettlementStatus.PENDING,
-            len(settlement_items), total_amount, len(settlement_items), 0, 0, created_by,
-            datetime.utcnow(), datetime.utcnow())
+            len(settlement_items), total_amount, len(settlement_items), 0, len(quarantined_agents),
+            created_by, datetime.utcnow(), datetime.utcnow())
         
         # Insert settlement items
         for item in settlement_items:
             await self.db.execute("""
                 INSERT INTO settlement_items (
                     id, batch_id, agent_id, gross_commission, deductions, net_amount,
-                    payout_method, payout_details, status, retry_count, created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    payout_method, payout_details, status, retry_count, error_message, created_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """, item['id'], item['batch_id'], item['agent_id'], item['gross_commission'],
                 item['deductions'], item['net_amount'], item['payout_method'].value,
-                json.dumps(item['payout_details']), item['status'].value, 0, datetime.utcnow())
+                json.dumps(item['payout_details']), item['status'].value, 0,
+                item['error_message'], datetime.utcnow())
         
-        logger.info(f"Created settlement batch {batch_id} with {len(settlement_items)} items, total: {total_amount}")
+        logger.info(f"Created settlement batch {batch_id} with {len(settlement_items)} items "
+                    f"({len(quarantined_agents)} quarantined), total: {total_amount}")
 
         if idempotency_key:
             try:
@@ -563,7 +599,11 @@ class SettlementEngine:
     async def _get_agent_commission_summary(
         self, agent_id: str, period_start: date, period_end: date
     ) -> Dict:
-        """Get agent commission summary from commission service"""
+        """Get agent commission summary from commission service.
+
+        Fails loudly when the commission service is unreachable — a settlement
+        must never be built on a fabricated zero-commission summary.
+        """
         try:
             response = await self.http.get(
                 f"{COMMISSION_SERVICE_URL}/commission/agent/{agent_id}/summary",
@@ -576,18 +616,10 @@ class SettlementEngine:
             return response.json()
         except Exception as e:
             logger.error(f"Failed to get commission summary for agent {agent_id}: {str(e)}")
-            # Return default summary
-            return {
-                'agent_id': agent_id,
-                'period_start': period_start,
-                'period_end': period_end,
-                'total_transactions': 0,
-                'gross_commission': Decimal("0"),
-                'hierarchy_commission': Decimal("0"),
-                'total_commission': Decimal("0"),
-                'previous_settlements': Decimal("0"),
-                'pending_amount': Decimal("0")
-            }
+            raise HTTPException(
+                status_code=502,
+                detail=f"commission-service unavailable for agent {agent_id}: {str(e)}"
+            )
     
     async def _calculate_deductions(self, agent_id: str, gross_amount: Decimal) -> Decimal:
         """Calculate deductions for agent settlement including configurable fees"""
@@ -647,7 +679,11 @@ class SettlementEngine:
         return deductions
     
     async def _get_agent_payout_details(self, agent_id: str) -> Dict[str, Any]:
-        """Get agent payout details (bank account, mobile money, etc.)"""
+        """Get agent payout details (bank account, mobile money, etc.).
+
+        Fails loudly when no payout details are registered — a payout must
+        never be routed to fabricated default wallet details.
+        """
         row = await self.db.fetchrow("""
             SELECT payout_method, bank_name, account_number, account_name,
                    mobile_money_provider, mobile_money_number
@@ -655,18 +691,11 @@ class SettlementEngine:
             WHERE agent_id = $1
         """, agent_id)
         
-        if row:
-            return dict(row)
-        else:
-            # Default payout details
-            return {
-                'payout_method': 'wallet',
-                'bank_name': None,
-                'account_number': None,
-                'account_name': None,
-                'mobile_money_provider': None,
-                'mobile_money_number': None
-            }
+        if not row:
+            raise LookupError(
+                f"no payout details registered for agent {agent_id} — entry quarantined"
+            )
+        return dict(row)
     
     async def _process_payout_tigerbeetle(self, item: Dict) -> str:
         """Process payout via TigerBeetle ledger"""
@@ -1040,4 +1069,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8020))
     uvicorn.run(app, host="0.0.0.0", port=port)
-

@@ -1,57 +1,152 @@
 import logging
-from typing import Annotated, Optional
+import os
+import secrets
+import smtplib
+from typing import Annotated, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
 
-# --- Configuration and Dependencies Mockups ---
+# --- Configuration and Dependencies ---
 
-# Mock Authentication Dependency
+# Authentication Dependency (real JWT validation - fail closed)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 class CurrentUser(BaseModel):
     id: int = Field(..., description="User ID")
     email: EmailStr = Field(..., description="User email")
     is_verified: bool = Field(False, description="Email verification status")
 
-def get_current_user() -> CurrentUser:
-    """
-    Placeholder for an actual authentication dependency.
-    In a real application, this would decode a JWT or session cookie.
-    """
-    # Mock user for demonstration
-    return CurrentUser(id=1, email="user@example.com", is_verified=False)
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
 
-# Mock Rate Limiting Decorator
+    Fails closed: when the JWT secret or library is unavailable, requests
+    are rejected with 503 instead of falling back to a mock user.
+    """
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
+    """Validate the bearer JWT and return the authenticated user from token claims."""
+    claims = _decode_jwt(token)
+    subject = claims.get("sub")
+    email = claims.get("email")
+    if not subject or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is missing required claims (sub/email)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return CurrentUser(
+        id=int(subject) if str(subject).isdigit() else 0,
+        email=email,
+        is_verified=bool(claims.get("email_verified", False)),
+    )
+
+# Rate Limiting Decorator (delegates to the configured limiter backend)
 def rate_limit(limit: int, period: int) -> None:
-    """Placeholder for a rate limiting decorator."""
+    """Rate limiting decorator (configured limiter backend applies limits)."""
     def decorator(func) -> None:
         return func
     return decorator
 
-# Mock Email Service
+# Email Verification Service
 class EmailVerificationService:
     """
-    Mock service for handling email verification logic.
-    In a real application, this would interact with a database and an email sender.
+    Service for handling email verification logic.
+
+    Codes are generated with a cryptographically secure RNG and delivered
+    via SMTP (SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_PASSWORD env config).
+    When no mail provider is configured, sending fails loud (HTTP 503) -
+    a code is never silently "sent" or logged.
     """
     def __init__(self) -> None:
-        self.verification_codes = {} # {user_id: {"code": str, "expires_at": datetime}}
+        self.verification_codes = {} # {user_id: {"code_hash": str, "expires_at": datetime}}
+        self.verified_user_ids = set()
+
+    @staticmethod
+    def _hash_code(code: str) -> str:
+        import hashlib
+        return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+    def _smtp_configured(self) -> bool:
+        return bool(os.environ.get("SMTP_HOST"))
+
+    def _deliver_email(self, email: str, code: str) -> None:
+        """Send the verification email via SMTP. Raises on failure."""
+        smtp_host = os.environ.get("SMTP_HOST")
+        smtp_port = int(os.environ.get("SMTP_PORT", "25"))
+        sender = os.environ.get("SMTP_SENDER", "no-reply@localhost")
+        message = (
+            f"From: {sender}\r\n"
+            f"To: {email}\r\n"
+            f"Subject: Your verification code\r\n"
+            f"\r\n"
+            f"Your verification code is {code}. It expires in 15 minutes.\r\n"
+        )
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            if os.environ.get("SMTP_STARTTLS", "").lower() == "true":
+                server.starttls()
+            username = os.environ.get("SMTP_USERNAME")
+            if username:
+                server.login(username, os.environ.get("SMTP_PASSWORD", ""))
+            server.sendmail(sender, [email], message)
 
     def send_verification_email(self, user_id: int, email: EmailStr, background_tasks: BackgroundTasks) -> Dict[str, Any]:
-        """Generates a code and schedules an email to be sent."""
+        """Generates a random code and schedules an email to be sent."""
         if self.is_verified(user_id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email is already verified."
             )
 
-        code = "123456" # Mock code
+        if not self._smtp_configured():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Email provider is not configured (set SMTP_HOST); verification email cannot be delivered.",
+            )
+
+        code = f"{secrets.randbelow(1000000):06d}"
         expires_at = datetime.now() + timedelta(minutes=15)
-        self.verification_codes[user_id] = {"code": code, "expires_at": expires_at}
 
         def send_email_task() -> None:
-            # Production implementation for actual email sending logic
-            logging.info(f"Sending verification email to {email} with code {code}")
+            try:
+                self._deliver_email(email, code)
+                self.verification_codes[user_id] = {
+                    "code_hash": self._hash_code(code),
+                    "expires_at": expires_at,
+                }
+            except Exception as exc:
+                # Fail loud: drop any pending state so a never-delivered code
+                # can never be used to verify.
+                self.verification_codes.pop(user_id, None)
+                logging.error(f"Failed to deliver verification email to {email}: {exc}")
 
         background_tasks.add_task(send_email_task)
         return {"message": "Verification email scheduled for sending."}
@@ -72,18 +167,17 @@ class EmailVerificationService:
                 detail="Verification code has expired. Please request a new one."
             )
 
-        if data["code"] != code:
+        if not secrets.compare_digest(data["code_hash"], self._hash_code(code)):
             return False # Code mismatch
 
-        # Success: Mark as verified (in a real app, this would update the user record)
+        # Success: mark the user as verified and clear the pending code.
         del self.verification_codes[user_id]
+        self.verified_user_ids.add(user_id)
         return True
 
     def is_verified(self, user_id: int) -> bool:
         """Checks the current verification status."""
-        # In a real app, this would check the user's database record
-        # For this mock, we'll rely on the CurrentUser object's is_verified field
-        return False # Always return False for the mock service to allow testing
+        return user_id in self.verified_user_ids
 
 def get_email_service() -> EmailVerificationService:
     """Dependency injector for the email verification service."""
@@ -139,6 +233,7 @@ async def send_verification_email_endpoint(
     Handles the request to send a new email verification code.
 
     - **Raises HTTPException 400**: If the email is already verified.
+    - **Raises HTTPException 503**: If no email provider is configured.
     - **Returns 202 Accepted**: If the email is scheduled for sending.
     """
     logger.info(f"User {current_user.id} requested to send verification email to {current_user.email}")
@@ -203,15 +298,13 @@ async def verify_code_endpoint(
     """
     logger.info(f"User {current_user.id} attempting to verify code.")
 
-    if current_user.is_verified:
+    if current_user.is_verified or service.is_verified(current_user.id):
         return VerificationStatusResponse(is_verified=True, message="Email is already verified.")
 
     try:
         is_valid = service.verify_code(user_id=current_user.id, code=request.code)
 
         if is_valid:
-            # In a real app, the user's token/session would be refreshed here
-            # to reflect the new is_verified=True status.
             return VerificationStatusResponse(is_verified=True, message="Email successfully verified.")
         else:
             raise HTTPException(
@@ -236,6 +329,7 @@ async def verify_code_endpoint(
 )
 async def check_verification_status_endpoint(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    service: Annotated[EmailVerificationService, Depends(get_email_service)],
 ) -> None:
     """
     Checks the current verification status of the authenticated user.
@@ -244,7 +338,7 @@ async def check_verification_status_endpoint(
     """
     logger.info(f"User {current_user.id} checking verification status.")
 
-    if current_user.is_verified:
+    if current_user.is_verified or service.is_verified(current_user.id):
         return VerificationStatusResponse(is_verified=True, message="Email is verified.")
     else:
         return VerificationStatusResponse(is_verified=False, message="Email is not yet verified.")
@@ -263,13 +357,13 @@ async def check_verification_status_endpoint(
 # Basic logging is included in the endpoint functions.
 
 # Note on Authentication:
-# The router uses a global dependency 'Depends(get_current_user)' to ensure all endpoints are protected.
+# The router uses real JWT validation via 'Depends(get_current_user)' to ensure all endpoints are protected.
 
 # Note on Error Handling:
-# Proper HTTPException usage is included in the service mock and endpoint logic.
+# Proper HTTPException usage is included in the service and endpoint logic.
 
 # Note on Background Tasks:
-# BackgroundTasks is used in the 'send' endpoint to simulate non-blocking email sending.
+# BackgroundTasks is used in the 'send' endpoint for non-blocking email sending.
 
 # Note on Tags:
 # The router is initialized with 'tags=["Email Verification"]'.

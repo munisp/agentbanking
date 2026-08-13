@@ -167,10 +167,21 @@ class MojaloopNIBSSBridge:
                 }
             
             # Parse accounts
-            payer_account_info = self._get_payer_account(payer_fsp)
+            payer_account_info = await self._get_payer_account(
+                payer_fsp,
+                transfer_request.get("payer", {}).get("partyIdInfo", {})
+            )
             payee_account_info = self._parse_party_identifier(
                 transfer_request.get("payee", {}).get("partyIdInfo", {})
             )
+            
+            if not payee_account_info:
+                return {
+                    "success": False,
+                    "transfer_id": transfer_id,
+                    "transfer_state": "ABORTED",
+                    "error": "Invalid payee account format",
+                }
             
             # Create NIBSS accounts
             source_account = NIBSSAccount(
@@ -397,24 +408,57 @@ class MojaloopNIBSSBridge:
         
         return None
     
-    def _get_payer_account(self, payer_fsp: str) -> Dict[str, str]:
+    async def _get_payer_account(
+        self,
+        payer_fsp: str,
+        payer_party_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, str]:
         """
-        Get payer account details from FSP
+        Resolve the payer's real NIBSS account
         
         Args:
             payer_fsp: Payer FSP identifier
+            payer_party_info: Payer party information from the transfer request
             
         Returns:
             Payer account details
+        
+        Raises:
+            ValueError: If the payer account cannot be determined. The default
+                settlement account is only ever used for our own participant's
+                settlement flows, never as a stand-in for a customer account.
         """
-        # In production, this would lookup the payer's account from database
-        # For now, return default account
-        return {
-            "account_number": self.default_account_number,
-            "bank_code": self.default_bank_code,
-            "account_name": f"{payer_fsp} Settlement Account",
-            "bvn": None,
-        }
+        parsed = self._parse_party_identifier(payer_party_info or {})
+        
+        if parsed:
+            # Verify the account exists and resolve the real account holder name
+            name_enquiry = await self.nibss_client.name_enquiry(
+                account_number=parsed["account_number"],
+                bank_code=parsed["bank_code"]
+            )
+            if not name_enquiry.get("success"):
+                raise ValueError(
+                    f"Payer account verification failed: {name_enquiry.get('error')}"
+                )
+            return {
+                "account_number": parsed["account_number"],
+                "bank_code": parsed["bank_code"],
+                "account_name": name_enquiry.get("account_name", ""),
+                "bvn": None,
+            }
+        
+        # Only our own FSP may fall back to the configured settlement account.
+        if payer_fsp == self.mojaloop_participant_id:
+            return {
+                "account_number": self.default_account_number,
+                "bank_code": self.default_bank_code,
+                "account_name": f"{payer_fsp} Settlement Account",
+                "bvn": None,
+            }
+        
+        raise ValueError(
+            f"No payer account provided and no settlement account registered for FSP '{payer_fsp}'"
+        )
     
     def _calculate_nibss_fees(
         self,
@@ -680,4 +724,3 @@ async def example_bridge_usage() -> None:
 
 if __name__ == "__main__":
     asyncio.run(example_bridge_usage())
-

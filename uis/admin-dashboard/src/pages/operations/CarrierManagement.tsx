@@ -39,33 +39,6 @@ interface SLAEntry {
   latencyActualMs: number;
 }
 
-const MOCK_COSTS: CarrierCost[] = [
-  { carrier: "MTN", perSMSCost: 4.5, perCallCost: 22, monthlyMin: 50000, totalSpend: 182400 },
-  { carrier: "Airtel", perSMSCost: 4.0, perCallCost: 20, monthlyMin: 30000, totalSpend: 98700 },
-  { carrier: "Glo", perSMSCost: 3.8, perCallCost: 18, monthlyMin: 20000, totalSpend: 67200 },
-  { carrier: "9Mobile", perSMSCost: 4.2, perCallCost: 21, monthlyMin: 15000, totalSpend: 41500 },
-];
-
-const MOCK_LIVE_RATES: LiveRate[] = [
-  { carrier: "MTN", smsRate: 4.5, voiceRate: 22, dataRateMBPS: 0.012, updatedAt: "10:44:31" },
-  { carrier: "Airtel", smsRate: 4.0, voiceRate: 20, dataRateMBPS: 0.010, updatedAt: "10:44:31" },
-  { carrier: "Glo", smsRate: 3.8, voiceRate: 18, dataRateMBPS: 0.009, updatedAt: "10:44:31" },
-  { carrier: "9Mobile", smsRate: 4.2, voiceRate: 21, dataRateMBPS: 0.011, updatedAt: "10:44:31" },
-];
-
-const MOCK_RULES: SwitchRule[] = [
-  { id: "rule-01", fromCarrier: "MTN", condition: "error_rate > ", threshold: 5, toCarrier: "Airtel", enabled: true },
-  { id: "rule-02", fromCarrier: "Airtel", condition: "error_rate > ", threshold: 8, toCarrier: "Glo", enabled: true },
-  { id: "rule-03", fromCarrier: "Glo", condition: "latency_ms > ", threshold: 500, toCarrier: "MTN", enabled: false },
-];
-
-const MOCK_SLAS: SLAEntry[] = [
-  { carrier: "MTN", uptimeTarget: 99.9, uptimeActual: 99.7, deliveryTarget: 98, deliveryActual: 97.2, latencyTargetMs: 300, latencyActualMs: 284 },
-  { carrier: "Airtel", uptimeTarget: 99.5, uptimeActual: 99.6, deliveryTarget: 97, deliveryActual: 98.1, latencyTargetMs: 350, latencyActualMs: 320 },
-  { carrier: "Glo", uptimeTarget: 99.0, uptimeActual: 98.4, deliveryTarget: 95, deliveryActual: 94.1, latencyTargetMs: 400, latencyActualMs: 445 },
-  { carrier: "9Mobile", uptimeTarget: 99.0, uptimeActual: 99.1, deliveryTarget: 96, deliveryActual: 95.8, latencyTargetMs: 380, latencyActualMs: 362 },
-];
-
 type TabKey = "cost" | "live" | "switching" | "sla";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
@@ -78,41 +51,28 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
 const CarrierManagement: React.FC = () => {
   const [tab, setTab] = useState<TabKey>("cost");
   const [costs, setCosts] = useState<CarrierCost[]>([]);
-  const [liveRates, setLiveRates] = useState<LiveRate[]>(MOCK_LIVE_RATES);
-  const [rules, setRules] = useState<SwitchRule[]>(MOCK_RULES);
-  const [slas, setSlas] = useState<SLAEntry[]>(MOCK_SLAS);
+  const [liveRates, setLiveRates] = useState<LiveRate[]>([]);
+  const [rules, setRules] = useState<SwitchRule[]>([]);
+  const [slas, setSlas] = useState<SLAEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [liveTs, setLiveTs] = useState(new Date().toLocaleTimeString());
+  const [error, setError] = useState<string | null>(null);
 
   
-
-  useEffect(() => {
-    if (tab !== "live") return;
-    const interval = setInterval(() => {
-      setLiveTs(new Date().toLocaleTimeString());
-      setLiveRates(prev => prev.map(r => ({
-        ...r,
-        smsRate: +(r.smsRate + (Math.random() - 0.5) * 0.05).toFixed(2),
-        voiceRate: +(r.voiceRate + (Math.random() - 0.5) * 0.2).toFixed(2),
-        updatedAt: new Date().toLocaleTimeString(),
-      })));
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [tab]);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/carriers`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setCosts(Array.isArray(d.costs) ? d.costs : MOCK_COSTS);
+        setCosts(Array.isArray(d.costs) ? d.costs : []);
         if (Array.isArray(d.slas)) setSlas(d.slas);
         if (Array.isArray(d.rules)) setRules(d.rules);
-      } else { setCosts(MOCK_COSTS); }
-    } catch { setCosts(MOCK_COSTS); }
+      } else { setError("Failed to load carrier data."); }
+    } catch { setError("Failed to load carrier data."); }
     finally { setLoading(false); }
   };
 
@@ -120,6 +80,13 @@ const CarrierManagement: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -175,10 +142,11 @@ const CarrierManagement: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-800">Live Rate Cards</h2>
-            <span className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" /> Live · updated {liveTs} · polling every 30s
-            </span>
+            <span className="text-xs text-gray-500">Live rate feed not connected</span>
           </div>
+          {liveRates.length === 0 && (
+            <p className="text-sm text-gray-500">No live carrier rates available — the rate feed is not connected.</p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {liveRates.map(r => (
               <div key={r.carrier} className="border border-gray-100 rounded-xl p-4">

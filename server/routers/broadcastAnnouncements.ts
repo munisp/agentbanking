@@ -281,12 +281,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishbroadcastAnnouncementsMiddleware("create", `${Date.now()}`, {
-        action: "create",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.create is not available in this deployment",
+      });
     }),
 
   delete: protectedProcedure
@@ -294,12 +292,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishbroadcastAnnouncementsMiddleware("delete", `${Date.now()}`, {
-        action: "delete",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.delete is not available in this deployment",
+      });
     }),
 
   stats: protectedProcedure.query(async () => {
@@ -316,14 +312,10 @@ export const broadcastAnnouncementsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishbroadcastAnnouncementsMiddleware(
-        "togglePin",
-        `${Date.now()}`,
-        { action: "togglePin" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "broadcastAnnouncements.togglePin is not available in this deployment",
+      });
     }),
   dismiss: protectedProcedure
     .input(z.object({ id: z.string() }))

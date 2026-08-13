@@ -349,63 +349,75 @@ export const dbtIntegrationRouter = router({
     }),
 
   getProjectInfo: protectedProcedure.query(async () => {
-    return {
-      name: "ngapp_analytics",
-      version: "1.0.0",
-      models: 45,
-      tests: 120,
-      sources: 8,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dbtIntegration.getProjectInfo is not available in this deployment",
+    });
   }),
   listModels: protectedProcedure.query(async () => {
-    return {
-      models: [
-        {
-          name: "fct_transactions",
-          schema: "analytics",
-          materialized: "table",
-        },
-      ],
-      total: 45,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dbtIntegration.listModels is not available in this deployment",
+    });
   }),
   runTests: protectedProcedure.mutation(async () => {
-    return { passed: 118, failed: 2, total: 120, duration: 45 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dbtIntegration.runTests is not available in this deployment",
+    });
   }),
   getLineage: protectedProcedure.query(async () => {
-    return {
-      nodes: [{ name: "fct_transactions", type: "model" }],
-      edges: [{ from: "stg_transactions", to: "fct_transactions" }],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dbtIntegration.getLineage is not available in this deployment",
+    });
   }),
   projectInfo: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.projectInfo is not available in this deployment",
+      });
     }),
   triggerRun: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.triggerRun is not available in this deployment",
+      });
     }),
   listTests: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.listTests is not available in this deployment",
+      });
     }),
   lineage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.lineage is not available in this deployment",
+      });
     }),
   listSources: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.listSources is not available in this deployment",
+      });
     }),
   platformValue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dbtIntegration.platformValue is not available in this deployment",
+      });
     }),
 });

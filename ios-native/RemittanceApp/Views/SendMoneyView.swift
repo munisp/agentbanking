@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Alamofire
 
 // MARK: - Data Models
 
@@ -38,6 +39,42 @@ struct DeliveryEstimate: Identifiable {
     let available: Bool
 }
 
+// MARK: - Transfer API DTOs
+
+private struct TransferQuoteRequest: Encodable {
+    let sourceCurrency: String
+    let destinationCurrency: String
+    let amount: Double
+}
+
+private struct TransferQuoteResponse: Decodable {
+    let rate: Double
+    let lastUpdated: String?
+    let provider: String?
+}
+
+private struct TransferInitiateRequest: Encodable {
+    let recipientName: String
+    let recipient: String
+    let recipientType: String
+    let bankName: String?
+    let amount: Double
+    let sourceCurrency: String
+    let destinationCurrency: String
+    let deliveryMethod: String
+    let note: String?
+}
+
+private struct TransferInitiateResponse: Decodable {
+    let reference: String
+    let status: String
+}
+
+private func jsonParameters<T: Encodable>(_ value: T) throws -> [String: Any] {
+    let data = try JSONEncoder().encode(value)
+    return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+}
+
 // MARK: - Constants
 
 let currencyFlags: [String: String] = [
@@ -52,13 +89,6 @@ let currencySymbols: [String: String] = [
 
 let sourceCurrencies = ["GBP", "USD", "EUR", "NGN"]
 let destinationCurrencies = ["NGN", "GHS", "KES", "USD", "GBP"]
-
-let mockRates: [String: [String: Double]] = [
-    "GBP": ["NGN": 1950.50, "GHS": 15.20, "KES": 165.30, "USD": 1.27],
-    "USD": ["NGN": 1535.00, "GHS": 11.95, "KES": 130.20, "GBP": 0.79],
-    "EUR": ["NGN": 1680.25, "GHS": 13.10, "KES": 142.50, "GBP": 0.86],
-    "NGN": ["GHS": 0.0078, "KES": 0.085, "USD": 0.00065, "GBP": 0.00051]
-]
 
 let deliveryMethods: [String: [DeliveryEstimate]] = [
     "NGN": [
@@ -139,24 +169,39 @@ final class SendMoneyViewModel: ObservableObject {
         }
     }
     
+    /// Fetches a live exchange rate quote from the backend. No rate is fabricated locally;
+    /// if the quote cannot be retrieved the quote UI and submit are blocked.
     func fetchExchangeRate() async {
         guard rateLock == nil else { return }
         isLoadingRate = true
+        defer { isLoadingRate = false }
         
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        
-        let rate = mockRates[sourceCurrency]?[destinationCurrency] ?? 1.0
-        exchangeRate = ExchangeRate(
-            from: sourceCurrency,
-            to: destinationCurrency,
-            rate: rate,
-            lastUpdated: "Just now",
-            provider: "Market Rate"
-        )
-        isLoadingRate = false
-        rateRefreshCountdown = 30
+        do {
+            let quoteRequest = TransferQuoteRequest(
+                sourceCurrency: sourceCurrency,
+                destinationCurrency: destinationCurrency,
+                amount: Double(amount) ?? 0
+            )
+            let response: TransferQuoteResponse = try await APIClient.shared.request(
+                .transferQuote,
+                method: .post,
+                parameters: jsonParameters(quoteRequest)
+            )
+            exchangeRate = ExchangeRate(
+                from: sourceCurrency,
+                to: destinationCurrency,
+                rate: response.rate,
+                lastUpdated: response.lastUpdated ?? "Just now",
+                provider: response.provider ?? "54Link"
+            )
+            rateRefreshCountdown = 30
+        } catch {
+            exchangeRate = nil
+            errorMessage = "Could not fetch a live exchange rate: \(error.localizedDescription)"
+        }
     }
     
+    /// Freezes the most recently fetched live rate client-side for up to 10 minutes.
     func lockRate() {
         guard let rate = exchangeRate else { return }
         rateLock = RateLock(
@@ -172,18 +217,53 @@ final class SendMoneyViewModel: ObservableObject {
         Task { await fetchExchangeRate() }
     }
     
+    /// Submits the transfer to the backend. Success (and its reference) is shown only
+    /// from the server's confirmed response; failures surface an honest error.
     func submitTransfer() async {
-        isSubmitting = true
-        
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard !isSubmitting else { return }
+        errorMessage = nil
+        successMessage = nil
         
         if !isOnline {
             pendingCount += 1
             successMessage = "Transfer queued. Will sync when online."
-        } else {
-            successMessage = "Transfer successful! Ref: TXN\(Int(Date().timeIntervalSince1970))"
+            return
         }
-        isSubmitting = false
+        
+        guard let amountValue = Double(amount), amountValue > 0 else {
+            errorMessage = "Enter a valid amount before sending."
+            return
+        }
+        guard rateLock != nil || exchangeRate != nil else {
+            errorMessage = "No live exchange rate available. Please refresh the rate before sending."
+            return
+        }
+        
+        isSubmitting = true
+        defer { isSubmitting = false }
+        
+        let transferRequest = TransferInitiateRequest(
+            recipientName: recipientName,
+            recipient: recipient,
+            recipientType: recipientType,
+            bankName: selectedBank.isEmpty ? nil : selectedBank,
+            amount: amountValue,
+            sourceCurrency: sourceCurrency,
+            destinationCurrency: destinationCurrency,
+            deliveryMethod: deliveryMethod,
+            note: note.isEmpty ? nil : note
+        )
+        
+        do {
+            let response: TransferInitiateResponse = try await APIClient.shared.request(
+                .transferInitiate,
+                method: .post,
+                parameters: jsonParameters(transferRequest)
+            )
+            successMessage = "Transfer \(response.status.lowercased()). Ref: \(response.reference)"
+        } catch {
+            errorMessage = "Transfer failed: \(error.localizedDescription). No money has been sent."
+        }
     }
     
     func startRateRefreshTimer() {

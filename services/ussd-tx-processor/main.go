@@ -9,17 +9,25 @@
 //   GET  /health        — Health check
 //   GET  /stats         — Transaction statistics
 //   POST /validate      — Validate USSD input for a given step
+//
+// Backend integration (REQUIRED — this processor never fabricates financial data):
+//   TRANSACTION_API_URL  — transaction engine for execution (real references)
+//   LEDGER_API_URL       — wallet/ledger API for real balances
+//   AUTH_API_URL         — auth service for PIN verification
 
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"regexp"
@@ -100,6 +108,120 @@ type TxStats struct {
 	AvgDurationSecs float64        `json:"avgDurationSecs"`
 }
 
+// ── Backend Service Clients ──────────────────────────────────────────────────
+//
+// All balances, PIN verification and transaction execution are delegated to
+// real backend services. This processor NEVER fabricates financial data and
+// only reports success with a real backend-issued reference.
+
+var (
+	transactionAPIURL = strings.TrimRight(os.Getenv("TRANSACTION_API_URL"), "/")
+	ledgerAPIURL      = strings.TrimRight(os.Getenv("LEDGER_API_URL"), "/")
+	authAPIURL        = strings.TrimRight(os.Getenv("AUTH_API_URL"), "/")
+	backendHTTP       = &http.Client{Timeout: 8 * time.Second}
+)
+
+// BalanceInfo is the real balance snapshot returned by the ledger/wallet API.
+type BalanceInfo struct {
+	Balance   float64 `json:"balance"`
+	Available float64 `json:"available_balance"`
+	Currency  string  `json:"currency"`
+}
+
+func fetchBalance(phone string) (*BalanceInfo, error) {
+	if ledgerAPIURL == "" {
+		return nil, errors.New("LEDGER_API_URL not configured")
+	}
+	resp, err := backendHTTP.Get(fmt.Sprintf("%s/api/v1/accounts/balance?phone=%s", ledgerAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ledger API returned status %d", resp.StatusCode)
+	}
+	var info BalanceInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+	if info.Currency == "" {
+		info.Currency = "NGN"
+	}
+	return &info, nil
+}
+
+// verifyPIN verifies the collected PIN against the auth service.
+func verifyPIN(phone, pin string) error {
+	if authAPIURL == "" {
+		return errors.New("AUTH_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{"phone": phone, "pin": pin})
+	resp, err := backendHTTP.Post(authAPIURL+"/api/v1/auth/verify-pin", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("auth service returned status %d", resp.StatusCode)
+	}
+	var result struct {
+		Valid bool `json:"valid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.Valid {
+		return errors.New("invalid PIN")
+	}
+	return nil
+}
+
+// ExecutionResult is the real outcome returned by the transaction engine.
+type ExecutionResult struct {
+	Reference string `json:"reference"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+}
+
+// executeTransaction posts the confirmed transaction to the transaction
+// engine. The USSD session ID is used as the idempotency key so carrier
+// retries can never double-execute a money movement.
+func executeTransaction(s *UssdSession) (*ExecutionResult, error) {
+	if transactionAPIURL == "" {
+		return nil, errors.New("TRANSACTION_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":        string(s.TxType),
+		"amount":      s.Amount,
+		"agentPhone":  s.PhoneNumber,
+		"agentCode":   s.AgentCode,
+		"targetPhone": s.TargetPhone,
+		"channel":     "ussd",
+	})
+	req, err := http.NewRequest(http.MethodPost, transactionAPIURL+"/api/v1/transactions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", s.ID)
+	resp, err := backendHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result ExecutionResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("transaction engine returned unreadable response (status %d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.Reference == "" {
+		if result.Error != "" {
+			return nil, errors.New(result.Error)
+		}
+		return nil, fmt.Errorf("transaction engine returned status %d without a reference", resp.StatusCode)
+	}
+	return &result, nil
+}
+
 // ── Session Store ────────────────────────────────────────────────────────────
 
 var (
@@ -117,12 +239,6 @@ func generateID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return "USSD-TX-" + hex.EncodeToString(b)
-}
-
-func generateTxRef() string {
-	b := make([]byte, 6)
-	rand.Read(b)
-	return "54L-" + strings.ToUpper(hex.EncodeToString(b))
 }
 
 // ── Menu Trees ───────────────────────────────────────────────────────────────
@@ -294,15 +410,32 @@ func processStep(req ProcessRequest) ProcessResponse {
 		}
 		session.Pin = input
 
-		// Balance inquiry completes immediately
+		// Verify PIN against the auth service before any balance disclosure
+		// or money movement.
+		if err := verifyPIN(session.PhoneNumber, session.Pin); err != nil {
+			log.Printf("[ussd-tx] PIN verification failed (session=%s): %v", session.ID, err)
+			session.Status = "failed"
+			failedTx++
+			delete(sessions, session.ID)
+			return ProcessResponse{SessionID: session.ID, Response: "END PIN verification failed. Transaction cancelled.", Continue: false, Step: "failed"}
+		}
+
+		// Balance inquiry completes immediately with the REAL ledger balance
 		if session.TxType == TxBalance {
-			session.TxRef = generateTxRef()
+			bal, err := fetchBalance(session.PhoneNumber)
+			if err != nil {
+				log.Printf("[ussd-tx] balance lookup failed (session=%s): %v", session.ID, err)
+				session.Status = "failed"
+				session.ErrorMsg = "balance service unavailable"
+				failedTx++
+				return ProcessResponse{SessionID: session.ID, Response: "END Balance service unavailable. Please try again later.", Continue: false, Step: "failed"}
+			}
 			session.Status = "completed"
 			session.Step = StepComplete
 			completedTx++
 			dur := time.Since(session.CreatedAt).Seconds()
 			totalDuration += dur
-			return ProcessResponse{SessionID: session.ID, Response: fmt.Sprintf("END Balance Inquiry\nRef: %s\nYour balance will be sent via SMS.\nThank you for using 54agent.", session.TxRef), Continue: false, TxRef: session.TxRef, Step: string(StepComplete)}
+			return ProcessResponse{SessionID: session.ID, Response: fmt.Sprintf("END Balance Inquiry\nBalance: %s %.2f\nAvailable: %s %.2f\nThank you for using 54agent.", bal.Currency, bal.Balance, bal.Currency, bal.Available), Continue: false, Step: string(StepComplete)}
 		}
 
 		session.Step = StepConfirm
@@ -310,7 +443,19 @@ func processStep(req ProcessRequest) ProcessResponse {
 
 	case StepConfirm:
 		if input == "1" {
-			session.TxRef = generateTxRef()
+			// Execute against the transaction engine — only a real backend
+			// reference may be shown to the customer as a confirmation.
+			result, err := executeTransaction(session)
+			if err != nil {
+				log.Printf("[ussd-tx] transaction execution failed (session=%s, type=%s, amount=%.2f): %v",
+					session.ID, session.TxType, session.Amount, err)
+				session.Status = "failed"
+				session.ErrorMsg = err.Error()
+				session.Step = StepError
+				failedTx++
+				return ProcessResponse{SessionID: session.ID, Response: fmt.Sprintf("END Transaction could not be completed. No funds were moved.\nReason: %s", session.ErrorMsg), Continue: false, Step: string(StepError)}
+			}
+			session.TxRef = result.Reference
 			session.Status = "completed"
 			session.Step = StepComplete
 			completedTx++
@@ -492,6 +637,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service": "ussd-tx-processor",
 		"version": "1.0.0",
 		"uptime":  time.Since(startTime).String(),
+		"backendsConfigured": transactionAPIURL != "" && ledgerAPIURL != "" && authAPIURL != "",
 	})
 }
 
@@ -514,6 +660,11 @@ func cleanupExpiredSessions() {
 }
 
 func main() {
+	if transactionAPIURL == "" || ledgerAPIURL == "" || authAPIURL == "" {
+		log.Printf("[ussd-tx-processor] WARNING: backend URLs incomplete (TRANSACTION_API_URL=%t LEDGER_API_URL=%t AUTH_API_URL=%t) — affected operations will fail closed",
+			transactionAPIURL != "", ledgerAPIURL != "", authAPIURL != "")
+	}
+
 	go cleanupExpiredSessions()
 
 	mux := http.NewServeMux()
@@ -524,7 +675,10 @@ func main() {
 	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/health", handleHealth)
 
-	port := "8111"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8111"
+	}
 	log.Printf("[ussd-tx-processor] Starting on :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("Server failed: %v", err)

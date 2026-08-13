@@ -36,6 +36,7 @@ export const PaymentRetryScreen = () => {
   const [failedPayments, setFailedPayments] = useState<FailedPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const BASE_URL = 'https://api.54agent.io/v1';
@@ -54,42 +55,9 @@ export const PaymentRetryScreen = () => {
       const data = await response.json();
       setFailedPayments(data.failed_payments || []);
     } catch (error) {
-      // Fallback to mock data for production-ready UI demonstration if API fails
-      setFailedPayments([
-        {
-          id: '1',
-          amount: '25,000.00',
-          currency: 'NGN',
-          recipientName: 'John Doe',
-          recipientAccount: '0123456789',
-          bankName: 'Access Bank',
-          date: '2024-03-28 14:30',
-          reason: 'Network Timeout',
-          reference: 'TRX-982341',
-        },
-        {
-          id: '2',
-          amount: '12,500.00',
-          currency: 'NGN',
-          recipientName: 'Sarah Smith',
-          recipientAccount: '9876543210',
-          bankName: 'GTBank',
-          date: '2024-03-27 09:15',
-          reason: 'Insufficient Funds',
-          reference: 'TRX-982342',
-        },
-        {
-          id: '3',
-          amount: '5,000.00',
-          currency: 'NGN',
-          recipientName: 'Michael Brown',
-          recipientAccount: '5544332211',
-          bankName: 'Zenith Bank',
-          date: '2024-03-26 18:45',
-          reason: 'Bank Server Down',
-          reference: 'TRX-982343',
-        },
-      ]);
+      // Honest failure: never substitute fabricated failed payments.
+      setFailedPayments([]);
+      setLoadError('Could not load failed payments. Pull to retry.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -197,7 +165,7 @@ export const PaymentRetryScreen = () => {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No failed payments found.</Text>
+            <Text style={styles.emptyText}>{loadError ?? 'No failed payments found.'}</Text>
             <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
               <Text style={styles.refreshButtonText}>Refresh</Text>
             </TouchableOpacity>

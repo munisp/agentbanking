@@ -21,15 +21,22 @@
 // Environment:
 //   AT_API_KEY, AT_USERNAME, AT_ENVIRONMENT
 //   KAFKA_BROKER, POS_API_URL, REDIS_URL
+//
+// POS_API_URL is REQUIRED for all financial commands. This webhook NEVER
+// fabricates balances or transaction references and fails closed when the
+// POS API is unreachable.
 
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -82,6 +89,123 @@ type DeliveryLog struct {
 	FailReason string    `json:"failReason,omitempty"`
 	RetryCount int       `json:"retryCount"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// ── POS API Client ───────────────────────────────────────────────────────────
+//
+// All financial data (balances, transaction references, PIN changes) comes
+// from the POS API. No fabricated values anywhere.
+
+var (
+	posAPIURL = strings.TrimRight(getEnv("POS_API_URL", ""), "/")
+	posHTTP   = &http.Client{Timeout: 8 * time.Second}
+)
+
+// POSBalance is the real balance snapshot returned by the POS API.
+type POSBalance struct {
+	Balance    float64 `json:"balance"`
+	Float      float64 `json:"float"`
+	Commission float64 `json:"commission"`
+	Currency   string  `json:"currency"`
+}
+
+func fetchPOSBalance(phone string) (*POSBalance, error) {
+	if posAPIURL == "" {
+		return nil, errors.New("POS_API_URL not configured")
+	}
+	resp, err := posHTTP.Get(fmt.Sprintf("%s/api/v1/agents/balance?phone=%s", posAPIURL, url.QueryEscape(phone)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("POS API returned status %d", resp.StatusCode)
+	}
+	var bal POSBalance
+	if err := json.NewDecoder(resp.Body).Decode(&bal); err != nil {
+		return nil, err
+	}
+	return &bal, nil
+}
+
+// POSTxResult is the real execution outcome returned by the POS API.
+type POSTxResult struct {
+	Reference string `json:"reference"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+}
+
+// forwardTransactionToPOS posts a CI/CO/TRF command to the POS API for real
+// execution. The AT message ID is used as the idempotency key so carrier
+// retries can never double-execute a money movement.
+func forwardTransactionToPOS(sms InboundSMS, cmd SMSCommand) (*POSTxResult, error) {
+	if posAPIURL == "" {
+		return nil, errors.New("POS_API_URL not configured")
+	}
+	txType := map[string]string{"CI": "cash_in", "CO": "cash_out", "TRF": "transfer"}[cmd.Type]
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":       txType,
+		"amount":     cmd.Amount,
+		"agentPhone": sms.From,
+		"recipient":  cmd.Receiver,
+		"channel":    "sms",
+	})
+	req, err := http.NewRequest(http.MethodPost, posAPIURL+"/api/v1/transactions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", sms.ID)
+	resp, err := posHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result POSTxResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("POS API returned unreadable response (status %d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.Reference == "" {
+		if result.Error != "" {
+			return nil, errors.New(result.Error)
+		}
+		return nil, fmt.Errorf("POS API returned status %d without a reference", resp.StatusCode)
+	}
+	return &result, nil
+}
+
+// forwardPINChangeToPOS submits a PIN change request to the POS/auth backend.
+func forwardPINChangeToPOS(sms InboundSMS, cmd SMSCommand) error {
+	if posAPIURL == "" {
+		return errors.New("POS_API_URL not configured")
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"phone":   sms.From,
+		"old_pin": cmd.OldPIN,
+		"new_pin": cmd.NewPIN,
+	})
+	req, err := http.NewRequest(http.MethodPost, posAPIURL+"/api/v1/auth/change-pin", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", sms.ID)
+	resp, err := posHTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var body struct {
+			Error string `json:"error"`
+		}
+		json.NewDecoder(resp.Body).Decode(&body)
+		if body.Error != "" {
+			return errors.New(body.Error)
+		}
+		return fmt.Errorf("POS API returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // ── SMS Command Parser ───────────────────────────────────────────────────────
@@ -167,27 +291,60 @@ func parseSMSCommand(text string) SMSCommand {
 	return cmd
 }
 
-// formatResponse generates an SMS reply (max 160 chars) for a command result.
-func formatResponse(cmd SMSCommand) string {
+// handleCommand executes a parsed command against the POS API and generates
+// an SMS reply (max 160 chars). Success replies are only produced with real
+// backend references; failures say so explicitly.
+func handleCommand(sms InboundSMS, cmd SMSCommand) string {
 	if !cmd.Valid {
 		return truncate160(fmt.Sprintf("Error: %s\nSend HELP for commands.", cmd.Error))
 	}
 
 	switch cmd.Type {
-	case "CI":
-		return truncate160(fmt.Sprintf("Cash In NGN %.2f received. Processing...\nRef: TXN%d", cmd.Amount, time.Now().UnixNano()%1000000))
-	case "CO":
-		return truncate160(fmt.Sprintf("Cash Out NGN %.2f requested. Processing...\nRef: TXN%d", cmd.Amount, time.Now().UnixNano()%1000000))
+	case "CI", "CO", "TRF":
+		result, err := forwardTransactionToPOS(sms, cmd)
+		if err != nil {
+			log.Printf("[SMS] %s execution failed (from=%s): %v", cmd.Type, sms.From, err)
+			return truncate160(fmt.Sprintf("%s could not be processed. No funds were moved. Please try again later.", cmdLabel(cmd.Type)))
+		}
+		if cmd.Type == "TRF" {
+			return truncate160(fmt.Sprintf("Transfer NGN %.2f to %s successful.\nRef: %s", cmd.Amount, cmd.Receiver, result.Reference))
+		}
+		return truncate160(fmt.Sprintf("%s NGN %.2f successful.\nRef: %s", cmdLabel(cmd.Type), cmd.Amount, result.Reference))
 	case "BAL":
-		return truncate160("Balance:\nFloat: NGN 50,000.00\nCommission: NGN 1,250.00\nLoyalty: 450 pts")
-	case "TRF":
-		return truncate160(fmt.Sprintf("Transfer NGN %.2f to %s. Processing...\nRef: TXN%d", cmd.Amount, cmd.Receiver, time.Now().UnixNano()%1000000))
+		bal, err := fetchPOSBalance(sms.From)
+		if err != nil {
+			log.Printf("[SMS] balance lookup failed (from=%s): %v", sms.From, err)
+			return truncate160("Balance service unavailable. Please try again later.")
+		}
+		currency := bal.Currency
+		if currency == "" {
+			currency = "NGN"
+		}
+		return truncate160(fmt.Sprintf("Balance: %s %.2f\nFloat: %s %.2f\nCommission: %s %.2f",
+			currency, bal.Balance, currency, bal.Float, currency, bal.Commission))
 	case "HELP":
 		return truncate160("54agent SMS Commands:\nCI <amt> - Cash In\nCO <amt> - Cash Out\nBAL - Balance\nTRF <phone> <amt> - Transfer\nPIN <old> <new> - Change PIN")
 	case "PIN":
-		return truncate160("PIN change request received. Processing...")
+		if err := forwardPINChangeToPOS(sms, cmd); err != nil {
+			log.Printf("[SMS] PIN change failed (from=%s): %v", sms.From, err)
+			return truncate160(fmt.Sprintf("PIN change failed: %s", err.Error()))
+		}
+		return truncate160("PIN changed successfully. Keep your PIN secret.")
 	default:
 		return truncate160("Unknown command. Send HELP for options.")
+	}
+}
+
+func cmdLabel(t string) string {
+	switch t {
+	case "CI":
+		return "Cash In"
+	case "CO":
+		return "Cash Out"
+	case "TRF":
+		return "Transfer"
+	default:
+		return t
 	}
 }
 
@@ -269,7 +426,7 @@ func incomingSMSHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[SMS-IN] from=%s text=%q network=%s", sms.From, sms.Text, sms.NetworkCode)
 
 	cmd := parseSMSCommand(sms.Text)
-	response := formatResponse(cmd)
+	response := handleCommand(sms, cmd)
 
 	log.Printf("[SMS-OUT] to=%s response=%q valid=%v", sms.From, response, cmd.Valid)
 
@@ -323,9 +480,10 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "healthy",
-		"service": "at-sms-webhook",
-		"version": "1.0.0",
+		"status":           "healthy",
+		"service":          "at-sms-webhook",
+		"version":          "1.0.0",
+		"posApiConfigured": posAPIURL != "",
 	})
 }
 
@@ -340,6 +498,10 @@ func getEnv(key, fallback string) string {
 
 func main() {
 	port := getEnv("PORT", "9011")
+
+	if posAPIURL == "" {
+		log.Printf("[AT-SMS-Webhook] WARNING: POS_API_URL not set — all financial commands will fail closed")
+	}
 
 	http.HandleFunc("/sms/incoming", incomingSMSHandler)
 	http.HandleFunc("/sms/delivery", deliveryReportHandler)

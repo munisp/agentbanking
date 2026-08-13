@@ -429,12 +429,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("inviteUser", `${Date.now()}`, {
-        action: "inviteUser",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.inviteUser is not available in this deployment",
+      });
     }),
 
   listUsers: protectedProcedure.query(async () => {
@@ -451,12 +449,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("removeUser", `${Date.now()}`, {
-        action: "removeUser",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.removeUser is not available in this deployment",
+      });
     }),
 
   settings: protectedProcedure.query(async () => {
@@ -473,12 +469,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishtenantAdminMiddleware("toggleLive", `${Date.now()}`, {
-        action: "toggleLive",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.toggleLive is not available in this deployment",
+      });
     }),
   updateUser: protectedProcedure
     .input(

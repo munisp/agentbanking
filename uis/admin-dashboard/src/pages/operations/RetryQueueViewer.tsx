@@ -19,14 +19,6 @@ interface InspectModal {
   item: RetryItem | null;
 }
 
-const MOCK_ITEMS: RetryItem[] = [
-  { id: "RQ-001", operationType: "payment", payloadSummary: "NGN 5,000 → AGT-012", attemptCount: 2, nextRetryTime: "2026-05-02 10:15", originalError: "Connection timeout to core banking" },
-  { id: "RQ-002", operationType: "webhook", payloadSummary: "POST https://partner.example.com/hook", attemptCount: 4, nextRetryTime: "2026-05-02 10:30", originalError: "HTTP 503 from upstream" },
-  { id: "RQ-003", operationType: "notification", payloadSummary: "SMS to +2348012345678", attemptCount: 1, nextRetryTime: "2026-05-02 10:10", originalError: "SMS gateway rate limit exceeded" },
-  { id: "RQ-004", operationType: "settlement", payloadSummary: "Batch settle 312 txns", attemptCount: 3, nextRetryTime: "2026-05-02 11:00", originalError: "Insufficient settlement float" },
-  { id: "RQ-005", operationType: "payment", payloadSummary: "GHS 200 → AGT-088", attemptCount: 1, nextRetryTime: "2026-05-02 10:05", originalError: "Invalid account number" },
-];
-
 const OP_STYLES: Record<OperationType, string> = {
   payment: "bg-blue-100 text-blue-700",
   notification: "bg-purple-100 text-purple-700",
@@ -37,6 +29,7 @@ const OP_STYLES: Record<OperationType, string> = {
 const RetryQueueViewer: React.FC = () => {
   const [items, setItems] = useState<RetryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<InspectModal>({ item: null });
   const [toast, setToast] = useState<string | null>(null);
 
@@ -46,10 +39,11 @@ const RetryQueueViewer: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/retry-queue`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setItems(Array.isArray(d.items) ? d.items : MOCK_ITEMS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setItems(Array.isArray(d.items) ? d.items : []);  } else { setError("Failed to load retry queue."); }
+    } catch { setError("Failed to load retry queue."); }
     finally { setLoading(false); }
   };
 
@@ -63,7 +57,7 @@ const RetryQueueViewer: React.FC = () => {
       });
       showToast(`Retry triggered for ${id}`);
       fetchData();
-    } catch { showToast(`Retry triggered for ${id} (demo)`); }
+    } catch { showToast(`Failed to trigger retry for ${id}.`); }
   };
 
   const handleCancel = async (id: string) => {
@@ -74,7 +68,7 @@ const RetryQueueViewer: React.FC = () => {
       });
       showToast(`${id} cancelled`);
       fetchData();
-    } catch { setItems(prev => prev.filter(i => i.id !== id)); showToast(`${id} cancelled (demo)`); }
+    } catch { showToast(`Failed to cancel ${id}.`); }
   };
 
   const totalQueued = items.length;
@@ -83,6 +77,13 @@ const RetryQueueViewer: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

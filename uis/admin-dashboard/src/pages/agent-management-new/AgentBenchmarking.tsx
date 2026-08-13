@@ -7,42 +7,12 @@ import { Trophy } from "lucide-react";
 
 export default function AgentBenchmarking() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: liveData, isLoading } = trpc.agentBenchmarking.list.useQuery(
+  const { data: liveData, isLoading, error, refetch } = trpc.agentBenchmarking.list.useQuery(
     undefined,
     { retry: 1 }
   );
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
+  // Render only real backend data — no fabricated fallback rows.
+  const mockData = liveData ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
@@ -67,6 +37,18 @@ export default function AgentBenchmarking() {
   return (
     <div className="min-h-screen bg-[#0a0e17] text-white p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Error banner with retry */}
+        {error && (
+          <div className="mb-6 bg-red-500/10 border border-red-500/40 text-red-400 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+            <span>Failed to load data. Please try again.</span>
+            <button
+              onClick={() => refetch()}
+              className="underline shrink-0 hover:text-red-300"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -148,6 +130,26 @@ export default function AgentBenchmarking() {
                 </tr>
               </thead>
               <tbody>
+                {isLoading && (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-8 text-center text-gray-400"
+                    >
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && filtered.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-8 text-center text-gray-400"
+                    >
+                      No data available.
+                    </td>
+                  </tr>
+                )}
                 {filtered.map((row: any) => (
                   <tr
                     key={row.id}

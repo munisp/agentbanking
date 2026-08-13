@@ -402,21 +402,33 @@ export const apacheAirflowRouter = router({
   getDag: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheAirflow.getDag is not available in this deployment",
+      });
     }),
   toggleDag: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheAirflow.toggleDag is not available in this deployment",
+      });
     }),
   listTaskInstances: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheAirflow.listTaskInstances is not available in this deployment",
+      });
     }),
   platformValue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheAirflow.platformValue is not available in this deployment",
+      });
     }),
 });

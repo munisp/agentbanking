@@ -23,29 +23,13 @@ interface LatencyPoint {
   p99: number;
 }
 
-const MOCK_RUNS: TestRun[] = [
-  { id: "lt-001", name: "Baseline — Payment API", date: "2025-04-28", peakRPS: 420, p95ms: 182, errorPct: 0.4, virtualUsers: 200, durationSec: 300 },
-  { id: "lt-002", name: "Stress — Auth Service", date: "2025-04-25", peakRPS: 850, p95ms: 374, errorPct: 2.1, virtualUsers: 500, durationSec: 600 },
-  { id: "lt-003", name: "Soak — Ledger Write", date: "2025-04-20", peakRPS: 210, p95ms: 143, errorPct: 0.1, virtualUsers: 100, durationSec: 3600 },
-  { id: "lt-004", name: "Spike — Transfer Endpoint", date: "2025-05-01", peakRPS: 1200, p95ms: 612, errorPct: 5.8, virtualUsers: 1000, durationSec: 60 },
-];
-
-const generateLatencyData = (): LatencyPoint[] =>
-  Array.from({ length: 20 }, (_, i) => ({
-    t: `${i * 15}s`,
-    p50: 80 + Math.round(Math.sin(i * 0.5) * 20 + Math.random() * 15),
-    p95: 160 + Math.round(Math.sin(i * 0.5) * 40 + Math.random() * 30),
-    p99: 280 + Math.round(Math.sin(i * 0.5) * 60 + Math.random() * 50),
-  }));
-
-const MOCK_LATENCY = generateLatencyData();
-
 const LoadTestDashboard: React.FC = () => {
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ targetUrl: "https://54agent.upi.dev/api/v1/transfer", virtualUsers: "200", durationSec: "300" });
-  const latest = runs[runs.length - 1] ?? MOCK_RUNS[0];
+  const latest = runs.length ? runs[runs.length - 1] : null;
 
   
 
@@ -53,10 +37,12 @@ const LoadTestDashboard: React.FC = () => {
 
   const fetchRuns = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/load-tests`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setRuns(Array.isArray(d.runs) ? d.runs : MOCK_RUNS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setRuns(Array.isArray(d.runs) ? d.runs : []); }
+      else { setError("Failed to load test runs."); }
+    } catch { setError("Failed to load test runs."); }
     finally { setLoading(false); }
   };
 
@@ -69,18 +55,25 @@ const LoadTestDashboard: React.FC = () => {
       });
       setShowForm(false);
       fetchRuns();
-    } catch { alert("Load test queued (demo mode)"); setShowForm(false); }
+    } catch { alert("Failed to queue load test. Please try again."); }
   };
 
   const summaryCards = [
-    { label: "Virtual Users", value: latest.virtualUsers.toLocaleString(), icon: <Users className="w-5 h-5 text-indigo-500" />, color: "text-indigo-600" },
-    { label: "Peak RPS", value: latest.peakRPS.toLocaleString(), icon: <Zap className="w-5 h-5 text-amber-500" />, color: "text-amber-600" },
-    { label: "p95 Latency", value: `${latest.p95ms} ms`, icon: <Clock className="w-5 h-5 text-blue-500" />, color: "text-blue-600" },
-    { label: "Error Rate", value: `${latest.errorPct}%`, icon: <AlertCircle className="w-5 h-5 text-red-500" />, color: latest.errorPct > 2 ? "text-red-600" : "text-green-600" },
+    { label: "Virtual Users", value: latest ? latest.virtualUsers.toLocaleString() : "—", icon: <Users className="w-5 h-5 text-indigo-500" />, color: "text-indigo-600" },
+    { label: "Peak RPS", value: latest ? latest.peakRPS.toLocaleString() : "—", icon: <Zap className="w-5 h-5 text-amber-500" />, color: "text-amber-600" },
+    { label: "p95 Latency", value: latest ? `${latest.p95ms} ms` : "—", icon: <Clock className="w-5 h-5 text-blue-500" />, color: "text-blue-600" },
+    { label: "Error Rate", value: latest ? `${latest.errorPct}%` : "—", icon: <AlertCircle className="w-5 h-5 text-red-500" />, color: latest && latest.errorPct > 2 ? "text-red-600" : "text-green-600" },
   ];
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchRuns()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -99,7 +92,7 @@ const LoadTestDashboard: React.FC = () => {
       </div>
 
       <div>
-        <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wide">Latest Test — {latest.name}</p>
+        <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wide">{latest ? `Latest Test — ${latest.name}` : "No test runs available"}</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {summaryCards.map(card => (
             <div key={card.label} className="bg-white rounded-xl shadow-sm p-6">
@@ -112,8 +105,9 @@ const LoadTestDashboard: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="font-semibold text-gray-800 mb-4">Latency Profile — Last Test Run</h2>
+        <p className="text-sm text-gray-500 mb-2">No latency profile data available — the load-test service does not report a latency series.</p>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={MOCK_LATENCY}>
+          <LineChart data={[]}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="t" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} unit="ms" />

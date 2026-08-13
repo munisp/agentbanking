@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -489,7 +494,9 @@ func (h *FloatHandler) ListFloatSettlements(c *gin.Context) {
 // RISK ASSESSMENT ENDPOINTS
 // ==========================================
 
-// TriggerRiskAssessment triggers a new risk assessment
+// TriggerRiskAssessment triggers a new risk assessment by calling the real
+// risk engine. Returns 501 when no risk engine is configured and 502 when the
+// engine is unreachable — it never returns a canned "processing" stub.
 // POST /api/v1/float/risk-assessment
 func (h *FloatHandler) TriggerRiskAssessment(c *gin.Context) {
 	var req struct {
@@ -510,16 +517,54 @@ func (h *FloatHandler) TriggerRiskAssessment(c *gin.Context) {
 		req.AssessmentType = "manual"
 	}
 	
-	// This would call the risk assessment service
-	// For now, return success
-	c.JSON(http.StatusAccepted, gin.H{
-		"message": "Risk assessment triggered successfully",
-		"data": gin.H{
-			"agent_id":        req.AgentID,
-			"assessment_type": req.AssessmentType,
-			"status":          "processing",
-		},
+	riskEngineURL := os.Getenv("RISK_ENGINE_URL")
+	if riskEngineURL == "" {
+		c.JSON(http.StatusNotImplemented, gin.H{
+			"error": "risk engine not configured (RISK_ENGINE_URL unset) — cannot trigger a real assessment",
+		})
+		return
+	}
+	
+	payload, err := json.Marshal(map[string]interface{}{
+		"agent_id":        req.AgentID,
+		"assessment_type": req.AssessmentType,
+		"requested_by":    req.RequestedBy,
 	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode assessment request"})
+		return
+	}
+	
+	resp, err := http.Post(
+		strings.TrimRight(riskEngineURL, "/")+"/api/v1/risk/assessments",
+		"application/json",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   "risk engine unreachable",
+			"details": err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read risk engine response"})
+		return
+	}
+	if resp.StatusCode >= 400 {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   "risk engine rejected assessment",
+			"status":  resp.StatusCode,
+			"response": json.RawMessage(body),
+		})
+		return
+	}
+	
+	// Pass through the real assessment response from the risk engine.
+	c.Data(resp.StatusCode, "application/json", body)
 }
 
 // ListRiskAssessments lists risk assessments
@@ -858,4 +903,3 @@ func (h *FloatHandler) SetIntegrationModel(c *gin.Context) {
 		"message": "Integration model updated successfully",
 	})
 }
-

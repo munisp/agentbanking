@@ -45,32 +45,27 @@ const SendMoneyScreen = () => {
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchingBeneficiaries, setFetchingBeneficiaries] = useState(true);
+  const [beneficiariesError, setBeneficiariesError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBeneficiaries();
   }, []);
 
   const fetchBeneficiaries = async () => {
+    setBeneficiariesError(null);
     try {
       const response = await fetch(`${API_BASE_URL}/beneficiaries`);
       const data = await response.json();
       if (response.ok) {
         setBeneficiaries(data.beneficiaries || []);
       } else {
-        // Fallback for demo purposes if API is not reachable
-        setBeneficiaries([
-          { id: '1', name: 'John Doe', accountNumber: '0123456789', bankName: 'Access Bank' },
-          { id: '2', name: 'Jane Smith', accountNumber: '9876543210', bankName: 'GTBank' },
-          { id: '3', name: 'Michael Brown', accountNumber: '5544332211', bankName: 'Zenith Bank' },
-        ]);
+        // Honest failure: never substitute fabricated recipients.
+        setBeneficiaries([]);
+        setBeneficiariesError(data.message || 'Could not load beneficiaries.');
       }
     } catch (error) {
-      // Fallback for demo purposes
-      setBeneficiaries([
-        { id: '1', name: 'John Doe', accountNumber: '0123456789', bankName: 'Access Bank' },
-        { id: '2', name: 'Jane Smith', accountNumber: '9876543210', bankName: 'GTBank' },
-        { id: '3', name: 'Michael Brown', accountNumber: '5544332211', bankName: 'Zenith Bank' },
-      ]);
+      setBeneficiaries([]);
+      setBeneficiariesError('Network error. Please check your connection and try again.');
     } finally {
       setFetchingBeneficiaries(false);
     }
@@ -154,6 +149,17 @@ const SendMoneyScreen = () => {
             <Text style={styles.sectionTitle}>Select Recipient</Text>
             {fetchingBeneficiaries ? (
               <ActivityIndicator color={PRIMARY_COLOR} style={{ marginVertical: 20 }} />
+            ) : beneficiariesError ? (
+              <View style={{ alignItems: 'center', marginVertical: 20 }}>
+                <Text style={{ color: '#B00020', marginBottom: 8 }}>{beneficiariesError}</Text>
+                <TouchableOpacity onPress={fetchBeneficiaries}>
+                  <Text style={{ color: PRIMARY_COLOR, fontWeight: '600' }}>Tap to retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : beneficiaries.length === 0 ? (
+              <Text style={{ color: '#A0A0A0', marginVertical: 20, textAlign: 'center' }}>
+                No saved beneficiaries yet.
+              </Text>
             ) : (
               <FlatList
                 data={beneficiaries}
@@ -207,10 +213,9 @@ const SendMoneyScreen = () => {
                   <Text style={styles.summaryLabel}>Amount</Text>
                   <Text style={styles.summaryValue}>₦{amount || '0.00'}</Text>
                 </View>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Fee</Text>
-                  <Text style={styles.summaryValue}>₦10.00</Text>
-                </View>
+                <Text style={{ color: '#A0A0A0', fontSize: 12, marginTop: 4 }}>
+                  The exact fee is confirmed by the server before the transfer is completed.
+                </Text>
               </View>
             )}
 

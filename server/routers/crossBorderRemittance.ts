@@ -35,6 +35,7 @@ import {
 } from "../lib/transactionHelper";
 import { validateInput } from "../lib/routerHelpers";
 import { enforcePermission } from "../_core/permify";
+import { getLiveFxRate } from "../lib/fxRateProvider";
 
 const CORRIDORS = {
   "NG-GH": {
@@ -79,23 +80,45 @@ const CORRIDORS = {
   },
 } as const;
 
-// Simulated FX rates (production: live feed from CBN/Reuters)
-const FX_RATES: Record<string, number> = {
-  "NGN-GHS": 0.0075,
-  "NGN-XOF": 0.37,
-  "NGN-XAF": 0.37,
-  "NGN-KES": 0.085,
-};
+// FX rates are fetched live from the Frankfurter/ECB reference feed via
+// ../lib/fxRateProvider (timeout + cached with fetched-at + staleness guard).
+// quote/send HARD-FAIL (SERVICE_UNAVAILABLE / NOT_IMPLEMENTED) when no fresh
+// live rate is available — the previous hardcoded simulated table debited real
+// float_balance and posted gl_journal_entries at fabricated rates.
 
 export const crossBorderRemittanceRouter = router({
   getCorridors: protectedProcedure.query(async () => {
-    return {
-      corridors: Object.entries(CORRIDORS).map(([id, c]) => ({
-        id,
-        ...c,
-        currentRate: FX_RATES[`${c.source}-${c.destination}`] || 0,
-      })),
-    };
+    const corridors = await Promise.all(
+      Object.entries(CORRIDORS).map(async ([id, c]) => {
+        try {
+          const live = await getLiveFxRate(c.source, c.destination);
+          return {
+            id,
+            ...c,
+            currentRate: live.rate,
+            rateSource: live.source,
+            rateDate: live.rateDate,
+            rateFetchedAt: live.fetchedAt,
+            rateAvailable: true,
+          };
+        } catch (err) {
+          // Feed down → fail loud for the whole board; uncovered currencies
+          // are reported explicitly per corridor (never a fabricated rate).
+          if (err instanceof TRPCError && err.code === "SERVICE_UNAVAILABLE")
+            throw err;
+          return {
+            id,
+            ...c,
+            currentRate: null,
+            rateSource: null,
+            rateDate: null,
+            rateFetchedAt: null,
+            rateAvailable: false,
+          };
+        }
+      })
+    );
+    return { corridors };
   }),
 
   quote: protectedProcedure
@@ -128,7 +151,9 @@ export const crossBorderRemittanceRouter = router({
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
       const netAmount = input.amountNGN - fee;
-      const rate = FX_RATES[`${corridor.source}-${corridor.destination}`] || 0;
+      // Live rate — quote hard-fails without a fresh rate (no fallback table).
+      const liveRate = await getLiveFxRate(corridor.source, corridor.destination);
+      const rate = liveRate.rate;
       const receivedAmount = Math.round(netAmount * rate * 100) / 100;
 
       return {
@@ -137,6 +162,9 @@ export const crossBorderRemittanceRouter = router({
         fee,
         netAmount,
         exchangeRate: rate,
+        rateSource: liveRate.source,
+        rateDate: liveRate.rateDate,
+        rateFetchedAt: liveRate.fetchedAt,
         receivedAmount,
         receivedCurrency: corridor.destination,
         estimatedMinutes: corridor.estimatedMinutes,
@@ -180,11 +208,15 @@ export const crossBorderRemittanceRouter = router({
           message: "Invalid corridor",
         });
 
+      // Live rate fetched BEFORE any float movement — send hard-fails without
+      // a fresh rate (no fabricated conversion against real float / GL).
+      const liveRate = await getLiveFxRate(corridor.source, corridor.destination);
+      const rate = liveRate.rate;
+
       const fee = Math.max(
         corridor.minFee,
         Math.round((input.amountNGN * corridor.feePercent) / 100)
       );
-      const rate = FX_RATES[`${corridor.source}-${corridor.destination}`] || 0;
       const receivedAmount =
         Math.round((input.amountNGN - fee) * rate * 100) / 100;
 
@@ -260,6 +292,9 @@ export const crossBorderRemittanceRouter = router({
                 receivedAmount,
                 receivedCurrency: corridor.destination,
                 exchangeRate: rate,
+                rateSource: liveRate.source,
+                rateDate: liveRate.rateDate,
+                rateFetchedAt: liveRate.fetchedAt,
                 purpose: input.purpose,
                 recipientWallet: input.recipientWallet,
               },

@@ -1943,17 +1943,10 @@ export const managementRouter = router({
     update: adminProcedure
       .input(z.object({ key: z.string(), value: z.unknown() }))
       .mutation(async ({ input }) => {
-        try {
-          // In production this would update platform_settings table
-          return { success: true, key: input.key, value: input.value };
-        } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-          });
-        }
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message: "management.update is not available in this deployment",
+        });
       }),
   }),
 });

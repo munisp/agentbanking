@@ -1,24 +1,34 @@
 """
 Router for ai-document-validation service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/ai-document-validation/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/ai-document-validation", tags=["ai-document-validation"])
 
-@router.post("/validate")
-async def validate_document(
-    user_id: str,
-    document_type: DocumentType,
-    file: UploadFile = File(...)):
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "ai-document-validation endpoints are not served by this gateway router. "
+    "Use the standalone ai-document-validation service."
+)
 
-@router.get("/validations/{validation_id}")
-async def get_validation(validation_id: str):
-    return {"status": "ok"}
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "ai-document-validation", "detail": _UNAVAILABLE},
+    )
 
+
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

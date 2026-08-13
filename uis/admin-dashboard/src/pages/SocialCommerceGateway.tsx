@@ -26,28 +26,6 @@ interface FunnelMetric {
   value: number;
 }
 
-const MOCK_CHANNELS: SocialChannel[] = [
-  { id: "c1", name: "WhatsApp Business", status: "connected", followers: 12400, ordersToday: 87 },
-  { id: "c2", name: "Facebook Shop", status: "connected", followers: 34200, ordersToday: 142 },
-  { id: "c3", name: "Instagram Shopping", status: "connected", followers: 28700, ordersToday: 95 },
-  { id: "c4", name: "TikTok Shop", status: "pending", followers: 9800, ordersToday: 23 },
-];
-
-const MOCK_ORDERS: SocialOrder[] = [
-  { id: "ORD-8801", channel: "Facebook Shop", customer: "Adaeze Obi", items: "Wristwatch x1, Sunglasses x2", amount: 45000, status: "delivered" },
-  { id: "ORD-8802", channel: "Instagram Shopping", customer: "Tunde Ayo", items: "Running Shoes x1", amount: 28500, status: "processing" },
-  { id: "ORD-8803", channel: "WhatsApp Business", customer: "Grace Eze", items: "Handbag x1", amount: 18000, status: "pending" },
-  { id: "ORD-8804", channel: "TikTok Shop", customer: "Emeka Chukwu", items: "Wireless Earbuds x1", amount: 12000, status: "pending" },
-  { id: "ORD-8805", channel: "Facebook Shop", customer: "Bola Adesanya", items: "Perfume x2", amount: 32000, status: "delivered" },
-];
-
-const MOCK_FUNNEL: FunnelMetric[] = [
-  { label: "Impressions", value: 248500 },
-  { label: "Clicks", value: 18640 },
-  { label: "Add to Cart", value: 4210 },
-  { label: "Orders", value: 347 },
-];
-
 const STATUS_STYLES: Record<string, string> = {
   connected: "bg-green-100 text-green-700",
   disconnected: "bg-red-100 text-red-700",
@@ -61,21 +39,23 @@ const SocialCommerceGateway: React.FC = () => {
   const [orders, setOrders] = useState<SocialOrder[]>([]);
   const [funnel, setFunnel] = useState<FunnelMetric[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [commissionEarned] = useState(52400);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/storefront/api/v1/social-commerce`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setChannels(Array.isArray(d.channels) ? d.channels : MOCK_CHANNELS);
-        setOrders(Array.isArray(d.orders) ? d.orders : MOCK_ORDERS);
-        setFunnel(Array.isArray(d.funnel) ? d.funnel : MOCK_FUNNEL);
-      }
-    } catch { }
+        setChannels(Array.isArray(d.channels) ? d.channels : []);
+        setOrders(Array.isArray(d.orders) ? d.orders : []);
+        setFunnel(Array.isArray(d.funnel) ? d.funnel : []);
+      } else { setError("Failed to load social commerce data."); }
+    } catch { setError("Failed to load social commerce data."); }
     finally { setLoading(false); }
   };
 
@@ -83,6 +63,13 @@ const SocialCommerceGateway: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -99,7 +86,7 @@ const SocialCommerceGateway: React.FC = () => {
         {[
           { label: "Orders Today", value: totalOrdersToday, color: "text-indigo-600" },
           { label: "Commission Earned", value: `₦${commissionEarned.toLocaleString()}`, color: "text-green-600" },
-          { label: "Conversion Rate", value: `${((MOCK_FUNNEL[3]?.value / MOCK_FUNNEL[0]?.value) * 100).toFixed(2)}%`, color: "text-blue-600" },
+          { label: "Conversion Rate", value: funnel.length >= 4 && funnel[0]?.value ? `${((funnel[3].value / funnel[0].value) * 100).toFixed(2)}%` : "—", color: "text-blue-600" },
           { label: "Connected Channels", value: channels.filter(c => c.status === "connected").length, color: "text-purple-600" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl shadow-sm p-4">

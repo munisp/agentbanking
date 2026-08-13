@@ -13,89 +13,9 @@ import {
   Medal,
 } from "lucide-react";
 
-// Mock agent performance data (in production, fetched from trpc.sprint23.agentPerformance.calculate)
-const mockAgents = [
-  {
-    agentId: "a1",
-    agentCode: "AG-001",
-    name: "Adebayo Ogundimu",
-    overallScore: 92.5,
-    tier: "platinum" as const,
-    trend: "improving" as const,
-    breakdown: {
-      transactionVolume: { score: 95, weight: 0.25, raw: 1250 },
-      successRate: { score: 98.2, weight: 0.2, raw: 98.2 },
-      customerSatisfaction: { score: 90, weight: 0.15, raw: 4.5 },
-      complianceAdherence: { score: 88, weight: 0.2, raw: 88 },
-      uptimeReliability: { score: 96, weight: 0.1, raw: 168 },
-      responseTime: { score: 100, weight: 0.1, raw: 450 },
-    },
-  },
-  {
-    agentId: "a2",
-    agentCode: "AG-002",
-    name: "Chioma Nwosu",
-    overallScore: 87.3,
-    tier: "gold" as const,
-    trend: "stable" as const,
-    breakdown: {
-      transactionVolume: { score: 82, weight: 0.25, raw: 980 },
-      successRate: { score: 96.5, weight: 0.2, raw: 96.5 },
-      customerSatisfaction: { score: 86, weight: 0.15, raw: 4.3 },
-      complianceAdherence: { score: 90, weight: 0.2, raw: 90 },
-      uptimeReliability: { score: 88, weight: 0.1, raw: 155 },
-      responseTime: { score: 75, weight: 0.1, raw: 2100 },
-    },
-  },
-  {
-    agentId: "a3",
-    agentCode: "AG-003",
-    name: "Emeka Okafor",
-    overallScore: 78.1,
-    tier: "gold" as const,
-    trend: "improving" as const,
-    breakdown: {
-      transactionVolume: { score: 75, weight: 0.25, raw: 820 },
-      successRate: { score: 94.0, weight: 0.2, raw: 94.0 },
-      customerSatisfaction: { score: 80, weight: 0.15, raw: 4.0 },
-      complianceAdherence: { score: 72, weight: 0.2, raw: 72 },
-      uptimeReliability: { score: 82, weight: 0.1, raw: 142 },
-      responseTime: { score: 75, weight: 0.1, raw: 2500 },
-    },
-  },
-  {
-    agentId: "a4",
-    agentCode: "AG-004",
-    name: "Fatima Ibrahim",
-    overallScore: 65.8,
-    tier: "silver" as const,
-    trend: "declining" as const,
-    breakdown: {
-      transactionVolume: { score: 60, weight: 0.25, raw: 620 },
-      successRate: { score: 88.0, weight: 0.2, raw: 88.0 },
-      customerSatisfaction: { score: 70, weight: 0.15, raw: 3.5 },
-      complianceAdherence: { score: 65, weight: 0.2, raw: 65 },
-      uptimeReliability: { score: 55, weight: 0.1, raw: 96 },
-      responseTime: { score: 50, weight: 0.1, raw: 4200 },
-    },
-  },
-  {
-    agentId: "a5",
-    agentCode: "AG-005",
-    name: "Oluwaseun Bakare",
-    overallScore: 55.2,
-    tier: "bronze" as const,
-    trend: "stable" as const,
-    breakdown: {
-      transactionVolume: { score: 45, weight: 0.25, raw: 380 },
-      successRate: { score: 82.0, weight: 0.2, raw: 82.0 },
-      customerSatisfaction: { score: 60, weight: 0.15, raw: 3.0 },
-      complianceAdherence: { score: 58, weight: 0.2, raw: 58 },
-      uptimeReliability: { score: 50, weight: 0.1, raw: 88 },
-      responseTime: { score: 25, weight: 0.1, raw: 6000 },
-    },
-  },
-];
+// No live scoring API is wired to this page yet — render an honest empty
+// state instead of fabricated agent rows.
+const mockAgents: any[] = [];
 
 const tierColors: Record<string, string> = {
   platinum: "text-purple-400",
@@ -162,6 +82,11 @@ export default function AgentPerformanceScoring() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              {mockAgents.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No performance data available.
+                </p>
+              )}
               {mockAgents.map((agent, idx) => (
                 <div
                   key={agent.agentId}

@@ -54,12 +54,9 @@ const SavingsGoalsScreen = () => {
         const data = await response.json();
         setGoals(data);
       } else {
-        // Fallback for demo purposes if API is not ready
-        setGoals([
-          { id: '1', title: 'New Car', targetAmount: 5000000, currentAmount: 1200000, deadline: '2026-12-31', category: 'Transport' },
-          { id: '2', title: 'Emergency Fund', targetAmount: 1000000, currentAmount: 850000, deadline: '2026-06-30', category: 'Security' },
-          { id: '3', title: 'Vacation', targetAmount: 500000, currentAmount: 50000, deadline: '2026-08-15', category: 'Leisure' },
-        ]);
+        // Honest failure: never substitute fabricated savings goals.
+        setGoals([]);
+        Alert.alert('Error', 'Failed to fetch savings goals. Please try again later.');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to fetch savings goals. Please try again later.');
@@ -98,28 +95,14 @@ const SavingsGoalsScreen = () => {
         throw new Error('Failed to add goal');
       }
     } catch (error) {
-      // Mock success for demo if API fails
-      const mockNewGoal: SavingsGoal = {
-        id: Math.random().toString(),
-        title: newGoalTitle,
-        targetAmount: parseFloat(newGoalTarget),
-        currentAmount: 0,
-        deadline: newGoalDeadline,
-        category: 'General',
-      };
-      setGoals([...goals, mockNewGoal]);
-      setIsAdding(false);
-      setNewGoalTitle('');
-      setNewGoalTarget('');
-      setNewGoalDeadline('');
-      Alert.alert('Success', 'Savings goal created!');
+      // Honest failure: the goal was NOT created. Never fabricate one locally.
+      Alert.alert('Error', 'Could not create the savings goal. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const renderGoalItem = ({ item }: { item: SavingsGoal }) => {
-  const { colors } = useTheme();
   const styles = makeStyles(colors);
     const progress = Math.min(item.currentAmount / item.targetAmount, 1);
     const percentage = Math.round(progress * 100);
@@ -233,7 +216,7 @@ const SavingsGoalsScreen = () => {
 const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.primary,
+    backgroundColor: #0052CC,
   },
   header: {
     flexDirection: 'row',
@@ -281,7 +264,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   goalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: #0052CC,
   },
   goalCategory: {
     fontSize: 12,
@@ -300,7 +283,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   currentAmount: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: #0052CC,
   },
   targetAmount: {
     fontSize: 14,
@@ -389,7 +372,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: colors.primary,
+    color: #0052CC,
   },
   submitButton: {
     backgroundColor: '#6C63FF',

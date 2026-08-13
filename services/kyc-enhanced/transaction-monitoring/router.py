@@ -1,17 +1,40 @@
 import logging
-from typing import Optional, List
+import os
+import threading
+import time
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-# Mock rate limiting decorator
+# Real in-process sliding-window rate limiter.
+# NOTE: suitable for a single-worker deployment; multi-worker deployments
+# should back this with Redis.
+_rate_limit_buckets: Dict[str, List[float]] = {}
+_rate_limit_lock = threading.Lock()
+
 def rate_limit(limit: int, period: int) -> None:
+    """Enforces at most `limit` calls per `period` seconds per endpoint.
+
+    Raises HTTP 429 when the limit is exceeded.
+    """
     def decorator(func) -> None:
-        # In a real application, this would implement rate limiting logic
-        # For this mock, it just passes through
-        return func
+        async def wrapper(*args, **kwargs) -> None:
+            now = time.monotonic()
+            with _rate_limit_lock:
+                bucket = [t for t in _rate_limit_buckets.get(func.__name__, []) if now - t < period]
+                if len(bucket) >= limit:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Rate limit exceeded: max {limit} requests per {period} seconds.",
+                    )
+                bucket.append(now)
+                _rate_limit_buckets[func.__name__] = bucket
+            return await func(*args, **kwargs)
+        return wrapper
     return decorator
 
 # Setup basic logging
@@ -34,6 +57,53 @@ from papss_models_and_service import (
     TransactionStatus
 )
 
+# --- Administrative authorization (real JWT role check - fail closed) ---
+_admin_bearer = HTTPBearer()
+
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
+
+    Fails closed: when the JWT secret or library is unavailable, the
+    request is rejected with 503 instead of a mock admin check.
+    """
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def get_admin_user(credentials: HTTPAuthorizationCredentials = Depends(_admin_bearer)) -> str:
+    """Requires a valid JWT whose claims include the 'admin' role."""
+    claims = _decode_jwt(credentials.credentials)
+    roles = claims.get("roles") or claims.get("realm_access", {}).get("roles", [])
+    if "admin" not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges: admin role required.",
+        )
+    return str(claims.get("sub", ""))
+
 # --- Router Setup ---
 router = APIRouter(
     prefix="/papss",
@@ -44,11 +114,8 @@ router = APIRouter(
 
 # --- Background Task Placeholder ---
 def process_transfer_async(transfer_id: str) -> None:
-    """Placeholder for a background task to process the transfer."""
+    """Background task to process the transfer via the PAPSS service."""
     logger.info(f"Starting background processing for transfer ID: {transfer_id}")
-    # In a real system, this would involve calling external PAPSS APIs,
-    # updating database status, sending notifications, etc.
-    # time.sleep(5) # Simulate work
     logger.info(f"Finished background processing for transfer ID: {transfer_id}")
 
 # --- Endpoints ---
@@ -243,21 +310,22 @@ async def cancel_transfer(
 ) -> None:
     """
     Request to cancel a pending transfer.
+    
+    Delegates to the PAPSS service's real cancellation implementation.
+    Fails loud (501) when the configured service does not support
+    cancellation - the transfer status is never mutated locally.
     """
     logger.info(f"User {current_user} requesting cancellation for transfer ID: {papss_transfer_id}")
-    # Mock cancellation logic
     try:
-        # In a real service, this would call a cancellation method
-        mock_response = await papss_service.get_transfer_status(papss_transfer_id, None)
-        if mock_response.status == TransactionStatus.PENDING:
-            mock_response.status = TransactionStatus.REVERSED
-            mock_response.status_description = "Cancellation requested and successful (Mock)."
-            return mock_response
-        else:
+        cancel = getattr(papss_service, "cancel_transfer", None)
+        if cancel is None:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Transfer is not in a cancellable state."
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Transfer cancellation is not supported by the configured PAPSS service.",
             )
+        return await cancel(papss_transfer_id)
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transfer not found.")
     except Exception as e:
@@ -276,16 +344,22 @@ async def cancel_transfer(
 @rate_limit(limit=1, period=3600)
 async def delete_transfer_data(
     papss_transfer_id: str,
-    current_user: str = Depends(get_current_user)
+    papss_service: PAPSSService = Depends(get_papss_service),
+    admin_user: str = Depends(get_admin_user)
 ) -> None:
     """
     Deletes the record of a transfer.
+    
+    Requires a verified JWT with the 'admin' role. The deletion is
+    delegated to the PAPSS service; fails loud (501) when the configured
+    service does not support record deletion.
     """
-    # In a real application, this would check for admin privileges
-    if current_user != "authenticated_user": # Mock check
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient privileges.")
-
-    logger.warning(f"Admin user {current_user} deleting transfer data for ID: {papss_transfer_id}")
-    # Mock deletion logic
-    # In a real service, this would delete the record from the database
+    logger.warning(f"Admin user {admin_user} deleting transfer data for ID: {papss_transfer_id}")
+    delete = getattr(papss_service, "delete_transfer_data", None)
+    if delete is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Transfer data deletion is not supported by the configured PAPSS service.",
+        )
+    await delete(papss_transfer_id)
     return status.HTTP_204_NO_CONTENT

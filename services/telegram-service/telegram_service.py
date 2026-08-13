@@ -111,24 +111,22 @@ async def send_telegram_photo(chat_id: int, photo_url: str, caption: str, reply_
         return None
 
 async def get_products():
-    """Fetch products from e-commerce service"""
+    """Fetch products from the e-commerce service.
+
+    FAIL LOUD: previously fell back to a hard-coded sample catalog (rice,
+    cooking oil, detergent, ...) presented to customers as the real catalog.
+    Returns None when the catalog cannot be loaded so callers can tell the
+    user the catalog is unavailable instead of selling fake products.
+    """
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{ECOMMERCE_API_URL}/products")
+            response = await client.get(f"{ECOMMERCE_API_URL}/products", timeout=10.0)
             if response.status_code == 200:
                 return response.json().get("products", [])
-    except:
-        pass
-    
-    # Fallback to sample products
-    return [
-        {"id": "1", "name": "Premium Rice (50kg)", "price": 45000, "description": "High-quality rice", "stock": 50},
-        {"id": "2", "name": "Cooking Oil (5L)", "price": 8500, "description": "Pure vegetable oil", "stock": 120},
-        {"id": "3", "name": "Detergent Powder (2kg)", "price": 3200, "description": "Powerful cleaning", "stock": 80},
-        {"id": "4", "name": "Tomato Paste (70g x 50)", "price": 12000, "description": "Rich tomato flavor", "stock": 60},
-        {"id": "5", "name": "Sugar (2kg)", "price": 1800, "description": "Pure white sugar", "stock": 100},
-        {"id": "6", "name": "Bathing Soap (Pack of 12)", "price": 2400, "description": "Fresh fragrance", "stock": 150}
-    ]
+    except Exception as e:
+        print(f"Product catalog fetch failed: {e}")
+    return None
+
 
 def create_main_menu_keyboard():
     """Create main menu inline keyboard"""
@@ -213,12 +211,18 @@ What would you like to do?
 async def handle_browse_products(chat_id: int):
     """Handle browse products action"""
     products = await get_products()
+    if products is None:
+        await send_telegram_message(chat_id, "⚠️ The product catalog is temporarily unavailable. Please try again later.")
+        return
     message = "🛍️ <b>Our Products</b>\n\nSelect a product to view details:"
     await send_telegram_message(chat_id, message, create_products_keyboard(products))
 
 async def handle_product_detail(chat_id: int, product_id: str):
     """Handle product detail view"""
     products = await get_products()
+    if products is None:
+        await send_telegram_message(chat_id, "⚠️ The product catalog is temporarily unavailable. Please try again later.")
+        return
     product = next((p for p in products if p['id'] == product_id), None)
     
     if not product:
@@ -244,6 +248,9 @@ Select quantity and add to cart:
 async def handle_add_to_cart(chat_id: int, user_id: int, product_id: str, quantity: int = 1):
     """Handle add to cart action"""
     products = await get_products()
+    if products is None:
+        await send_telegram_message(chat_id, "⚠️ The product catalog is temporarily unavailable. Please try again later.")
+        return
     product = next((p for p in products if p['id'] == product_id), None)
     
     if not product:
@@ -473,9 +480,19 @@ async def get_orders():
 
 @app.post("/send-notification/{chat_id}")
 async def send_notification(chat_id: int, message: str):
-    """Send notification to user"""
+    """Send notification to user.
+
+    FAIL LOUD: previously any truthy Telegram API response (including error
+    payloads returned when TELEGRAM_BOT_TOKEN is unset) was reported as
+    'sent'. Now checks the Telegram API `ok` flag and returns 502 on failure.
+    """
     result = await send_telegram_message(chat_id, message)
-    return {"status": "sent" if result else "failed"}
+    if not result or result.get("ok") is not True:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Telegram API rejected the notification: {result}",
+        )
+    return {"status": "sent", "result": result}
 
 @app.post("/set-webhook")
 async def set_webhook(webhook_url: str):
@@ -507,4 +524,3 @@ async def get_stats():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8041)
-

@@ -12,7 +12,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -137,7 +142,8 @@ interface TransactionDao {
 
 interface TransactionRepository {
     fun getTransactionsStream(page: Int, pageSize: Int, query: String?, type: String?): Flow<List<Transaction>>
-    suspend fun refreshTransactions(page: Int, pageSize: Int, query: String?, type: String?)
+    /** Returns true when the server returned a full page (i.e. more pages may exist). */
+    suspend fun refreshTransactions(page: Int, pageSize: Int, query: String?, type: String?): Boolean
 }
 
 class TransactionRepositoryImpl(
@@ -153,27 +159,16 @@ class TransactionRepositoryImpl(
             .map { entities -> entities.map { it.toDomain() } }
     }
 
-    override suspend fun refreshTransactions(page: Int, pageSize: Int, query: String?, type: String?) {
-        try {
-            val response = apiService.getTransactions(page, pageSize, query, type)
-            if (response.isSuccessful) {
-                val dtos = response.body() ?: emptyList()
-                val entities = dtos.map { it.toDomain().toEntity() }
-                // For simplicity, we only insert the current page. A real app would handle this more carefully.
-                if (page == 1) {
-                    // transactionDao.clearAll() // Only clear if we are fetching the first page
-                }
-                transactionDao.insertAll(entities)
-            } else {
-                // Handle API error
-                throw HttpException(response)
-            }
-        } catch (e: IOException) {
-            // Network error, rely on cached data
-            println("Network error: ${e.message}")
-        } catch (e: HttpException) {
-            // API error
-            println("API error: ${e.code()}")
+    override suspend fun refreshTransactions(page: Int, pageSize: Int, query: String?, type: String?): Boolean {
+        val response = apiService.getTransactions(page, pageSize, query, type)
+        if (response.isSuccessful) {
+            val dtos = response.body() ?: emptyList()
+            val entities = dtos.map { it.toDomain().toEntity() }
+            transactionDao.insertAll(entities)
+            // A short page means the end of the history has been reached.
+            return dtos.size >= pageSize
+        } else {
+            throw HttpException(response)
         }
     }
 }
@@ -241,14 +236,17 @@ class TransactionHistoryViewModel(
 
             val currentState = _state.value
             try {
-                repository.refreshTransactions(
+                val hasMore = repository.refreshTransactions(
                     currentState.currentPage,
                     pageSize,
                     currentState.searchQuery,
                     currentState.selectedType?.name
                 )
-                // Simulate total pages update from API response header/body
-                _state.update { it.copy(totalPages = 5) }
+                // End of history is derived from the actual page the server
+                // returned — never a fabricated page count.
+                _state.update {
+                    it.copy(totalPages = if (hasMore) currentState.currentPage + 1 else currentState.currentPage)
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(error = "Failed to load transactions: ${e.message}") }
             } finally {
@@ -390,24 +388,35 @@ fun TransactionHistoryScreen(
         )
     }
 
-    // Biometric Prompt Placeholder (In a real app, this would be a platform-specific side effect)
+    // Real biometric/device-credential prompt (platform BiometricPrompt).
     if (state.isBiometricPromptVisible) {
-        // In a real app, you'd use a LaunchedEffect and a platform-specific manager here
-        AlertDialog(
-            onDismissRequest = { viewModel.onBiometricAuthResult(false) },
-            title = { Text("Biometric Authentication") },
-            text = { Text("Simulating BiometricPrompt. Click 'Success' to proceed.") },
-            confirmButton = {
-                Button(onClick = { viewModel.onBiometricAuthResult(true) }) {
-                    Text("Success")
-                }
-            },
-            dismissButton = {
-                Button(onClick = { viewModel.onBiometricAuthResult(false) }) {
-                    Text("Cancel")
-                }
+        val context = LocalContext.current
+        LaunchedEffect(Unit) {
+            val activity = context as? FragmentActivity
+            if (activity == null) {
+                viewModel.onBiometricAuthResult(false)
+                return@LaunchedEffect
             }
-        )
+            val executor = ContextCompat.getMainExecutor(activity)
+            val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    viewModel.onBiometricAuthResult(true)
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    viewModel.onBiometricAuthResult(false)
+                }
+                override fun onAuthenticationFailed() {
+                    // Non-fatal: the system prompt stays visible for another attempt.
+                }
+            })
+            // BIOMETRIC_STRONG with DEVICE_CREDENTIAL fallback (passcode) — never silently allowed.
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Biometric Authentication")
+                .setSubtitle("Authenticate to view transaction history")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build()
+            prompt.authenticate(promptInfo)
+        }
     }
 }
 
@@ -644,7 +653,7 @@ fun EmptyState(onRefresh: () -> Unit) {
 
 // Placeholder for Hilt/Koin modules and actual implementations
 object DependencyInjection {
-    // Mock implementations for preview and demonstration
+    // Mock implementations for @Preview only — never referenced on live paths.
     private val mockApi = object : TransactionApiService {
         override suspend fun getTransactions(page: Int, pageSize: Int, query: String?, type: String?): Response<List<TransactionDto>> {
             delay(500) // Simulate network delay
@@ -725,7 +734,7 @@ fun PreviewTransactionHistoryScreen() {
  * - Jetpack Compose UI (Material Design 3)
  * - MVVM Architecture (ViewModel, StateFlow)
  * - Repository Pattern (TransactionRepository)
- * - Data Sources (Retrofit/API and Room/Local Cache - Mocked)
+ * - Data Sources (Retrofit API + Room cache; mocks are confined to @Preview)
  * - State Management (TransactionHistoryState, TransactionHistoryEvent)
  * - Transaction List with detailed items
  * - Search functionality (real-time feedback)

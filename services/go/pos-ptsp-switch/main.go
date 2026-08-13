@@ -8,8 +8,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -53,6 +51,13 @@ type TransactionResponse struct {
 }
 
 var db *sql.DB
+
+// Simulation mode is only honoured outside production; in production the
+// combination PTSP_SIMULATION_MODE=true + ENVIRONMENT=production is fatal.
+var (
+	simulationMode = os.Getenv("PTSP_SIMULATION_MODE") == "true"
+	environment    = os.Getenv("ENVIRONMENT")
+)
 
 var routes = []SwitchRoute{
 	{Name: "nibss_nip", Endpoint: "https://nip.nibss-plc.com.ng/api/v1", SuccessRate: 0.97, AvgLatency: 450, FeeRate: 7.5, Status: "active"},
@@ -148,31 +153,47 @@ func handleProcessTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !simulationMode {
+		// No real ISO 8583 switch session is configured. Refuse to process:
+		// never fabricate response codes / auth codes and never persist them
+		// as if they were real switch approvals.
+		log.Printf("[pos-ptsp-switch] Refusing transaction rrn=%s: no payment switch configured", req.RRN)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "no payment switch configured; refusing to process or persist a fabricated authorization",
+		})
+		return
+	}
+
+	// Simulated switch call — only reachable when PTSP_SIMULATION_MODE=true
+	// and ENVIRONMENT != production (enforced in main).
+	log.Printf("[pos-ptsp-switch] WARNING: simulating switch approval for rrn=%s (PTSP_SIMULATION_MODE)", req.RRN)
+
 	route := selectRoute(req.CardScheme, req.Amount)
 
-	// Simulate switch call (in production: actual ISO 8583 message)
 	time.Sleep(time.Duration(route.AvgLatency/10) * time.Millisecond) // simulated latency
 
-	// Generate response
+	// Generate simulated response (clearly marked as simulated)
 	respCode := "00" // approved
 	if rand.Float64() > route.SuccessRate {
 		respCode = "05" // do not honour
 	}
-	authCode := fmt.Sprintf("%06d", rand.Intn(999999))
+	authCode := fmt.Sprintf("SIM%03d", rand.Intn(999))
 	latency := int(time.Since(start).Milliseconds())
 	fee := int64(float64(req.Amount) * route.FeeRate / 10000.0)
 
-	// Persist
+	// Persist simulated record (only in simulation mode; flagged via auth_code prefix)
 	db.Exec(`INSERT INTO switch_transactions (terminal_id, merchant_id, amount_kobo, currency, card_scheme, processing_code, stan, rrn, switch_used, response_code, auth_code, fee_kobo, latency_ms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		req.TerminalID, req.MerchantID, req.Amount, req.Currency, req.CardScheme,
-		req.ProcessingCode, req.STAN, req.RRN, route.Name, respCode, authCode, fee, latency)
+		req.ProcessingCode, req.STAN, req.RRN, route.Name+"_sim", respCode, authCode, fee, latency)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(TransactionResponse{
 		ResponseCode: respCode,
 		AuthCode:     authCode,
 		RRN:          req.RRN,
-		SwitchUsed:   route.Name,
+		SwitchUsed:   route.Name + "_sim",
 		LatencyMs:    latency,
 		FeeCharged:   fee,
 	})
@@ -189,9 +210,18 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	if simulationMode && environment == "production" {
+		log.Fatal("PTSP_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production")
+	}
+
 	// graceful shutdown via signal.Notify for SIGTERM
 	initDB()
 	log.Println("[pos-ptsp-switch] Starting on :8282")
+	if simulationMode {
+		log.Println("[pos-ptsp-switch] WARNING: running with SIMULATED switch approvals (non-production only)")
+	} else {
+		log.Println("[pos-ptsp-switch] No payment switch configured; /api/v1/switch/process will return 503")
+	}
 
 	http.HandleFunc("/health", handleHealth)
 	http.HandleFunc("/api/v1/switch/process", handleProcessTransaction)

@@ -16,13 +16,6 @@ interface Incident {
   description: string;
 }
 
-const MOCK_INCIDENTS: Incident[] = [
-  { id: "INC-0041", title: "NIP Gateway Latency Spike", severity: "P1", status: "mitigated", affected_services: ["payment-hub", "nip-gateway"], assignee: "Kolade Obi", started_at: "2024-11-29 14:23", description: "NIP gateway p99 latency exceeded 8s. Root cause: upstream NIBSS degradation. Mitigation: reduced retry timeout." },
-  { id: "INC-0040", title: "Agent Auth Token Expiry Bug", severity: "P2", status: "resolved", affected_services: ["auth-service"], assignee: "Taiwo Adewale", started_at: "2024-11-28 09:45", resolved_at: "2024-11-28 11:30", description: "Tokens expiring 2hrs early due to timezone bug in token issuance." },
-  { id: "INC-0039", title: "Float Deduction Race Condition", severity: "P1", status: "postmortem", affected_services: ["float-management"], assignee: "Aisha Bello", started_at: "2024-11-25 16:00", resolved_at: "2024-11-25 18:45", description: "Concurrent float deductions causing negative balances for 12 agents." },
-  { id: "INC-0042", title: "SMS OTP Delivery Failure", severity: "P2", status: "open", affected_services: ["notification-service", "sms-gateway"], started_at: "2024-11-29 17:10", description: "OTP SMS not delivered to MTN numbers. Affecting ~15% of agent logins." },
-];
-
 const SEV_STYLES: Record<string, string> = { P0: "bg-red-600 text-white", P1: "bg-red-100 text-red-800", P2: "bg-amber-100 text-amber-800", P3: "bg-gray-100 text-gray-700" };
 const STATUS_STYLES: Record<string, string> = {
   open: "bg-red-100 text-red-700", investigating: "bg-orange-100 text-orange-700",
@@ -33,6 +26,7 @@ const STATUS_STYLES: Record<string, string> = {
 const IncidentManagement: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", severity: "P2", affected_services: "", description: "" });
   const [selected, setSelected] = useState<Incident | null>(null);
@@ -41,10 +35,11 @@ const IncidentManagement: React.FC = () => {
 
   const fetchIncidents = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/incidents`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setIncidents(Array.isArray(d.incidents) ? d.incidents : MOCK_INCIDENTS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setIncidents(Array.isArray(d.incidents) ? d.incidents : []);  } else { setError("Failed to load incidents."); }
+    } catch { setError("Failed to load incidents."); }
     finally { setLoading(false); }
   };
 
@@ -69,13 +64,20 @@ const IncidentManagement: React.FC = () => {
       });
       setShowForm(false);
       fetchIncidents();
-    } catch { alert("Incident created (demo mode)"); setShowForm(false); }
+    } catch { alert("Failed to create incident. Please try again."); }
   };
 
   const open = incidents.filter(i => i.status === "open" || i.status === "investigating").length;
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchIncidents()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

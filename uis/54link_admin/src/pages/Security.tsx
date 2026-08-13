@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // ...existing code...
+import { developerPlatformService } from "@/services/developerPlatform";
 import type { SecurityScan } from "@/types/developerPlatform";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -20,34 +21,13 @@ export default function SecurityDashboard() {
     try {
       setLoading(true);
       setError(null);
-      // Use mock data for now
-      setTimeout(() => {
-        setScans([
-          {
-            scan_id: "scan-1",
-            app_id: "mock-app-1",
-            app_name: "Mock App 1",
-            scan_type: "static",
-            status: "completed",
-            severity: "low",
-            vulnerabilities_found: 0,
-            critical: 0,
-            high: 0,
-            medium: 0,
-            low: 0,
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-          },
-        ]);
-        setLoading(false);
-      }, 500);
-      // Uncomment when ready to use real API:
-      // const response = await developerPlatformService.listSecurityScans();
-      // setScans(response.scans);
+      const response = await developerPlatformService.listSecurityScans();
+      setScans(response.scans);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load security scans";
       setError(message);
+    } finally {
       setLoading(false);
     }
   };

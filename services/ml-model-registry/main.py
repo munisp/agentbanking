@@ -2,22 +2,31 @@
 ML Model Registry & Monitoring Service — Model versioning, A/B testing, drift detection.
 
 Port: 8144
-Stack: FastAPI, PostgreSQL, Redis
+Stack: FastAPI
 
 Features:
-  - Model version registry with metadata (accuracy, F1, AUC-ROC)
+  - Model version registry with metadata (accuracy, F1, AUC-ROC) — models are
+    registered exclusively through the API with their real, measured metrics.
+    The service never pre-registers fabricated platform models or invented
+    accuracy figures.
   - A/B testing with traffic splitting
-  - Data drift detection (PSI, KL divergence)
+  - Data drift detection: real PSI (Population Stability Index) computed from
+    caller-supplied reference vs current distributions. Drift cannot be
+    computed without a reference distribution — requests lacking one fail
+    with 422 instead of returning fabricated scores.
   - Model performance monitoring (latency, error rate, prediction distribution)
-  - Automated rollback on degradation
   - Audit trail for all model deployments
+
+NOTE: registry state is process-local (dicts/lists). Run a single replica or
+front it with a persistent store before relying on it across restarts.
 """
 
+import math
 import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -51,6 +60,15 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 app = FastAPI(title="54agent ML Model Registry", version="1.0.0")
 
+# PSI interpretation thresholds (industry standard):
+#   < 0.1  : no significant population change
+#   0.1-0.25 : moderate change — monitor
+#   > 0.25 : significant change — investigate/retrain
+PSI_WARNING_THRESHOLD = float(os.getenv("PSI_WARNING_THRESHOLD", "0.1"))
+PSI_CRITICAL_THRESHOLD = float(os.getenv("PSI_CRITICAL_THRESHOLD", "0.25"))
+PSI_BINS = int(os.getenv("PSI_BINS", "10"))
+MIN_SAMPLES_FOR_PSI = 10
+
 
 class ModelStatus(str, Enum):
     STAGING = "staging"
@@ -80,7 +98,7 @@ class DriftReport(BaseModel):
     model_name: str
     version: str
     feature_drifts: dict  # feature_name -> PSI score
-    prediction_drift: float
+    prediction_drift: Optional[float] = None
     data_quality_score: float
     alert_level: str  # "none", "warning", "critical"
     recommendation: str
@@ -99,48 +117,93 @@ class ABTest(BaseModel):
     ended_at: Optional[str] = None
 
 
-# In-memory stores (production: PostgreSQL + S3)
+# In-memory stores (single-replica deployments only)
 models: dict[str, ModelVersion] = {}
 drift_reports: list[DriftReport] = []
 ab_tests: dict[str, ABTest] = {}
 performance_logs: list[dict] = []
 
-# Pre-register platform ML models
-PLATFORM_MODELS = [
-    {"model_name": "fraud-detection", "version": "1.0.0", "framework": "xgboost",
-     "metrics": {"accuracy": 0.956, "f1": 0.923, "auc_roc": 0.981, "precision": 0.941, "recall": 0.906},
-     "description": "Transaction fraud scoring model — 9 features, gradient boosted trees"},
-    {"model_name": "kyb-risk-scoring", "version": "1.0.0", "framework": "ensemble",
-     "metrics": {"accuracy": 0.934, "f1": 0.912, "auc_roc": 0.967},
-     "description": "KYB business risk assessment — 6 weighted risk factors"},
-    {"model_name": "agent-churn-prediction", "version": "1.0.0", "framework": "lightgbm",
-     "metrics": {"accuracy": 0.891, "f1": 0.867, "auc_roc": 0.943},
-     "description": "Agent churn prediction — behavioral features over 90-day window"},
-    {"model_name": "anomaly-detection", "version": "1.0.0", "framework": "isolation_forest",
-     "metrics": {"precision": 0.878, "recall": 0.912, "f1": 0.895},
-     "description": "Transaction anomaly detection — unsupervised isolation forest"},
-    {"model_name": "face-recognition", "version": "1.0.0", "framework": "deepface",
-     "metrics": {"accuracy": 0.997, "far": 0.001, "frr": 0.003},
-     "description": "DeepFace ArcFace face recognition model"},
-    {"model_name": "deepfake-detection", "version": "1.0.0", "framework": "efficientnet",
-     "metrics": {"accuracy": 0.982, "f1": 0.976},
-     "description": "Deepfake detection binary classifier"},
-]
 
+# ---------------------------------------------------------------------------
+# Real drift computation (PSI)
+# ---------------------------------------------------------------------------
 
-@app.on_event("startup")
-async def startup():
-    for m in PLATFORM_MODELS:
-        mv = ModelVersion(
-            model_name=m["model_name"],
-            version=m["version"],
-            status=ModelStatus.PRODUCTION,
-            framework=m["framework"],
-            metrics=m["metrics"],
-            description=m["description"],
-            deployed_at=datetime.now(timezone.utc).isoformat(),
+def compute_psi(reference: List[float], current: List[float], bins: int = PSI_BINS) -> float:
+    """
+    Population Stability Index between a reference (expected) and a current
+    (actual) numeric sample:
+
+        PSI = sum( (actual% - expected%) * ln(actual% / expected%) )
+
+    Bins are quantile-based on the reference sample. Raises ValueError when
+    the computation is impossible (insufficient or degenerate data) — callers
+    must fail loud rather than invent a drift score.
+    """
+    if len(reference) < MIN_SAMPLES_FOR_PSI or len(current) < MIN_SAMPLES_FOR_PSI:
+        raise ValueError(
+            f"PSI requires at least {MIN_SAMPLES_FOR_PSI} samples in both "
+            f"reference and current distributions "
+            f"(got {len(reference)} reference, {len(current)} current)"
         )
-        models[f"{m['model_name']}:{m['version']}"] = mv
+
+    ref_sorted = sorted(float(v) for v in reference)
+    cur = [float(v) for v in current]
+
+    # Quantile bin edges from the reference distribution.
+    edges = []
+    for i in range(1, bins):
+        idx = min(int(i * len(ref_sorted) / bins), len(ref_sorted) - 1)
+        edges.append(ref_sorted[idx])
+    edges = sorted(set(edges))
+    if not edges:
+        raise ValueError("reference distribution is degenerate (single value); PSI undefined")
+
+    def bucketize(values: List[float]) -> List[float]:
+        counts = [0] * (len(edges) + 1)
+        for v in values:
+            placed = False
+            for i, edge in enumerate(edges):
+                if v <= edge:
+                    counts[i] += 1
+                    placed = True
+                    break
+            if not placed:
+                counts[-1] += 1
+        total = len(values)
+        return [c / total for c in counts]
+
+    expected_pct = bucketize(ref_sorted)
+    actual_pct = bucketize(cur)
+
+    eps = 1e-6
+    psi = 0.0
+    for e, a in zip(expected_pct, actual_pct):
+        e = max(e, eps)
+        a = max(a, eps)
+        psi += (a - e) * math.log(a / e)
+    return psi
+
+
+def _parse_distribution(value, feature_name: str) -> Dict[str, List[float]]:
+    """Extract {'reference': [...], 'current': [...]} numeric samples."""
+    if not isinstance(value, dict) or "reference" not in value or "current" not in value:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"feature '{feature_name}' must be an object with 'reference' and "
+                "'current' numeric sample arrays — drift cannot be computed without "
+                "a reference distribution"
+            ),
+        )
+    try:
+        reference = [float(v) for v in value["reference"]]
+        current = [float(v) for v in value["current"]]
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=422,
+            detail=f"feature '{feature_name}' distributions must be numeric arrays",
+        )
+    return {"reference": reference, "current": current}
 
 
 @app.post("/models/register")
@@ -212,41 +275,79 @@ async def rollback_model(model_name: str, version: str):
 
 @app.post("/drift/check")
 async def check_drift(body: dict):
+    """
+    Compute real PSI drift for a registered model.
+
+    Body:
+      model_name, version: target a REGISTERED model (404 otherwise)
+      features: {feature_name: {"reference": [...], "current": [...]}}
+      predictions (optional): {"reference": [...], "current": [...]}
+    """
     model_name = body.get("model_name", "")
     version = body.get("version", "")
     features = body.get("features", {})
 
-    # Simulate PSI (Population Stability Index) calculation
-    feature_drifts = {}
-    total_drift = 0.0
-    for feat_name, values in features.items():
-        # PSI = sum((actual% - expected%) * ln(actual%/expected%))
-        psi = abs(hash(f"{feat_name}{len(values)}") % 100) / 1000.0  # Simulated
-        feature_drifts[feat_name] = round(psi, 4)
-        total_drift += psi
+    key = f"{model_name}:{version}"
+    if key not in models:
+        raise HTTPException(404, f"model {key} not found — register it before drift checks")
+    if not features:
+        raise HTTPException(422, "features are required for drift computation")
 
-    avg_drift = total_drift / max(len(features), 1)
+    feature_drifts: Dict[str, float] = {}
+    skipped: Dict[str, str] = {}
+    for feat_name, value in features.items():
+        dist = _parse_distribution(value, feat_name)
+        try:
+            feature_drifts[feat_name] = round(
+                compute_psi(dist["reference"], dist["current"]), 4
+            )
+        except ValueError as exc:
+            skipped[feat_name] = str(exc)
+
+    if not feature_drifts:
+        raise HTTPException(
+            status_code=422,
+            detail=f"no feature had sufficient data for PSI: {skipped}",
+        )
+
+    max_drift = max(feature_drifts.values())
+
+    prediction_drift: Optional[float] = None
+    predictions = body.get("predictions")
+    if predictions is not None:
+        dist = _parse_distribution(predictions, "predictions")
+        try:
+            prediction_drift = round(compute_psi(dist["reference"], dist["current"]), 4)
+        except ValueError:
+            prediction_drift = None
+
     alert_level = "none"
     recommendation = "No action needed"
-
-    if avg_drift > 0.2:
+    if max_drift > PSI_CRITICAL_THRESHOLD:
         alert_level = "critical"
         recommendation = "Retrain model immediately — significant distribution shift detected"
-    elif avg_drift > 0.1:
+    elif max_drift > PSI_WARNING_THRESHOLD:
         alert_level = "warning"
         recommendation = "Monitor closely — moderate distribution shift detected"
+
+    # Honest data-quality signal: fraction of submitted features that yielded a PSI.
+    total_features = len(features)
+    data_quality = round(len(feature_drifts) / max(total_features, 1), 4)
 
     report = DriftReport(
         model_name=model_name,
         version=version,
         feature_drifts=feature_drifts,
-        prediction_drift=round(avg_drift, 4),
-        data_quality_score=round(1.0 - avg_drift, 4),
+        prediction_drift=prediction_drift,
+        data_quality_score=data_quality,
         alert_level=alert_level,
         recommendation=recommendation,
     )
     drift_reports.append(report)
-    return report.model_dump()
+    result = report.model_dump()
+    if skipped:
+        result["skipped_features"] = skipped
+    return result
 
 
 @app.post("/ab-tests/create")

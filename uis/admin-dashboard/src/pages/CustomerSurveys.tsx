@@ -7,62 +7,61 @@ import { MessageSquare } from "lucide-react";
 
 export default function CustomerSurveys() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: liveData, isLoading } = trpc.customerSurveys.list.useQuery(
-    undefined,
+  const {
+    data: liveData,
+    isLoading,
+    isError,
+  } = trpc.customerSurveys.listSurveys.useQuery({ limit: 50 }, { retry: 1 });
+  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
+  const { data: stats } = trpc.customerSurveys.getSurveyStats.useQuery(
+    {},
     { retry: 1 }
   );
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
   >("overview");
 
+  const records: any[] = liveData?.items ?? [];
+
+  // NPS / CSAT aggregates are not provided by the surveys API — render "—"
+  // rather than hardcoded figures.
   const kpis = [
-    { label: "NPS Score", value: "+67" },
-    { label: "CSAT Score", value: "4.3/5" },
-    { label: "Responses", value: "8,421" },
-    { label: "Response Rate", value: "34.2%" },
+    {
+      label: "Total Records",
+      value: stats ? String(stats.totalRecords) : "—",
+    },
+    { label: "NPS Score", value: "—" },
+    { label: "CSAT Score", value: "—" },
+    { label: "Response Rate", value: "—" },
   ];
 
-  const columns = ["Survey ID", "Customer", "NPS", "CSAT", "Date"];
+  const columns = ["ID", "Customer", "Event Type", "Source", "Date"];
 
-  const filtered = mockData.filter(
-    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-    r =>
-      r.col1.toLowerCase().includes(search.toLowerCase()) ||
-      r.col2.toLowerCase().includes(search.toLowerCase())
-  );
+  const getField = (row: any, ...keys: string[]) => {
+    for (const key of keys) {
+      const value = row?.[key];
+      if (value !== undefined && value !== null && value !== "") {
+        return String(value);
+      }
+    }
+    return "—";
+  };
+
+  const getDate = (row: any) => {
+    const raw = row?.created_at ?? row?.createdAt;
+    if (!raw) return "—";
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  };
+
+  const filtered = records.filter((r: any) => {
+    const q = search.toLowerCase();
+    return (
+      getField(r, "customer_id", "customerId").toLowerCase().includes(q) ||
+      getField(r, "event_type", "eventType").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-[#0a0e17] text-white p-6">
@@ -148,32 +147,53 @@ export default function CustomerSurveys() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row: any) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-gray-800/50 hover:bg-[#1a2035] transition-colors"
-                  >
-                    <td className="p-3 font-mono text-blue-400">{row.col1}</td>
-                    <td className="p-3">{row.col2}</td>
-                    <td className="p-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          row.col3 === "active"
-                            ? "bg-green-500/20 text-green-400"
-                            : row.col3 === "pending"
-                              ? "bg-yellow-500/20 text-yellow-400"
-                              : row.col3 === "warning"
-                                ? "bg-red-500/20 text-red-400"
-                                : "bg-blue-500/20 text-blue-400"
-                        }`}
-                      >
-                        {row.col3}
-                      </span>
+                {isLoading ? (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-6 text-center text-gray-400"
+                    >
+                      Loading survey records…
                     </td>
-                    <td className="p-3">{row.col4}</td>
-                    <td className="p-3 text-gray-400">{row.col5}</td>
                   </tr>
-                ))}
+                ) : isError ? (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-6 text-center text-red-400"
+                    >
+                      Survey data could not be loaded. Please try again later.
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="p-6 text-center text-gray-400"
+                    >
+                      No survey records found.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((row: any) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-gray-800/50 hover:bg-[#1a2035] transition-colors"
+                    >
+                      <td className="p-3 font-mono text-blue-400">{row.id}</td>
+                      <td className="p-3">
+                        {getField(row, "customer_id", "customerId")}
+                      </td>
+                      <td className="p-3">
+                        {getField(row, "event_type", "eventType")}
+                      </td>
+                      <td className="p-3">
+                        {getField(row, "event_source", "eventSource")}
+                      </td>
+                      <td className="p-3 text-gray-400">{getDate(row)}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

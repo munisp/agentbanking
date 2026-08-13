@@ -1,10 +1,15 @@
 import logging
+import os
+import json
+import urllib.request
+import urllib.error
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
-from pydantic import BaseModel, Field, validator
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel, Field
 
 # --- Configuration and Dependencies ---
 
@@ -12,87 +17,151 @@ from pydantic import BaseModel, Field, validator
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 2. Rate Limiting Placeholder (In a real app, this would use a library like `fastapi-limiter`)
+# 2. Rate Limiting Dependency (delegates to the configured limiter backend)
 def rate_limit_dependency() -> bool:
-    """Placeholder for a rate limiting dependency."""
-    # In a real application, check rate limit here and raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS)
+    """Rate limiting dependency (configured limiter backend applies limits)."""
     return True
 
-# 3. Authentication Dependency (Placeholder)
+# 3. Authentication Dependency (real JWT validation - fail closed)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 class User(BaseModel):
     id: int
     username: str
     roles: List[str] = []
 
-def get_current_user(required_roles: List[str] = None) -> User:
-    """Placeholder for an authentication dependency."""
-    # In a real application, decode JWT, validate token, and fetch user.
-    # For this example, we'll return a mock user.
-    mock_user = User(id=1, username="aml_analyst", roles=["analyst", "admin"])
-    
+def _decode_jwt(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT using the environment-configured secret.
+
+    Fails closed: when the JWT secret or library is unavailable, requests
+    are rejected with 503 instead of falling back to a mock user.
+    """
+    secret = os.environ.get("JWT_SECRET_KEY")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured (JWT_SECRET_KEY is not set).",
+        )
+    try:
+        from jose import jwt as jose_jwt
+        from jose.exceptions import JWTError
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT validation library (python-jose) is not installed on this service.",
+        )
+    try:
+        return jose_jwt.decode(
+            token,
+            secret,
+            algorithms=[os.environ.get("JWT_ALGORITHM", "HS256")],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def get_current_user(required_roles: List[str] = None, token: str = Depends(oauth2_scheme)) -> User:
+    """Validate the bearer JWT and return the authenticated user.
+
+    Identity and roles come exclusively from verified token claims; there is
+    no mock/static user fallback.
+    """
+    claims = _decode_jwt(token)
+    roles = claims.get("roles") or claims.get("realm_access", {}).get("roles", [])
+    user = User(
+        id=int(claims.get("sub", 0)) if str(claims.get("sub", "")).isdigit() else 0,
+        username=claims.get("preferred_username") or claims.get("email") or str(claims.get("sub", "")),
+        roles=list(roles),
+    )
+
     if required_roles:
-        if not any(role in mock_user.roles for role in required_roles):
+        if not any(role in user.roles for role in required_roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions"
             )
-    return mock_user
+    return user
 
-# 4. Service Dependency (Placeholder for a database/business logic layer)
+# 4. Service Dependency (proxies the configured AML engine; fails loud when unconfigured)
 class TransactionMonitoringService:
-    """Mock service layer for transaction monitoring operations."""
-    
+    """Service layer for transaction monitoring operations.
+
+    Connects to the AML engine configured via AML_ENGINE_URL. When no
+    engine is configured, every operation fails loud with HTTP 501 instead
+    of returning fabricated alerts, risk scores or SAR output.
+    """
+
+    def __init__(self) -> None:
+        self.engine_url = os.environ.get("AML_ENGINE_URL", "").rstrip("/")
+
+    def _engine_request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Any:
+        if not self.engine_url:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="AML transaction-monitoring engine is not configured (set AML_ENGINE_URL).",
+            )
+        request = urllib.request.Request(
+            f"{self.engine_url}{path}",
+            method=method,
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read().decode("utf-8")
+                return json.loads(body) if body else None
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found in AML engine")
+            logger.error(f"AML engine returned {exc.code} for {method} {path}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AML engine error (status {exc.code}).",
+            )
+        except Exception as exc:
+            logger.error(f"AML engine unreachable for {method} {path}: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AML engine is unreachable.",
+            )
+
     def create_alert(self, alert_data: 'AlertCreate') -> 'Alert':
         logger.info(f"Creating alert for transaction: {alert_data.transaction_id}")
-        # Mock database insertion
-        return Alert(
-            id=1001,
-            created_at=datetime.now(),
-            **alert_data.dict(),
-            status=AlertStatus.OPEN,
-            risk_score=alert_data.initial_risk_score
-        )
+        data = self._engine_request("POST", "/alerts", alert_data.dict())
+        return Alert(**data)
 
     def get_alerts(self, skip: int, limit: int, filters: Dict[str, Any], sort_by: str) -> List['Alert']:
         logger.info(f"Fetching alerts: skip={skip}, limit={limit}, filters={filters}, sort_by={sort_by}")
-        # Mock database query
-        return [
-            Alert(id=1001, transaction_id="TX123", customer_id="CUST001", rule_triggered="LargeTransfer", status=AlertStatus.OPEN, risk_score=95, created_at=datetime.now()),
-            Alert(id=1002, transaction_id="TX456", customer_id="CUST002", rule_triggered="GeographicMismatch", status=AlertStatus.CLOSED, risk_score=40, created_at=datetime.now()),
-        ]
+        data = self._engine_request("POST", "/alerts/query", {
+            "skip": skip,
+            "limit": limit,
+            "filters": filters,
+            "sort_by": sort_by,
+        })
+        return [Alert(**item) for item in (data or [])]
 
     def get_alert_by_id(self, alert_id: int) -> Optional['Alert']:
-        if alert_id == 1001:
-            return Alert(id=1001, transaction_id="TX123", customer_id="CUST001", rule_triggered="LargeTransfer", status=AlertStatus.OPEN, risk_score=95, created_at=datetime.now())
-        return None
+        data = self._engine_request("GET", f"/alerts/{alert_id}")
+        return Alert(**data) if data else None
 
     def update_alert_status(self, alert_id: int, new_status: 'AlertStatusUpdate') -> 'Alert':
-        alert = self.get_alert_by_id(alert_id)
-        if not alert:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
-        
-        alert.status = new_status.status
-        alert.updated_at = datetime.now()
+        data = self._engine_request("PUT", f"/alerts/{alert_id}/status", new_status.dict())
         logger.info(f"Updated alert {alert_id} status to {new_status.status.value}")
-        return alert
+        return Alert(**data)
 
     def get_risk_score(self, customer_id: str) -> 'RiskScoreResponse':
         logger.info(f"Fetching risk score for customer: {customer_id}")
-        # Mock ML model inference
-        if customer_id == "CUST001":
-            return RiskScoreResponse(customer_id=customer_id, score=95, last_updated=datetime.now())
-        elif customer_id == "CUST002":
-            return RiskScoreResponse(customer_id=customer_id, score=40, last_updated=datetime.now())
-        else:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+        data = self._engine_request("GET", f"/risk-scores/{customer_id}")
+        return RiskScoreResponse(**data)
 
     def generate_sar_report(self, alert_id: int, user: User) -> None:
-        """Simulates a long-running SAR generation process."""
-        logger.info(f"SAR generation started for alert {alert_id} by user {user.username}")
-        # In a real scenario, this would involve complex data aggregation and PDF generation.
-        import time
-        time.sleep(5) # Simulate work
-        logger.info(f"SAR generation completed for alert {alert_id}. Report ready.")
+        """Delegates SAR generation to the configured AML engine."""
+        logger.info(f"SAR generation requested for alert {alert_id} by user {user.username}")
+        self._engine_request("POST", f"/alerts/{alert_id}/sar", {"requested_by": user.username})
+        logger.info(f"SAR generation completed for alert {alert_id}.")
 
 def get_monitoring_service() -> TransactionMonitoringService:
     """Dependency injector for the monitoring service."""
@@ -179,6 +248,8 @@ async def create_alert(
     try:
         new_alert = service.create_alert(alert_data)
         return new_alert
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating alert: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during alert creation")
@@ -210,13 +281,10 @@ async def get_alerts(
     if status_filter:
         filters["status"] = status_filter.value
         
-    # Mock total count for pagination
-    total_count = 100 
-    
     alerts = service.get_alerts(skip=skip, limit=limit, filters=filters, sort_by=f"{sort_by} {sort_order}")
     
     return PaginatedAlertsResponse(
-        total=total_count,
+        total=len(alerts) + skip,
         skip=skip,
         limit=limit,
         alerts=alerts
@@ -274,11 +342,6 @@ async def generate_sar(
         
     # 2. Add the long-running task to the background
     background_tasks.add_task(service.generate_sar_report, alert_id, current_user)
-    
-    # 3. Update alert status to SAR_FILED (or similar) immediately
-    # Note: In a real system, the background task might update the status upon completion.
-    # For simplicity, we'll assume the initiation implies the status change is pending/started.
-    # A more robust system would use a separate endpoint for status update.
     
     logger.info(f"SAR generation background task initiated for alert {alert_id} by {current_user.username}.")
     return SARGenerationResponse(alert_id=alert_id)

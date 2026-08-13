@@ -9,50 +9,63 @@ import SwiftUI
 import Combine
 import LocalAuthentication // For Biometric Authentication
 
-// MARK: - API Client Mock
+// MARK: - PIN API (real backend client)
 
-/// A mock API client for handling PIN setup and other API calls.
-/// In a real application, this would be a concrete implementation of a protocol
-/// that handles network requests, serialization, and error handling.
-class APIClient {
-    enum APIError: Error, LocalizedError {
-        case networkError
-        case invalidPin
-        case serverError(String)
-        
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "Could not connect to the network. Please check your connection."
-            case .invalidPin: return "The PIN you entered is invalid or does not meet the requirements."
-            case .serverError(let message): return "Server error: \(message)"
-            }
+enum PinAPIError: Error, LocalizedError {
+    case networkError
+    case invalidPin
+    case serverError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError: return "Could not connect to the network. Please check your connection."
+        case .invalidPin: return "The PIN you entered is invalid or does not meet the requirements."
+        case .serverError(let message): return "Server error: \(message)"
         }
-    }
-    
-    /// Simulates an API call to set or change the user's PIN.
-    /// - Parameters:
-    ///   - pin: The new PIN.
-    ///   - completion: A closure to be called upon completion with a Result.
-    func setPin(pin: String, completion: @escaping (Result<Void, APIError>) -> Void) {
-        // Simulate network delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            // Simulate success 90% of the time
-            if Int.random(in: 1...10) > 1 {
-                completion(.success(()))
-            } else {
-                // Simulate a specific error
-                completion(.failure(.serverError("Failed to update PIN due to a temporary server issue.")))
-            }
-        }
-    }
-    
-    /// Placeholder for integrating with payment gateways.
-    /// In a real app, this would handle tokenization, transaction initiation, etc.
-    func integratePaymentGateway(gateway: String) {
-        print("Integrating with payment gateway: \(gateway)")
-        // Logic for Paystack, Flutterwave, Interswitch integration
     }
 }
+
+/// Interface for PIN setup, allowing DEBUG-only mocks for previews/tests.
+protocol PinAPI {
+    /// Sets or changes the user's PIN on the backend. Success is reported
+    /// only when the server confirms the update.
+    func setPin(pin: String, completion: @escaping (Result<Void, PinAPIError>) -> Void)
+}
+
+/// Real PIN client backed by the 54agent backend security endpoint.
+class LivePinAPIClient: PinAPI {
+    private struct EmptyResponse: Decodable {}
+
+    func setPin(pin: String, completion: @escaping (Result<Void, PinAPIError>) -> Void) {
+        guard pin.count == 4, pin.allSatisfy({ $0.isNumber }) else {
+            completion(.failure(.invalidPin))
+            return
+        }
+        Task {
+            do {
+                let _: EmptyResponse = try await APIClient.shared.request(
+                    .securityPin,
+                    method: .post,
+                    parameters: ["pin": pin]
+                )
+                completion(.success(()))
+            } catch {
+                completion(.failure(.serverError(error.localizedDescription)))
+            }
+        }
+    }
+}
+
+#if DEBUG
+/// Mock PIN client (DEBUG builds only, for previews/tests).
+class MockPinAPIClient: PinAPI {
+    func setPin(pin: String, completion: @escaping (Result<Void, PinAPIError>) -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            completion(.success(()))
+        }
+    }
+}
+#endif
 
 // MARK: - Local Data Manager Mock
 
@@ -88,13 +101,13 @@ final class PinSetupViewModel: ObservableObject {
     
     // MARK: - Dependencies
     
-    private let apiClient: APIClient
+    private let apiClient: PinAPI
     private let localDataManager: LocalDataManager
     private let context = LAContext()
-    
+
     // MARK: - Initialization
-    
-    init(apiClient: APIClient = APIClient(), localDataManager: LocalDataManager = LocalDataManager.shared) {
+
+    init(apiClient: PinAPI = LivePinAPIClient(), localDataManager: LocalDataManager = LocalDataManager.shared) {
         self.apiClient = apiClient
         self.localDataManager = localDataManager
         checkBiometricsAvailability()
@@ -144,8 +157,6 @@ final class PinSetupViewModel: ObservableObject {
                     self?.isSetupComplete = true
                     // 2. Offline Mode Support (Local Caching)
                     self?.localDataManager.savePinSetupStatus(isSetup: true)
-                    // 3. Payment Gateway Placeholder (e.g., after successful PIN setup)
-                    self?.apiClient.integratePaymentGateway(gateway: "Paystack")
                 case .failure(let error):
                     // 4. Error Handling
                     self?.errorMessage = error.localizedDescription

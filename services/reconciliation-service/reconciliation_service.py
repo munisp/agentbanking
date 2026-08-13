@@ -254,7 +254,8 @@ class ReconciliationEngine:
         """, ReconciliationStatus.PROCESSING, datetime.utcnow(), batch_id)
         
         try:
-            # Fetch source and target data
+            # Fetch source and target data. Any ingestion failure aborts the run
+            # loudly — a batch is never reconciled against silently empty data.
             source_records = await self._fetch_source_data(batch)
             target_records = await self._fetch_target_data(batch)
             
@@ -356,25 +357,16 @@ class ReconciliationEngine:
             """, DiscrepancyStatus.ACCEPTED, resolution.resolution_notes,
                 resolution.resolved_by, datetime.utcnow(), discrepancy_id)
             
-        elif resolution.resolution_type == "adjust_source":
-            # Adjust source record
-            await self._adjust_source_record(discrepancy, resolution.adjustment_data)
-            await self.db.execute("""
-                UPDATE reconciliation_discrepancies
-                SET status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = $4
-                WHERE id = $5
-            """, DiscrepancyStatus.RESOLVED, resolution.resolution_notes,
-                resolution.resolved_by, datetime.utcnow(), discrepancy_id)
-            
-        elif resolution.resolution_type == "adjust_target":
-            # Adjust target record
-            await self._adjust_target_record(discrepancy, resolution.adjustment_data)
-            await self.db.execute("""
-                UPDATE reconciliation_discrepancies
-                SET status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = $4
-                WHERE id = $5
-            """, DiscrepancyStatus.RESOLVED, resolution.resolution_notes,
-                resolution.resolved_by, datetime.utcnow(), discrepancy_id)
+        elif resolution.resolution_type in ("adjust_source", "adjust_target"):
+            # Adjustment rails are not implemented. Refuse to mark a discrepancy
+            # RESOLVED without a real adjustment having been applied.
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    f"resolution_type '{resolution.resolution_type}' is not implemented: "
+                    "no adjustment was applied, so the discrepancy cannot be marked resolved"
+                )
+            )
             
         elif resolution.resolution_type == "manual":
             # Manual resolution
@@ -384,6 +376,11 @@ class ReconciliationEngine:
                 WHERE id = $5
             """, DiscrepancyStatus.RESOLVED, resolution.resolution_notes,
                 resolution.resolved_by, datetime.utcnow(), discrepancy_id)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown resolution_type '{resolution.resolution_type}'"
+            )
         
         logger.info(f"Resolved discrepancy {discrepancy_id} via {resolution.resolution_type}")
         return True
@@ -425,7 +422,9 @@ class ReconciliationEngine:
         elif recon_type == ReconciliationType.LEDGER:
             return await self._fetch_ledger_data(recon_date)
         else:
-            return []
+            raise NotImplementedError(
+                f"source ingestion for reconciliation type '{recon_type}' is not implemented"
+            )
     
     async def _fetch_target_data(self, batch: Dict) -> List[Dict]:
         """Fetch target data based on reconciliation type"""
@@ -441,7 +440,9 @@ class ReconciliationEngine:
         elif recon_type == ReconciliationType.LEDGER:
             return await self._fetch_external_ledger_data(recon_date)
         else:
-            return []
+            raise NotImplementedError(
+                f"target ingestion for reconciliation type '{recon_type}' is not implemented"
+            )
     
     async def _fetch_commission_data(self, recon_date: date) -> List[Dict]:
         """Fetch commission calculations from commission service"""
@@ -469,7 +470,7 @@ class ReconciliationEngine:
             ]
         except Exception as e:
             logger.error(f"Failed to fetch commission data: {str(e)}")
-            return []
+            raise RuntimeError(f"commission data ingestion failed: {str(e)}") from e
     
     async def _fetch_settlement_data(self, recon_date: date) -> List[Dict]:
         """Fetch settlement data from settlement service"""
@@ -498,7 +499,7 @@ class ReconciliationEngine:
             ]
         except Exception as e:
             logger.error(f"Failed to fetch settlement data: {str(e)}")
-            return []
+            raise RuntimeError(f"settlement data ingestion failed: {str(e)}") from e
     
     async def _fetch_payment_data(self, recon_date: date) -> List[Dict]:
         """Fetch payment data from database"""
@@ -566,7 +567,7 @@ class ReconciliationEngine:
             ]
         except Exception as e:
             logger.error(f"Failed to fetch TigerBeetle commission data: {str(e)}")
-            return []
+            raise RuntimeError(f"tigerbeetle commission data ingestion failed: {str(e)}") from e
     
     async def _fetch_tigerbeetle_settlement_data(self, recon_date: date) -> List[Dict]:
         """Fetch settlement transfers from TigerBeetle"""
@@ -593,17 +594,21 @@ class ReconciliationEngine:
             ]
         except Exception as e:
             logger.error(f"Failed to fetch TigerBeetle settlement data: {str(e)}")
-            return []
+            raise RuntimeError(f"tigerbeetle settlement data ingestion failed: {str(e)}") from e
     
     async def _fetch_bank_statement_data(self, recon_date: date) -> List[Dict]:
-        """Fetch bank statement data"""
-        # Integrate with bank API or import CSV
-        return []
+        """Fetch bank statement data — bank rail integration is not implemented.
+        Fails loudly instead of reconciling against a silently empty dataset."""
+        raise NotImplementedError(
+            "bank statement ingestion is not implemented — configure a bank API or CSV import before running payment reconciliation"
+        )
     
     async def _fetch_external_ledger_data(self, recon_date: date) -> List[Dict]:
-        """Fetch external ledger data"""
-        # Integrate with external reconciliation system
-        return []
+        """Fetch external ledger data — external ledger integration is not implemented.
+        Fails loudly instead of reconciling against a silently empty dataset."""
+        raise NotImplementedError(
+            "external ledger ingestion is not implemented — configure an external reconciliation feed before running ledger reconciliation"
+        )
     
     async def _perform_matching(
         self,
@@ -740,16 +745,6 @@ class ReconciliationEngine:
             json.dumps(source_record) if source_record else None,
             json.dumps(target_record) if target_record else None,
             DiscrepancyStatus.OPEN, datetime.utcnow())
-    
-    async def _adjust_source_record(self, discrepancy: Dict, adjustment_data: Dict):
-        """Adjust source record to match target"""
-        # Implementation depends on source system
-        logger.info(f"Adjusting source record for discrepancy {discrepancy['id']}")
-    
-    async def _adjust_target_record(self, discrepancy: Dict, adjustment_data: Dict):
-        """Adjust target record to match source"""
-        # Implementation depends on target system
-        logger.info(f"Adjusting target record for discrepancy {discrepancy['id']}")
 
 # =====================================================
 # API ENDPOINTS
@@ -959,4 +954,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8021))
     uvicorn.run(app, host="0.0.0.0", port=port)
-

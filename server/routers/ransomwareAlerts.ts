@@ -276,12 +276,10 @@ export const ransomwareAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishransomwareAlertsMiddleware("acknowledge", `${Date.now()}`, {
-        action: "acknowledge",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ransomwareAlerts.acknowledge is not available in this deployment",
+      });
     }),
 
   getAlerts: protectedProcedure.query(async () => {

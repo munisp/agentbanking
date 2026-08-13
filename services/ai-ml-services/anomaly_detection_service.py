@@ -1,19 +1,14 @@
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".."))
-from shared.middleware import apply_middleware, ErrorResponse
-from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
 """
 Anomaly Detection Service
-Isolation Forest and statistical methods for detecting anomalies
+Statistical methods (Z-score, hour/frequency/pattern heuristics) for detecting
+anomalies over real transaction history.
 Port: 8031
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-
-apply_middleware(app)
-setup_logging("anomaly-detection-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -24,7 +19,15 @@ import numpy as np
 import json
 
 import os
+
 app = FastAPI(title="Anomaly Detection Service", version="1.0.0")
+
+from shared.middleware import apply_middleware, ErrorResponse
+from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware
+
+apply_middleware(app)
+setup_logging("anomaly-detection-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,7 +71,9 @@ def calculate_z_score(value: float, mean: float, std: float) -> float:
 
 def detect_transaction_anomaly(transaction: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Detect anomalies in transactions using Isolation Forest-inspired approach
+    Detect anomalies in transactions using statistical heuristics over the
+    agent's real historical transactions (Z-score, hour-of-day distribution,
+    velocity, type distribution). Not a learned model; no fabricated data.
     """
     if not historical_data:
         return {
@@ -78,18 +83,18 @@ def detect_transaction_anomaly(transaction: Dict[str, Any], historical_data: Lis
             "reasons": [],
             "recommended_action": "monitor"
         }
-    
+
     # Extract features
     amounts = [t['amount'] for t in historical_data]
     hours = [t['hour'] for t in historical_data]
-    
+
     mean_amount = np.mean(amounts)
     std_amount = np.std(amounts)
-    
+
     # Calculate anomaly scores for different features
     anomaly_scores = []
     reasons = []
-    
+
     # 1. Amount anomaly (Z-score > 3 is unusual)
     amount_z = calculate_z_score(transaction['amount'], mean_amount, std_amount)
     if amount_z > 3:
@@ -98,52 +103,52 @@ def detect_transaction_anomaly(transaction: Dict[str, Any], historical_data: Lis
     elif amount_z > 2:
         anomaly_scores.append(0.5)
         reasons.append(f"Transaction amount is moderately higher than usual")
-    
+
     # 2. Time-based anomaly (unusual hour)
     transaction_hour = transaction['hour']
     hour_counts = {}
     for h in hours:
         hour_counts[h] = hour_counts.get(h, 0) + 1
-    
+
     avg_hour_count = np.mean(list(hour_counts.values()))
     current_hour_count = hour_counts.get(transaction_hour, 0)
-    
+
     if current_hour_count < avg_hour_count * 0.3:  # Less than 30% of average
         anomaly_scores.append(0.6)
         reasons.append(f"Transaction at unusual hour ({transaction_hour}:00)")
-    
+
     # 3. Frequency anomaly (too many transactions in short time)
     recent_transactions = [t for t in historical_data if (datetime.now() - t['timestamp']).total_seconds() < 3600]
     if len(recent_transactions) > 10:
         anomaly_scores.append(0.7)
         reasons.append(f"High transaction frequency: {len(recent_transactions)} transactions in last hour")
-    
+
     # 4. Pattern anomaly (unusual transaction type for this agent)
     type_counts = {}
     for t in historical_data:
         tx_type = t.get('transaction_type', 'unknown')
         type_counts[tx_type] = type_counts.get(tx_type, 0) + 1
-    
+
     current_type = transaction.get('transaction_type', 'unknown')
     current_type_count = type_counts.get(current_type, 0)
     total_transactions = len(historical_data)
-    
+
     if current_type_count / total_transactions < 0.05:  # Less than 5% of transactions
         anomaly_scores.append(0.5)
         reasons.append(f"Unusual transaction type: {current_type}")
-    
+
     # 5. Velocity anomaly (rapid succession of large transactions)
     last_5_min = [t for t in historical_data if (datetime.now() - t['timestamp']).total_seconds() < 300]
     if len(last_5_min) >= 3 and transaction['amount'] > mean_amount:
         anomaly_scores.append(0.9)
         reasons.append(f"Rapid succession of transactions: {len(last_5_min)} in last 5 minutes")
-    
+
     # Calculate overall anomaly score
     if anomaly_scores:
         overall_score = max(anomaly_scores)  # Take highest score
     else:
         overall_score = 0.0
-    
+
     # Determine risk level and action
     if overall_score >= 0.8:
         risk_level = "critical"
@@ -157,7 +162,7 @@ def detect_transaction_anomaly(transaction: Dict[str, Any], historical_data: Lis
     else:
         risk_level = "low"
         recommended_action = "allow"
-    
+
     return {
         "is_anomaly": overall_score >= 0.6,
         "anomaly_score": round(overall_score, 2),
@@ -176,40 +181,40 @@ def detect_order_anomaly(order: Dict[str, Any], agent_history: List[Dict[str, An
             "reasons": [],
             "recommended_action": "approve"
         }
-    
+
     anomaly_scores = []
     reasons = []
-    
+
     # 1. Order value anomaly
     order_values = [o['total_amount'] for o in agent_history]
     mean_value = np.mean(order_values)
     std_value = np.std(order_values)
-    
+
     value_z = calculate_z_score(order['total_amount'], mean_value, std_value)
     if value_z > 3:
         anomaly_scores.append(0.8)
         reasons.append(f"Order value (${order['total_amount']:.2f}) is unusually high")
-    
+
     # 2. Quantity anomaly
     if 'items' in order:
         total_quantity = sum(item.get('quantity', 0) for item in order['items'])
         historical_quantities = [sum(item.get('quantity', 0) for item in o.get('items', [])) for o in agent_history]
         mean_qty = np.mean(historical_quantities) if historical_quantities else 0
-        
+
         if mean_qty > 0 and total_quantity > mean_qty * 3:
             anomaly_scores.append(0.7)
             reasons.append(f"Order quantity ({total_quantity}) is 3x higher than average")
-    
+
     # 3. New manufacturer anomaly
     if 'manufacturer_id' in order:
         historical_manufacturers = set(o.get('manufacturer_id') for o in agent_history)
         if order['manufacturer_id'] not in historical_manufacturers:
             anomaly_scores.append(0.4)
             reasons.append("First order from this manufacturer")
-    
+
     # Calculate overall score
     overall_score = max(anomaly_scores) if anomaly_scores else 0.0
-    
+
     if overall_score >= 0.7:
         risk_level = "high"
         recommended_action = "manual_approval_required"
@@ -219,7 +224,7 @@ def detect_order_anomaly(order: Dict[str, Any], agent_history: List[Dict[str, An
     else:
         risk_level = "low"
         recommended_action = "auto_approve"
-    
+
     return {
         "is_anomaly": overall_score >= 0.5,
         "anomaly_score": round(overall_score, 2),
@@ -233,7 +238,7 @@ def detect_order_anomaly(order: Dict[str, Any], agent_history: List[Dict[str, An
 async def init_db():
     """Initialize database tables"""
     global db_pool, redis_client
-    
+
     try:
         db_pool = await asyncpg.create_pool(
             host=os.getenv('DB_HOST', 'localhost'),
@@ -244,9 +249,9 @@ async def init_db():
             min_size=10,
             max_size=20
         )
-        
+
         redis_client = await redis.from_url("redis://localhost:6379", decode_responses=True)
-        
+
         async with db_pool.acquire() as conn:
             # Anomaly detections table
             await conn.execute("""
@@ -267,7 +272,7 @@ async def init_db():
                     INDEX idx_status (status)
                 )
             """)
-            
+
             print("✅ Anomaly Detection tables initialized")
     except Exception as e:
         print(f"❌ Database initialization error: {e}")
@@ -305,7 +310,7 @@ async def detect_transaction_anomaly_endpoint(transaction: TransactionAnomaly):
                 ORDER BY created_at DESC
                 LIMIT 100
             """, transaction.agent_id)
-            
+
             # Prepare historical data
             historical_data = [
                 {
@@ -316,7 +321,7 @@ async def detect_transaction_anomaly_endpoint(transaction: TransactionAnomaly):
                 }
                 for row in historical
             ]
-            
+
             # Prepare current transaction
             current_tx = {
                 'amount': transaction.amount,
@@ -324,10 +329,10 @@ async def detect_transaction_anomaly_endpoint(transaction: TransactionAnomaly):
                 'hour': transaction.timestamp.hour,
                 'timestamp': transaction.timestamp
             }
-            
+
             # Detect anomaly
             result = detect_transaction_anomaly(current_tx, historical_data)
-            
+
             # Save anomaly if detected
             if result['is_anomaly']:
                 await conn.execute("""
@@ -337,9 +342,9 @@ async def detect_transaction_anomaly_endpoint(transaction: TransactionAnomaly):
                 """, 'transaction', transaction.transaction_id, transaction.agent_id,
                     result['anomaly_score'], result['risk_level'], 
                     json.dumps(result['reasons']), result['recommended_action'])
-            
+
             return AnomalyResponse(**result)
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -354,10 +359,10 @@ async def detect_order_anomaly_endpoint(order_id: str, agent_id: str):
                 FROM purchase_orders
                 WHERE id = $1
             """, order_id)
-            
+
             if not order:
                 raise HTTPException(status_code=404, detail="Order not found")
-            
+
             # Get historical orders
             historical = await conn.fetch("""
                 SELECT total_amount, manufacturer_id, items
@@ -366,14 +371,14 @@ async def detect_order_anomaly_endpoint(order_id: str, agent_id: str):
                 ORDER BY created_at DESC
                 LIMIT 50
             """, agent_id, order_id)
-            
+
             # Prepare data
             current_order = {
                 'total_amount': float(order['total_amount']),
                 'manufacturer_id': str(order['manufacturer_id']),
                 'items': json.loads(order['items']) if order['items'] else []
             }
-            
+
             historical_orders = [
                 {
                     'total_amount': float(o['total_amount']),
@@ -382,10 +387,10 @@ async def detect_order_anomaly_endpoint(order_id: str, agent_id: str):
                 }
                 for o in historical
             ]
-            
+
             # Detect anomaly
             result = detect_order_anomaly(current_order, historical_orders)
-            
+
             # Save anomaly if detected
             if result['is_anomaly']:
                 await conn.execute("""
@@ -395,9 +400,9 @@ async def detect_order_anomaly_endpoint(order_id: str, agent_id: str):
                 """, 'order', order_id, agent_id,
                     result['anomaly_score'], result['risk_level'], 
                     json.dumps(result['reasons']), result['recommended_action'])
-            
+
             return result
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -414,14 +419,14 @@ async def bulk_anomaly_analysis(request: BulkAnalysisRequest):
                 WHERE created_at >= CURRENT_DATE - INTERVAL '{} days'
                 AND anomaly_score >= {}
             """.format(request.days, request.min_anomaly_score)
-            
+
             if request.agent_id:
                 query += f" AND agent_id = '{request.agent_id}'"
-            
+
             query += " ORDER BY anomaly_score DESC, created_at DESC LIMIT 100"
-            
+
             anomalies = await conn.fetch(query)
-            
+
             return {
                 "total_anomalies": len(anomalies),
                 "anomalies": [
@@ -437,7 +442,7 @@ async def bulk_anomaly_analysis(request: BulkAnalysisRequest):
                     for a in anomalies
                 ]
             }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -453,7 +458,7 @@ async def get_anomaly_analytics():
                 WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY risk_level
             """)
-            
+
             # Anomalies by entity type
             by_type = await conn.fetch("""
                 SELECT entity_type, COUNT(*) as count
@@ -461,14 +466,14 @@ async def get_anomaly_analytics():
                 WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY entity_type
             """)
-            
+
             # Total anomalies
             total = await conn.fetchval("""
                 SELECT COUNT(*)
                 FROM anomaly_detections
                 WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
             """)
-            
+
             return {
                 "last_7_days": {
                     "total_anomalies": total or 0,
@@ -476,7 +481,7 @@ async def get_anomaly_analytics():
                     "by_entity_type": {t['entity_type']: t['count'] for t in by_type}
                 }
             }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

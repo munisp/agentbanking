@@ -556,10 +556,15 @@ export default function Monitoring() {
   const healthyCount = services.filter((s) => s.status === "healthy").length;
   const unhealthyCount = services.filter((s) => s.status === "unhealthy").length;
   const checkingCount = services.filter((s) => s.status === "checking").length;
+  // Availability counts only verified-healthy services — a service still in
+  // "checking" state was never verified and must not inflate the numerator.
+  // If nothing has been verified yet, show "—" rather than a misleading 0%.
   const overallUptime =
-    services.length > 0
-      ? (((healthyCount + checkingCount) / services.length) * 100).toFixed(1)
-      : "0.0";
+    checkingCount === services.length
+      ? "—"
+      : services.length > 0
+        ? ((healthyCount / services.length) * 100).toFixed(1)
+        : "0.0";
   const allHealthy = unhealthyCount === 0 && checkingCount === 0;
 
   const filteredServices = useMemo(() => {
@@ -673,7 +678,9 @@ export default function Monitoring() {
               </p>
             </div>
             <div className="text-right">
-              <div className="text-4xl font-bold">{overallUptime}%</div>
+              <div className="text-4xl font-bold">
+                {overallUptime === "—" ? "—" : `${overallUptime}%`}
+              </div>
               <div className="opacity-80 text-sm">availability</div>
               <button
                 onClick={loadSmokeResults}

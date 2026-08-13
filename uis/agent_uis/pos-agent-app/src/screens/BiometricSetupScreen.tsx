@@ -56,7 +56,7 @@ export const BiometricSetupScreen = () => {
         setIsFingerprintEnabled(result.fingerprintEnabled || false);
         setIsFaceIdEnabled(result.faceIdEnabled || false);
       } else {
-        // Fallback for demo purposes if API fails
+        // Honest default: settings unknown -> treat as disabled, show load error.
         setIsFingerprintEnabled(false);
         setIsFaceIdEnabled(false);
       }
@@ -68,9 +68,39 @@ export const BiometricSetupScreen = () => {
     }
   };
 
+  // Real device-biometrics capability check (defensive require; never auto-true).
+  const checkSensorAvailable = async (type: 'fingerprint' | 'faceId'): Promise<boolean> => {
+    let RNB: any = null;
+    try {
+      RNB = require('react-native-biometrics').default;
+    } catch {
+      RNB = null;
+    }
+    if (!RNB) return false;
+    try {
+      const rnBiometrics = new RNB({ allowDeviceCredentials: true });
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+      if (!available) return false;
+      if (type === 'faceId') return biometryType === 'FaceID' || biometryType === 'Face';
+      return true; // fingerprint / generic biometrics
+    } catch {
+      return false;
+    }
+  };
+
   const updateBiometricSetting = async (type: 'fingerprint' | 'faceId', value: boolean) => {
     try {
       setIsUpdating(true);
+      if (value) {
+        const available = await checkSensorAvailable(type);
+        if (!available) {
+          Alert.alert(
+            'Unavailable',
+            `${type === 'fingerprint' ? 'Fingerprint' : 'Face ID'} authentication is not available on this device.`,
+          );
+          return;
+        }
+      }
       const response = await fetch(`${BASE_URL}/user/security/biometrics/update`, {
         method: 'POST',
         headers: {

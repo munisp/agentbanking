@@ -357,26 +357,41 @@ export const apacheNifiRouter = router({
   listProcessGroups: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheNifi.listProcessGroups is not available in this deployment",
+      });
     }),
   instantiateTemplate: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheNifi.instantiateTemplate is not available in this deployment",
+      });
     }),
   startProcessGroup: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheNifi.startProcessGroup is not available in this deployment",
+      });
     }),
   stopProcessGroup: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheNifi.stopProcessGroup is not available in this deployment",
+      });
     }),
   platformIntegration: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "apacheNifi.platformIntegration is not available in this deployment",
+      });
     }),
 });

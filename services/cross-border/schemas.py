@@ -87,7 +87,7 @@ class TransactionRead(TransactionBase):
     fx_rate: Decimal = Field(..., decimal_places=6, description="FX rate used for conversion.")
     status: TransactionStatus
     status_detail: Optional[str]
-    compliance_score: int
+    compliance_score: Optional[int] = Field(None, description="Compliance risk score; NULL when screening is pending.")
     created_at: datetime
     updated_at: Optional[datetime]
     
@@ -114,7 +114,7 @@ class PaginatedPartyResponse(BaseModel):
     page: int
     size: int
     items: List[PartyRead]
-    
+
 class PaginatedFXRateResponse(BaseModel):
     total: int
     page: int

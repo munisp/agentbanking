@@ -16,24 +16,6 @@ interface Integration {
   logo: string;
 }
 
-const MOCK_INTEGRATIONS: Integration[] = [
-  { id: "nibss", name: "NIBSS", category: "Payment", status: "connected", description: "Nigeria Inter-Bank Settlement System for NIP and NEFT transfers between Nigerian banks.", logo: "NI" },
-  { id: "mojaloop", name: "Mojaloop", category: "Payment", status: "connected", description: "Open-source interoperability platform for real-time inclusive financial services.", logo: "MJ" },
-  { id: "flutterwave", name: "Flutterwave", category: "Payment", status: "connected", description: "Pan-African payments gateway supporting cards, bank transfers and mobile money.", logo: "FW" },
-  { id: "paystack", name: "Paystack", category: "Payment", status: "available", description: "Modern Nigerian payments processor with support for card, bank and USSD payments.", logo: "PS" },
-  { id: "stripe", name: "Stripe", category: "Payment", status: "available", description: "Global payments infrastructure for international card processing and disbursements.", logo: "ST" },
-  { id: "cbn-api", name: "CBN Open API", category: "Compliance", status: "connected", description: "Central Bank of Nigeria regulatory reporting, BVN verification and policy feeds.", logo: "CB" },
-  { id: "nfiu", name: "NFIU", category: "Compliance", status: "connected", description: "Nigeria Financial Intelligence Unit STR/CTR filing and AML transaction screening.", logo: "NF" },
-  { id: "termii", name: "Termii SMS", category: "Communication", status: "connected", description: "Nigerian SMS gateway for OTP delivery, transactional SMS and voice notifications.", logo: "TM" },
-  { id: "africas-talking", name: "Africa's Talking", category: "Communication", status: "available", description: "Multi-channel communications API for SMS, USSD, voice and airtime across Africa.", logo: "AT" },
-  { id: "erpnext", name: "ERPNext", category: "ERP", status: "available", description: "Open-source ERP for accounting, inventory and HR integration with agent banking operations.", logo: "EN" },
-  { id: "mixpanel", name: "Mixpanel", category: "Analytics", status: "available", description: "Product analytics platform for tracking user journeys and funnel optimisation.", logo: "MP" },
-  { id: "remita", name: "Remita", category: "Payment", status: "coming-soon", description: "Government and enterprise payment collection platform used by IPPIS and federal agencies.", logo: "RM" },
-  { id: "interswitch", name: "Interswitch", category: "Payment", status: "coming-soon", description: "Nigerian payment switching and processing network supporting Verve cards and Quickteller.", logo: "IW" },
-  { id: "dojah", name: "Dojah KYC", category: "Compliance", status: "available", description: "Identity verification APIs for BVN lookup, NIN check, document OCR and liveness detection.", logo: "DJ" },
-  { id: "google-analytics", name: "Google Analytics", category: "Analytics", status: "coming-soon", description: "Web and app analytics for dashboard usage tracking and admin user behaviour insights.", logo: "GA" },
-];
-
 const CATEGORIES: Array<"All" | IntegrationCategory> = ["All", "Payment", "Compliance", "Communication", "ERP", "Analytics"];
 
 const STATUS_CONFIG: Record<IntegrationStatus, { label: string; bg: string; text: string; icon: React.FC<{className?: string}> }> = {
@@ -45,6 +27,7 @@ const STATUS_CONFIG: Record<IntegrationStatus, { label: string; bg: string; text
 const IntegrationMarketplace: React.FC = () => {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<"All" | IntegrationCategory>("All");
   const [connecting, setConnecting] = useState<string | null>(null);
 
@@ -52,11 +35,12 @@ const IntegrationMarketplace: React.FC = () => {
 
   const fetchIntegrations = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/integrations`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setIntegrations(Array.isArray(d.integrations) ? d.integrations : MOCK_INTEGRATIONS); }
-      else { setIntegrations(MOCK_INTEGRATIONS); }
-    } catch { setIntegrations(MOCK_INTEGRATIONS); }
+      if (res.ok) { const d = await res.json(); setIntegrations(Array.isArray(d.integrations) ? d.integrations : []); }
+      else { setError("Failed to load integrations."); }
+    } catch { setError("Failed to load integrations."); }
     finally { setLoading(false); }
   };
 
@@ -84,6 +68,13 @@ const IntegrationMarketplace: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchIntegrations()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

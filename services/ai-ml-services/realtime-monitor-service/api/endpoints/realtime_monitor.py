@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 import math
+import os
+import time
 
 from db.session import get_db
 from core.auth import get_current_user
@@ -29,18 +31,35 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/realtime-monitor", tags=["realtime-monitor"])
 
+# Real process start time for honest uptime reporting.
+_PROCESS_START = time.time()
+
+
+def _check_redis() -> str:
+    """Actually probe Redis; never report a hardcoded status."""
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        return "unconfigured"
+    try:
+        import redis  # type: ignore
+        client = redis.from_url(redis_url, socket_timeout=2, socket_connect_timeout=2)
+        client.ping()
+        return "healthy"
+    except Exception as exc:
+        logger.error(f"Redis health check failed: {exc}")
+        return "unhealthy"
+
 
 @router.get("/health", response_model=SystemHealth)
 async def get_system_health(db: Session = Depends(get_db)):
     """
     Get system health status
-    
+
     Returns:
     - System health metrics including database, Redis, and WebSocket status
     """
     from websocket.connection_manager import manager
-    import time
-    
+
     # Check database
     try:
         db.execute("SELECT 1")
@@ -48,18 +67,19 @@ async def get_system_health(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         db_status = "unhealthy"
-    
-    # Check Redis (simplified - in production, actually check Redis)
-    redis_status = "healthy"
-    
+
+    # Real Redis probe (unconfigured/unhealthy/healthy — never fabricated)
+    redis_status = _check_redis()
+
     # Get WebSocket connections
     ws_connections = manager.get_connection_count()
-    
-    # Calculate uptime (simplified - in production, track actual start time)
-    uptime_seconds = 3600.0  # Mock value
-    
+
+    # Real uptime since process start
+    uptime_seconds = time.time() - _PROCESS_START
+
+    degraded = db_status != "healthy" or redis_status == "unhealthy"
     return SystemHealth(
-        status="healthy" if db_status == "healthy" else "degraded",
+        status="healthy" if not degraded else "degraded",
         database=db_status,
         redis=redis_status,
         websocket_connections=ws_connections,
@@ -74,7 +94,7 @@ async def get_dashboard_stats(
 ):
     """
     Get dashboard statistics and metrics
-    
+
     Returns:
     - Active transactions count
     - Total volume (24h)
@@ -109,10 +129,10 @@ async def get_transactions(
 ):
     """
     Get paginated list of transactions with filters
-    
+
     Query Parameters:
     - page: Page number (default: 1)
-    - page_size: Items per page (default: 20, max: 100)
+    - page_size: Page size (default: 20, max: 100)
     - status: Filter by transaction status (can be multiple)
     - type: Filter by transaction type (can be multiple)
     - date_from: Filter transactions from this date
@@ -120,12 +140,12 @@ async def get_transactions(
     - currency: Filter by currency (can be multiple)
     - min_amount: Minimum transaction amount
     - max_amount: Maximum transaction amount
-    
+
     Returns:
     - Paginated list of transactions
     """
     service = RealtimeMonitorService(db)
-    
+
     # Build filters
     filters = DashboardFilters(
         status=status,
@@ -136,13 +156,13 @@ async def get_transactions(
         min_amount=min_amount,
         max_amount=max_amount
     )
-    
+
     # Get transactions
     transactions, total = service.get_transactions(filters, page, page_size)
-    
+
     # Calculate total pages
     total_pages = math.ceil(total / page_size) if total > 0 else 0
-    
+
     return PaginatedTransactionResponse(
         data=[TransactionSchema.from_orm(txn) for txn in transactions],
         total=total,
@@ -161,19 +181,19 @@ async def get_active_transactions(
 ):
     """
     Get active (pending or processing) transactions
-    
+
     Query Parameters:
     - page: Page number (default: 1)
-    - page_size: Items per page (default: 20, max: 100)
-    
+    - page_size: Page size (default: 20, max: 100)
+
     Returns:
     - Paginated list of active transactions
     """
     service = RealtimeMonitorService(db)
     transactions, total = service.get_active_transactions(page, page_size)
-    
+
     total_pages = math.ceil(total / page_size) if total > 0 else 0
-    
+
     return PaginatedTransactionResponse(
         data=[TransactionSchema.from_orm(txn) for txn in transactions],
         total=total,
@@ -191,19 +211,19 @@ async def get_transaction(
 ):
     """
     Get transaction by ID
-    
+
     Path Parameters:
     - transaction_id: Transaction ID
-    
+
     Returns:
     - Transaction details
     """
     service = RealtimeMonitorService(db)
     transaction = service.get_transaction_by_id(transaction_id)
-    
+
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    
+
     return TransactionSchema.from_orm(transaction)
 
 
@@ -217,20 +237,20 @@ async def get_alerts(
 ):
     """
     Get alerts
-    
+
     Query Parameters:
     - acknowledged: Filter by acknowledged status (default: false)
     - page: Page number (default: 1)
-    - page_size: Items per page (default: 20, max: 100)
-    
+    - page_size: Page size (default: 20, max: 100)
+
     Returns:
     - Paginated list of alerts
     """
     service = RealtimeMonitorService(db)
     alerts, total = service.get_alerts(acknowledged, page, page_size)
-    
+
     total_pages = math.ceil(total / page_size) if total > 0 else 0
-    
+
     return PaginatedAlertResponse(
         data=[AlertSchema.from_orm(alert) for alert in alerts],
         total=total,
@@ -248,21 +268,21 @@ async def acknowledge_alert(
 ):
     """
     Acknowledge an alert
-    
+
     Path Parameters:
     - alert_id: Alert ID
-    
+
     Returns:
     - Updated alert
     """
     service = RealtimeMonitorService(db)
     user_id = current_user.get("user_id")
-    
+
     alert = service.acknowledge_alert(alert_id, user_id)
-    
+
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    
+
     return AlertSchema.from_orm(alert)
 
 
@@ -280,15 +300,15 @@ async def export_transactions_csv(
 ):
     """
     Export transactions to CSV
-    
+
     Query Parameters:
     - Same filters as get_transactions endpoint
-    
+
     Returns:
     - CSV file
     """
     service = RealtimeMonitorService(db)
-    
+
     # Build filters
     filters = DashboardFilters(
         status=status,
@@ -299,10 +319,10 @@ async def export_transactions_csv(
         min_amount=min_amount,
         max_amount=max_amount
     )
-    
+
     # Generate CSV
     csv_content = service.export_transactions_csv(filters)
-    
+
     # Return as downloadable file
     return Response(
         content=csv_content,

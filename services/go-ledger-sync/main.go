@@ -1,13 +1,14 @@
 // pos-ledger-sync — Go sidecar for 54agent POS Shell
 //
 // Provides:
-// 1. TigerBeetle ledger sync (double-entry accounting)
+// 1. TigerBeetle ledger sync (double-entry accounting) — backed by a real
+//    TigerBeetle cluster via the official tigerbeetle-go client
 // 2. Health aggregator (checks all sidecars + main app)
 // 3. mTLS proxy for inter-service communication
 // 4. Transaction lifecycle management
-// 5. Settlement batch processor
+// 5. Settlement batch processor (two-phase commit against TigerBeetle)
 // 6. Float balance tracker
-// 7. Reconciliation engine
+// 7. Reconciliation engine (TigerBeetle cluster vs local synced ledger)
 //
 // Listens on port 9200 (configurable via GO_LEDGER_PORT).
 
@@ -24,10 +25,115 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	tb "github.com/tigerbeetle/tigerbeetle-go"
+	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
+
+// ── TigerBeetle cluster client (source of truth) ─────────────────────────────
+
+var tbClient tb.Client
+
+// stringToUint128 converts a string ID to a deterministic tbtypes.Uint128.
+func stringToUint128(s string) tbtypes.Uint128 {
+	var result tbtypes.Uint128
+	b := []byte(s)
+	if len(b) > 16 {
+		b = b[:16]
+	}
+	copy(result[:], b)
+	return result
+}
+
+// tbAccountID maps a POS account identifier to its TigerBeetle account ID.
+func tbAccountID(accountID string) tbtypes.Uint128 {
+	return stringToUint128("acct:" + accountID)
+}
+
+// ensureTBAccount creates the account in TigerBeetle, tolerating EXISTS.
+func ensureTBAccount(accountID, currency string) error {
+	results, err := tbClient.CreateAccounts([]tbtypes.Account{
+		{ID: tbAccountID(accountID), Ledger: 1, Code: 1, Flags: 0},
+	})
+	if err != nil {
+		return fmt.Errorf("tigerbeetle CreateAccounts: %w", err)
+	}
+	for _, res := range results {
+		if !strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
+			return fmt.Errorf("tigerbeetle account creation rejected for %s: result=%v", accountID, res.Result)
+		}
+	}
+	return nil
+}
+
+// postTransferToTigerBeetle posts a real transfer. Pending entries are posted
+// as two-phase pending transfers so settlement can post them later.
+func postTransferToTigerBeetle(entry LedgerEntry) error {
+	if tbClient == nil {
+		return fmt.Errorf("tigerbeetle client not connected")
+	}
+	if err := ensureTBAccount(entry.DebitAccountID, entry.Currency); err != nil {
+		return err
+	}
+	if err := ensureTBAccount(entry.CreditAccountID, entry.Currency); err != nil {
+		return err
+	}
+
+	flags := uint16(0)
+	if entry.Pending {
+		flags = tbtypes.TransferFlags{Pending: true}.ToUint16()
+	}
+
+	results, err := tbClient.CreateTransfers([]tbtypes.Transfer{
+		{
+			ID:              stringToUint128(entry.ID),
+			DebitAccountID:  tbAccountID(entry.DebitAccountID),
+			CreditAccountID: tbAccountID(entry.CreditAccountID),
+			Amount:          tbtypes.ToUint128(uint64(entry.Amount)),
+			Ledger:          uint32(entry.LedgerCode),
+			Code:            uint16(entry.TransferCode),
+			Flags:           flags,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("tigerbeetle CreateTransfers: %w", err)
+	}
+	if len(results) > 0 {
+		return fmt.Errorf("tigerbeetle transfer rejected: result=%v index=%d", results[0].Result, results[0].Index)
+	}
+	return nil
+}
+
+// settlePendingTransfer posts the pending transfer in TigerBeetle (2nd phase).
+func settlePendingTransfer(entry LedgerEntry) error {
+	if tbClient == nil {
+		return fmt.Errorf("tigerbeetle client not connected")
+	}
+	results, err := tbClient.CreateTransfers([]tbtypes.Transfer{
+		{
+			ID:              stringToUint128("stl:" + entry.ID),
+			DebitAccountID:  tbAccountID(entry.DebitAccountID),
+			CreditAccountID: tbAccountID(entry.CreditAccountID),
+			Amount:          tbtypes.ToUint128(0), // 0 = post full pending amount
+			PendingID:       stringToUint128(entry.ID),
+			Ledger:          uint32(entry.LedgerCode),
+			Code:            uint16(entry.TransferCode),
+			Flags:           tbtypes.TransferFlags{PostPendingTransfer: true}.ToUint16(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("tigerbeetle post-pending transfer: %w", err)
+	}
+	if len(results) > 0 {
+		return fmt.Errorf("tigerbeetle settlement rejected for %s: result=%v", entry.ID, results[0].Result)
+	}
+	return nil
+}
 
 // ── WAL (Write-Ahead Log) ─────────────────────────────────────────────────────
 // Provides durable persistence using only Go stdlib (no external DB driver).
@@ -223,6 +329,8 @@ type StatsResponse struct {
 }
 
 // ── Application State ────────────────────────────────────────────────────────
+// Local materialised cache of transfers that were ACCEPTED by the TigerBeetle
+// cluster. Nothing is recorded here unless the cluster committed it first.
 
 type AppState struct {
 	mu               sync.RWMutex
@@ -272,15 +380,27 @@ func transferHandler(w http.ResponseWriter, r *http.Request) {
 	if entry.Currency == "" {
 		entry.Currency = "NGN"
 	}
+	if entry.LedgerCode == 0 {
+		entry.LedgerCode = 1
+	}
+	if entry.TransferCode == 0 {
+		entry.TransferCode = 1
+	}
+
+	// Post to the real TigerBeetle cluster first. Only record locally what the
+	// cluster actually committed.
+	if err := postTransferToTigerBeetle(entry); err != nil {
+		log.Printf("[TB] transfer %s rejected: %v", entry.ID, err)
+		jsonError(w, "ledger posting failed: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 
 	// Persist to WAL before updating in-memory state
 	appendWAL("TRANSFER", entry)
 
 	state.mu.Lock()
 	state.ledger = append(state.ledger, entry)
-	// Update debit account
 	updateAccount(entry.DebitAccountID, entry.Currency, -entry.Amount, entry.Pending)
-	// Update credit account
 	updateAccount(entry.CreditAccountID, entry.Currency, entry.Amount, entry.Pending)
 	state.mu.Unlock()
 
@@ -315,6 +435,23 @@ func batchTransferHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if entries[i].Currency == "" {
 			entries[i].Currency = "NGN"
+		}
+		if entries[i].LedgerCode == 0 {
+			entries[i].LedgerCode = 1
+		}
+		if entries[i].TransferCode == 0 {
+			entries[i].TransferCode = 1
+		}
+	}
+
+	// Post every entry to the real cluster. Any rejection aborts the batch —
+	// nothing is recorded that TigerBeetle did not accept.
+	for i := range entries {
+		if err := postTransferToTigerBeetle(entries[i]); err != nil {
+			log.Printf("[TB] batch transfer %s rejected: %v", entries[i].ID, err)
+			jsonError(w, fmt.Sprintf("batch aborted at entry %d (%s): %v", i, entries[i].ID, err),
+				http.StatusServiceUnavailable)
+			return
 		}
 	}
 
@@ -375,13 +512,30 @@ func settlementHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state.mu.Lock()
+	state.mu.RLock()
 	pending := make([]LedgerEntry, 0)
 	for _, e := range state.ledger {
 		if e.Pending {
 			pending = append(pending, e)
 		}
 	}
+	state.mu.RUnlock()
+
+	if len(pending) == 0 {
+		jsonError(w, "no pending transfers to settle", http.StatusConflict)
+		return
+	}
+
+	// Post the second phase of every pending transfer in TigerBeetle.
+	// A settlement is only reported once the cluster accepted it.
+	for _, e := range pending {
+		if err := settlePendingTransfer(e); err != nil {
+			log.Printf("[TB] settlement failed for %s: %v", e.ID, err)
+			jsonError(w, "settlement posting failed for "+e.ID+": "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	var totalAmt int64
 	for _, e := range pending {
 		totalAmt += e.Amount
@@ -395,7 +549,8 @@ func settlementHandler(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     time.Now().UnixMilli(),
 		SettledAt:     time.Now().UnixMilli(),
 	}
-	// Mark pending as settled
+
+	state.mu.Lock()
 	for i := range state.ledger {
 		if state.ledger[i].Pending {
 			state.ledger[i].Pending = false
@@ -410,27 +565,71 @@ func settlementHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, batch)
 }
 
+// reconcileHandler honestly compares the local synced ledger against the
+// TigerBeetle cluster. It never reports "balanced" by construction.
 func reconcileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state.mu.RLock()
-	var totalDebits, totalCredits int64
-	for _, e := range state.ledger {
-		totalDebits += e.Amount
-		totalCredits += e.Amount
+	if tbClient == nil {
+		jsonError(w, "tigerbeetle cluster unreachable — reconciliation cannot run", http.StatusServiceUnavailable)
+		return
 	}
-	matched := len(state.ledger)
+
+	state.mu.RLock()
+	accountIDs := make([]string, 0, len(state.accounts))
+	localAccounts := make(map[string]AccountBalance, len(state.accounts))
+	for id, acc := range state.accounts {
+		accountIDs = append(accountIDs, id)
+		localAccounts[id] = *acc
+	}
 	state.mu.RUnlock()
+
+	matched := 0
+	unmatched := 0
+	var discrepancy int64
+
+	for _, accountID := range accountIDs {
+		accounts, err := tbClient.LookupAccounts([]tbtypes.Uint128{tbAccountID(accountID)})
+		if err != nil {
+			jsonError(w, "tigerbeetle lookup failed during reconciliation: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		local := localAccounts[accountID]
+		if len(accounts) == 0 {
+			// Local state claims activity the cluster does not know about.
+			unmatched++
+			discrepancy += local.CreditsPosted + local.DebitsPosted
+			continue
+		}
+		tbAcc := accounts[0]
+		tbDebits := int64(tbAcc.DebitsPosted.BigInt().Uint64())
+		tbCredits := int64(tbAcc.CreditsPosted.BigInt().Uint64())
+		if tbDebits == local.DebitsPosted && tbCredits == local.CreditsPosted {
+			matched++
+		} else {
+			unmatched++
+			d := (tbCredits - tbDebits) - (local.CreditsPosted - local.DebitsPosted)
+			if d < 0 {
+				d = -d
+			}
+			discrepancy += d
+		}
+	}
+
+	status := "balanced"
+	if unmatched > 0 || discrepancy > 0 {
+		status = "discrepancy"
+	}
 
 	state.reconcileCount.Add(1)
 	result := ReconciliationResult{
 		ID:             fmt.Sprintf("rec_%d", time.Now().UnixMilli()),
-		Status:         "balanced",
+		Status:         status,
 		MatchedCount:   matched,
-		UnmatchedCount: 0,
-		DiscrepancyAmt: 0,
+		UnmatchedCount: unmatched,
+		DiscrepancyAmt: discrepancy,
 		Timestamp:      time.Now().UnixMilli(),
 	}
 
@@ -660,6 +859,28 @@ func main() {
 
 	// Initialise in-memory state
 	state = NewAppState()
+
+	// Connect to the real TigerBeetle cluster — this sidecar is a ledger sync
+	// facade and refuses to masquerade as a ledger without it.
+	tbAddresses := os.Getenv("TB_ADDRESSES")
+	if tbAddresses == "" {
+		tbAddresses = os.Getenv("TIGERBEETLE_ADDR")
+	}
+	if tbAddresses == "" {
+		tbAddresses = "localhost:3000"
+	}
+	clusterID, _ := strconv.ParseUint(os.Getenv("TB_CLUSTER_ID"), 10, 64)
+
+	client, err := tb.NewClient(tbtypes.ToUint128(clusterID), strings.Split(tbAddresses, ","))
+	if err != nil {
+		log.Fatalf("[pos-ledger-sync] TigerBeetle client init failed (%s): %v — refusing to start", tbAddresses, err)
+	}
+	defer client.Close()
+	if _, err := client.LookupAccounts([]tbtypes.Uint128{tbtypes.ToUint128(1)}); err != nil {
+		log.Fatalf("[pos-ledger-sync] TigerBeetle cluster unreachable at %s: %v — refusing to start", tbAddresses, err)
+	}
+	tbClient = client
+	log.Printf("[pos-ledger-sync] Connected to TigerBeetle cluster %d at %s", clusterID, tbAddresses)
 
 	// WAL — durable persistence across pod restarts
 	walPath := os.Getenv("GO_LEDGER_WAL_PATH")

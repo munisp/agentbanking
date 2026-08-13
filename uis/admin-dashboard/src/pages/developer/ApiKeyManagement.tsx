@@ -19,15 +19,10 @@ interface ApiKey {
 
 const ALL_SCOPES = ["transactions:read", "transactions:write", "agents:read", "merchants:read", "reports:read", "webhooks:manage", "compliance:read", "settlements:read"];
 
-const MOCK_KEYS: ApiKey[] = [
-  { id: "key-001", name: "Production App", key_prefix: "sk_live_abc1", scopes: ["transactions:read", "reports:read"], status: "active", last_used: "2 hours ago", usage_count: 45230, created_at: "2024-01-15" },
-  { id: "key-002", name: "Analytics Dashboard", key_prefix: "sk_live_def2", scopes: ["transactions:read", "reports:read", "agents:read"], status: "active", last_used: "Just now", usage_count: 12800, created_at: "2024-03-10" },
-  { id: "key-003", name: "Legacy Integration", key_prefix: "sk_live_ghi3", scopes: ["transactions:read"], status: "revoked", usage_count: 5000, created_at: "2023-11-20" },
-];
-
 const ApiKeyManagement: React.FC = () => {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [newKey, setNewKey] = useState<ApiKey | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -39,11 +34,12 @@ const ApiKeyManagement: React.FC = () => {
 
   const fetchKeys = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/api-keys`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setKeys(Array.isArray(d.keys) ? d.keys : MOCK_KEYS); }
-      else { setKeys(MOCK_KEYS); }
-    } catch { setKeys(MOCK_KEYS); }
+      if (res.ok) { const d = await res.json(); setKeys(Array.isArray(d.keys) ? d.keys : []); }
+      else { setError("Failed to load API keys."); }
+    } catch { setError("Failed to load API keys."); }
     finally { setLoading(false); }
   };
 
@@ -86,6 +82,13 @@ const ApiKeyManagement: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchKeys()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

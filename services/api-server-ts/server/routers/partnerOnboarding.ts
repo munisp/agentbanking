@@ -359,7 +359,10 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "partnerOnboarding.addCorridor is not available in this deployment",
+      });
     }),
 
   addFeeOverride: protectedProcedure
@@ -367,7 +370,10 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "partnerOnboarding.addFeeOverride is not available in this deployment",
+      });
     }),
 
   completeOnboarding: protectedProcedure
@@ -375,7 +381,10 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "partnerOnboarding.completeOnboarding is not available in this deployment",
+      });
     }),
 
   getBranding: protectedProcedure.query(async () => {
@@ -395,7 +404,10 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "partnerOnboarding.registerTenant is not available in this deployment",
+      });
     }),
 
   updateBranding: protectedProcedure
@@ -403,7 +415,10 @@ export const partnerOnboardingRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "partnerOnboarding.updateBranding is not available in this deployment",
+      });
     }),
   validateInvite: protectedProcedure
     .input(z.object({ inviteCode: z.string() }))

@@ -24,18 +24,6 @@ interface ArchiveJob {
   sizeMB: number;
 }
 
-const MOCK_POLICIES: ArchivalPolicy[] = [
-  { entityType: "transactions", retentionDays: 365, archiveAfterDays: 180, storageTarget: "S3", lastRun: "2026-05-01 02:00", recordsArchived: 142800 },
-  { entityType: "audit-logs", retentionDays: 730, archiveAfterDays: 365, storageTarget: "cold-storage", lastRun: "2026-04-30 03:00", recordsArchived: 980200 },
-  { entityType: "kyc-docs", retentionDays: 2555, archiveAfterDays: 730, storageTarget: "S3", lastRun: "2026-04-15 01:00", recordsArchived: 12400 },
-];
-
-const MOCK_JOBS: ArchiveJob[] = [
-  { name: "transactions-archive-20260501", started: "2026-05-01 02:00", completed: "2026-05-01 02:48", recordsMoved: 142800, sizeMB: 2840 },
-  { name: "audit-logs-archive-20260430", started: "2026-04-30 03:00", completed: "2026-04-30 04:21", recordsMoved: 980200, sizeMB: 9802 },
-  { name: "kyc-docs-archive-20260415", started: "2026-04-15 01:00", completed: "2026-04-15 01:12", recordsMoved: 12400, sizeMB: 18600 },
-];
-
 const ENTITY_STYLES: Record<EntityType, string> = {
   "transactions": "bg-blue-100 text-blue-700",
   "audit-logs": "bg-amber-100 text-amber-700",
@@ -51,6 +39,7 @@ const ArchivalAdmin: React.FC = () => {
   const [policies, setPolicies] = useState<ArchivalPolicy[]>([]);
   const [jobs, setJobs] = useState<ArchiveJob[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [runningPolicy, setRunningPolicy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -60,14 +49,15 @@ const ArchivalAdmin: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/archival`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setPolicies(Array.isArray(d.policies) ? d.policies : MOCK_POLICIES);
-        setJobs(Array.isArray(d.jobs) ? d.jobs : MOCK_JOBS);
-      } else { setPolicies(MOCK_POLICIES); setJobs(MOCK_JOBS); }
-    } catch { setPolicies(MOCK_POLICIES); setJobs(MOCK_JOBS); }
+        setPolicies(Array.isArray(d.policies) ? d.policies : []);
+        setJobs(Array.isArray(d.jobs) ? d.jobs : []);
+      } else { setError("Failed to load archival data."); }
+    } catch { setError("Failed to load archival data."); }
     finally { setLoading(false); }
   };
 
@@ -82,12 +72,19 @@ const ArchivalAdmin: React.FC = () => {
       });
       showToast(`Archive job started for ${entityType}`);
       fetchData();
-    } catch { showToast(`Archive job triggered for ${entityType} (demo)`); }
+    } catch { showToast(`Failed to start archive job for ${entityType}.`); }
     finally { setRunningPolicy(null); }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

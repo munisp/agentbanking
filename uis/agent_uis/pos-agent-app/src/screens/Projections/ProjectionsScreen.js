@@ -19,162 +19,6 @@ import { commissionApi, networkOperationsApi } from "../../services/apiService";
 import { spacing, theme } from "../../theme";
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-// Mock data for analytics
-const MOCK_ANALYTICS_DATA = {
-  week: {
-    transactions: [
-      {
-        id: 1,
-        amount: 5000,
-        credit: 5000,
-        type: "deposit",
-        date: "2026-03-05",
-      },
-      { id: 2, amount: 15000, credit: 0, type: "transfer", date: "2026-03-05" },
-      {
-        id: 3,
-        amount: 8500,
-        credit: 8500,
-        type: "deposit",
-        date: "2026-03-04",
-      },
-      {
-        id: 4,
-        amount: 25000,
-        credit: 0,
-        type: "withdrawal",
-        date: "2026-03-04",
-      },
-      {
-        id: 5,
-        amount: 12000,
-        credit: 12000,
-        type: "deposit",
-        date: "2026-03-03",
-      },
-      { id: 6, amount: 7500, credit: 0, type: "purchase", date: "2026-03-03" },
-      {
-        id: 7,
-        amount: 18000,
-        credit: 18000,
-        type: "deposit",
-        date: "2026-03-02",
-      },
-      { id: 8, amount: 9500, credit: 0, type: "transfer", date: "2026-03-02" },
-      {
-        id: 9,
-        amount: 22000,
-        credit: 22000,
-        type: "deposit",
-        date: "2026-03-01",
-      },
-      {
-        id: 10,
-        amount: 13500,
-        credit: 0,
-        type: "withdrawal",
-        date: "2026-03-01",
-      },
-      {
-        id: 11,
-        amount: 6800,
-        credit: 6800,
-        type: "deposit",
-        date: "2026-02-29",
-      },
-      {
-        id: 12,
-        amount: 14200,
-        credit: 0,
-        type: "purchase",
-        date: "2026-02-29",
-      },
-    ],
-    commissions: [
-      {
-        id: 1,
-        amount: 250,
-        commission_amount: 250,
-        type: "transaction",
-        date: "2026-03-05",
-      },
-      {
-        id: 2,
-        amount: 450,
-        commission_amount: 450,
-        type: "transaction",
-        date: "2026-03-04",
-      },
-      {
-        id: 3,
-        amount: 380,
-        commission_amount: 380,
-        type: "transaction",
-        date: "2026-03-03",
-      },
-      {
-        id: 4,
-        amount: 520,
-        commission_amount: 520,
-        type: "transaction",
-        date: "2026-03-02",
-      },
-      {
-        id: 5,
-        amount: 610,
-        commission_amount: 610,
-        type: "transaction",
-        date: "2026-03-01",
-      },
-      {
-        id: 6,
-        amount: 340,
-        commission_amount: 340,
-        type: "transaction",
-        date: "2026-02-29",
-      },
-    ],
-  },
-  month: {
-    transactions: Array.from({ length: 45 }, (_, i) => ({
-      id: i + 1,
-      amount: Math.floor(Math.random() * 30000) + 5000,
-      credit:
-        Math.random() > 0.5 ? Math.floor(Math.random() * 30000) + 5000 : 0,
-      type: ["deposit", "withdrawal", "transfer", "purchase"][
-        Math.floor(Math.random() * 4)
-      ],
-      date: `2026-02-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`,
-    })),
-    commissions: Array.from({ length: 30 }, (_, i) => ({
-      id: i + 1,
-      amount: Math.floor(Math.random() * 800) + 200,
-      commission_amount: Math.floor(Math.random() * 800) + 200,
-      type: "transaction",
-      date: `2026-02-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`,
-    })),
-  },
-  quarter: {
-    transactions: Array.from({ length: 120 }, (_, i) => ({
-      id: i + 1,
-      amount: Math.floor(Math.random() * 40000) + 5000,
-      credit:
-        Math.random() > 0.5 ? Math.floor(Math.random() * 40000) + 5000 : 0,
-      type: ["deposit", "withdrawal", "transfer", "purchase"][
-        Math.floor(Math.random() * 4)
-      ],
-      date: `2026-${String(Math.floor(Math.random() * 3) + 1).padStart(2, "0")}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`,
-    })),
-    commissions: Array.from({ length: 90 }, (_, i) => ({
-      id: i + 1,
-      amount: Math.floor(Math.random() * 1000) + 200,
-      commission_amount: Math.floor(Math.random() * 1000) + 200,
-      type: "transaction",
-      date: `2026-${String(Math.floor(Math.random() * 3) + 1).padStart(2, "0")}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`,
-    })),
-  },
-};
-
 export default function ProjectionsScreen() {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
@@ -185,6 +29,7 @@ export default function ProjectionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [prevTransactions, setPrevTransactions] = useState(null); // null = growth unavailable
 
   useEffect(() => {
     fetchProjectionData();
@@ -218,7 +63,7 @@ export default function ProjectionsScreen() {
           hasRealData = true;
         }
       } catch (err) {
-        console.log("Transactions fetch error, using mock data:", err.message);
+        console.log("Transactions fetch error:", err.message);
       }
 
       // Try to fetch real commissions for the period
@@ -234,22 +79,37 @@ export default function ProjectionsScreen() {
           hasRealData = true;
         }
       } catch (err) {
-        console.log("Commissions fetch error, using mock data:", err.message);
+        console.log("Commissions fetch error:", err.message);
       }
 
-      // Use mock data if no real data was retrieved
-      if (!hasRealData) {
-        const mockData = MOCK_ANALYTICS_DATA[period];
-        setTransactions(mockData.transactions);
-        setCommissions(mockData.commissions);
+      // Fetch the previous equivalent period so the growth rate is computed
+      // from real data (never a hard-coded percentage).
+      if (hasRealData) {
+        try {
+          const prevFilter = getPreviousDateFilter(period);
+          const prevResponse = await networkOperationsApi.listTransactions({
+            agent_id: agentId,
+            ...prevFilter,
+            page: 1,
+            limit: 1000,
+          });
+          setPrevTransactions(prevResponse.transactions || prevResponse.data || []);
+        } catch (err) {
+          console.log("Previous-period fetch error:", err.message);
+          setPrevTransactions(null);
+        }
+      } else {
+        // No fabricated fallback: when the server has no data (or is
+        // unreachable) the screen shows an honest empty/error state.
+        setTransactions([]);
+        setCommissions([]);
+        setPrevTransactions(null);
       }
     } catch (err) {
       console.error("Projection data fetch error:", err);
-      // Fall back to mock data on error
-      const mockData = MOCK_ANALYTICS_DATA[period];
-      setTransactions(mockData.transactions);
-      setCommissions(mockData.commissions);
-      setError("Using sample data - " + (err.message || "API unavailable"));
+      setTransactions([]);
+      setCommissions([]);
+      setError("Could not load projection data: " + (err.message || "API unavailable"));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -277,6 +137,29 @@ export default function ProjectionsScreen() {
     return {
       start_date: startDate.toISOString(),
       end_date: new Date().toISOString(),
+    };
+  };
+
+  // The equivalent period immediately preceding the current one.
+  const getPreviousDateFilter = (period) => {
+    const end = new Date();
+    let windowDays;
+    switch (period) {
+      case "week":
+        windowDays = 7;
+        break;
+      case "quarter":
+        windowDays = 90;
+        break;
+      case "month":
+      default:
+        windowDays = 30;
+    }
+    const prevEnd = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
+    const prevStart = new Date(prevEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
+    return {
+      start_date: prevStart.toISOString(),
+      end_date: prevEnd.toISOString(),
     };
   };
 
@@ -357,9 +240,18 @@ export default function ProjectionsScreen() {
     (metrics.transactionCount / getDaysInPeriod(period)) *
     getDaysInPeriod(period);
 
-  // Calculate growth rate (comparing to estimated previous period)
-  const growthRate = 8.5; // Mock growth rate percentage
-  const projectedGrowthVolume = projectedVolume * (1 + growthRate / 100);
+  // Growth rate computed from the real previous-period volume fetched from
+  // the backend. When previous-period data is unavailable, growth is reported
+  // as unavailable — never a hard-coded percentage.
+  const previousVolume = prevTransactions
+    ? prevTransactions.reduce((acc, txn) => acc + (parseFloat(txn.amount || 0) || 0), 0)
+    : null;
+  const growthRate =
+    previousVolume != null && previousVolume > 0
+      ? ((metrics.totalVolume - previousVolume) / previousVolume) * 100
+      : null;
+  const projectedGrowthVolume =
+    growthRate != null ? projectedVolume * (1 + growthRate / 100) : null;
 
   function getDaysInPeriod(period) {
     switch (period) {
@@ -553,9 +445,14 @@ export default function ProjectionsScreen() {
               </Text>
               <Text
                 variant="titleLarge"
-                style={[styles.growthValue, { color: theme.colors.success }]}
+                style={[
+                  styles.growthValue,
+                  { color: growthRate != null && growthRate < 0 ? "#B00020" : theme.colors.success },
+                ]}
               >
-                +{growthRate.toFixed(1)}%
+                {growthRate != null
+                  ? `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}%`
+                  : "Unavailable"}
               </Text>
             </View>
             <View style={styles.growthItem}>
@@ -564,10 +461,9 @@ export default function ProjectionsScreen() {
                 With Growth Volume
               </Text>
               <Text variant="titleLarge" style={styles.growthValue}>
-                ₦
-                {projectedGrowthVolume.toLocaleString(undefined, {
-                  maximumFractionDigits: 0,
-                })}
+                {projectedGrowthVolume != null
+                  ? `₦${projectedGrowthVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                  : "Unavailable"}
               </Text>
             </View>
           </View>

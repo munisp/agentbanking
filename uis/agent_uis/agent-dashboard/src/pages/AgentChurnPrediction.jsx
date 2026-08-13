@@ -10,6 +10,7 @@ const RISK_COLORS = { high: "text-red-400 bg-red-900/30 border-red-700/50", medi
 const AgentChurnPrediction = () => {
   const [predictions, setPredictions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [riskFilter, setRiskFilter] = useState("all");
   const [expanded, setExpanded] = useState(null);
   const [intervening, setIntervening] = useState(null);
@@ -18,14 +19,20 @@ const AgentChurnPrediction = () => {
 
   const fetchPredictions = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_BANKING_URL}/ai-ml/api/v1/churn-prediction/agents`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setPredictions(Array.isArray(data.predictions) ? data.predictions : Array.isArray(data) ? data : []);
-      } else { setPredictions([]); }
-    } catch { setPredictions([]); }
-    finally { setLoading(false); }
+      if (!res.ok) {
+        setPredictions([]);
+        setError(`Churn prediction service returned HTTP ${res.status}. The endpoint reports unavailable until CHURN_PREDICTION_URL is configured on the backend.`);
+        return;
+      }
+      const data = await res.json();
+      setPredictions(Array.isArray(data.predictions) ? data.predictions : Array.isArray(data) ? data : []);
+    } catch (err) {
+      setPredictions([]);
+      setError(`Churn prediction service is unreachable: ${err.message || "network error"}`);
+    } finally { setLoading(false); }
   };
 
   const triggerIntervention = async (agentId) => {
@@ -89,6 +96,15 @@ const AgentChurnPrediction = () => {
         {/* Predictions List */}
         {loading ? (
           <div className="text-center py-12 text-gray-500"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" /> Running model...</div>
+        ) : error ? (
+          <div className="text-center py-12 bg-gray-100 border border-red-700/50 rounded-xl px-4">
+            <AlertTriangle className="w-6 h-6 text-red-400 mx-auto mb-2" />
+            <p className="text-red-400 font-medium">Churn predictions unavailable</p>
+            <p className="text-gray-400 text-sm mt-1 max-w-md mx-auto">{error}</p>
+            <button onClick={fetchPredictions} className="mt-4 inline-flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm hover:bg-gray-700 transition-colors">
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
+          </div>
         ) : (
           <div className="space-y-3">
             {filtered.map((pred, i) => {

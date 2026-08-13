@@ -380,21 +380,9 @@ export const networkStatusDashboardRouter = router({
   resolveAlert: protectedProcedure
     .input(z.object({ alertId: z.string(), resolution: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "networkStatusDashboard",
-        "mutation",
-        "Executed networkStatusDashboard mutation"
-      );
-
-      return { success: true, alertId: input.alertId };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "networkStatusDashboard.resolveAlert is not available in this deployment",
+      });
     }),
 });

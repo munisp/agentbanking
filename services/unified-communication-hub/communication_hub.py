@@ -10,9 +10,6 @@ Central orchestration layer for all communication channels
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("unified-communication-hub")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -23,6 +20,12 @@ import asyncio
 import os
 
 app = FastAPI(title="Unified Communication Hub", version="2.0.0")
+
+# Shared middleware/observability wiring (must run after `app` exists; the
+# previous ordering raised NameError at import time).
+apply_middleware(app)
+setup_logging("unified-communication-hub")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,7 +165,8 @@ async def send_to_channel(channel: Channel, message: Message) -> Dict:
             
             if response.status_code in [200, 201]:
                 channel_stats[channel]["sent"] += 1
-                channel_stats[channel]["delivered"] += 1
+                # NOTE: 'delivered' is only incremented by delivery webhooks;
+                # a provider accepting the message is not proof of delivery.
                 return {"success": True, "channel": channel.value, "response": response.json()}
             else:
                 channel_stats[channel]["failed"] += 1
@@ -458,4 +462,3 @@ async def broadcast_message(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8060)
-

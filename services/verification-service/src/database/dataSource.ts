@@ -1,5 +1,6 @@
 import path from "path";
 import { DataSource } from "typeorm";
+import logger from "../config/logger.config";
 import { readEnv } from "../config/readEnv.config";
 
 const DB_HOST = readEnv("DB_HOST");
@@ -9,6 +10,17 @@ const DB_PASSWORD = readEnv("DB_PASSWORD");
 const DB_DATABASE = readEnv("DB_DATABASE");
 const DB_DATABASE_TYPE = readEnv("DB_DATABASE_TYPE");
 const DB_SSL_ENABLED = readEnv("DB_SSL_ENABLED");
+// TLS certificate verification for the database connection is ON by default.
+// It may ONLY be disabled via the explicit opt-in env var
+// DB_SSL_INSECURE_TLS=true (e.g. a local dev database with a self-signed
+// certificate). Never enable this in production: disabling verification
+// exposes the database connection to MITM attacks.
+const DB_SSL_INSECURE_TLS = readEnv("DB_SSL_INSECURE_TLS") === "true";
+if (DB_SSL_INSECURE_TLS) {
+  logger.warn(
+    "WARNING: DB_SSL_INSECURE_TLS=true — TLS certificate verification is DISABLED for the database connection. Do not use in production."
+  );
+}
 
 export const AppDataSource = new DataSource({
   type: <"mysql" | "postgres">DB_DATABASE_TYPE,
@@ -25,7 +37,7 @@ export const AppDataSource = new DataSource({
   ssl:
     DB_SSL_ENABLED === "true"
       ? {
-          rejectUnauthorized: false,
+          rejectUnauthorized: !DB_SSL_INSECURE_TLS,
         }
       : undefined,
 });

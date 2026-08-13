@@ -96,7 +96,8 @@ class MojaloupService:
         base_url: str,
         participant_id: str,
         private_key: str,
-        timeout: int = 30
+        timeout: int = 30,
+        settlement_base_url: Optional[str] = None
     ):
         """
         Initialize Mojaloop client
@@ -106,8 +107,11 @@ class MojaloupService:
             participant_id: Our participant ID (FSP ID)
             private_key: Private key for signing
             timeout: Request timeout in seconds
+            settlement_base_url: Central-settlement API base URL
+                (defaults to base_url)
         """
         self.base_url = base_url.rstrip('/')
+        self.settlement_base_url = (settlement_base_url or base_url).rstrip('/')
         self.participant_id = participant_id
         self.private_key = private_key
         
@@ -469,7 +473,7 @@ class MojaloupService:
         end_time: Optional[datetime] = None
     ) -> Dict[str, int]:
         """
-        Get settlement report from Mojaloop
+        Get settlement report from the Mojaloop central-settlement API
         
         Args:
             start_time: Start time or None for last settlement
@@ -477,30 +481,59 @@ class MojaloupService:
         
         Returns:
             Dictionary of participant -> net position
-        """
-        # In production, call Mojaloop settlement API
-        # url = f"{self.base_url}/settlements"
-        # params = {}
-        # if start_time:
-        #     params["startTime"] = start_time.isoformat()
-        # if end_time:
-        #     params["endTime"] = end_time.isoformat()
-        # 
-        # response = await self.client.get(url, params=params, headers=self._get_headers())
-        # data = response.json()
-        # 
-        # net_positions = {}
-        # for participant in data["participants"]:
-        #     net_positions[participant["id"]] = participant["netPosition"]
-        # 
-        # return net_positions
         
-        # Mock implementation
-        return {
-            self.participant_id: -50000,  # Net sender
-            "bank-a": 30000,  # Net receiver
-            "mobile-money": 20000  # Net receiver
-        }
+        Raises:
+            httpx.HTTPStatusError: When the settlement API returns an error.
+            RuntimeError: When the settlement API response cannot be parsed.
+            Net positions are never fabricated.
+        """
+        url = f"{self.settlement_base_url}/settlements"
+        params = {}
+        if start_time:
+            params["startTime"] = start_time.isoformat()
+        if end_time:
+            params["endTime"] = end_time.isoformat()
+        
+        response = await self.client.get(
+            url, params=params, headers=self._get_headers()
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        # The central-settlement API returns either a list of settlements or a
+        # single settlement object, each with participants holding settlement
+        # accounts that carry netSettlementAmount entries.
+        settlements = data if isinstance(data, list) else [data]
+        
+        net_positions: Dict[str, int] = {}
+        for settlement in settlements:
+            if not isinstance(settlement, dict):
+                continue
+            for participant in settlement.get("participants", []):
+                participant_key = participant.get("name") or participant.get("id")
+                if participant_key is None:
+                    continue
+                participant_key = str(participant_key)
+                for account in participant.get("accounts", []):
+                    net_amount = account.get("netSettlementAmount", {})
+                    amount = net_amount.get("amount")
+                    if amount is None:
+                        continue
+                    try:
+                        net_positions[participant_key] = (
+                            net_positions.get(participant_key, 0) + int(float(amount))
+                        )
+                    except (TypeError, ValueError) as e:
+                        raise RuntimeError(
+                            f"Unparseable net settlement amount for participant "
+                            f"{participant_key}: {amount!r}"
+                        ) from e
+        
+        logger.info(
+            f"Settlement report retrieved: {len(net_positions)} participants"
+        )
+        
+        return net_positions
     
     # ==================== Helper Methods ====================
     

@@ -181,7 +181,7 @@ export const automatedComplianceCheckerRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'compliance_rule_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'compliance_rule_%'}`)
       .limit(100);
     const rules = rows.map(r => JSON.parse(String(r.value ?? "{}")));
     const passing = rules.filter((r: any) => r.status === "passing").length;
@@ -210,7 +210,7 @@ export const automatedComplianceCheckerRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'compliance_rule_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'compliance_rule_%'}`)
           .limit(input?.limit ?? 50);
         let rules = rows.map(r => ({
           id: r.key.replace("compliance_rule_", ""),

@@ -1,49 +1,34 @@
 """
 Router for ebay-service service
-Auto-extracted from main.py for unified gateway registration
+Replaces a generated stub that returned canned {"status": "ok"} payloads for
+every endpoint (mockware) and referenced undefined symbols, so it could not be
+imported by the unified gateway.
+
+The real implementation lives in the standalone service (services/ebay-service/).
+This router now FAILS LOUDLY: /health reports 503 and every other route
+returns 501 until the gateway wires real handlers. No responses are
+fabricated here.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/ebay-service", tags=["ebay-service"])
 
-@router.get("/")
-async def root():
-    return {"status": "ok"}
+_UNAVAILABLE = (
+    "ebay-service endpoints are not served by this gateway router. "
+    "Use the standalone ebay-service service."
+)
+
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "ebay-service", "detail": _UNAVAILABLE},
+    )
 
-@router.post("/api/v1/products")
-async def list_product(product: Product):
-    return {"status": "ok"}
 
-@router.get("/api/v1/products")
-async def get_products(status: Optional[str] = None):
-    return {"status": "ok"}
-
-@router.put("/api/v1/products/{sku}/inventory")
-async def update_inventory(sku: str, update: InventoryUpdate):
-    return {"status": "ok"}
-
-@router.post("/webhook/orders")
-async def order_webhook(request: Request):
-    return {"status": "ok"}
-
-@router.get("/api/v1/orders")
-async def get_orders(status: Optional[str] = None, limit: int = 50):
-    return {"status": "ok"}
-
-@router.put("/api/v1/orders/{order_id}/status")
-async def update_order_status(order_id: str, status: str):
-    return {"status": "ok"}
-
-@router.get("/api/v1/metrics")
-async def get_metrics():
-    return {"status": "ok"}
-
-@router.post("/api/v1/sync")
-async def sync_with_marketplace():
-    return {"status": "ok"}
-
+@router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def not_implemented(full_path: str):
+    raise HTTPException(status_code=501, detail=_UNAVAILABLE)

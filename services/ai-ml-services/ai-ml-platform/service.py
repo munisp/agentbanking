@@ -31,23 +31,34 @@ class AuthenticationException(HTTPException):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-# --- Security Utilities (Placeholders) ---
+# --- Security Utilities ---
 
-# NOTE: In a real application, these would be implemented using libraries like passlib and python-jose
+from passlib.context import CryptContext
+
+# Real bcrypt password hashing (requires the ``passlib[bcrypt]`` extra).
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 def get_password_hash(password: str) -> str:
-    """Placeholder for password hashing."""
-    # Using a simple placeholder for demonstration. Replace with proper hashing (e.g., bcrypt)
-    return f"hashed_{password}"
+    """Hash a plaintext password with bcrypt."""
+    return _pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Placeholder for password verification."""
-    # Using a simple placeholder for demonstration. Replace with proper verification
-    return get_password_hash(plain_password) == hashed_password
+    """Verify a plaintext password against a bcrypt hash."""
+    return _pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:
-    """Placeholder for JWT token creation."""
-    # Using a simple placeholder. Replace with proper JWT encoding
-    return f"fake_jwt_token_for_{data.get('sub')}"
+    """
+    Local token issuance has been REMOVED. This service now validates
+    Keycloak-issued RS256 JWT bearer tokens (see router.get_current_user);
+    clients must obtain tokens from the Keycloak realm token endpoint.
+
+    Fails loud with 501 rather than issuing a fake token
+    ("fake_jwt_token_for_<sub>") that could never authenticate.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Local token issuance removed; obtain a bearer token from Keycloak.",
+    )
 
 # --- Generic Service Class ---
 
@@ -115,7 +126,7 @@ class BaseService:
         db_obj = self.get(db, id) # Use get to ensure it exists and raise 404 if not
         db.delete(db_obj)
         db.commit()
-        logger.info(f"Removed {self.name} with ID {id}")
+        logger.info(f"Removed {self.name} with ID {db_obj.id}")
         return db_obj
 
 # --- Specific Service Implementations ---

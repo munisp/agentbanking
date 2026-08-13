@@ -245,8 +245,9 @@ export default function Billing() {
   const [newPlan, setNewPlan] = useState('');
   const [savingTenantPlan, setSavingTenantPlan] = useState(false);
 
-  // trend data (computed)
-  const [trendData, setTrendData] = useState<{ date: string; mrr: number; collected: number }[]>([]);
+  // trend data (computed from paid invoices — the billing API provides no
+  // daily revenue series, so only collected revenue is charted)
+  const [trendData, setTrendData] = useState<{ date: string; collected: number }[]>([]);
 
   // ── Load core data (accounts + invoices) on mount ─────────────────────────
   // Source of truth is billing-aggregator's own dashboard (real per-tenant
@@ -304,18 +305,6 @@ export default function Billing() {
             avg_arpu: items.length ? totalMrr / items.length : 0,
           });
 
-          const now = new Date();
-          setTrendData(Array.from({ length: 30 }, (_, i) => {
-            const d = new Date(now); d.setDate(d.getDate() - (29 - i));
-            const base = items.reduce((s, rec) => s + rec.monthlyAmount / 30, 0);
-            const j = 0.85 + 0.3 * ((d.getDate() * 17) % 11) / 11;
-            return {
-              date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-              mrr: Math.round(base * j / 1000),
-              collected: Math.round(base * j * 0.93 / 1000),
-            };
-          }));
-
           const mappedInvoices: Invoice[] = rawInvoices
             .map((inv: any) => ({
               invoiceNumber: inv.invoiceNumber,
@@ -330,6 +319,25 @@ export default function Billing() {
             }))
             .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
           setInvoices(mappedInvoices);
+
+          // 30-day collected revenue, derived from real paid invoices only.
+          const now = new Date();
+          const dailyCollected = new Array<number>(30).fill(0);
+          mappedInvoices.forEach((inv) => {
+            if (inv.status !== 'paid' || !inv.paidAt) return;
+            const paidDate = new Date(inv.paidAt);
+            if (isNaN(paidDate.getTime())) return;
+            const daysAgo = Math.floor((now.getTime() - paidDate.getTime()) / 86_400_000);
+            if (daysAgo < 0 || daysAgo > 29) return;
+            dailyCollected[29 - daysAgo] += parseFloat(inv.amount) || 0;
+          });
+          setTrendData(dailyCollected.map((total, i) => {
+            const d = new Date(now); d.setDate(d.getDate() - (29 - i));
+            return {
+              date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              collected: Math.round(total / 1000),
+            };
+          }));
           setLoadingInvoices(false);
         }).catch(() => {}),
 
@@ -722,17 +730,24 @@ export default function Billing() {
           <div className="space-y-6">
             {/* Revenue trend */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-5">30-Day Revenue Trend (₦K)</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', fontSize: '12px' }} labelStyle={{ color: '#f1f5f9' }} formatter={(v: number | undefined) => v != null ? `₦${v}K` : ''} />
-                  <Line type="monotone" dataKey="mrr" stroke={primaryColor} strokeWidth={2.5} name="MRR" dot={false} />
-                  <Line type="monotone" dataKey="collected" stroke="#10b981" strokeWidth={2} name="Collected" dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-5">30-Day Collected Revenue (₦K)</h3>
+              {loadingInvoices ? (
+                <div className="h-[240px] flex items-center justify-center"><Activity className="w-6 h-6 animate-spin text-slate-400" /></div>
+              ) : trendData.length === 0 ? (
+                <p className="h-[240px] flex items-center justify-center text-sm text-slate-400">
+                  Revenue trend unavailable — invoice data could not be loaded.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={trendData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', fontSize: '12px' }} labelStyle={{ color: '#f1f5f9' }} formatter={(v: number | undefined) => v != null ? `₦${v}K` : ''} />
+                    <Line type="monotone" dataKey="collected" stroke="#10b981" strokeWidth={2} name="Collected" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Plan distribution + Outstanding */}

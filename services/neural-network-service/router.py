@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -37,15 +38,71 @@ class InferenceResponse(BaseModel):
 
 def _production_inference(model_path: str, input_data: Dict[str, Any]) -> Any:
     """
-    Loads the model and performs inference.
-    In a real application, this would involve loading the model artifact
-    from `model_path` and running the prediction.
+    Loads the serialized model artifact from `model_path` and performs real
+    inference on the input features.
+
+    Fails closed: returns HTTP 503 when the artifact is missing, unloadable,
+    or inference errors — never returns constant/fabricated predictions.
     """
-    logger.info(f"Mock inference on model at {model_path} with data: {input_data}")
-    # Simple production logic: return a fixed result or a result based on input
-    if "feature_a" in input_data and input_data["feature_a"] > 10:
-        return {"score": 0.95, "class": "fraud"}
-    return {"score": 0.05, "class": "safe"}
+    if not model_path or not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Model artifact not available at '{model_path}'. Inference refused.",
+        )
+
+    try:
+        import joblib
+        model = joblib.load(model_path)
+    except Exception as e:
+        logger.error(f"Failed to load model artifact at {model_path}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Model artifact at '{model_path}' could not be loaded: {e}",
+        )
+
+    # Build a deterministic feature vector from the input features.
+    # Features are ordered by name for reproducibility; non-numeric values are rejected.
+    feature_names = sorted(input_data.keys())
+    vector = []
+    for name in feature_names:
+        value = input_data[name]
+        if isinstance(value, bool):
+            vector.append(float(value))
+        elif isinstance(value, (int, float)):
+            vector.append(float(value))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Feature '{name}' is non-numeric ({type(value).__name__}); "
+                       "only numeric features are supported for inference.",
+            )
+
+    if not vector:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="input_data must contain at least one numeric feature.",
+        )
+
+    try:
+        prediction = model.predict([vector])[0]
+    except Exception as e:
+        logger.error(f"Inference failed for model at {model_path}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Model inference failed: {e}",
+        )
+
+    result: Dict[str, Any] = {"class": prediction.item() if hasattr(prediction, "item") else prediction}
+
+    # Only report a score when the model actually produces calibrated probabilities
+    if hasattr(model, "predict_proba"):
+        try:
+            probabilities = model.predict_proba([vector])[0]
+            result["score"] = float(max(probabilities))
+        except Exception:
+            pass  # score omitted rather than fabricated
+
+    return result
 
 
 def _log_activity(db: Session, model_id: int, activity_type: str, details: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> models.ActivityLog:
@@ -226,13 +283,13 @@ def perform_inference(
     """
     Performs a prediction using the specified model.
 
-    The model is identified by `model_id`. The actual inference logic is productioned
-    but demonstrates the flow: retrieve model, check status, perform inference,
-    and log the activity.
+    The model is identified by `model_id`. Inference loads the real serialized
+    artifact and fails closed (503) when the artifact is unavailable.
 
     Raises:
         HTTPException 404: If the model is not found.
         HTTPException 400: If the model is not active.
+        HTTPException 503: If the model artifact cannot be loaded or run.
     """
     db_model = read_model(model_id, db)  # Check if model exists
 
@@ -243,7 +300,7 @@ def perform_inference(
             detail=f"Model ID {model_id} is not currently active for inference.",
         )
 
-    # 1. Perform the actual inference (productioned)
+    # 1. Perform the actual inference against the serialized artifact
     prediction = _production_inference(db_model.model_path, request.input_data)
 
     # 2. Log the inference activity

@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw, Send, Eye, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
+import { AlertTriangle, RefreshCw, Send, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { getTenantHeadersFromStorage } from "../../services/tenant";
 
@@ -18,12 +18,6 @@ interface SuspiciousReport {
   reference?: string;
 }
 
-const MOCK_REPORTS: SuspiciousReport[] = [
-  { id: "nfiu-001", report_type: "STR", subject_name: "Unknown Corp Ltd", subject_account: "0123456789", amount: 4500000, currency: "NGN", transaction_date: "2024-11-20", reason: "Multiple high-value transactions with no clear business purpose", status: "submitted", submitted_at: "2024-11-21", reference: "NFIU-STR-2024-0441" },
-  { id: "nfiu-002", report_type: "CTR", subject_name: "Emeka Okafor", subject_account: "9876543210", amount: 6000000, currency: "NGN", transaction_date: "2024-11-25", reason: "Cash transaction exceeding ₦5M threshold", status: "draft" },
-  { id: "nfiu-003", report_type: "SATR", subject_name: "Fast Deals Nigeria", subject_account: "5555444433", amount: 2200000, currency: "NGN", transaction_date: "2024-11-15", reason: "Structuring: 11 transactions of ₦200k each within 48hrs", status: "acknowledged", submitted_at: "2024-11-16", reference: "NFIU-SATR-2024-0387" },
-];
-
 const TYPE_COLORS: Record<string, string> = { STR: "bg-red-100 text-red-700", CTR: "bg-amber-100 text-amber-700", SATR: "bg-orange-100 text-orange-700" };
 const STATUS_STYLES: Record<string, { cls: string; icon: React.FC<any> }> = {
   draft: { cls: "bg-gray-100 text-gray-600", icon: Clock },
@@ -35,6 +29,7 @@ const STATUS_STYLES: Record<string, { cls: string; icon: React.FC<any> }> = {
 const NFIUReporting: React.FC = () => {
   const [reports, setReports] = useState<SuspiciousReport[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ report_type: "STR", subject_name: "", subject_account: "", amount: "", reason: "" });
@@ -43,25 +38,29 @@ const NFIUReporting: React.FC = () => {
 
   const fetchReports = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/nfiu-reports`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setReports(Array.isArray(d.reports) ? d.reports : MOCK_REPORTS); }
-      else { setReports(MOCK_REPORTS); }
-    } catch { setReports(MOCK_REPORTS); }
-    finally { setLoading(false); }
+      if (!res.ok) throw new Error(`Failed to load NFIU reports (HTTP ${res.status})`);
+      const d = await res.json();
+      setReports(Array.isArray(d.reports) ? d.reports : []);
+    } catch (e: any) {
+      setReports([]);
+      setLoadError(e?.message || "Failed to load NFIU reports.");
+    } finally { setLoading(false); }
   };
 
   const submitToNFIU = async (id: string) => {
     setSubmitting(id);
     try {
-      await fetch(`${CORE_URL}/compliance/api/v1/nfiu-reports/${id}/submit`, { method: "POST", headers: getTenantHeadersFromStorage() });
-      fetchRequests();
+      const res = await fetch(`${CORE_URL}/compliance/api/v1/nfiu-reports/${id}/submit`, { method: "POST", headers: getTenantHeadersFromStorage() });
+      if (!res.ok) throw new Error(`Submission failed (HTTP ${res.status})`);
+      await fetchReports();
       alert("Report submitted to NFIU successfully.");
-    } catch { alert("Report submitted (demo mode)"); }
-    finally { setSubmitting(null); }
+    } catch (e: any) {
+      alert(`Failed to submit report to NFIU: ${e?.message || "Unknown error"}`);
+    } finally { setSubmitting(null); }
   };
-
-  const fetchRequests = fetchReports;
 
   const createReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,11 +70,13 @@ const NFIUReporting: React.FC = () => {
         headers: { ...getTenantHeadersFromStorage(), "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, amount: Number(form.amount), currency: "NGN", transaction_date: new Date().toISOString().split("T")[0] }),
       });
-      if (!res.ok) throw new Error("Failed to create report");
+      if (!res.ok) throw new Error(`Failed to create report (HTTP ${res.status})`);
       setShowForm(false);
       setForm({ report_type: "STR", subject_name: "", subject_account: "", amount: "", reason: "" });
       fetchReports();
-    } catch { alert("Report saved (demo mode)"); setShowForm(false); }
+    } catch (err: any) {
+      alert(`Failed to create report: ${err?.message || "Unknown error"}`);
+    }
   };
 
   return (
@@ -92,6 +93,19 @@ const NFIUReporting: React.FC = () => {
         </button>
       </div>
 
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-700">Failed to load NFIU reports</p>
+            <p className="text-xs text-red-600">{loadError}</p>
+          </div>
+          <button onClick={fetchReports} className="ml-auto text-xs px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg">
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: "STR Filed", value: reports.filter(r => r.report_type === "STR").length, color: "text-red-600" },
@@ -100,7 +114,7 @@ const NFIUReporting: React.FC = () => {
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <p className="text-xs text-gray-500">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+            <p className={`text-2xl font-bold mt-1 ${color}`}>{loadError ? "—" : value}</p>
           </div>
         ))}
       </div>
@@ -158,6 +172,10 @@ const NFIUReporting: React.FC = () => {
           <tbody className="divide-y divide-gray-50">
             {loading ? (
               <tr><td colSpan={7} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" /></td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={7} className="text-center py-10 text-red-500 text-sm">Unable to load reports. Use Retry above.</td></tr>
+            ) : reports.length === 0 ? (
+              <tr><td colSpan={7} className="text-center py-10 text-gray-400 text-sm">No NFIU reports on file.</td></tr>
             ) : reports.map(r => {
               const StatusIcon = STATUS_STYLES[r.status].icon;
               return (

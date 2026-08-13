@@ -861,15 +861,28 @@ export const stablecoinRailsRouter = router({
         }
       }
 
-      // FX rate lookup for non-NGN
+      // FX rate lookup for non-NGN (fail-closed: never invent a rate)
       let stablecoinAmount = input.amount;
       if (input.fiatCurrency !== "NGN" && input.stablecoin === "cNGN") {
-        const rateRes = await db
-          .execute(
+        let rateRes: any;
+        try {
+          rateRes = await db.execute(
             sql`SELECT rate FROM "currency_rates" WHERE from_currency = ${input.fiatCurrency} AND to_currency = 'NGN' ORDER BY updated_at DESC LIMIT 1`
-          )
-          .catch(() => ({ rows: [] as any[] }));
-        const rate = Number((rateRes as any).rows?.[0]?.rate ?? 1);
+          );
+        } catch (err) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `FX rate lookup failed for ${input.fiatCurrency}/NGN: ${err instanceof Error ? err.message : "unknown error"}`,
+          });
+        }
+        const rateRaw = rateRes?.rows?.[0]?.rate;
+        const rate = Number(rateRaw);
+        if (rateRaw == null || !Number.isFinite(rate) || rate <= 0) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `No FX rate available for ${input.fiatCurrency}/NGN — on-ramp blocked, no ledger posting`,
+          });
+        }
         stablecoinAmount = input.amount * rate;
       }
 

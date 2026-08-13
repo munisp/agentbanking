@@ -1299,7 +1299,6 @@ export function SupervisorApprovalModal({
     "pending" | "approved" | "rejected" | "timeout"
   >("pending");
   const [countdown, setCountdown] = useState(120);
-  const SUPERVISOR_PIN = "1234"; // Change via Settings → Security in production
 
   useEffect(() => {
     if (status !== "pending") return;
@@ -1316,14 +1315,16 @@ export function SupervisorApprovalModal({
     return () => clearInterval(iv);
   }, [status]);
 
+  // No client-side supervisor PIN exists: approvals must come from a backend
+  // override service, which is not connected yet — so approval always fails
+  // closed. The entered PIN is never evaluated locally.
   const handleApprove = () => {
-    if (pin === SUPERVISOR_PIN) {
-      setStatus("approved");
-      setTimeout(onApproved, 1500);
-    } else {
-      toast.error("Invalid supervisor PIN");
-      setPin("");
-    }
+    setPin("");
+    toast.error(
+      "Supervisor approval service is unavailable — this override cannot be approved."
+    );
+    setStatus("rejected");
+    setTimeout(onRejected, 1500);
   };
 
   return (
@@ -1345,6 +1346,9 @@ export function SupervisorApprovalModal({
           </h3>
           <p className="text-gray-400 text-sm">
             Transaction exceeds agent limit
+          </p>
+          <p className="text-xs mt-1" style={{ color: GOLD }}>
+            Remote supervisor approval is not connected — overrides currently cannot be approved.
           </p>
         </div>
 

@@ -385,7 +385,10 @@ export const securityHardeningRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "securityHardening.runScan is not available in this deployment",
+      });
     }),
   getDDoSConfig: protectedProcedure.query(async () => ({
     enabled: true,

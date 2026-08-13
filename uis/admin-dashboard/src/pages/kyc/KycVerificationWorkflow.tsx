@@ -222,18 +222,29 @@ export default function KycVerificationWorkflow() {
                     value={docUrl}
                     onChange={e => setDocUrl(e.target.value)}
                   />
+                  {!docUrl.trim() && (
+                    <p className="text-xs text-red-400 mt-1">
+                      A real uploaded document URL is required — submission is
+                      blocked without one.
+                    </p>
+                  )}
                 </div>
                 <Button
-                  onClick={() =>
+                  onClick={() => {
+                    const url = docUrl.trim();
+                    if (!url) {
+                      toast.error(
+                        "Upload the document first and provide its URL before submitting."
+                      );
+                      return;
+                    }
                     submitMutation.mutate({
                       agentId,
                       documentType: docType as any,
-                      documentUrl:
-                        docUrl ||
-                        "https://storage.54agent.com/kyc/sample-doc.pdf",
-                    })
-                  }
-                  disabled={submitMutation.isPending}
+                      documentUrl: url,
+                    });
+                  }}
+                  disabled={submitMutation.isPending || !docUrl.trim()}
                 >
                   <Upload className="w-4 h-4 mr-2" /> Submit for Verification
                 </Button>

@@ -16,20 +16,6 @@ interface RegionTelemetry {
 
 interface LatencyPoint { time: string; latencyMs: number; }
 
-const MOCK_REGIONS: RegionTelemetry[] = [
-  { region: "Lagos", nodes: 12, avgLatencyMs: 18, packetLoss: 0.2, jitterMs: 2.1, status: "healthy" },
-  { region: "Abuja", nodes: 8, avgLatencyMs: 24, packetLoss: 0.5, jitterMs: 3.4, status: "healthy" },
-  { region: "Kano", nodes: 5, avgLatencyMs: 42, packetLoss: 1.8, jitterMs: 6.2, status: "degraded" },
-  { region: "Port Harcourt", nodes: 6, avgLatencyMs: 31, packetLoss: 0.9, jitterMs: 4.0, status: "healthy" },
-  { region: "Ibadan", nodes: 4, avgLatencyMs: 55, packetLoss: 3.1, jitterMs: 9.5, status: "critical" },
-  { region: "Enugu", nodes: 3, avgLatencyMs: 38, packetLoss: 1.2, jitterMs: 5.1, status: "degraded" },
-];
-
-const MOCK_LATENCY: LatencyPoint[] = Array.from({ length: 24 }, (_, i) => ({
-  time: `${String(i).padStart(2, "0")}:00`,
-  latencyMs: 18 + Math.floor(Math.random() * 20),
-}));
-
 const STATUS_STYLES: Record<string, string> = {
   healthy: "bg-green-100 text-green-700",
   degraded: "bg-amber-100 text-amber-700",
@@ -40,28 +26,29 @@ const NetworkTelemetry: React.FC = () => {
   const [regions, setRegions] = useState<RegionTelemetry[]>([]);
   const [latencyData, setLatencyData] = useState<LatencyPoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [traceroute, setTraceroute] = useState<string | null>(null);
 
   useEffect(() => { fetchTelemetry(); }, []);
 
   const fetchTelemetry = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/network/telemetry`, { headers: getTenantHeadersFromStorage() });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setRegions(data.regions || MOCK_REGIONS);
-      setLatencyData(data.latency || MOCK_LATENCY);
-    } catch {
-      setRegions(MOCK_REGIONS);
-      setLatencyData(MOCK_LATENCY);
-    } finally {
+      setRegions(Array.isArray(data.regions) ? data.regions : []);
+      setLatencyData(Array.isArray(data.latency) ? data.latency : []);
+    } catch { setError("Failed to load network telemetry."); } finally {
       setLoading(false);
     }
   };
 
   const runTraceroute = () => {
-    setTraceroute("Tracing route to 54agent.upi.dev...\n1  192.168.1.1  1ms\n2  10.0.0.1  4ms\n3  196.46.1.1  12ms\n4  41.222.32.1  18ms\n5  54agent.upi.dev  21ms\nTrace complete.");
+    // No traceroute/diagnostics endpoint exists — report honestly instead of
+    // rendering a fabricated trace.
+    setTraceroute("Traceroute unavailable: no network diagnostics endpoint is connected.");
   };
 
   const avgLatency = regions.length ? Math.round(regions.reduce((a, r) => a + r.avgLatencyMs, 0) / regions.length) : 0;
@@ -71,6 +58,13 @@ const NetworkTelemetry: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchTelemetry()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Network Telemetry</h1>

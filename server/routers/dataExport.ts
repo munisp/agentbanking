@@ -323,43 +323,10 @@ export const dataExportRouter = router({
   createJob: protectedProcedure
     .input(z.object({}))
     .mutation(async ({ ctx, input }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      try {
-        // Middleware fan-out (fail-open)
-        await publishdataExportMiddleware("createJob", `${Date.now()}`, {
-          action: "createJob",
-        }).catch(() => {});
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataExport.createJob is not available in this deployment",
+      });
     }),
   listJobs: protectedProcedure
     .input(z.object({}).optional())

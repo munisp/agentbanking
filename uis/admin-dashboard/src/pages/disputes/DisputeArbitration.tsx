@@ -71,7 +71,7 @@ const DisputeArbitration: React.FC = () => {
       setLoading(true);
       const res = await api.listArbitrationCases(statusFilter !== "all" ? statusFilter : undefined);
       const payload = res && typeof res === "object" ? (res as { cases?: ArbitrationCase[]; data?: ArbitrationCase[] }) : {};
-      const data: ArbitrationCase[] = payload.cases ?? payload.data ?? generateMockCases();
+      const data: ArbitrationCase[] = payload.cases ?? payload.data ?? [];
       setCases(data);
       setStats({
         total: data.length,
@@ -83,7 +83,8 @@ const DisputeArbitration: React.FC = () => {
         total_refunded: data.reduce((s, c) => s + (c.refund_amount || 0), 0),
       });
     } catch {
-      setCases(generateMockCases());
+      setCases([]);
+      setError("Failed to load arbitration cases.");
     } finally {
       setLoading(false);
     }
@@ -291,14 +292,5 @@ const DisputeArbitration: React.FC = () => {
   );
 };
 
-function generateMockCases(): ArbitrationCase[] {
-  return [
-    { id: "1", case_ref: "ARB-20250421-001", dispute_ref: "DSP-20250410-034", transaction_ref: "TXN-20250405-112", claimant: "Customer A", respondent: "Agent Emeka", amount: 45000, dispute_type: "unauthorized_transaction", status: "deliberation", escalated_at: "2025-04-18T10:00:00Z", deadline: "2025-04-28T23:59:59Z" },
-    { id: "2", case_ref: "ARB-20250419-002", dispute_ref: "DSP-20250408-021", transaction_ref: "TXN-20250402-089", claimant: "Customer B", respondent: "Agent Fatima", amount: 12500, dispute_type: "failed_credit", status: "evidence_collection", escalated_at: "2025-04-16T09:00:00Z", deadline: "2025-04-30T23:59:59Z" },
-    { id: "3", case_ref: "ARB-20250415-003", dispute_ref: "DSP-20250401-009", transaction_ref: "TXN-20250325-054", claimant: "Customer C", respondent: "Agent Chidi", amount: 28000, dispute_type: "wrong_amount", status: "ruled", ruling: "claimant_favor", refund_amount: 28000, panel_notes: "Evidence confirmed wrong amount charged.", escalated_at: "2025-04-12T08:00:00Z", deadline: "2025-04-25T23:59:59Z", total_refunded: 28000 },
-    { id: "4", case_ref: "ARB-20250412-004", dispute_ref: "DSP-20250328-007", transaction_ref: "TXN-20250320-031", claimant: "Customer D", respondent: "Agent Aisha", amount: 5500, dispute_type: "duplicate_charge", status: "ruled", ruling: "split", refund_amount: 2750, panel_notes: "Partial duplicate confirmed.", escalated_at: "2025-04-09T11:00:00Z", deadline: "2025-04-22T23:59:59Z", total_refunded: 2750 },
-    { id: "5", case_ref: "ARB-20250410-005", dispute_ref: "DSP-20250325-003", transaction_ref: "TXN-20250318-019", claimant: "Customer E", respondent: "Agent Tunde", amount: 8000, dispute_type: "service_not_rendered", status: "ruled", ruling: "respondent_favor", panel_notes: "Customer confirmed receiving service.", escalated_at: "2025-04-07T14:00:00Z", deadline: "2025-04-20T23:59:59Z" },
-  ];
-}
 
 export default DisputeArbitration;

@@ -382,7 +382,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.inviteUser is not available in this deployment",
+      });
     }),
 
   listUsers: protectedProcedure.query(async () => {
@@ -394,7 +397,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.removeUser is not available in this deployment",
+      });
     }),
 
   settings: protectedProcedure.query(async () => {
@@ -406,7 +412,10 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tenantAdmin.toggleLive is not available in this deployment",
+      });
     }),
   updateUser: protectedProcedure
     .input(

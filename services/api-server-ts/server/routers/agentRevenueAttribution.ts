@@ -373,6 +373,9 @@ export const agentRevenueAttributionRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentRevenueAttribution.recalculate is not available in this deployment",
+      });
     }),
 });

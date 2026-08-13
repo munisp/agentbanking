@@ -15,13 +15,6 @@ interface DataRequest {
   notes?: string;
 }
 
-const MOCK_REQUESTS: DataRequest[] = [
-  { id: "gdpr-001", type: "access", subject_name: "Amaka Obi", subject_email: "amaka@example.com", status: "pending", submitted_at: "2024-11-20", deadline: "2024-12-20", notes: "Requested all transaction history" },
-  { id: "gdpr-002", type: "erasure", subject_name: "Bode Williams", subject_email: "bode@example.com", status: "in_progress", submitted_at: "2024-11-18", deadline: "2024-12-18" },
-  { id: "gdpr-003", type: "portability", subject_name: "Chidera Eze", subject_email: "chi@example.com", status: "completed", submitted_at: "2024-11-01", deadline: "2024-12-01" },
-  { id: "gdpr-004", type: "rectification", subject_name: "Dipo Alade", subject_email: "dipo@example.com", status: "rejected", submitted_at: "2024-10-28", deadline: "2024-11-28", notes: "Subject could not verify identity" },
-];
-
 const TYPE_LABELS: Record<string, string> = { access: "Data Access", erasure: "Right to Erasure", portability: "Data Portability", rectification: "Rectification" };
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -33,6 +26,7 @@ const STATUS_STYLES: Record<string, string> = {
 const GDPRModule: React.FC = () => {
   const [requests, setRequests] = useState<DataRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<DataRequest | null>(null);
 
@@ -40,11 +34,12 @@ const GDPRModule: React.FC = () => {
 
   const fetchRequests = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/gdpr/api/v1/requests`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setRequests(Array.isArray(d.requests) ? d.requests : MOCK_REQUESTS); }
-      else { setRequests(MOCK_REQUESTS); }
-    } catch { setRequests(MOCK_REQUESTS); }
+      if (res.ok) { const d = await res.json(); setRequests(Array.isArray(d.requests) ? d.requests : []); }
+      else { setError("Failed to load GDPR requests."); }
+    } catch { setError("Failed to load GDPR requests."); }
     finally { setLoading(false); }
   };
 
@@ -63,8 +58,8 @@ const GDPRModule: React.FC = () => {
     try {
       const res = await fetch(`${CORE_URL}/gdpr/api/v1/requests/${id}/export`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) { alert("Data export prepared. Download link sent to subject."); }
-      else { alert("Export prepared (demo mode)"); }
-    } catch { alert("Export prepared (demo mode)"); }
+      else { alert("Failed to prepare export. Please try again."); }
+    } catch { alert("Failed to prepare export. Please try again."); }
   };
 
   const filtered = requests.filter(r => statusFilter === "all" || r.status === statusFilter);
@@ -77,6 +72,13 @@ const GDPRModule: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchRequests()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

@@ -15,14 +15,6 @@ interface CreditProfile {
   trend: "improving" | "stable" | "declining";
 }
 
-const MOCK_PROFILES: CreditProfile[] = [
-  { agent_id: "AGT-0023", agent_name: "Tunde Bakare", credit_score: 820, tier: "AA", float_limit: 500000, loan_eligible: true, payment_history_score: 95, volume_score: 88, kyc_score: 100, last_updated: "2024-11-29", trend: "improving" },
-  { agent_id: "AGT-0045", agent_name: "Ngozi Adeleke", credit_score: 755, tier: "A", float_limit: 350000, loan_eligible: true, payment_history_score: 82, volume_score: 79, kyc_score: 100, last_updated: "2024-11-29", trend: "stable" },
-  { agent_id: "AGT-0087", agent_name: "Grace Okoro", credit_score: 612, tier: "BBB", float_limit: 150000, loan_eligible: false, payment_history_score: 70, volume_score: 65, kyc_score: 80, last_updated: "2024-11-28", trend: "stable" },
-  { agent_id: "AGT-0112", agent_name: "Emeka Nwosu", credit_score: 480, tier: "BB", float_limit: 50000, loan_eligible: false, payment_history_score: 55, volume_score: 48, kyc_score: 75, last_updated: "2024-11-28", trend: "declining" },
-  { agent_id: "AGT-0055", agent_name: "Fatima Aliyu", credit_score: 890, tier: "AAA", float_limit: 1000000, loan_eligible: true, payment_history_score: 98, volume_score: 95, kyc_score: 100, last_updated: "2024-11-29", trend: "stable" },
-];
-
 const TIER_COLORS: Record<string, string> = {
   AAA: "bg-emerald-100 text-emerald-800", AA: "bg-emerald-100 text-emerald-700",
   A: "bg-blue-100 text-blue-700", BBB: "bg-blue-100 text-blue-600",
@@ -33,7 +25,7 @@ const TIER_COLORS: Record<string, string> = {
 const scoreColor = (score: number) => score >= 750 ? "text-emerald-600" : score >= 650 ? "text-blue-600" : score >= 500 ? "text-amber-600" : "text-red-600";
 
 const CreditRatingSystem: React.FC = () => {
-  const [profiles, setProfiles] = useState<CreditProfile[]>(MOCK_PROFILES);
+  const [profiles, setProfiles] = useState<CreditProfile[]>([]);
   const [loading] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -54,7 +46,7 @@ const CreditRatingSystem: React.FC = () => {
           </h1>
           <p className="text-gray-500 text-sm mt-1">Agent credit scores, float limits and loan eligibility based on performance</p>
         </div>
-        <button onClick={() => setProfiles(MOCK_PROFILES)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
+        <button disabled title="No credit data source is connected" className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm opacity-50 cursor-not-allowed">
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
@@ -90,6 +82,8 @@ const CreditRatingSystem: React.FC = () => {
           <tbody className="divide-y divide-gray-50">
             {loading ? (
               <tr><td colSpan={9} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" /></td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={9} className="text-center py-10 text-gray-400">No credit profiles — no data source is connected.</td></tr>
             ) : filtered.map(p => (
               <tr key={p.agent_id} className="hover:bg-gray-50/50">
                 <td className="py-3 px-4">

@@ -21,129 +21,6 @@ import {
   Target,
 } from "lucide-react";
 
-const MOCK_AGENTS = [
-  {
-    rank: 1,
-    id: "AGT-0012",
-    name: "Adebayo Ogundimu",
-    region: "Lagos",
-    txCount: 2847,
-    volume: 45230000,
-    commission: 1230000,
-    rating: 4.9,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 2,
-    id: "AGT-0034",
-    name: "Chidinma Okafor",
-    region: "Abuja",
-    txCount: 2654,
-    volume: 41800000,
-    commission: 1150000,
-    rating: 4.8,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 3,
-    id: "AGT-0056",
-    name: "Ibrahim Musa",
-    region: "Kano",
-    txCount: 2312,
-    volume: 38500000,
-    commission: 980000,
-    rating: 4.7,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 4,
-    id: "AGT-0078",
-    name: "Funke Adeyemi",
-    region: "Lagos",
-    txCount: 2198,
-    volume: 35200000,
-    commission: 920000,
-    rating: 4.6,
-    trend: "down",
-    badge: "silver",
-  },
-  {
-    rank: 5,
-    id: "AGT-0023",
-    name: "Emeka Nwosu",
-    region: "Port Harcourt",
-    txCount: 2045,
-    volume: 32100000,
-    commission: 850000,
-    rating: 4.5,
-    trend: "up",
-    badge: "silver",
-  },
-  {
-    rank: 6,
-    id: "AGT-0045",
-    name: "Aisha Bello",
-    region: "Abuja",
-    txCount: 1987,
-    volume: 30800000,
-    commission: 810000,
-    rating: 4.5,
-    trend: "up",
-    badge: "silver",
-  },
-  {
-    rank: 7,
-    id: "AGT-0067",
-    name: "Olumide Bakare",
-    region: "Ibadan",
-    txCount: 1876,
-    volume: 28500000,
-    commission: 750000,
-    rating: 4.4,
-    trend: "down",
-    badge: "bronze",
-  },
-  {
-    rank: 8,
-    id: "AGT-0089",
-    name: "Grace Eze",
-    region: "Enugu",
-    txCount: 1754,
-    volume: 26200000,
-    commission: 690000,
-    rating: 4.3,
-    trend: "up",
-    badge: "bronze",
-  },
-  {
-    rank: 9,
-    id: "AGT-0091",
-    name: "Yusuf Abdullahi",
-    region: "Kaduna",
-    txCount: 1632,
-    volume: 24800000,
-    commission: 640000,
-    rating: 4.2,
-    trend: "down",
-    badge: "bronze",
-  },
-  {
-    rank: 10,
-    id: "AGT-0103",
-    name: "Blessing Okoro",
-    region: "Benin",
-    txCount: 1521,
-    volume: 23100000,
-    commission: 590000,
-    rating: 4.1,
-    trend: "up",
-    badge: "bronze",
-  },
-];
-
 function formatNaira(n: number) {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -160,16 +37,37 @@ function LeaderboardContent() {
     undefined,
     { retry: 1 }
   );
+
+  // Render only real backend data — never fabricated leaderboard rows.
+  const agents = useMemo(() => {
+    const d: any = _liveData;
+    const list = Array.isArray(d)
+      ? d
+      : d?.agents ?? d?.leaderboard ?? d?.data ?? [];
+    if (!Array.isArray(list)) return [];
+    return list.map((a: any, i: number) => ({
+      rank: a.rank ?? i + 1,
+      id: a.id ?? a.agent_id ?? "",
+      name: a.name ?? a.agent_name ?? "—",
+      region: a.region ?? "—",
+      txCount: a.txCount ?? a.tx_count ?? 0,
+      volume: a.volume ?? 0,
+      commission: a.commission ?? 0,
+      rating: a.rating ?? 0,
+      trend: a.trend ?? "flat",
+      badge: a.badge ?? "bronze",
+    }));
+  }, [_liveData]);
   const [regionFilter, setRegionFilter] = useState("all");
   const [sortBy, setSortBy] = useState<
     "volume" | "txCount" | "commission" | "rating"
   >("volume");
   const [period, setPeriod] = useState("month");
 
-  const regions = [...new Set(MOCK_AGENTS.map(a => a.region))];
+  const regions = [...new Set(agents.map(a => a.region))];
 
   const filtered = useMemo(() => {
-    let result = [...MOCK_AGENTS];
+    let result = [...agents];
     if (search)
       result = result.filter(
         a =>
@@ -182,7 +80,7 @@ function LeaderboardContent() {
       (a: any, b: any) => (b[sortBy] as number) - (a[sortBy] as number)
     );
     return result.map((a, i) => ({ ...a, rank: i + 1 }));
-  }, [search, regionFilter, sortBy]);
+  }, [agents, search, regionFilter, sortBy]);
 
   const badgeIcon = (badge: string) => {
     if (badge === "gold") return <Crown className="h-4 w-4 text-yellow-500" />;
@@ -304,6 +202,13 @@ function LeaderboardContent() {
             </tr>
           </thead>
           <tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  No performance data available.
+                </td>
+              </tr>
+            )}
             {filtered.map(agent => (
               <tr key={agent.id} className="border-t hover:bg-muted/30">
                 <td className="p-3 font-bold">
@@ -342,8 +247,10 @@ function LeaderboardContent() {
                 <td className="p-3 text-center">
                   {agent.trend === "up" ? (
                     <TrendingUp className="h-4 w-4 text-green-500 mx-auto" />
-                  ) : (
+                  ) : agent.trend === "down" ? (
                     <TrendingDown className="h-4 w-4 text-red-500 mx-auto" />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
               </tr>

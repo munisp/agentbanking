@@ -12,6 +12,7 @@ import {
   isNull,
   gte,
   lte,
+  like,
   or,
   asc,
 } from "drizzle-orm";
@@ -322,14 +323,28 @@ export const predictiveAgentChurnRouter = router({
         lastUpdated: new Date().toISOString(),
       };
     try {
+      // Churn records are stored as systemConfig rows keyed "churn_<itemId>"
+      // (see the create/delete mutations in this router).
       const [totalRow] = await database
         .select({ total: count() })
-        .from(systemConfig);
+        .from(systemConfig)
+        .where(like(systemConfig.key, "churn_%"));
       const total = totalRow?.total ?? 0;
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const [recentRow] = await database
+        .select({ recent: count() })
+        .from(systemConfig)
+        .where(
+          and(
+            like(systemConfig.key, "churn_%"),
+            gte(systemConfig.createdAt, thirtyDaysAgo)
+          )
+        );
+      const recent = recentRow?.recent ?? 0;
       return {
         total,
         active: total,
-        recent: Math.min(total, 50),
+        recent,
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -343,12 +358,28 @@ export const predictiveAgentChurnRouter = router({
   }),
 
   listAtRisk: protectedProcedure.query(async () => {
-    // Middleware fan-out (fail-open)
-    await publishpredictiveAgentChurnMiddleware("listAtRisk", `${Date.now()}`, {
-      action: "listAtRisk",
-    }).catch(() => {});
-
-    return { data: [], total: 0 };
+    const database = await getDb();
+    if (!database) return { data: [], total: 0 };
+    const rows = await database
+      .select()
+      .from(systemConfig)
+      .where(like(systemConfig.key, "churn_%"))
+      .orderBy(desc(systemConfig.createdAt))
+      .limit(100);
+    const data = rows.map(row => {
+      let details: Record<string, unknown> = {};
+      try {
+        details = JSON.parse(row.value);
+      } catch {
+        details = {};
+      }
+      return {
+        itemId: row.key.replace(/^churn_/, ""),
+        ...details,
+        createdAt: row.createdAt,
+      };
+    });
+    return { data, total: data.length };
   }),
 
   triggerIntervention: protectedProcedure
@@ -356,13 +387,9 @@ export const predictiveAgentChurnRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishpredictiveAgentChurnMiddleware(
-        "triggerIntervention",
-        `${Date.now()}`,
-        { action: "triggerIntervention" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "predictiveAgentChurn.triggerIntervention is not available in this deployment",
+      });
     }),
 });

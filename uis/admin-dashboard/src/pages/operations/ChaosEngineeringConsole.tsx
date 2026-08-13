@@ -14,26 +14,6 @@ interface ChaosExperiment {
   blastRadius: "Low" | "Med" | "High";
 }
 
-const MOCK_EXPERIMENTS: ChaosExperiment[] = [
-  { id: "ce-001", name: "Payment Service Latency Spike", type: "latency", targetService: "payment-svc", status: "completed", lastRun: "2025-04-30 14:22", blastRadius: "Low" },
-  { id: "ce-002", name: "Auth Pod Kill", type: "pod-kill", targetService: "auth-svc", status: "idle", lastRun: "2025-04-28 09:10", blastRadius: "Med" },
-  { id: "ce-003", name: "Ledger Fault Injection", type: "fault-injection", targetService: "ledger-svc", status: "idle", lastRun: "2025-04-25 16:45", blastRadius: "High" },
-  { id: "ce-004", name: "Core Network Partition", type: "network-partition", targetService: "core-banking", status: "idle", lastRun: "2025-04-20 11:00", blastRadius: "High" },
-  { id: "ce-005", name: "Notification Latency", type: "latency", targetService: "notification-svc", status: "completed", lastRun: "2025-05-01 08:30", blastRadius: "Low" },
-];
-
-const MOCK_LOGS = [
-  "[00:00.000] Experiment initialized — target: payment-svc",
-  "[00:00.412] Injecting 500ms latency on /api/v1/transfer endpoints",
-  "[00:01.003] Observed p99 latency: 612ms (baseline: 98ms)",
-  "[00:01.500] Circuit breaker triggered on downstream caller agent-svc",
-  "[00:02.110] Retry storm detected — 342 retries/sec",
-  "[00:03.000] Alertmanager: FIRING PagerDuty alert payment_high_latency",
-  "[00:04.200] Rollback signal received — removing latency injection",
-  "[00:04.800] Service recovered — p99 latency: 101ms",
-  "[00:05.000] Experiment completed. Resilience score: 87/100",
-];
-
 const TYPE_STYLES: Record<string, string> = {
   latency: "bg-amber-100 text-amber-700",
   "fault-injection": "bg-red-100 text-red-700",
@@ -56,6 +36,7 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 const ChaosEngineeringConsole: React.FC = () => {
   const [experiments, setExperiments] = useState<ChaosExperiment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [activeExp, setActiveExp] = useState<ChaosExperiment | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -71,31 +52,44 @@ const ChaosEngineeringConsole: React.FC = () => {
 
   const fetchExperiments = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/chaos/experiments`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setExperiments(Array.isArray(d.experiments) ? d.experiments : MOCK_EXPERIMENTS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setExperiments(Array.isArray(d.experiments) ? d.experiments : []); }
+      else { setError("Failed to load chaos experiments."); }
+    } catch { setError("Failed to load chaos experiments."); }
     finally { setLoading(false); }
   };
 
-  const runExperiment = (exp: ChaosExperiment) => {
+  const runExperiment = async (exp: ChaosExperiment) => {
     setConfirmId(null);
     setActiveExp({ ...exp, status: "running" });
     setLogLines([]);
     setExperiments(prev => prev.map(e => e.id === exp.id ? { ...e, status: "running" } : e));
-    MOCK_LOGS.forEach((line, i) => {
-      setTimeout(() => {
-        setLogLines(prev => [...prev, line]);
-        if (i === MOCK_LOGS.length - 1) {
-          setExperiments(prev => prev.map(e => e.id === exp.id ? { ...e, status: "completed" } : e));
-          setActiveExp(prev => prev ? { ...prev, status: "completed" } : null);
-        }
-      }, i * 700);
-    });
+    try {
+      const res = await fetch(`${CORE_URL}/ops/api/v1/chaos/experiments/${exp.id}/run`, { method: "POST", headers: getTenantHeadersFromStorage() });
+      if (!res.ok) throw new Error();
+      const d = await res.json().catch(() => ({}));
+      // Render only server-reported log lines — never simulated output.
+      if (Array.isArray(d.logs)) setLogLines(d.logs);
+      setExperiments(prev => prev.map(e => e.id === exp.id ? { ...e, status: "completed" } : e));
+      setActiveExp(prev => prev ? { ...prev, status: "completed" } : null);
+    } catch {
+      setExperiments(prev => prev.map(e => e.id === exp.id ? { ...e, status: "idle" } : e));
+      setActiveExp(prev => prev ? { ...prev, status: "idle" } : null);
+      setError("Failed to run experiment. No experiment was executed.");
+    }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchExperiments()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

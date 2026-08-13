@@ -376,31 +376,10 @@ export const dataExportRouter = router({
   createJob: protectedProcedure
     .input(z.object({}))
     .mutation(async ({ ctx, input }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "dataExport",
-        "mutation",
-        "Executed dataExport mutation"
-      );
-
-      try {
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dataExport.createJob is not available in this deployment",
+      });
     }),
   listJobs: protectedProcedure
     .input(z.object({}).optional())

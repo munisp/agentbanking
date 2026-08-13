@@ -16,13 +16,6 @@ interface ClawbackCase {
   created_at: string;
 }
 
-const MOCK_CASES: ClawbackCase[] = [
-  { id: "clb-001", agent_id: "AGT-0023", agent_name: "Tunde Bakare", reason: "reversal", amount: 12500, original_commission_date: "2024-11-01", status: "approved", notes: "Commission on reversed transaction TXN-112", created_at: "2024-11-28" },
-  { id: "clb-002", agent_id: "AGT-0087", agent_name: "Grace Okoro", reason: "fraud", amount: 45000, original_commission_date: "2024-10-15", status: "pending_approval", notes: "Agent involved in suspected collusion fraud case", created_at: "2024-11-27" },
-  { id: "clb-003", agent_id: "AGT-0112", agent_name: "Emeka Nwosu", reason: "duplicate", amount: 8800, original_commission_date: "2024-11-10", status: "executed", created_at: "2024-11-20" },
-  { id: "clb-004", agent_id: "AGT-0055", agent_name: "Fatima Aliyu", reason: "policy_violation", amount: 22000, original_commission_date: "2024-11-05", status: "disputed", notes: "Agent disputes — claims transactions were legitimate", created_at: "2024-11-22" },
-];
-
 const REASON_LABELS: Record<string, string> = {
   fraud: "Fraud", reversal: "Transaction Reversal", policy_violation: "Policy Violation",
   error: "System Error", duplicate: "Duplicate Payment",
@@ -36,6 +29,7 @@ const STATUS_STYLES: Record<string, string> = {
 const CommissionClawback: React.FC = () => {
   const [cases, setCases] = useState<ClawbackCase[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ agent_id: "", agent_name: "", reason: "reversal", amount: "", notes: "" });
   const [processing, setProcessing] = useState<string | null>(null);
@@ -44,11 +38,12 @@ const CommissionClawback: React.FC = () => {
 
   const fetchCases = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/commission/api/v1/clawbacks`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setCases(Array.isArray(d.cases) ? d.cases : MOCK_CASES); }
-      else { setCases(MOCK_CASES); }
-    } catch { setCases(MOCK_CASES); }
+      if (res.ok) { const d = await res.json(); setCases(Array.isArray(d.cases) ? d.cases : []); }
+      else { setError("Failed to load clawback cases."); }
+    } catch { setError("Failed to load clawback cases."); }
     finally { setLoading(false); }
   };
 
@@ -81,7 +76,7 @@ const CommissionClawback: React.FC = () => {
       });
       setShowForm(false);
       fetchCases();
-    } catch { alert("Case created (demo mode)"); setShowForm(false); }
+    } catch { alert("Failed to create case. Please try again."); }
   };
 
   const totalPending = cases.filter(c => c.status === "pending_approval").reduce((s, c) => s + c.amount, 0);
@@ -89,6 +84,13 @@ const CommissionClawback: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchCases()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

@@ -181,7 +181,7 @@ export const advancedRateLimiterRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'rate_limit_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'rate_limit_%'}`)
       .limit(100);
     const activeRules = rows.filter(r => {
       const v = JSON.parse(String(r.value ?? "{}"));
@@ -203,7 +203,7 @@ export const advancedRateLimiterRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'rate_limit_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'rate_limit_%'}`)
           .limit(input?.limit ?? 50);
         return {
           rules: rows.map(r => ({

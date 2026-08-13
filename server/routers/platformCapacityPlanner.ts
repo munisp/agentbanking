@@ -366,13 +366,9 @@ export const platformCapacityPlannerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishplatformCapacityPlannerMiddleware(
-        "runProjection",
-        `${Date.now()}`,
-        { action: "runProjection" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "platformCapacityPlanner.runProjection is not available in this deployment",
+      });
     }),
 });

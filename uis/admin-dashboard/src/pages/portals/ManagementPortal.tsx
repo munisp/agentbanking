@@ -12,40 +12,32 @@ interface HRData { headcount: number; newJoins: number; churn: number; trainingC
 interface ComplianceData { openViolations: number; upcomingFilings: number; auditStatus: string }
 interface Approval { id: string; type: string; requester: string; amount?: number; submitted: string; status: "pending" }
 
-const MOCK_OPS: OpsData = { uptime: 99.7, incidents: 2, slaHealth: "Healthy" };
-const MOCK_FIN: FinanceData = { revenue: 94500000, collections: 128000000, payouts: 87000000 };
-const MOCK_HR: HRData = { headcount: 12480, newJoins: 340, churn: 112, trainingCompletion: 76 };
-const MOCK_COMP: ComplianceData = { openViolations: 4, upcomingFilings: 2, auditStatus: "In Progress" };
-const MOCK_APPROVALS: Approval[] = [
-  { id: "ap1", type: "Float Top-Up", requester: "Lagos Zone A", amount: 5000000, submitted: "10:02 AM", status: "pending" },
-  { id: "ap2", type: "Large Transaction Override", requester: "Chuka Obi", amount: 2800000, submitted: "09:47 AM", status: "pending" },
-  { id: "ap3", type: "New Agent Activation", requester: "HR Team", submitted: "08:30 AM", status: "pending" },
-];
-
 const fmt = (n: number) => n >= 1e9 ? `₦${(n / 1e9).toFixed(1)}B` : `₦${(n / 1e6).toFixed(1)}M`;
 
 const ManagementPortal: React.FC = () => {
   const [tab, setTab] = useState<Tab>("Operations");
-  const [ops, setOps] = useState<OpsData>(MOCK_OPS);
-  const [fin, setFin] = useState<FinanceData>(MOCK_FIN);
-  const [hr, setHr] = useState<HRData>(MOCK_HR);
-  const [comp, setComp] = useState<ComplianceData>(MOCK_COMP);
+  const [ops, setOps] = useState<OpsData | null>(null);
+  const [fin, setFin] = useState<FinanceData | null>(null);
+  const [hr, setHr] = useState<HRData | null>(null);
+  const [comp, setComp] = useState<ComplianceData | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/portals/api/v1/management/overview`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setOps(d.ops ?? MOCK_OPS); setFin(d.finance ?? MOCK_FIN);
-        setHr(d.hr ?? MOCK_HR); setComp(d.compliance ?? MOCK_COMP);
-        setApprovals(d.approvals ?? MOCK_APPROVALS);
-      } else { setApprovals(MOCK_APPROVALS); }
-    } catch { setApprovals(MOCK_APPROVALS); }
+        setOps(d.ops ?? null); setFin(d.finance ?? null);
+        setHr(d.hr ?? null); setComp(d.compliance ?? null);
+        setApprovals(d.approvals ?? []);
+      } else { setError("Failed to load management overview."); }
+    } catch { setError("Failed to load management overview."); }
     finally { setLoading(false); }
   };
 
@@ -53,6 +45,13 @@ const ManagementPortal: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchAll()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Management Portal</h1>
         <p className="text-gray-500 text-sm mt-1">Operational, financial and compliance overview for management</p>
@@ -70,7 +69,10 @@ const ManagementPortal: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6">
-        {tab === "Operations" && (
+        {tab === "Operations" && !ops && (
+          <p className="text-sm text-gray-500">No operations data available.</p>
+        )}
+        {tab === "Operations" && ops && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               { label: "Platform Uptime", value: `${ops.uptime}%`, sub: "Last 30 days", color: "text-emerald-600" },
@@ -86,7 +88,10 @@ const ManagementPortal: React.FC = () => {
           </div>
         )}
 
-        {tab === "Finance" && (
+        {tab === "Finance" && !fin && (
+          <p className="text-sm text-gray-500">No finance data available.</p>
+        )}
+        {tab === "Finance" && fin && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               { label: "Revenue MTD", value: fmt(fin.revenue), icon: FileText },
@@ -101,7 +106,10 @@ const ManagementPortal: React.FC = () => {
           </div>
         )}
 
-        {tab === "HR" && (
+        {tab === "HR" && !hr && (
+          <p className="text-sm text-gray-500">No HR data available.</p>
+        )}
+        {tab === "HR" && hr && (
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-6">
             {[
               { label: "Total Headcount", value: hr.headcount.toLocaleString(), color: "text-indigo-600" },
@@ -117,7 +125,10 @@ const ManagementPortal: React.FC = () => {
           </div>
         )}
 
-        {tab === "Compliance" && (
+        {tab === "Compliance" && !comp && (
+          <p className="text-sm text-gray-500">No compliance data available.</p>
+        )}
+        {tab === "Compliance" && comp && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
               { label: "Open Violations", value: comp.openViolations, color: "text-red-500", icon: XCircle },

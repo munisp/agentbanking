@@ -21,38 +21,6 @@ interface ChatSession {
   aiAssigned: boolean;
 }
 
-const MOCK_SESSIONS: ChatSession[] = [
-  {
-    id: "s1", agentName: "Ade Okafor", customer: "Mrs. Bello", waitTime: "2m", status: "active", aiAssigned: false,
-    messages: [
-      { id: "m1", sender: "customer", text: "Hello, I'm having trouble with my cash-in transaction.", time: "10:32" },
-      { id: "m2", sender: "support", text: "Hi Mrs. Bello, I'm here to help. Can you share your transaction reference?", time: "10:33" },
-      { id: "m3", sender: "customer", text: "It's TXN-20240501-8821. I deposited ₦20,000 but my balance didn't update.", time: "10:34" },
-      { id: "m4", sender: "support", text: "Thank you, I'm looking into that now. Please hold on for a moment.", time: "10:35" },
-    ],
-  },
-  {
-    id: "s2", agentName: "Chike Eze", customer: "Mr. Adeyemi", waitTime: "5m", status: "queued", aiAssigned: false,
-    messages: [
-      { id: "m5", sender: "customer", text: "I need help resetting my agent PIN.", time: "10:40" },
-    ],
-  },
-  {
-    id: "s3", agentName: "Ngozi Uche", customer: "Fatima Musa", waitTime: "0m", status: "resolved", aiAssigned: true,
-    messages: [
-      { id: "m6", sender: "customer", text: "How do I register a new beneficiary?", time: "09:15" },
-      { id: "m7", sender: "support", text: "Go to Transfers > Beneficiaries > Add New. Fill in the details and confirm with your PIN.", time: "09:15" },
-      { id: "m8", sender: "customer", text: "Got it, thanks!", time: "09:16" },
-    ],
-  },
-  {
-    id: "s4", agentName: "Emeka Nwosu", customer: "Grace Obi", waitTime: "8m", status: "queued", aiAssigned: false,
-    messages: [
-      { id: "m9", sender: "customer", text: "My KYC submission was rejected. What do I do?", time: "10:45" },
-    ],
-  },
-];
-
 const STATUS_STYLES: Record<string, string> = {
   active: "bg-green-100 text-green-700",
   queued: "bg-amber-100 text-amber-700",
@@ -64,16 +32,18 @@ const LiveChatSupport: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { fetchSessions(); }, []);
 
   const fetchSessions = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/support/api/v1/chat-sessions`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setSessions(Array.isArray(d.sessions) ? d.sessions : MOCK_SESSIONS); }
-      else { setSessions(MOCK_SESSIONS); }
-    } catch { setSessions(MOCK_SESSIONS); }
+      if (res.ok) { const d = await res.json(); setSessions(Array.isArray(d.sessions) ? d.sessions : []); }
+      else { setError("Failed to load chat sessions."); }
+    } catch { setError("Failed to load chat sessions."); }
     finally { setLoading(false); }
   };
 
@@ -95,6 +65,13 @@ const LiveChatSupport: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchSessions()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <MessageSquare className="w-7 h-7 text-indigo-600" /> Live Chat Support

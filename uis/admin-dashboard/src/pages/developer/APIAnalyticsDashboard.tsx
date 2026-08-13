@@ -23,34 +23,6 @@ interface StatusDist {
   color: string;
 }
 
-const MOCK_ENDPOINTS: EndpointStat[] = [
-  { endpoint: "POST /transaction/api/v1/transfers", calls: 48200, avgLatencyMs: 142, errorRate: 0.4 },
-  { endpoint: "GET /transaction/api/v1/transactions", calls: 39500, avgLatencyMs: 88, errorRate: 0.2 },
-  { endpoint: "POST /agent/api/v1/cash-in", calls: 31800, avgLatencyMs: 210, errorRate: 0.7 },
-  { endpoint: "GET /agent/api/v1/agents", calls: 28100, avgLatencyMs: 65, errorRate: 0.1 },
-  { endpoint: "POST /payment-hub/api/v1/bills", calls: 22600, avgLatencyMs: 195, errorRate: 1.2 },
-  { endpoint: "POST /auth/api/v1/login", calls: 18900, avgLatencyMs: 120, errorRate: 2.1 },
-  { endpoint: "GET /compliance/api/v1/kyc-status", calls: 15400, avgLatencyMs: 78, errorRate: 0.3 },
-  { endpoint: "POST /developer/api/v1/webhooks/test", calls: 9800, avgLatencyMs: 302, errorRate: 3.5 },
-  { endpoint: "GET /finance/api/v1/wallet-balance", calls: 8300, avgLatencyMs: 55, errorRate: 0.1 },
-  { endpoint: "POST /settlement/api/v1/reconcile", calls: 4100, avgLatencyMs: 480, errorRate: 0.9 },
-];
-
-const MOCK_DAILY: DailyUsage[] = [
-  { hour: "00:00", requests: 1200 }, { hour: "02:00", requests: 800 }, { hour: "04:00", requests: 620 },
-  { hour: "06:00", requests: 2100 }, { hour: "08:00", requests: 8400 }, { hour: "10:00", requests: 14200 },
-  { hour: "12:00", requests: 16800 }, { hour: "14:00", requests: 15300 }, { hour: "16:00", requests: 13700 },
-  { hour: "18:00", requests: 10200 }, { hour: "20:00", requests: 6800 }, { hour: "22:00", requests: 3400 },
-];
-
-const MOCK_STATUS: StatusDist[] = [
-  { code: "200 OK", count: 87400, color: "bg-green-500" },
-  { code: "201 Created", count: 12100, color: "bg-emerald-400" },
-  { code: "400 Bad Request", count: 3200, color: "bg-amber-500" },
-  { code: "401 Unauthorized", count: 1800, color: "bg-orange-500" },
-  { code: "500 Internal Error", count: 520, color: "bg-red-500" },
-];
-
 const RANGES = ["24h", "7d", "30d"] as const;
 
 const APIAnalyticsDashboard: React.FC = () => {
@@ -59,25 +31,23 @@ const APIAnalyticsDashboard: React.FC = () => {
   const [status, setStatus] = useState<StatusDist[]>([]);
   const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
   useEffect(() => { fetchData(); }, [range]);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/analytics?range=${range}`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setEndpoints(Array.isArray(d.endpoints) ? d.endpoints : MOCK_ENDPOINTS);
-        setDaily(Array.isArray(d.daily) ? d.daily : MOCK_DAILY);
-        setStatus(Array.isArray(d.status) ? d.status : MOCK_STATUS);
-      } else {
-        setEndpoints(MOCK_ENDPOINTS); setDaily(MOCK_DAILY); setStatus(MOCK_STATUS);
-      }
-    } catch {
-      setEndpoints(MOCK_ENDPOINTS); setDaily(MOCK_DAILY); setStatus(MOCK_STATUS);
-    } finally {
+        setEndpoints(Array.isArray(d.endpoints) ? d.endpoints : []);
+        setDaily(Array.isArray(d.daily) ? d.daily : []);
+        setStatus(Array.isArray(d.status) ? d.status : []);
+      } else { setError("Failed to load API analytics."); }
+    } catch { setError("Failed to load API analytics."); } finally {
       setLoading(false);
       setLastUpdated(new Date().toLocaleTimeString());
     }
@@ -87,6 +57,13 @@ const APIAnalyticsDashboard: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

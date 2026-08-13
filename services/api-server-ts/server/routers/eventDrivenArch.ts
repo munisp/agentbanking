@@ -354,26 +354,41 @@ export const eventDrivenArchRouter = router({
   dashboard: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "eventDrivenArch.dashboard is not available in this deployment",
+      });
     }),
   listTopics: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "eventDrivenArch.listTopics is not available in this deployment",
+      });
     }),
   getDeadLetterQueue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "eventDrivenArch.getDeadLetterQueue is not available in this deployment",
+      });
     }),
   retryDeadLetter: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "eventDrivenArch.retryDeadLetter is not available in this deployment",
+      });
     }),
   recentEvents: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "eventDrivenArch.recentEvents is not available in this deployment",
+      });
     }),
 });

@@ -859,16 +859,10 @@ export const userQuietHoursRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return { success: true, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "sprint15Features.update is not available in this deployment",
+      });
     }),
 });
 
@@ -887,16 +881,10 @@ export const notifTemplateRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return { success: true, id: `tpl-${Date.now()}`, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "sprint15Features.create is not available in this deployment",
+      });
     }),
   update: protectedProcedure
     .input(

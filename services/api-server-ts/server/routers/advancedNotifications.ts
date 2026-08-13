@@ -377,16 +377,25 @@ export const advancedNotificationsRouter = router({
   sendNotification: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "advancedNotifications.sendNotification is not available in this deployment",
+      });
     }),
   listHistory: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "advancedNotifications.listHistory is not available in this deployment",
+      });
     }),
   getPreferences: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "advancedNotifications.getPreferences is not available in this deployment",
+      });
     }),
 });

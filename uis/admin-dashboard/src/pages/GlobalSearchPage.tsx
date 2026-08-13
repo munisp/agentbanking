@@ -14,112 +14,13 @@ import {
   FileText,
 } from "lucide-react";
 
-// Mock search results (in production, powered by tRPC full-text search across entities)
-const mockAgents = [
-  {
-    id: "a1",
-    code: "AG-001",
-    name: "Adebayo Ogundimu",
-    tier: "platinum",
-    status: "active",
-    location: "Lagos",
-  },
-  {
-    id: "a2",
-    code: "AG-002",
-    name: "Chioma Nwosu",
-    tier: "gold",
-    status: "active",
-    location: "Abuja",
-  },
-  {
-    id: "a3",
-    code: "AG-003",
-    name: "Emeka Okafor",
-    tier: "gold",
-    status: "active",
-    location: "Port Harcourt",
-  },
-  {
-    id: "a4",
-    code: "AG-004",
-    name: "Fatima Ibrahim",
-    tier: "silver",
-    status: "suspended",
-    location: "Kano",
-  },
-  {
-    id: "a5",
-    code: "AG-005",
-    name: "Oluwaseun Bakare",
-    tier: "bronze",
-    status: "active",
-    location: "Ibadan",
-  },
-];
+// No client-side search index is bundled; until the search API is wired to
+// these lists the page honestly shows zero results rather than canned data.
+const mockAgents: any[] = [];
 
-const mockTransactions = [
-  {
-    id: "t1",
-    ref: "TXN-20260420-001",
-    type: "cash_in",
-    amount: 50000,
-    customer: "Ade Johnson",
-    status: "completed",
-    date: "2026-04-20",
-  },
-  {
-    id: "t2",
-    ref: "TXN-20260420-002",
-    type: "transfer",
-    amount: 125000,
-    customer: "Bola Tinubu",
-    status: "completed",
-    date: "2026-04-20",
-  },
-  {
-    id: "t3",
-    ref: "TXN-20260419-015",
-    type: "cash_out",
-    amount: 30000,
-    customer: "Chidi Eze",
-    status: "reversed",
-    date: "2026-04-19",
-  },
-  {
-    id: "t4",
-    ref: "TXN-20260419-008",
-    type: "airtime",
-    amount: 5000,
-    customer: "Dayo Adeleke",
-    status: "completed",
-    date: "2026-04-19",
-  },
-];
+const mockTransactions: any[] = [];
 
-const mockCustomers = [
-  {
-    id: "c1",
-    name: "Ade Johnson",
-    phone: "08012345678",
-    totalTx: 45,
-    lastActive: "2026-04-20",
-  },
-  {
-    id: "c2",
-    name: "Bola Tinubu",
-    phone: "08098765432",
-    totalTx: 12,
-    lastActive: "2026-04-20",
-  },
-  {
-    id: "c3",
-    name: "Chidi Eze",
-    phone: "07011223344",
-    totalTx: 28,
-    lastActive: "2026-04-19",
-  },
-];
+const mockCustomers: any[] = [];
 
 export default function GlobalSearchPage() {
   const [query, setQuery] = useState("");

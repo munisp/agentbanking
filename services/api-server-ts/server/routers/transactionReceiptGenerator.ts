@@ -232,7 +232,7 @@ export const transactionReceiptGeneratorRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'receipt_template_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'receipt_template_%'}`)
       .limit(100);
     return {
       totalTemplates: rows.length,
@@ -250,7 +250,7 @@ export const transactionReceiptGeneratorRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'receipt_template_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'receipt_template_%'}`)
           .limit(input?.limit ?? 20);
         return {
           templates: rows.map(r => ({

@@ -16,33 +16,6 @@ interface ABTest {
   winner?: string;
 }
 
-const MOCK_TESTS: ABTest[] = [
-  {
-    id: "ab-001", name: "Cash-In Button CTA", description: "Test 'Add Cash' vs 'Cash In' button label on agent dashboard",
-    status: "running", metric: "click_rate", start_date: "2024-11-15",
-    variants: [
-      { name: "Control: Cash In", allocation: 50, conversions: 4520, visitors: 9800 },
-      { name: "Test: Add Cash", allocation: 50, conversions: 4890, visitors: 9750 },
-    ],
-  },
-  {
-    id: "ab-002", name: "Commission Display Format", description: "Show commission as % vs flat amount on transaction receipts",
-    status: "concluded", metric: "agent_satisfaction", start_date: "2024-10-01", end_date: "2024-10-31", winner: "Test: Flat Amount",
-    variants: [
-      { name: "Control: Percentage", allocation: 50, conversions: 1200, visitors: 5000 },
-      { name: "Test: Flat Amount", allocation: 50, conversions: 1580, visitors: 5000 },
-    ],
-  },
-  {
-    id: "ab-003", name: "Onboarding Flow Simplification", description: "5-step vs 3-step agent onboarding funnel",
-    status: "draft", metric: "completion_rate",
-    variants: [
-      { name: "Control: 5 Steps", allocation: 50, conversions: 0, visitors: 0 },
-      { name: "Test: 3 Steps", allocation: 50, conversions: 0, visitors: 0 },
-    ],
-  },
-];
-
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600", running: "bg-blue-100 text-blue-700",
   paused: "bg-amber-100 text-amber-700", concluded: "bg-purple-100 text-purple-700",
@@ -51,6 +24,7 @@ const STATUS_STYLES: Record<string, string> = {
 const ABTesting: React.FC = () => {
   const [tests, setTests] = useState<ABTest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", metric: "conversion_rate" });
 
@@ -58,10 +32,11 @@ const ABTesting: React.FC = () => {
 
   const fetchTests = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/ab-tests`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setTests(Array.isArray(d.tests) ? d.tests : MOCK_TESTS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setTests(Array.isArray(d.tests) ? d.tests : []);  } else { setError("Failed to load A/B tests."); }
+    } catch { setError("Failed to load A/B tests."); }
     finally { setLoading(false); }
   };
 
@@ -78,6 +53,13 @@ const ABTesting: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchTests()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -136,7 +118,7 @@ const ABTesting: React.FC = () => {
                     body: JSON.stringify(form),
                   });
                   setShowForm(false); fetchTests();
-                } catch { alert("Test created (demo mode)"); setShowForm(false); }
+                } catch { alert("Failed to create test. Please try again."); }
               }} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">Create</button>
               <button onClick={() => setShowForm(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">Cancel</button>
             </div>

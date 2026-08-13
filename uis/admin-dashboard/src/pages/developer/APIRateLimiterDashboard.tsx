@@ -20,29 +20,13 @@ interface ThrottledClient {
   retryAfter: string;
 }
 
-const MOCK_RULES: RateLimitRule[] = [
-  { id: "r1", pattern: "POST /transaction/api/v1/transfers", limit: 60, window: "per-minute", currentUsage: 48 },
-  { id: "r2", pattern: "POST /auth/api/v1/login", limit: 10, window: "per-minute", currentUsage: 3 },
-  { id: "r3", pattern: "GET /transaction/api/v1/transactions", limit: 300, window: "per-minute", currentUsage: 198 },
-  { id: "r4", pattern: "POST /agent/api/v1/cash-in", limit: 50, window: "per-minute", currentUsage: 47 },
-  { id: "r5", pattern: "POST /payment-hub/api/v1/bills", limit: 1000, window: "per-hour", currentUsage: 620 },
-  { id: "r6", pattern: "GET /compliance/api/v1/kyc-status", limit: 5000, window: "per-hour", currentUsage: 1200 },
-  { id: "r7", pattern: "POST /developer/api/v1/webhooks/test", limit: 20, window: "per-minute", currentUsage: 19 },
-  { id: "r8", pattern: "*", limit: 50000, window: "per-day", currentUsage: 31000 },
-];
-
-const MOCK_THROTTLED: ThrottledClient[] = [
-  { id: "t1", identifier: "IP: 196.168.4.22", endpoint: "POST /auth/api/v1/login", blockedAt: "2024-12-10 14:32:01", retryAfter: "2024-12-10 14:33:01" },
-  { id: "t2", identifier: "Key: sk_live_9f3k...2xp", endpoint: "POST /agent/api/v1/cash-in", blockedAt: "2024-12-10 14:30:45", retryAfter: "2024-12-10 14:31:45" },
-  { id: "t3", identifier: "IP: 41.58.120.7", endpoint: "POST /transaction/api/v1/transfers", blockedAt: "2024-12-10 14:28:10", retryAfter: "2024-12-10 14:29:10" },
-];
-
 const WINDOW_OPTIONS = ["per-minute", "per-hour", "per-day"] as const;
 
 const APIRateLimiterDashboard: React.FC = () => {
   const [rules, setRules] = useState<RateLimitRule[]>([]);
   const [throttled, setThrottled] = useState<ThrottledClient[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ pattern: "", limit: "", window: "per-minute" as RateLimitRule["window"] });
 
@@ -50,14 +34,15 @@ const APIRateLimiterDashboard: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/developer/api/v1/rate-limits`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setRules(Array.isArray(d.rules) ? d.rules : MOCK_RULES);
-        setThrottled(Array.isArray(d.throttled) ? d.throttled : MOCK_THROTTLED);
-      } else { setRules(MOCK_RULES); setThrottled(MOCK_THROTTLED); }
-    } catch { setRules(MOCK_RULES); setThrottled(MOCK_THROTTLED); }
+        setRules(Array.isArray(d.rules) ? d.rules : []);
+        setThrottled(Array.isArray(d.throttled) ? d.throttled : []);
+      } else { setError("Failed to load rate limit data."); }
+    } catch { setError("Failed to load rate limit data."); }
     finally { setLoading(false); }
   };
 
@@ -88,6 +73,13 @@ const APIRateLimiterDashboard: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

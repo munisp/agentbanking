@@ -272,12 +272,10 @@ export const offlineQueueRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishofflineQueueMiddleware("clearSynced", `${Date.now()}`, {
-        action: "clearSynced",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "offlineQueue.clearSynced is not available in this deployment",
+      });
     }),
 
   getNetworkMetrics: protectedProcedure.query(async () => {
@@ -312,11 +310,9 @@ export const offlineQueueRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishofflineQueueMiddleware("retryFailed", `${Date.now()}`, {
-        action: "retryFailed",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "offlineQueue.retryFailed is not available in this deployment",
+      });
     }),
 });

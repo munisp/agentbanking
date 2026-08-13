@@ -353,31 +353,41 @@ export const websocketServiceRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "websocketService.dashboard is not available in this deployment",
+    });
   }),
   listConnections: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "websocketService.listConnections is not available in this deployment",
+      });
     }),
   broadcastMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "websocketService.broadcastMessage is not available in this deployment",
+      });
     }),
   channelStats: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "websocketService.channelStats is not available in this deployment",
+      });
     }),
   recentMessages: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "websocketService.recentMessages is not available in this deployment",
+      });
     }),
 });

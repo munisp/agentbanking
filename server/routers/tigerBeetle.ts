@@ -490,18 +490,16 @@ export const tigerBeetleRouter = router({
   rotateSecret: protectedProcedure
     .input(z.object({ secretName: z.string() }))
     .mutation(async ({ input }) => {
-      await publishtigerBeetleMiddleware("rotateSecret", `${Date.now()}`, {
-        action: "rotateSecret",
-      }).catch(() => {});
-
-      return { success: true, rotatedAt: new Date().toISOString() };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "tigerBeetle.rotateSecret is not available in this deployment",
+      });
     }),
   start: protectedProcedure.mutation(async () => {
-    await publishtigerBeetleMiddleware("start", `${Date.now()}`, {
-      action: "start",
-    }).catch(() => {});
-
-    return { success: true, startedAt: new Date().toISOString() };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "tigerBeetle.start is not available in this deployment",
+    });
   }),
 
   // ── Middleware Integration ─────────────────────────────────────────────────

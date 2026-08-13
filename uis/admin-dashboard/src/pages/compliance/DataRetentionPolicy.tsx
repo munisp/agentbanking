@@ -21,21 +21,6 @@ interface ExpiryAlert {
   expiresIn: number;
 }
 
-const MOCK_POLICIES: RetentionPolicy[] = [
-  { id: "p1", entityType: "Transactions", retentionDays: 2555, legalBasis: "CBN", archivePolicy: "archive", lastEnforced: "2026-04-30", nextRun: "2026-05-07" },
-  { id: "p2", entityType: "KYC Documents", retentionDays: 1825, legalBasis: "CBN", archivePolicy: "archive", lastEnforced: "2026-04-28", nextRun: "2026-05-05" },
-  { id: "p3", entityType: "Audit Logs", retentionDays: 3650, legalBasis: "NDPR", archivePolicy: "archive", lastEnforced: "2026-04-25", nextRun: "2026-05-02" },
-  { id: "p4", entityType: "Customer Data", retentionDays: 1095, legalBasis: "NDPR", archivePolicy: "delete", lastEnforced: "2026-04-30", nextRun: "2026-05-07" },
-  { id: "p5", entityType: "Session Logs", retentionDays: 180, legalBasis: "GDPR", archivePolicy: "delete", lastEnforced: "2026-04-29", nextRun: "2026-05-06" },
-  { id: "p6", entityType: "Failed Login Attempts", retentionDays: 90, legalBasis: "NDPR", archivePolicy: "delete", lastEnforced: "2026-04-30", nextRun: "2026-05-07" },
-];
-
-const MOCK_ALERTS: ExpiryAlert[] = [
-  { id: "a1", entityType: "Session Logs", recordCount: 14520, expiresIn: 7 },
-  { id: "a2", entityType: "Customer Data", recordCount: 320, expiresIn: 14 },
-  { id: "a3", entityType: "Failed Login Attempts", recordCount: 8900, expiresIn: 22 },
-];
-
 const BASIS_COLORS: Record<string, string> = {
   CBN: "bg-green-100 text-green-700",
   NDPR: "bg-blue-100 text-blue-700",
@@ -46,6 +31,7 @@ const DataRetentionPolicy: React.FC = () => {
   const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
   const [alerts, setAlerts] = useState<ExpiryAlert[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Partial<RetentionPolicy>>({});
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -54,14 +40,15 @@ const DataRetentionPolicy: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/retention-policies`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setPolicies(Array.isArray(d.policies) ? d.policies : MOCK_POLICIES);
-        setAlerts(Array.isArray(d.alerts) ? d.alerts : MOCK_ALERTS);
-      } else { setPolicies(MOCK_POLICIES); setAlerts(MOCK_ALERTS); }
-    } catch { setPolicies(MOCK_POLICIES); setAlerts(MOCK_ALERTS); }
+        setPolicies(Array.isArray(d.policies) ? d.policies : []);
+        setAlerts(Array.isArray(d.alerts) ? d.alerts : []);
+      } else { setError("Failed to load retention policies."); }
+    } catch { setError("Failed to load retention policies."); }
     finally { setLoading(false); }
   };
 
@@ -91,6 +78,13 @@ const DataRetentionPolicy: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -132,6 +126,12 @@ const DataRetentionPolicy: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
+              {loading && (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Loading…</td></tr>
+              )}
+              {!loading && policies.length === 0 && (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">No retention policies available.</td></tr>
+              )}
               {policies.map(policy => (
                 <tr key={policy.id} className="hover:bg-gray-50">
                   <td className="py-3 pr-4 font-medium text-gray-900">{policy.entityType}</td>

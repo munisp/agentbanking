@@ -16,12 +16,6 @@ interface SandboxExperiment {
   results?: string;
 }
 
-const MOCK_EXPERIMENTS: SandboxExperiment[] = [
-  { id: "exp-001", name: "Higher Daily Limit Trial", description: "Test ₦300k daily limit for Tier 3 agents vs default ₦200k", category: "payment_limit", status: "running", participants: 45, start_date: "2024-11-01", end_date: "2024-11-30" },
-  { id: "exp-002", name: "Simplified BVN KYC", description: "BVN-only onboarding for basic accounts under ₦50k balance", category: "kyc_threshold", status: "completed", participants: 200, start_date: "2024-10-01", end_date: "2024-10-31", results: "23% improvement in onboarding conversion. Fraud rate within acceptable limits." },
-  { id: "exp-003", name: "Zero-fee Cash-In Pilot", description: "Waive cash-in fees for 30 days to measure volume uplift", category: "fee_structure", status: "draft", participants: 0 },
-];
-
 const CATEGORY_LABELS: Record<string, string> = {
   payment_limit: "Payment Limits", kyc_threshold: "KYC Threshold", agent_tier: "Agent Tier",
   fee_structure: "Fee Structure", float_policy: "Float Policy",
@@ -36,6 +30,7 @@ const STATUS_STYLES: Record<string, { cls: string; icon: React.FC<any> }> = {
 const RegulatorySandbox: React.FC = () => {
   const [experiments, setExperiments] = useState<SandboxExperiment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", category: "payment_limit" });
   const [launching, setLaunching] = useState<string | null>(null);
@@ -44,11 +39,12 @@ const RegulatorySandbox: React.FC = () => {
 
   const fetchExperiments = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/compliance/api/v1/sandbox/experiments`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setExperiments(Array.isArray(d.experiments) ? d.experiments : MOCK_EXPERIMENTS); }
-      else { setExperiments(MOCK_EXPERIMENTS); }
-    } catch { setExperiments(MOCK_EXPERIMENTS); }
+      if (res.ok) { const d = await res.json(); setExperiments(Array.isArray(d.experiments) ? d.experiments : []); }
+      else { setError("Failed to load sandbox experiments."); }
+    } catch { setError("Failed to load sandbox experiments."); }
     finally { setLoading(false); }
   };
 
@@ -57,7 +53,7 @@ const RegulatorySandbox: React.FC = () => {
     try {
       await fetch(`${CORE_URL}/compliance/api/v1/sandbox/experiments/${id}/launch`, { method: "POST", headers: getTenantHeadersFromStorage() });
       fetchExperiments();
-    } catch { alert("Experiment launched (demo mode)"); }
+    } catch { alert("Failed to launch experiment. Please try again."); }
     finally { setLaunching(null); }
   };
 
@@ -66,7 +62,7 @@ const RegulatorySandbox: React.FC = () => {
     try {
       await fetch(`${CORE_URL}/compliance/api/v1/sandbox/experiments/${id}/stop`, { method: "POST", headers: getTenantHeadersFromStorage() });
       fetchExperiments();
-    } catch { alert("Experiment stopped (demo mode)"); }
+    } catch { alert("Failed to stop experiment. Please try again."); }
   };
 
   const createExperiment = async (e: React.FormEvent) => {
@@ -80,11 +76,18 @@ const RegulatorySandbox: React.FC = () => {
       setShowForm(false);
       setForm({ name: "", description: "", category: "payment_limit" });
       fetchExperiments();
-    } catch { alert("Experiment created (demo mode)"); setShowForm(false); }
+    } catch { alert("Failed to create experiment. Please try again."); }
   };
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchExperiments()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

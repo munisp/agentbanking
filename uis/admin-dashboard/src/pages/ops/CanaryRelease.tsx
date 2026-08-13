@@ -18,13 +18,6 @@ interface CanaryDeploy {
   promoted_at?: string;
 }
 
-const MOCK_DEPLOYS: CanaryDeploy[] = [
-  { id: "can-001", service: "payment-hub", version: "v2.14.1", canary_percentage: 10, status: "running", error_rate_baseline: 0.12, error_rate_canary: 0.09, latency_baseline_ms: 142, latency_canary_ms: 118, started_at: "2024-11-29 10:00" },
-  { id: "can-002", service: "auth-service", version: "v1.8.3", canary_percentage: 25, status: "promoting", error_rate_baseline: 0.05, error_rate_canary: 0.04, latency_baseline_ms: 88, latency_canary_ms: 72, started_at: "2024-11-28 14:00" },
-  { id: "can-003", service: "float-management", version: "v3.2.0", canary_percentage: 5, status: "rolling_back", error_rate_baseline: 0.08, error_rate_canary: 1.45, latency_baseline_ms: 220, latency_canary_ms: 890, started_at: "2024-11-29 08:30" },
-  { id: "can-004", service: "notification-service", version: "v1.5.2", canary_percentage: 100, status: "completed", error_rate_baseline: 0.15, error_rate_canary: 0.12, latency_baseline_ms: 95, latency_canary_ms: 88, started_at: "2024-11-27 09:00", promoted_at: "2024-11-28 09:00" },
-];
-
 const STATUS_STYLES: Record<string, string> = {
   running: "bg-blue-100 text-blue-700", promoting: "bg-emerald-100 text-emerald-700",
   rolling_back: "bg-red-100 text-red-700", completed: "bg-gray-100 text-gray-600",
@@ -34,6 +27,7 @@ const STATUS_STYLES: Record<string, string> = {
 const CanaryRelease: React.FC = () => {
   const [deploys, setDeploys] = useState<CanaryDeploy[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
 
   
@@ -42,10 +36,11 @@ const CanaryRelease: React.FC = () => {
 
   const fetchDeploys = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/canary-releases`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setDeploys(Array.isArray(d.releases) ? d.releases : MOCK_DEPLOYS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setDeploys(Array.isArray(d.releases) ? d.releases : []);  } else { setError("Failed to load canary releases."); }
+    } catch { setError("Failed to load canary releases."); }
     finally { setLoading(false); }
   };
 
@@ -62,6 +57,13 @@ const CanaryRelease: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchDeploys()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

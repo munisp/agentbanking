@@ -314,14 +314,10 @@ export const platformRevenueOptimizerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishplatformRevenueOptimizerMiddleware(
-        "createExperiment",
-        `${Date.now()}`,
-        { action: "createExperiment" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "platformRevenueOptimizer.createExperiment is not available in this deployment",
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {

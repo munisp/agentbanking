@@ -167,7 +167,7 @@ export const reportTemplateDesignerRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'report_template_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'report_template_%'}`)
       .limit(100);
     return {
       totalTemplates: rows.length,
@@ -191,7 +191,7 @@ export const reportTemplateDesignerRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'report_template_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'report_template_%'}`)
           .limit(input?.limit ?? 20);
         return {
           templates: rows.map(r => ({

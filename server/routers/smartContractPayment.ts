@@ -270,21 +270,10 @@ export const smartContractPaymentRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      try {
-        await publishsmartContractPaymentMiddleware(
-          "deployContract",
-          `${Date.now()}`,
-          { action: "deployContract" }
-        ).catch(() => {});
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "smartContractPayment.deployContract is not available in this deployment",
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {

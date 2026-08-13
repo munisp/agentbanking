@@ -272,14 +272,10 @@ export const operationalCommandBridgeRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishoperationalCommandBridgeMiddleware(
-        "createIncident",
-        `${Date.now()}`,
-        { action: "createIncident" }
-      ).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "operationalCommandBridge.createIncident is not available in this deployment",
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {

@@ -14,17 +14,6 @@ interface SIMCard {
   lastPing: string;
 }
 
-const MOCK_SIMS: SIMCard[] = [
-  { id: "SIM-0001", carrier: "MTN", status: "active", signalStrength: 92, dataUsageMB: 1420, lastPing: "2025-05-02 10:44:30" },
-  { id: "SIM-0002", carrier: "Airtel", status: "active", signalStrength: 85, dataUsageMB: 980, lastPing: "2025-05-02 10:44:31" },
-  { id: "SIM-0003", carrier: "Glo", status: "idle", signalStrength: 60, dataUsageMB: 220, lastPing: "2025-05-02 10:30:05" },
-  { id: "SIM-0004", carrier: "9Mobile", status: "failed", signalStrength: 0, dataUsageMB: 0, lastPing: "2025-05-01 22:10:00" },
-  { id: "SIM-0005", carrier: "MTN", status: "active", signalStrength: 88, dataUsageMB: 1750, lastPing: "2025-05-02 10:44:29" },
-  { id: "SIM-0006", carrier: "Airtel", status: "idle", signalStrength: 72, dataUsageMB: 540, lastPing: "2025-05-02 10:38:14" },
-  { id: "SIM-0007", carrier: "Glo", status: "active", signalStrength: 78, dataUsageMB: 890, lastPing: "2025-05-02 10:44:28" },
-  { id: "SIM-0008", carrier: "MTN", status: "active", signalStrength: 95, dataUsageMB: 2100, lastPing: "2025-05-02 10:44:33" },
-];
-
 const CARRIER_COLORS: Record<string, string> = {
   MTN: "#FFCC00",
   Airtel: "#E30613",
@@ -41,6 +30,7 @@ const STATUS_STYLES: Record<string, string> = {
 const SIMOrchestratorDashboard: React.FC = () => {
   const [sims, setSims] = useState<SIMCard[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   
@@ -49,10 +39,11 @@ const SIMOrchestratorDashboard: React.FC = () => {
 
   const fetchSIMs = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/sims`, { headers: getTenantHeadersFromStorage() });
-      if (res.ok) { const d = await res.json(); setSims(Array.isArray(d.sims) ? d.sims : MOCK_SIMS); }
-    } catch { }
+      if (res.ok) { const d = await res.json(); setSims(Array.isArray(d.sims) ? d.sims : []);  } else { setError("Failed to load SIM data."); }
+    } catch { setError("Failed to load SIM data."); }
     finally { setLoading(false); }
   };
 
@@ -65,7 +56,7 @@ const SIMOrchestratorDashboard: React.FC = () => {
       setActionMsg(`${action === "rotate" ? "Rotated" : "Deactivated"} ${simId}`);
       fetchSIMs();
     } catch {
-      setActionMsg(`${action === "rotate" ? "Rotated" : "Deactivated"} ${simId} (demo mode)`);
+      setActionMsg(`Failed to ${action} ${simId}. Please try again.`);
     }
     setTimeout(() => setActionMsg(null), 3000);
   };
@@ -84,6 +75,13 @@ const SIMOrchestratorDashboard: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchSIMs()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

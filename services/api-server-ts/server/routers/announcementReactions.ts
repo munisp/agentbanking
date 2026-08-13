@@ -361,7 +361,10 @@ export const announcementReactionsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "announcementReactions.addComment is not available in this deployment",
+      });
     }),
 
   getReactions: protectedProcedure.query(async () => {
@@ -373,6 +376,9 @@ export const announcementReactionsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "announcementReactions.react is not available in this deployment",
+      });
     }),
 });

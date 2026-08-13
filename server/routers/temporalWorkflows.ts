@@ -401,12 +401,10 @@ export const temporalWorkflowsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      // Middleware fan-out (fail-open)
-      await publishtemporalWorkflowsMiddleware("terminate", `${Date.now()}`, {
-        action: "terminate",
-      }).catch(() => {});
-
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "temporalWorkflows.terminate is not available in this deployment",
+      });
     }),
 
   workflowTypes: protectedProcedure.query(async () => {

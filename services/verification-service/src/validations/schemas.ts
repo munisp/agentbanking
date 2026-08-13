@@ -15,6 +15,7 @@ export const EnvSchema = z.object({
   DB_DATABASE: z.string(),
   DB_DATABASE_TYPE: z.enum(["postgres", "mysql"]),
   DB_SSL_ENABLED: z.string().optional(),
+  DB_SSL_INSECURE_TLS: z.string().optional(),
   BALLERINE_API_URL: z.string(),
   BALLERINE_API_KEY: z.string(),
   DEFAULT_KYB_WORKFLOW_ID: z.string(),
@@ -25,6 +26,8 @@ export const EnvSchema = z.object({
   KYC_FLOW_BASE_URL: z.string(),
   SHIELD_VERIFICATION_BASE_URL: z.string(),
   SHIELD_VERIFICATION_API_KEY: z.string(),
+  SHIELD_API_INSECURE_TLS: z.string().optional(),
+  WEBHOOK_INSECURE_TLS: z.string().optional(),
   KYC_FLOW_API_KEY: z.string(),
 });
 

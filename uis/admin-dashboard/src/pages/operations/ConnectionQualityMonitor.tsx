@@ -25,23 +25,6 @@ interface MetricSummary {
   successRate: number;
 }
 
-const MOCK_AGENTS: AgentConnectivity[] = [
-  { agentId: "AGT-001", location: "Lagos, NG", qualityScore: "Excellent", lastSeen: "2s ago" },
-  { agentId: "AGT-002", location: "Abuja, NG", qualityScore: "Good", lastSeen: "15s ago" },
-  { agentId: "AGT-003", location: "Kano, NG", qualityScore: "Poor", lastSeen: "2m ago" },
-  { agentId: "AGT-004", location: "Accra, GH", qualityScore: "Excellent", lastSeen: "1s ago" },
-  { agentId: "AGT-005", location: "Nairobi, KE", qualityScore: "Offline", lastSeen: "18m ago" },
-  { agentId: "AGT-006", location: "Dar es Salaam, TZ", qualityScore: "Good", lastSeen: "30s ago" },
-];
-
-const MOCK_CHART: QualityPoint[] = Array.from({ length: 12 }, (_, i) => ({
-  time: `${i * 5}m`,
-  latency: Math.round(80 + Math.random() * 120),
-  packetLoss: parseFloat((Math.random() * 2).toFixed(2)),
-}));
-
-const MOCK_METRICS: MetricSummary = { avgLatency: 124, packetLoss: 0.8, jitter: 18, successRate: 99.2 };
-
 const QUALITY_STYLES: Record<string, string> = {
   Excellent: "bg-emerald-100 text-emerald-700",
   Good: "bg-blue-100 text-blue-700",
@@ -50,10 +33,11 @@ const QUALITY_STYLES: Record<string, string> = {
 };
 
 const ConnectionQualityMonitor: React.FC = () => {
-  const [metrics, setMetrics] = useState<MetricSummary>(MOCK_METRICS);
+  const [metrics, setMetrics] = useState<MetricSummary | null>(null);
   const [agents, setAgents] = useState<AgentConnectivity[]>([]);
   const [chartData, setChartData] = useState<QualityPoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   
 
@@ -61,25 +45,29 @@ const ConnectionQualityMonitor: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/connection-quality`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setMetrics(d.metrics ?? MOCK_METRICS);
-        setAgents(Array.isArray(d.agents) ? d.agents : MOCK_AGENTS);
-        setChartData(Array.isArray(d.chart) ? d.chart : MOCK_CHART);
-      } else {
-        setMetrics(MOCK_METRICS); setAgents(MOCK_AGENTS); setChartData(MOCK_CHART);
-      }
-    } catch {
-      setMetrics(MOCK_METRICS); setAgents(MOCK_AGENTS); setChartData(MOCK_CHART);
-    } finally { setLoading(false); }
+        setMetrics(d.metrics ?? null);
+        setAgents(Array.isArray(d.agents) ? d.agents : []);
+        setChartData(Array.isArray(d.chart) ? d.chart : []);
+      } else { setError("Failed to load connection quality data."); }
+    } catch { setError("Failed to load connection quality data."); } finally { setLoading(false); }
   };
 
   const poorAgents = agents.filter(a => a.qualityScore === "Poor" || a.qualityScore === "Offline");
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -94,10 +82,10 @@ const ConnectionQualityMonitor: React.FC = () => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Avg Latency", value: `${metrics.avgLatency} ms`, color: "text-blue-600" },
-          { label: "Packet Loss", value: `${metrics.packetLoss} %`, color: "text-amber-600" },
-          { label: "Jitter", value: `${metrics.jitter} ms`, color: "text-purple-600" },
-          { label: "Success Rate", value: `${metrics.successRate} %`, color: "text-emerald-600" },
+          { label: "Avg Latency", value: metrics ? `${metrics.avgLatency} ms` : "—", color: "text-blue-600" },
+          { label: "Packet Loss", value: metrics ? `${metrics.packetLoss} %` : "—", color: "text-amber-600" },
+          { label: "Jitter", value: metrics ? `${metrics.jitter} ms` : "—", color: "text-purple-600" },
+          { label: "Success Rate", value: metrics ? `${metrics.successRate} %` : "—", color: "text-emerald-600" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-6">
             <p className="text-xs text-gray-500">{label}</p>

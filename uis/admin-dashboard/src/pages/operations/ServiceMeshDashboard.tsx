@@ -22,22 +22,6 @@ interface CircuitBreakerEntry {
   lastTripped: string;
 }
 
-const MOCK_SERVICES: ServiceNode[] = [
-  { id: "svc-01", name: "payment-svc", replicas: 3, requestsPerMin: 8420, errorRate: 0.3, p99LatencyMs: 142, mtlsEnabled: true },
-  { id: "svc-02", name: "auth-svc", replicas: 2, requestsPerMin: 15200, errorRate: 0.1, p99LatencyMs: 38, mtlsEnabled: true },
-  { id: "svc-03", name: "ledger-svc", replicas: 4, requestsPerMin: 6310, errorRate: 0.6, p99LatencyMs: 215, mtlsEnabled: true },
-  { id: "svc-04", name: "agent-svc", replicas: 3, requestsPerMin: 4900, errorRate: 1.2, p99LatencyMs: 88, mtlsEnabled: false },
-  { id: "svc-05", name: "notification-svc", replicas: 2, requestsPerMin: 3100, errorRate: 0.2, p99LatencyMs: 55, mtlsEnabled: true },
-  { id: "svc-06", name: "kyc-svc", replicas: 2, requestsPerMin: 1200, errorRate: 0.8, p99LatencyMs: 330, mtlsEnabled: false },
-];
-
-const MOCK_CIRCUIT_BREAKERS: CircuitBreakerEntry[] = [
-  { source: "payment-svc", destination: "ledger-svc", state: "closed", failureRate: 0.6, lastTripped: "2025-04-29 11:22" },
-  { source: "agent-svc", destination: "payment-svc", state: "half-open", failureRate: 4.2, lastTripped: "2025-05-01 08:14" },
-  { source: "auth-svc", destination: "kyc-svc", state: "open", failureRate: 12.5, lastTripped: "2025-05-02 07:05" },
-  { source: "notification-svc", destination: "auth-svc", state: "closed", failureRate: 0.1, lastTripped: "2025-04-20 15:00" },
-];
-
 const CB_STYLES: Record<string, string> = {
   closed: "bg-green-100 text-green-700",
   "half-open": "bg-amber-100 text-amber-700",
@@ -48,6 +32,7 @@ const ServiceMeshDashboard: React.FC = () => {
   const [services, setServices] = useState<ServiceNode[]>([]);
   const [breakers, setBreakers] = useState<CircuitBreakerEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   
 
@@ -55,14 +40,15 @@ const ServiceMeshDashboard: React.FC = () => {
 
   const fetchMeshData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${CORE_URL}/ops/api/v1/mesh/services`, { headers: getTenantHeadersFromStorage() });
       if (res.ok) {
         const d = await res.json();
-        setServices(Array.isArray(d.services) ? d.services : MOCK_SERVICES);
-        setBreakers(Array.isArray(d.circuitBreakers) ? d.circuitBreakers : MOCK_CIRCUIT_BREAKERS);
-      } else { setServices(MOCK_SERVICES); setBreakers(MOCK_CIRCUIT_BREAKERS); }
-    } catch { setServices(MOCK_SERVICES); setBreakers(MOCK_CIRCUIT_BREAKERS); }
+        setServices(Array.isArray(d.services) ? d.services : []);
+        setBreakers(Array.isArray(d.circuitBreakers) ? d.circuitBreakers : []);
+      } else { setError("Failed to load service mesh data."); }
+    } catch { setError("Failed to load service mesh data."); }
     finally { setLoading(false); }
   };
 
@@ -70,6 +56,13 @@ const ServiceMeshDashboard: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-4">
+          <span>{error}</span>
+          <button onClick={() => fetchMeshData()} className="underline shrink-0">Retry</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

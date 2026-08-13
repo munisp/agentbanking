@@ -167,7 +167,7 @@ export const transactionEnrichmentServiceRouter = router({
     const rows = await db
       .select()
       .from(systemConfig)
-      .where(sql`\${systemConfig.key} LIKE 'enrichment_rule_%'`)
+      .where(sql`${systemConfig.key} LIKE ${'enrichment_rule_%'}`)
       .limit(100);
     const rules = rows.map(r => JSON.parse(String(r.value ?? "{}")));
     return {
@@ -186,7 +186,7 @@ export const transactionEnrichmentServiceRouter = router({
         const rows = await db
           .select()
           .from(systemConfig)
-          .where(sql`\${systemConfig.key} LIKE 'enrichment_rule_%'`)
+          .where(sql`${systemConfig.key} LIKE ${'enrichment_rule_%'}`)
           .limit(input?.limit ?? 20);
         return {
           rules: rows.map(r => ({

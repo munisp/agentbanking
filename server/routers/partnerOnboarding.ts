@@ -362,8 +362,18 @@ export const partnerOnboardingRouter = router({
     .query(async () => ({ step: 1, totalSteps: 5, complete: false })),
   removeCorridor: protectedProcedure
     .input(z.object({ corridorId: z.string().min(1).max(255) }))
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "partnerOnboarding.removeCorridor is not available in this deployment",
+    });
+  }),
   removeFee: protectedProcedure
     .input(z.object({ feeId: z.string().min(1).max(255) }))
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "partnerOnboarding.removeFee is not available in this deployment",
+    });
+  }),
 });

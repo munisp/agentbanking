@@ -1,1 +1,1 @@
-"""Customer support service"""\n
+"""Customer support service"""

@@ -24,6 +24,7 @@
 //   FIDO2_RP_ORIGIN   — Relying Party origin (e.g. "https://app.54agent.ng")
 //   FIDO2_RP_NAME     — Relying Party display name (default: "54agent POS")
 //   FIDO2_ADMIN_KEY   — Shared secret for admin endpoints
+//   FIDO2_STORE_URL   — Durable credential/session store DSN (required when ENVIRONMENT=production)
 
 package main
 
@@ -556,6 +557,15 @@ func min(a, b int) int {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 func main() {
+	// The credential/session stores above are in-memory and ephemeral.
+	// In production a durable store is mandatory; elsewhere, warn loudly.
+	if os.Getenv("FIDO2_STORE_URL") == "" {
+		if os.Getenv("ENVIRONMENT") == "production" || os.Getenv("NODE_ENV") == "production" {
+			log.Fatal("[FIDO2] ENVIRONMENT=production requires FIDO2_STORE_URL (durable credential/session store); the in-memory store is forbidden in production")
+		}
+		log.Println("[FIDO2] WARNING: using in-memory credential/session store — all passkeys and sessions are ephemeral; set FIDO2_STORE_URL for a durable store")
+	}
+
 	if err := initWebAuthn(); err != nil {
 		log.Fatalf("[FIDO2] WebAuthn init error: %v", err)
 	}

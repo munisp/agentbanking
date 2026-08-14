@@ -365,23 +365,43 @@ export const rateAlertsRouter = router({
   }),
 
   getStats: protectedProcedure.query(async () => {
+    // Merged implementation — this router previously declared getStats twice;
+    // the second (hardcoded zeros) silently overwrote this real query.
     const database = await getDb();
     if (!database)
       return {
         total: 0,
         active: 0,
         recent: 0,
+        totalAlerts: 0,
+        activeAlerts: 0,
+        triggeredToday: 0,
         lastUpdated: new Date().toISOString(),
       };
     try {
       const [totalRow] = await database
         .select({ total: count() })
         .from(rateAlerts);
-      const total = totalRow?.total ?? 0;
+      const total = Number(totalRow?.total ?? 0);
+      const [activeRow] = await database
+        .select({ cnt: count() })
+        .from(rateAlerts)
+        .where(eq(rateAlerts.status, "active"));
+      const active = Number(activeRow?.cnt ?? 0);
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const [triggeredRow] = await database
+        .select({ cnt: count() })
+        .from(rateAlerts)
+        .where(gte(rateAlerts.triggeredAt, startOfDay));
+      const triggeredToday = Number(triggeredRow?.cnt ?? 0);
       return {
         total,
-        active: total,
+        active,
         recent: Math.min(total, 50),
+        totalAlerts: total,
+        activeAlerts: active,
+        triggeredToday,
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -389,6 +409,9 @@ export const rateAlertsRouter = router({
         total: 0,
         active: 0,
         recent: 0,
+        totalAlerts: 0,
+        activeAlerts: 0,
+        triggeredToday: 0,
         lastUpdated: new Date().toISOString(),
       };
     }
@@ -456,11 +479,6 @@ export const rateAlertsRouter = router({
       })
     )
     .mutation(async ({ input }) => ({ id: input.id, updated: true })),
-  getStats: protectedProcedure.query(async () => ({
-    totalAlerts: 0,
-    activeAlerts: 0,
-    triggeredToday: 0,
-  })),
   quickCreate: protectedProcedure
     .input(
       z.object({

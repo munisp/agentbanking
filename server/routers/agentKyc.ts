@@ -342,135 +342,33 @@ export const agentKycRouter = router({
   listProfiles: openProcedure
     .input(z.object({ status: z.string().optional() }).optional())
     .query(async ({ input }) => {
-      const profiles = [
-        {
-          agentId: "AGT-001",
-          agentName: "Adebayo Okonkwo",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 15,
-          documents: [
-            { docId: "DOC-001A", docType: "nin", status: "verified" },
-            { docId: "DOC-001B", docType: "bvn", status: "verified" },
-          ],
-        },
-        {
-          agentId: "AGT-002",
-          agentName: "Fatima Ibrahim",
-          kycLevel: 1,
-          overallStatus: "pending",
-          riskScore: 45,
-          documents: [{ docId: "DOC-002A", docType: "nin", status: "pending" }],
-        },
-        {
-          agentId: "AGT-003",
-          agentName: "Chidi Nnamdi",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 10,
-          documents: [
-            { docId: "DOC-003A", docType: "nin", status: "verified" },
-            { docId: "DOC-003B", docType: "passport", status: "verified" },
-          ],
-        },
-        {
-          agentId: "AGT-004",
-          agentName: "Amina Yusuf",
-          kycLevel: 0,
-          overallStatus: "rejected",
-          riskScore: 80,
-          documents: [
-            { docId: "DOC-004A", docType: "nin", status: "rejected" },
-          ],
-        },
-      ];
-      let filtered = profiles;
-      if (input?.status)
-        filtered = filtered.filter(p => p.overallStatus === input.status);
-      return { profiles: filtered, total: filtered.length };
+      // FAIL LOUD: previously returned hardcoded fabricated agent profiles.
+      // No KYC profile store with this shape exists in this deployment.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentKyc.listProfiles is not available in this deployment",
+      });
     }),
 
   getProfile: openProcedure
     .input(z.object({ agentId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
-      const profiles: Record<
-        string,
-        {
-          agentId: string;
-          agentName: string;
-          kycLevel: number;
-          overallStatus: string;
-          riskScore: number;
-          documents: Array<{ docId: string; docType: string; status: string }>;
-        }
-      > = {
-        "AGT-001": {
-          agentId: "AGT-001",
-          agentName: "Adebayo Okonkwo",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 15,
-          documents: [
-            { docId: "DOC-001A", docType: "nin", status: "verified" },
-            { docId: "DOC-001B", docType: "bvn", status: "verified" },
-          ],
-        },
-        "AGT-002": {
-          agentId: "AGT-002",
-          agentName: "Fatima Ibrahim",
-          kycLevel: 1,
-          overallStatus: "pending",
-          riskScore: 45,
-          documents: [{ docId: "DOC-002A", docType: "nin", status: "pending" }],
-        },
-      };
-      const profile = profiles[input.agentId];
-      if (!profile)
-        throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      return profile;
+      // FAIL LOUD: previously returned hardcoded fabricated profiles.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentKyc.getProfile is not available in this deployment",
+      });
     }),
 
   getDocument: openProcedure
     .input(z.object({ docId: z.string().min(1).max(255) }))
     .query(async ({ input }) => {
-      const docs: Record<
-        string,
-        {
-          docId: string;
-          docType: string;
-          status: string;
-          confidenceScore: number;
-          agentId: string;
-          docNumber: string;
-          fullName: string;
-        }
-      > = {
-        "DOC-001A": {
-          docId: "DOC-001A",
-          docType: "nin",
-          status: "verified",
-          confidenceScore: 95,
-          agentId: "AGT-001",
-          docNumber: "12345678901",
-          fullName: "Adebayo Okonkwo",
-        },
-        "DOC-001B": {
-          docId: "DOC-001B",
-          docType: "bvn",
-          status: "verified",
-          confidenceScore: 98,
-          agentId: "AGT-001",
-          docNumber: "22345678901",
-          fullName: "Adebayo Okonkwo",
-        },
-      };
-      const doc = docs[input.docId];
-      if (!doc)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Document not found",
-        });
-      return doc;
+      // FAIL LOUD: previously returned hardcoded fabricated documents with
+      // fabricated confidenceScore values.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentKyc.getDocument is not available in this deployment",
+      });
     }),
 
   submitDocument: openProcedure
@@ -488,6 +386,8 @@ export const agentKycRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // Input format pre-validation only — a regex match is NOT verification
+      // and must never produce a "verified" status or a confidence score.
       const isValidNin =
         input.docType === "nin" && /^\d{11}$/.test(input.docNumber);
       const isValidBvn =
@@ -495,37 +395,27 @@ export const agentKycRouter = router({
       const isValidPassport =
         input.docType === "passport" && /^[A-Z]\d{8}$/.test(input.docNumber);
       const isValid = isValidNin || isValidBvn || isValidPassport;
-      return {
-        docId: `DOC-${Date.now()}`,
-        agentId: input.agentId,
-        docType: input.docType,
-        status: isValid ? ("verified" as const) : ("manual_review" as const),
-        confidenceScore: isValid ? 95 : 40,
-        submittedAt: new Date().toISOString(),
-      };
+      if (!isValid) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Document number fails format validation for docType "${input.docType}"`,
+        });
+      }
+      // FAIL LOUD: no KYC verification provider (NIN/BVN/passport) is
+      // configured in this deployment. Regex format checks cannot verify
+      // identity documents.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "agentKyc.submitDocument is not available in this deployment",
+      });
     }),
 
   getDashboard: openProcedure.query(async () => {
-    return {
-      totalAgents: 4,
-      verificationRate: 50,
-      avgRiskScore: 37.5,
-      byStatus: { complete: 2, pending: 1, rejected: 1 },
-      recentSubmissions: [
-        {
-          agentId: "AGT-001",
-          docType: "nin",
-          status: "verified",
-          submittedAt: "2024-06-01",
-        },
-        {
-          agentId: "AGT-002",
-          docType: "nin",
-          status: "pending",
-          submittedAt: "2024-06-02",
-        },
-      ],
-    };
+    // FAIL LOUD: previously returned hardcoded fabricated dashboard metrics.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "agentKyc.getDashboard is not available in this deployment",
+    });
   }),
   list: openProcedure
     .input(

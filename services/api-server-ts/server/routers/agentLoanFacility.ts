@@ -6,8 +6,14 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { agentLoans, agents, transactions } from "../../drizzle/schema";
+import {
+  agentLoans,
+  agents,
+  transactions,
+  gl_journal_entries,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, avg, sql } from "drizzle-orm";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
   validateAmount,
   validateStatusTransition,
@@ -42,6 +48,16 @@ const INTEREST_RATES = {
 }; // monthly %
 const MAX_LOAN_MULTIPLIER = 3; // max loan = 3x average monthly volume
 const MIN_CREDIT_SCORE = 500;
+
+// ── GL account ids used for loan double-entry journaling ────────────────────
+// Chosen to follow the repo's existing gl_journal_entries conventions:
+// floatTopUp posts debit 2001 / credit 1001 (agent float vs cash on hand) and
+// the disputeRefund twin posts 5002 (refund expense) / 1001. For loans we use:
+//   1201 = Loans Receivable (asset)     — increases when principal goes out
+//   2001 = Agent Float Clearing (liability) — the same agent-float leg used by
+//          floatTopUp; disbursement credits it, repayment debits it back.
+const GL_ACCT_LOANS_RECEIVABLE = 1201;
+const GL_ACCT_AGENT_FLOAT_CLEARING = 2001;
 const CREDIT_SCORE_WEIGHTS = {
   txVolume: 0.3,
   repaymentHistory: 0.25,
@@ -228,36 +244,104 @@ export const agentLoanFacilityRouter = router({
     }),
 
   // Disburse a loan (credit agent float)
+  // FF-2: single DB transaction — conditional approved→disbursed UPDATE first,
+  // float credited ONLY if the transition claimed a row (no TOCTOU double
+  // disburse), double-entry GL journal, admin-or-owning-agent authorization.
   disburse: protectedProcedure
     .input(z.object({ loanId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        const [loan] = await db
-          .select()
-          .from(agentLoans)
-          .where(eq(agentLoans.id, input.loanId))
-          .limit(100);
-        if (!loan) throw new Error("Loan not found");
-        if (loan.status !== "approved")
-          throw new Error("Loan must be approved before disbursement");
-        // Credit agent float
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`"floatBalance" + ${loan.principalAmount}`,
-          })
-          .where(eq(agents.id, loan.agentId));
-        await db
-          .update(agentLoans)
-          .set({
-            status: "disbursed",
-            disbursedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(agentLoans.id, input.loanId));
-        return { success: true, disbursedAmount: loan.principalAmount };
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+
+        return await withTransaction(async tx => {
+          // Atomic state transition: only a loan still 'approved' can be
+          // disbursed. A concurrent double-disburse affects 0 rows → CONFLICT.
+          const claimed = await tx
+            .update(agentLoans)
+            .set({
+              status: "disbursed",
+              disbursedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(agentLoans.id, input.loanId),
+                eq(agentLoans.status, "approved")
+              )
+            )
+            .returning();
+          const loan = claimed[0];
+          if (!loan) {
+            const existing = await tx
+              .select()
+              .from(agentLoans)
+              .where(eq(agentLoans.id, input.loanId))
+              .limit(1);
+            if (!existing[0])
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Loan not found",
+              });
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Loan is '${existing[0].status}' — only approved loans can be disbursed (duplicate disbursement rejected)`,
+            });
+          }
+
+          // Authorization: admin or the agent who owns the loan.
+          if (session.role !== "admin" && session.id !== loan.agentId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an admin or the owning agent can disburse this loan",
+            });
+          }
+
+          // Credit agent float — atomic SQL-expression update (same guarded
+          // pattern as repositories/agent.repository.ts adjustFloatBalance,
+          // credit leg); 0 rows means the agent row vanished → roll back.
+          const credited = await tx
+            .update(agents)
+            .set({
+              floatBalance: sql`"floatBalance" + ${String(loan.principalAmount)}::numeric`,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, loan.agentId))
+            .returning({ id: agents.id });
+          if (credited.length === 0) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: `Agent ${loan.agentId} not found — disbursement rolled back`,
+            });
+          }
+
+          // Double-entry GL: debit Loans Receivable, credit Agent Float
+          // Clearing (see GL_ACCT_* constants above). entryNumber is
+          // deterministic per loan; the whole transaction rolls back on
+          // failure so a retry cannot duplicate the entry.
+          const ref = `LOAN-DISB-${loan.id}`;
+          await tx.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Loan disbursement #${loan.id} to agent ${loan.agentId}`,
+            debitAccountId: GL_ACCT_LOANS_RECEIVABLE,
+            creditAccountId: GL_ACCT_AGENT_FLOAT_CLEARING,
+            amount: Math.round(Number(loan.principalAmount) * 100), // kobo
+            currency: "NGN",
+            referenceType: "loan_disbursement",
+            referenceId: ref,
+            postedBy: session.agentCode ?? String(session.id),
+            status: "posted",
+          });
+
+          return { success: true, disbursedAmount: loan.principalAmount, ref };
+        }, "agentLoanFacility.disburse");
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -269,36 +353,119 @@ export const agentLoanFacilityRouter = router({
     }),
 
   // Record repayment
+  // FF-2: single DB transaction, optimistic-concurrency guarded UPDATE,
+  // overpayment rejected, double-entry GL credit leg to Loans Receivable.
   recordRepayment: protectedProcedure
     .input(z.object({ loanId: z.number(), amount: z.number().min(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        const [loan] = await db
-          .select()
-          .from(agentLoans)
-          .where(eq(agentLoans.id, input.loanId))
-          .limit(100);
-        if (!loan) throw new Error("Loan not found");
-        const newRepaid =
-          parseFloat(String(loan.amountRepaid || "0")) + input.amount;
-        const totalRepayable = parseFloat(String(loan.totalRepayable));
-        const isFullyRepaid = newRepaid >= totalRepayable;
-        await db
-          .update(agentLoans)
-          .set({
-            amountRepaid: String(newRepaid),
-            status: isFullyRepaid ? "completed" : "repaying",
-            updatedAt: new Date(),
-          })
-          .where(eq(agentLoans.id, input.loanId));
-        return {
-          success: true,
-          amountRepaid: newRepaid,
-          remaining: totalRepayable - newRepaid,
-          fullyRepaid: isFullyRepaid,
-        };
+        const session = await getAgentFromCookie(ctx.req);
+        if (!session)
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Agent session required",
+          });
+
+        return await withTransaction(async tx => {
+          const rows = await tx
+            .select()
+            .from(agentLoans)
+            .where(eq(agentLoans.id, input.loanId))
+            .limit(1);
+          const loan = rows[0];
+          if (!loan)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Loan not found",
+            });
+
+          // Authorization: admin or the agent who owns the loan.
+          if (session.role !== "admin" && session.id !== loan.agentId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an admin or the owning agent can record repayment for this loan",
+            });
+          }
+
+          if (loan.status !== "disbursed" && loan.status !== "repaying") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Loan is '${loan.status}' — repayments can only be recorded against an active (disbursed/repaying) loan`,
+            });
+          }
+
+          const repaid = parseFloat(String(loan.amountRepaid || "0"));
+          const totalRepayable = parseFloat(String(loan.totalRepayable));
+          const remaining = totalRepayable - repaid;
+          // Reject overpayment beyond the remaining balance (1 kobo tolerance
+          // for decimal representation noise).
+          if (input.amount > remaining + 0.005) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Overpayment rejected: remaining balance is ${remaining.toFixed(2)}, attempted ${input.amount.toFixed(2)}`,
+            });
+          }
+          const newRepaid = repaid + input.amount;
+          const isFullyRepaid = newRepaid >= totalRepayable - 0.005;
+
+          // Guarded UPDATE: the amountRepaid predicate is an optimistic
+          // concurrency token — a concurrent repayment that already committed
+          // changed amountRepaid, so this affects 0 rows → CONFLICT.
+          const updated = await tx
+            .update(agentLoans)
+            .set({
+              amountRepaid: newRepaid.toFixed(2),
+              status: isFullyRepaid ? "completed" : "repaying",
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(agentLoans.id, input.loanId),
+                sql`"amount_repaid" = ${repaid.toFixed(2)}::numeric`,
+                sql`"status" IN ('disbursed', 'repaying')`
+              )
+            )
+            .returning({ id: agentLoans.id });
+          if (updated.length === 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Concurrent repayment detected — please retry (no amount was recorded)",
+            });
+          }
+
+          // Double-entry GL: debit Agent Float Clearing, credit Loans
+          // Receivable (repayment reduces both the clearing liability and the
+          // receivable asset). Agent floatBalance itself is not moved here —
+          // repayment cash settlement against float is handled by the float
+          // management flow; this journal records the loan-leg accounting.
+          // entryNumber is unique per repayment via the cumulative repaid
+          // amount (a rolled-back retry re-derives the same deterministic ref).
+          const ref = `LOAN-REPAY-${loan.id}-${newRepaid.toFixed(2)}`;
+          await tx.insert(gl_journal_entries).values({
+            entryNumber: `JE-${ref}`,
+            description: `Loan repayment #${loan.id} from agent ${loan.agentId}`,
+            debitAccountId: GL_ACCT_AGENT_FLOAT_CLEARING,
+            creditAccountId: GL_ACCT_LOANS_RECEIVABLE,
+            amount: Math.round(input.amount * 100), // kobo
+            currency: "NGN",
+            referenceType: "loan_repayment",
+            referenceId: ref,
+            postedBy: session.agentCode ?? String(session.id),
+            status: "posted",
+          });
+
+          return {
+            success: true,
+            ref,
+            amountRepaid: newRepaid,
+            remaining: Math.max(0, totalRepayable - newRepaid),
+            fullyRepaid: isFullyRepaid,
+          };
+        }, "agentLoanFacility.recordRepayment");
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

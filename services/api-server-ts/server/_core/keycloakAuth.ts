@@ -8,7 +8,7 @@
  *  GET  /api/auth/logout   → clear session cookie, redirect to Keycloak end-session
  *  GET  /api/auth/me       → return current user info from session (JSON)
  *
- * Session cookie: `kc_session` — HttpOnly, SameSite=None, Secure in production.
+ * Session cookie: `kc_session` — HttpOnly, SameSite=Lax, Secure in production.
  * The cookie value is a server-signed JWT containing:
  *   { sub, name, email, role, accessToken, refreshToken, idToken, exp }
  *
@@ -91,7 +91,13 @@ function sessionCookieOptions(req: Request) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none" as const,
+    // SEC-11: SameSite=Lax instead of None (CSRF hardening). This is
+    // compatible with the Keycloak authorization-code flow: the callback at
+    // /api/auth/callback is a top-level GET navigation, and Lax cookies ARE
+    // sent on top-level cross-site navigations, so the state/return cookies
+    // (already Lax) and the session cookie all flow correctly. Only embedded
+    // cross-site XHR/iframes would be affected, which this app does not use.
+    sameSite: "lax" as const,
     secure: isSecure(req),
     maxAge: SESSION_MAX_AGE_SECONDS * 1000,
   };

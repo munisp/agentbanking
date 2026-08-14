@@ -407,27 +407,17 @@ export const artRobustnessRouter = router({
   runAttack: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishartRobustnessMiddleware("runAttack", `${Date.now()}`, {
-        action: "runAttack",
-      }).catch(() => {});
-
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "artRobustness.runAttack is not available in this deployment",
-      });
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "artRobustness.runAttack is not available in this deployment",
+    });
+  }),
   runFullSuite: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishartRobustnessMiddleware("runFullSuite", `${Date.now()}`, {
-        action: "runFullSuite",
-      }).catch(() => {});
-
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "artRobustness.runFullSuite is not available in this deployment",
-      });
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "artRobustness.runFullSuite is not available in this deployment",
+    });
+  }),
 });

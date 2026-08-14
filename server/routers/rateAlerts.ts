@@ -315,10 +315,21 @@ export const rateAlertsRouter = router({
         action: "create",
       }).catch(() => {});
 
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const inserted = await database
+        .insert(rateAlerts)
+        .values((input?.data ?? {}) as any)
+        .returning();
+      const row = inserted[0];
       return {
         success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
+        id: row?.id,
+        createdAt: row?.createdAt ?? new Date().toISOString(),
       };
     }),
 
@@ -407,20 +418,46 @@ export const rateAlertsRouter = router({
         channel: z.enum(["email", "sms", "push"]).default("email"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Middleware fan-out (fail-open)
       await publishrateAlertsMiddleware("subscribe", `${Date.now()}`, {
         action: "subscribe",
       }).catch(() => {});
 
+      const [baseCurrency, targetCurrency] = input.currencyPair.split("/");
+      if (!baseCurrency || !targetCurrency) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "currencyPair must be in BASE/TARGET format",
+        });
+      }
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const inserted = await database
+        .insert(rateAlerts)
+        .values({
+          agentId: (ctx as any)?.user?.id ?? 0,
+          baseCurrency: baseCurrency.slice(0, 3).toUpperCase(),
+          targetCurrency: targetCurrency.slice(0, 3).toUpperCase(),
+          targetRate: String(input.threshold),
+          direction: input.direction,
+          status: "active",
+          notifiedVia: [input.channel],
+        })
+        .returning();
+      const row = inserted[0];
       return {
-        id: `alert-${Date.now()}`,
+        id: row?.id,
         currencyPair: input.currencyPair,
         threshold: input.threshold,
         direction: input.direction,
         channel: input.channel,
         active: true,
-        createdAt: new Date().toISOString(),
+        createdAt: row?.createdAt ?? new Date().toISOString(),
       };
     }),
   update: protectedProcedure
@@ -431,7 +468,31 @@ export const rateAlertsRouter = router({
         active: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => ({ id: input.id, updated: true })),
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.threshold !== undefined)
+        set.targetRate = String(input.threshold);
+      if (input.active !== undefined)
+        set.status = input.active ? "active" : "paused";
+      const updated = await database
+        .update(rateAlerts)
+        .set(set)
+        .where(eq(rateAlerts.id, input.id))
+        .returning();
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Rate alert ${input.id} not found`,
+        });
+      }
+      return { id: input.id, updated: true };
+    }),
   getStats: protectedProcedure.query(async () => ({
     totalAlerts: 0,
     activeAlerts: 0,
@@ -445,9 +506,36 @@ export const rateAlertsRouter = router({
         direction: z.enum(["above", "below"]),
       })
     )
-    .mutation(async ({ input }) => ({
-      id: Date.now(),
-      ...input,
-      active: true,
-    })),
+    .mutation(async ({ input, ctx }) => {
+      const [baseCurrency, targetCurrency] = input.currencyPair.split("/");
+      if (!baseCurrency || !targetCurrency) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "currencyPair must be in BASE/TARGET format",
+        });
+      }
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const inserted = await database
+        .insert(rateAlerts)
+        .values({
+          agentId: (ctx as any)?.user?.id ?? 0,
+          baseCurrency: baseCurrency.slice(0, 3).toUpperCase(),
+          targetCurrency: targetCurrency.slice(0, 3).toUpperCase(),
+          targetRate: String(input.threshold),
+          direction: input.direction,
+          status: "active",
+        })
+        .returning();
+      const row = inserted[0];
+      return {
+        id: row?.id,
+        ...input,
+        active: true,
+      };
+    }),
 });

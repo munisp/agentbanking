@@ -7,6 +7,7 @@ import {
   systemConfig,
   auditLog,
   transactions,
+  workflowDefinitions,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
@@ -434,7 +435,30 @@ export const goServiceBridgeRouter = router({
   workflowCreate: protectedProcedure
     .input(z.object({ name: z.string(), steps: z.array(z.string()) }))
     .mutation(async ({ input }) => {
-      return { id: `wf_${Date.now()}`, ...input, status: "created" };
+      // Real persistence: workflow_definitions table exists in the schema.
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — workflow not created",
+        });
+      const [row] = await db
+        .insert(workflowDefinitions)
+        .values({
+          name: input.name,
+          description: null,
+          category: "general",
+          steps: JSON.stringify(input.steps),
+          isActive: true,
+          version: 1,
+        })
+        .returning();
+      return {
+        id: `wf_${row.id}`,
+        name: row.name,
+        steps: input.steps,
+        status: "created",
+      };
     }),
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
@@ -450,7 +474,26 @@ export const goServiceBridgeRouter = router({
       avgLatencyMs: Math.round(Number(checks.avgLat ?? 0)),
     };
   }),
-  workflowList: protectedProcedure.query(async () => ({ workflows: [] })),
+  workflowList: protectedProcedure.query(async () => {
+    // Real query against workflow_definitions.
+    const db = await getDb();
+    if (!db) return { workflows: [] };
+    const rows = await db
+      .select()
+      .from(workflowDefinitions)
+      .orderBy(desc(workflowDefinitions.id))
+      .limit(100);
+    return {
+      workflows: rows.map(r => ({
+        id: `wf_${r.id}`,
+        name: r.name,
+        category: r.category,
+        steps: JSON.parse(String(r.steps ?? "[]")),
+        isActive: r.isActive,
+        version: r.version,
+      })),
+    };
+  }),
   ledgerTransfer: protectedProcedure
     .input(z.object({ from: z.string(), to: z.string(), amount: z.number() }))
     .mutation(async () => ({ transferId: "txn-1", status: "pending" })),

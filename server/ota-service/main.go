@@ -23,6 +23,7 @@
 //   AWS_SECRET_ACCESS_KEY — S3 secret key
 //   S3_BUCKET           — S3 bucket name for firmware packages
 //   DATABASE_URL        — PostgreSQL connection string (for firmware metadata)
+//   OTA_STORE_URL       — Durable firmware metadata store DSN (required when ENVIRONMENT=production)
 
 package main
 
@@ -58,35 +59,11 @@ type FirmwarePackage struct {
 	CreatedBy      string    `json:"createdBy"`
 }
 
-// In-memory store for demo; replace with PostgreSQL in production.
-var firmwareStore = map[string]*FirmwarePackage{
-	"fw-001": {
-		ID:             "fw-001",
-		Version:        "2.4.1",
-		Model:          "PAX-A920",
-		S3Key:          "firmware/PAX-A920/v2.4.1/firmware.bin",
-		Checksum:       "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		SizeBytes:      4194304,
-		RolloutPercent: 100,
-		ReleaseNotes:   "Security patch CVE-2024-1234; improved NFC stability",
-		IsLatest:       true,
-		CreatedAt:      time.Now().Add(-72 * time.Hour),
-		CreatedBy:      "admin",
-	},
-	"fw-002": {
-		ID:             "fw-002",
-		Version:        "2.4.0",
-		Model:          "PAX-A920",
-		S3Key:          "firmware/PAX-A920/v2.4.0/firmware.bin",
-		Checksum:       "sha256:abc123def456",
-		SizeBytes:      4194304,
-		RolloutPercent: 100,
-		ReleaseNotes:   "Initial stable release",
-		IsLatest:       false,
-		CreatedAt:      time.Now().Add(-168 * time.Hour),
-		CreatedBy:      "admin",
-	},
-}
+// In-memory store; replace with PostgreSQL in production. The store starts
+// empty: the fabricated demo firmware entries (whose checksums did not match
+// any real binary) were removed, so unknown firmware IDs now return an honest
+// 404 until a real package is uploaded via POST /api/v1/ota/upload.
+var firmwareStore = map[string]*FirmwarePackage{}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -498,6 +475,15 @@ func newRouter() http.Handler {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 func main() {
+	// The firmware store is in-memory and ephemeral. In production a durable
+	// store is mandatory; elsewhere, warn loudly.
+	if os.Getenv("OTA_STORE_URL") == "" {
+		if os.Getenv("ENVIRONMENT") == "production" || os.Getenv("NODE_ENV") == "production" {
+			log.Fatal("[OTA] ENVIRONMENT=production requires OTA_STORE_URL (durable firmware metadata store); the in-memory store is forbidden in production")
+		}
+		log.Println("[OTA] WARNING: firmware store is in-memory/ephemeral; set OTA_STORE_URL for a durable store in production")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8081"

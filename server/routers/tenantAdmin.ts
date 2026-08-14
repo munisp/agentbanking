@@ -482,7 +482,12 @@ export const tenantAdminRouter = router({
         name: z.string().optional(),
       })
     )
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "tenantAdmin.updateUser is not available in this deployment",
+    });
+  }),
   activityLog: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async () => ({ entries: [], total: 0 })),

@@ -462,7 +462,7 @@ export async function rollbackBillingStep(input: {
     case "assign_billing_roles":
       await _db
         .delete(billingRoleAssignments)
-        .where(eq(tenantBillingConfig.tenantId, input.tenantId));
+        .where(eq(billingRoleAssignments.tenantId, input.tenantId));
       break;
     case "activate_billing":
       await _db

@@ -233,7 +233,7 @@ class TransactionService:
         compliance_score = self._screen_compliance(
             sender, receiver, transaction_in.source_amount
         )
-        
+
         # 5. Create Transaction
         db_transaction = Transaction(
             reference_id=_generate_reference_id(),

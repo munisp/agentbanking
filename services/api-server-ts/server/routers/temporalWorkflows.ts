@@ -364,11 +364,9 @@ export const temporalWorkflowsRouter = router({
   start: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "start",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "temporalWorkflows.start is not available in this deployment",
+      });
     }),
 });

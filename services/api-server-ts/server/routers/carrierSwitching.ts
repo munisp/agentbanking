@@ -373,11 +373,9 @@ export const carrierSwitchingRouter = router({
         "Executed carrierSwitching mutation"
       );
 
-      return {
-        success: true,
-        action: "recordSwitch",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "carrierSwitching.recordSwitch is not available in this deployment",
+      });
     }),
 });

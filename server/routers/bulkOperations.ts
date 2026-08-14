@@ -417,11 +417,9 @@ export const bulkOperationsRouter = router({
         action: "retry",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "retry",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "bulkOperations.retry is not available in this deployment",
+      });
     }),
 });

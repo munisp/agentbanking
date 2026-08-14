@@ -421,10 +421,9 @@ export const webhookNotificationsRouter = router({
         { action: "toggleWebhook" }
       ).catch(() => {});
 
-      return {
-        success: true,
-        webhookId: input.webhookId,
-        active: input.active,
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "webhookNotifications.toggleWebhook is not available in this deployment",
+      });
     }),
 });

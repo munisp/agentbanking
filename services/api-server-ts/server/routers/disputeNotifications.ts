@@ -398,13 +398,10 @@ export const disputeNotificationsRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
-      return {
-        success: true,
-        message: "Notification channels configured",
-        channels: input.channels ?? ["email", "sms", "push"],
-        enabled: input.enabled ?? true,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "disputeNotifications.configureChannels is not available in this deployment",
+      });
     }),
 
   getDeliveryStats: protectedProcedure.query(async () => {

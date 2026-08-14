@@ -397,11 +397,10 @@ export const customerDisputePortalRouter = router({
         { action: "escalateDispute" }
       ).catch(() => {});
 
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        escalatedAt: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "customerDisputePortal.escalateDispute is not available in this deployment",
+      });
     }),
   updateDispute: protectedProcedure
     .input(
@@ -419,10 +418,9 @@ export const customerDisputePortalRouter = router({
         { action: "updateDispute" }
       ).catch(() => {});
 
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        updatedAt: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "customerDisputePortal.updateDispute is not available in this deployment",
+      });
     }),
 });

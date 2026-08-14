@@ -108,16 +108,28 @@ export function csrfProtection(
 
   const csrfToken = req.headers["x-csrf-token"] as string;
   const sessionId = req.cookies?.session_id;
+  // SEC-11: in production a missing/invalid CSRF token on a state-changing
+  // request is rejected with 403 (fail closed). Outside production the
+  // legacy log-and-continue behavior is kept so local dev tooling that does
+  // not fetch a CSRF token still works.
+  const csrfEnforced = process.env.NODE_ENV === "production";
 
   if (!sessionId || !csrfToken) {
-    // Don't block — just log for monitoring
     console.warn(`[CSRF] Missing token/session on ${req.method} ${req.path}`);
+    if (csrfEnforced) {
+      return res
+        .status(403)
+        .json({ error: "CSRF token required for state-changing requests" });
+    }
     return next();
   }
 
   const stored = csrfTokens.get(sessionId);
   if (!stored || stored.token !== csrfToken || stored.expires < Date.now()) {
     console.warn(`[CSRF] Invalid token on ${req.method} ${req.path}`);
+    if (csrfEnforced) {
+      return res.status(403).json({ error: "Invalid or expired CSRF token" });
+    }
   }
 
   // Clean expired tokens periodically

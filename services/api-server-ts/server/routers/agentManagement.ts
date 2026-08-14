@@ -12,7 +12,7 @@ import {
   writeAuditLog,
 } from "../db";
 import { agents, floatTopUpRequests } from "../../drizzle/schema";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, and, sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
@@ -302,41 +302,13 @@ export const agentManagementRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
           });
-        const result = await db
-          .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.id, input.requestId))
-          .limit(1);
-        const req = result[0];
-        if (!req)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Request not found",
-          });
-        if (req.status !== "pending") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Request already ${req.status}`,
-          });
-        }
-        // P0-A: Wrap float credit + status update in an atomic DB transaction
-        await withTransaction(async tx => {
-          // Credit agent float (updates agents.floatBalance)
-          await tx
-            .update(require("../../drizzle/schema").agents)
-            .set({
-              floatBalance: require("drizzle-orm")
-                .sql`"floatBalance" + ${Number(req.requestedAmount)}`,
-              updatedAt: new Date(),
-            })
-            .where(
-              require("drizzle-orm").eq(
-                require("../../drizzle/schema").agents.id,
-                req.agentId
-              )
-            );
-          // Update request status
-          await tx
+        // P0-A / FF-8: Approve-and-credit atomically. The pending→approved
+        // transition is a conditional UPDATE inside the transaction, so the
+        // status check can no longer be raced: a concurrent second approval
+        // affects 0 rows → 409 CONFLICT, and the float is credited ONLY when
+        // the transition claimed the row.
+        const req = await withTransaction(async tx => {
+          const claimed = await tx
             .update(floatTopUpRequests)
             .set({
               status: "approved",
@@ -344,7 +316,41 @@ export const agentManagementRouter = router({
               notes: input.notes ?? null,
               updatedAt: new Date(),
             })
-            .where(eq(floatTopUpRequests.id, input.requestId));
+            .where(
+              and(
+                eq(floatTopUpRequests.id, input.requestId),
+                eq(floatTopUpRequests.status, "pending")
+              )
+            )
+            .returning();
+          const row = claimed[0];
+          if (!row) {
+            const existing = await tx
+              .select()
+              .from(floatTopUpRequests)
+              .where(eq(floatTopUpRequests.id, input.requestId))
+              .limit(1);
+            if (!existing[0])
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Request not found",
+              });
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Request already ${existing[0].status} — duplicate or concurrent approval rejected`,
+            });
+          }
+          // Credit agent float (updates agents.floatBalance) — atomic SQL
+          // expression; requestedAmount is a PG numeric passed through as a
+          // string, so the arithmetic is exact decimal.
+          await tx
+            .update(agents)
+            .set({
+              floatBalance: sql`"floatBalance" + ${String(row.requestedAmount)}::numeric`,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, row.agentId));
+          return row;
         });
         await writeAuditLog({
           agentId: session.id,

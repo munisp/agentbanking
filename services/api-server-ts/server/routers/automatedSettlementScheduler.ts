@@ -37,68 +37,12 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
 };
 
-// Schedule state backed by DB batch counts + configurable defaults
-const DEFAULT_SCHEDULES = [
-  {
-    id: "SCH-601",
-    name: "Daily EOD Settlement",
-    cronExpression: "0 23 * * *",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-602",
-    name: "Weekly Merchant Payout",
-    cronExpression: "0 6 * * 1",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-603",
-    name: "Monthly Agent Commission",
-    cronExpression: "0 0 1 * *",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-604",
-    name: "Hourly Micro-Settlement",
-    cronExpression: "0 * * * *",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-605",
-    name: "T+1 Bank Settlement",
-    cronExpression: "0 8 * * 1-5",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-606",
-    name: "Cross-Border Settlement",
-    cronExpression: "0 12 * * 3",
-    status: "active" as const,
-  },
-  {
-    id: "SCH-607",
-    name: "Refund Batch",
-    cronExpression: "0 18 * * *",
-    status: "paused" as const,
-  },
-  {
-    id: "SCH-608",
-    name: "Float Reconciliation",
-    cronExpression: "0 0,12 * * *",
-    status: "paused" as const,
-  },
-];
-
-let scheduleState = DEFAULT_SCHEDULES.map((s, i) => ({
-  ...s,
-  lastRun: Date.now() - i * 86400000,
-  nextRun: Date.now() + (i + 1) * 3600000,
-  successRate: 99.5 - i * 0.2,
-  avgDuration: [45, 120, 300, 15, 90, 180, 60, 30][i],
-  totalRuns: 100 + i * 50,
-  totalSettled: 50000000 + i * 60000000,
-  failedRuns: i % 3,
-}));
+// Schedule state: no settlement-schedules table exists in the drizzle schema
+// for this deployment. The previous in-memory DEFAULT_SCHEDULES (SCH-601 …)
+// with fabricated lastRun/successRate/totalSettled values have been removed.
+// Reads return an honest empty result marked source:"unavailable"; mutations
+// fail loud with NOT_IMPLEMENTED.
+const SCHEDULES_SOURCE = "unavailable" as const;
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 function validateAutomatedsettlementschedulerInput(
@@ -308,23 +252,26 @@ export const automatedSettlementSchedulerRouter = router({
       })
       .from(merchantSettlements)
       .limit(100);
-    const active = scheduleState.filter(s => s.status === "active").length;
-    const paused = scheduleState.filter(s => s.status === "paused").length;
+    // Schedule-derived metrics are not available: no schedules table exists
+    // in this deployment. Reported honestly as zero/unavailable rather than
+    // fabricated.
     return {
-      totalSchedules: scheduleState.length,
-      activeSchedules: active,
-      pausedSchedules: paused,
+      totalSchedules: 0,
+      activeSchedules: 0,
+      pausedSchedules: 0,
       totalSettled24h: Number(vol?.t ?? 0),
-      avgSuccessRate: 99.2,
-      failedRuns24h: 1,
-      nextSettlement: Date.now() + 3600000,
+      avgSuccessRate: null,
+      failedRuns24h: null,
+      nextSettlement: null,
       totalBatches: batchCount?.cnt ?? 0,
+      source: SCHEDULES_SOURCE,
     };
   }),
 
   listSchedules: protectedProcedure.query(async () => ({
-    schedules: scheduleState,
-    total: scheduleState.length,
+    schedules: [],
+    total: 0,
+    source: SCHEDULES_SOURCE,
   })),
 
   createSchedule: protectedProcedure
@@ -336,53 +283,14 @@ export const automatedSettlementSchedulerRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "automatedSettlementScheduler",
-        "mutation",
-        "Executed automatedSettlementScheduler mutation"
-      );
-
-      try {
-        const ns = {
-          id: `SCH-${Date.now()}`,
-          ...input,
-          status: "active" as const,
-          lastRun: 0,
-          nextRun: Date.now() + 3600000,
-          successRate: 100,
-          avgDuration: 0,
-          totalRuns: 0,
-          totalSettled: 0,
-          failedRuns: 0,
-        };
-        scheduleState.push(ns);
-        try {
-          await publishSettlementEvent({
-            eventType: "settlement.schedule.created" as any,
-            batchId: ns.id,
-          } as any);
-        } catch (e) {
-          // @ts-expect-error auto-fix
-          logger.warn("[SettlementScheduler] Middleware:", e);
-        }
-        return { id: ns.id, ...input, status: "active", createdAt: Date.now() };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no settlement-schedules table exists in this deployment;
+      // the previous implementation pushed to a fabricated in-memory state
+      // seeded from hardcoded DEFAULT_SCHEDULES.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "automatedSettlementScheduler.createSchedule is not available in this deployment",
+      });
     }),
 
   toggleSchedule: protectedProcedure
@@ -390,92 +298,24 @@ export const automatedSettlementSchedulerRouter = router({
       z.object({ scheduleId: z.string(), action: z.enum(["pause", "resume"]) })
     )
     .mutation(async ({ input, ctx }) => {
-      try {
-        const s = scheduleState.find(s => s.id === input.scheduleId);
-        if (!s)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Schedule not found",
-          });
-        s.status = input.action === "pause" ? "paused" : "active";
-        try {
-          await publishSettlementEvent({
-            eventType: `settlement.schedule.${input.action}d`,
-            batchId: input.scheduleId,
-            data: { by: ctx.user?.id },
-          } as any);
-        } catch (e) {
-          // @ts-expect-error auto-fix
-          logger.warn("[SettlementScheduler] Middleware:", e);
-        }
-        return {
-          success: true,
-          scheduleId: input.scheduleId,
-          newStatus: s.status,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no settlement-schedules table exists in this deployment.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "automatedSettlementScheduler.toggleSchedule is not available in this deployment",
+      });
     }),
 
   triggerManual: protectedProcedure
     .input(z.object({ scheduleId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      try {
-        const db = (await getDb())!;
-        const s = scheduleState.find(s => s.id === input.scheduleId);
-        if (!s)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Schedule not found",
-          });
-        const batchRef = `MANUAL-${input.scheduleId}-${Date.now()}`;
-        await db.insert(reconciliationBatches).values({
-          batchReference: batchRef,
-          // @ts-expect-error middleware type mismatch
-          sourceType: `manual_${s.type}`,
-          status: "processing",
-          totalRecords: 0,
-          matchedCount: 0,
-          unmatchedCount: 0,
-          discrepancyCount: 0,
-          processedBy: ctx.user?.id ?? null,
-          processedAt: new Date(),
-        } as any);
-        s.lastRun = Date.now();
-        s.totalRuns += 1;
-        try {
-          await publishSettlementEvent({
-            eventType: "settlement.schedule.manual_trigger" as any,
-            batchId: batchRef,
-          } as any);
-          // @ts-expect-error middleware type mismatch
-          await tbRecordSettlementTransfer({
-            batchId: batchRef,
-            amount: 0,
-          });
-        } catch (e) {
-          // @ts-expect-error middleware type mismatch
-          logger.warn("[SettlementScheduler] Middleware:", e);
-        }
-        return {
-          executionId: batchRef,
-          scheduleId: input.scheduleId,
-          status: "running",
-          startedAt: Date.now(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no settlement-schedules table exists in this deployment;
+      // the previous implementation inserted reconciliation batches for
+      // phantom in-memory schedules.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "automatedSettlementScheduler.triggerManual is not available in this deployment",
+      });
     }),
 });

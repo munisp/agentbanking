@@ -1,1 +1,1 @@
-"""Multi-currency wallet service"""\n
+"""Multi-currency wallet service"""

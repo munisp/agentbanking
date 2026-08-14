@@ -1,1 +1,1 @@
-"""Currency conversion service"""\n
+"""Currency conversion service"""

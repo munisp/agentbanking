@@ -1,1 +1,1 @@
-"""Bank account verification service"""\n
+"""Bank account verification service"""

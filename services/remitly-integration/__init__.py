@@ -1,1 +1,1 @@
-"""Remitly payment integration"""\n
+"""Remitly payment integration"""

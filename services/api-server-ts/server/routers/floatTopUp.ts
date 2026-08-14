@@ -19,7 +19,7 @@ import {
   supervisorAgents,
   gl_journal_entries,
 } from "../../drizzle/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, count, max } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { floatTopupRequestsTotal } from "../metrics";
@@ -528,11 +528,33 @@ export const floatTopUpRouter = router({
 
   // ── Additional query/mutation procedures ─────────────────────
   getStats_floatTopUp: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      status: "operational",
-    };
+    try {
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
+      const [row] = await db
+        .select({
+          total: count(),
+          lastUpdated: max(floatTopUpRequests.updatedAt),
+        })
+        .from(floatTopUpRequests);
+      return {
+        totalRecords: Number(row?.total ?? 0),
+        lastUpdated: (row?.lastUpdated ?? new Date()).toISOString(),
+        status: "operational",
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
   }),
 
   healthCheck_floatTopUp: protectedProcedure.query(async () => {

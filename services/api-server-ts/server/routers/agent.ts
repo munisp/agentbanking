@@ -27,6 +27,11 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { agents } from "../../drizzle/schema";
 import { getJwtSecret } from "../lib/envValidation";
 import {
+  isAccountLocked,
+  recordFailedLogin,
+  clearFailedLogins,
+} from "../lib/securityHardening";
+import {
   eq,
   ilike,
   and,
@@ -135,8 +140,22 @@ export const agentRouter = router({
       );
 
       try {
-        const agent = await getAgentByCode(input.agentCode.toUpperCase());
+        // SEC-18: enforce the account lockout manager (previously never
+        // called) — key on the agent code so credential stuffing against a
+        // single agent is throttled regardless of source IP.
+        const lockKey = input.agentCode.toUpperCase();
+        const lockState = isAccountLocked(lockKey);
+        if (lockState.locked) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Account temporarily locked due to repeated failed login attempts. Try again in ${Math.ceil(lockState.remainingMs / 60000)} minute(s).`,
+          });
+        }
+
+        const agent = await getAgentByCode(lockKey);
         if (!agent) {
+          // Record the attempt to throttle user-enumeration grinding too.
+          recordFailedLogin(lockKey);
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: "Invalid agent code or PIN",
@@ -151,6 +170,7 @@ export const agentRouter = router({
 
         const valid = await bcrypt.compare(input.pin, agent.pinHash);
         if (!valid) {
+          const lockResult = recordFailedLogin(lockKey);
           await writeAuditLog({
             agentId: agent.id,
             agentCode: agent.agentCode,
@@ -159,12 +179,21 @@ export const agentRouter = router({
             resourceId: String(agent.id),
             ipAddress: ctx.req.ip ?? "unknown",
             status: "failure",
+            metadata: {
+              attemptsRemaining: lockResult.attemptsRemaining,
+              locked: lockResult.locked,
+            },
           });
           throw new TRPCError({
             code: "UNAUTHORIZED",
-            message: "Invalid agent code or PIN",
+            message: lockResult.locked
+              ? "Too many failed attempts — account temporarily locked"
+              : "Invalid agent code or PIN",
           });
         }
+
+        // Successful login clears the failed-attempt counter.
+        clearFailedLogins(lockKey);
 
         await updateAgentLastLogin(agent.id);
         await writeAuditLog({
@@ -293,6 +322,21 @@ export const agentRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // SEC-06: unauthenticated agent creation is a dev-only convenience.
+      // It is enabled ONLY outside production AND with the explicit opt-in
+      // DEV_AGENT_REGISTRATION=true (mirrors the DEV_AUTH_BYPASS gate in
+      // server/_core/context.ts). In every other case it fails closed:
+      // agent accounts must be created by an admin.
+      const devRegistrationEnabled =
+        process.env.NODE_ENV !== "production" &&
+        process.env.DEV_AGENT_REGISTRATION === "true";
+      if (!devRegistrationEnabled) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Public agent registration is disabled. An administrator must create agent accounts.",
+        });
+      }
       try {
         const existing = await getAgentByCode(input.agentCode.toUpperCase());
         if (existing) {

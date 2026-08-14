@@ -11,6 +11,7 @@ import {
   billingRoleAssignments,
 } from "../drizzle/schema";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { withIdempotencyTx } from "./lib/transactionHelper";
 
 async function getDbInstance() {
   const instance = await getDb();
@@ -133,19 +134,41 @@ export async function validateSettlementAmounts(
 }
 
 export async function executeSettlementTransfers(
-  settlements: AgentSettlement[]
+  settlements: AgentSettlement[],
+  batchId?: string
 ): Promise<void> {
-  // Update agent float balance using SQL expression (no db.raw)
+  // FF-6: each settlement credit is claimed in the idempotency_keys table in
+  // the SAME DB transaction as the float update, under a deterministic
+  // operation id, so a Temporal activity retry no-ops instead of
+  // double-crediting the agent.
   for (const s of settlements) {
-    const _db = await getDbInstance();
-
-    await _db
-      .update(agents)
-      .set({
-        floatBalance: sql`${agents.floatBalance} + ${String(s.netAmount)}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, s.agentId));
+    // Deterministic operation id: batchId+agentId when the workflow supplies
+    // its batchId; otherwise a content-derived fallback (agent + exact amount
+    // + tx count) which is still stable across retries of the same activity.
+    const opId = batchId
+      ? `SETTLE-${batchId}-${s.agentId}`
+      : `SETTLE-${s.agentId}-${Math.round(s.netAmount * 100)}-${s.transactionCount}`;
+    await withIdempotencyTx(
+      `settlement-credit:${opId}`,
+      {
+        agentId: s.agentId,
+        netAmount: s.netAmount,
+        transactionCount: s.transactionCount,
+        currency: s.currency,
+      },
+      async tx => {
+        // Update agent float balance using SQL expression (no db.raw)
+        await tx
+          .update(agents)
+          .set({
+            floatBalance: sql`${agents.floatBalance} + ${s.netAmount.toFixed(2)}::numeric`,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, s.agentId));
+        return opId;
+      },
+      `executeSettlementTransfers:${opId}`
+    );
   }
 }
 
@@ -252,17 +275,31 @@ export async function executeFloatTransfer(input: {
   currency: string;
   requestId: string;
 }): Promise<string> {
-  const transferRef = `FLT-${input.requestId}-${Date.now()}`;
-  const _db = await getDbInstance();
-
-  await _db
-    .update(agents)
-    .set({
-      floatBalance: sql`${agents.floatBalance} + ${String(input.amount)}`,
-      updatedAt: new Date(),
-    })
-    .where(eq(agents.id, input.agentId));
-  return transferRef;
+  // FF-6: deterministic transfer ref (was FLT-{requestId}-{Date.now()}, which
+  // made every Temporal retry a brand-new transfer). The ref is derived from
+  // the requestId alone and the float credit + idempotency claim commit in
+  // the SAME DB transaction, so a retry replays the stored ref and no-ops.
+  const transferRef = `FLT-${input.requestId}`;
+  return withIdempotencyTx(
+    `float-transfer:${input.requestId}`,
+    {
+      agentId: input.agentId,
+      amount: input.amount,
+      currency: input.currency,
+      requestId: input.requestId,
+    },
+    async tx => {
+      await tx
+        .update(agents)
+        .set({
+          floatBalance: sql`${agents.floatBalance} + ${input.amount.toFixed(2)}::numeric`,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, input.agentId));
+      return transferRef;
+    },
+    `executeFloatTransfer:${input.requestId}`
+  );
 }
 
 export async function notifyAgentOfFloat(input: {
@@ -425,7 +462,7 @@ export async function rollbackBillingStep(input: {
     case "assign_billing_roles":
       await _db
         .delete(billingRoleAssignments)
-        .where(eq(billingRoleAssignments.tenantId, input.tenantId));
+        .where(eq(tenantBillingConfig.tenantId, input.tenantId));
       break;
     case "activate_billing":
       await _db

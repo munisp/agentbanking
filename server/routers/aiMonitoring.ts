@@ -456,11 +456,9 @@ export const aiMonitoringRouter = router({
         action: "acknowledgeAlert",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "acknowledgeAlert",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "aiMonitoring.acknowledgeAlert is not available in this deployment",
+      });
     }),
 });

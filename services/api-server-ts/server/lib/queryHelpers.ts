@@ -195,37 +195,9 @@ export async function batchProcess<T, R>(
 
 // ─── Optimistic Locking ───────────────────────────────────────────────────────
 
-/**
- * Update a record with optimistic locking via version column.
- * Returns null if the version has changed (concurrent update detected).
- */
-export async function updateWithVersion<T>(
-  tableName: string,
-  id: number,
-  currentVersion: number,
-  updates: Record<string, unknown>
-): Promise<T | null> {
-  const db = await getDb();
-  const setClause = Object.entries(updates)
-    .map(([k]) => `"${k}" = $${k}`)
-    .join(", ");
-
-  const result = await db.execute(
-    sql`UPDATE "${sql.raw(tableName)}"
-        SET ${sql.raw(
-          Object.entries(updates)
-            .map(([k, v]) => `"${k}" = ${JSON.stringify(v)}`)
-            .join(", ")
-        )},
-            "version" = "version" + 1,
-            "updatedAt" = NOW()
-        WHERE "id" = ${id}
-        AND "version" = ${currentVersion}
-        RETURNING *`
-  );
-
-  return (result.rows[0] as T) ?? null;
-}
+// SEC-22: updateWithVersion() was removed. It built SQL by inlining values
+// via sql.raw (SQL-injection-prone) and had zero call sites in the repo.
+// Use Drizzle's typed update() with .set() and a version predicate instead.
 
 // ─── JSONB Query Helpers ──────────────────────────────────────────────────────
 
@@ -283,39 +255,10 @@ export const window = {
 
 // ─── Upsert Helper ────────────────────────────────────────────────────────────
 
-/**
- * Type-safe upsert with conflict resolution.
- */
-export async function upsertOne<T>(
-  tableName: string,
-  data: Record<string, unknown>,
-  conflictColumns: string[],
-  updateColumns?: string[]
-): Promise<T> {
-  const db = await getDb();
-  const cols = Object.keys(data);
-  const vals = Object.values(data);
-
-  const colList = cols.map((c) => `"${c}"`).join(", ");
-  const valList = vals.map((_, i) => `$${i + 1}`).join(", ");
-  const conflictList = conflictColumns.map((c) => `"${c}"`).join(", ");
-  const updateCols = updateColumns ?? cols.filter((c) => !conflictColumns.includes(c));
-  const updateSet = updateCols
-    .map((c) => `"${c}" = EXCLUDED."${c}"`)
-    .join(", ");
-
-  const result = await db.execute(
-    sql.raw(
-      `INSERT INTO "${tableName}" (${colList})
-       VALUES (${vals.map((v) => `'${JSON.stringify(v)}'`).join(", ")})
-       ON CONFLICT (${conflictList})
-       DO UPDATE SET ${updateSet}, "updatedAt" = NOW()
-       RETURNING *`
-    )
-  );
-
-  return result.rows[0] as T;
-}
+// SEC-22: upsertOne() was removed. It inlined row values into a sql.raw()
+// query string without bound parameters (SQL-injection-prone) and had zero
+// call sites in the repo. Use Drizzle's .insert().onConflictDoUpdate()
+// instead, which binds parameters safely.
 
 // ─── Explain Analyze Helper (development only) ───────────────────────────────
 

@@ -358,12 +358,7 @@ export const businessRulesRouter = router({
           .where(eq(systemConfig.key, "biz_rule_" + input.ruleId))
           .limit(1);
         if (rows.length === 0)
-          // Middleware fan-out (fail-open)
-          await publishbusinessRulesMiddleware("updateRule", `${Date.now()}`, {
-            action: "updateRule",
-          }).catch(() => {});
-
-        return { success: false, error: "Rule not found" };
+          return { success: false, error: "Rule not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const { ruleId, ...updates } = input;
         const merged = {
@@ -382,6 +377,11 @@ export const businessRulesRouter = router({
           status: "success",
           metadata: updates,
         });
+        // Middleware fan-out (fail-open)
+        await publishbusinessRulesMiddleware("updateRule", `${Date.now()}`, {
+          action: "updateRule",
+        }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

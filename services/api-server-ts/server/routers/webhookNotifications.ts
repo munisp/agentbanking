@@ -371,10 +371,9 @@ export const webhookNotificationsRouter = router({
   toggleWebhook: protectedProcedure
     .input(z.object({ webhookId: z.string(), active: z.boolean() }))
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        webhookId: input.webhookId,
-        active: input.active,
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "webhookNotifications.toggleWebhook is not available in this deployment",
+      });
     }),
 });

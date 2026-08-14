@@ -10,6 +10,7 @@ import { getDb, writeAuditLog } from "../db";
 import { commissionPayouts, agents } from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
 import {
   validateAmount,
@@ -146,6 +147,22 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // SEC-04b/SEC-07: IDOR fix — an agent may only request a payout for its
+      // own agent code (derived from the agent session cookie). Back-office
+      // admins may request on behalf of any agent.
+      if (ctx.user.role !== "admin") {
+        const session = await getAgentFromCookie(ctx.req);
+        if (
+          !session ||
+          session.agentCode.toUpperCase() !== input.agentCode.toUpperCase()
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Agents may only request payouts for their own agent code",
+          });
+        }
+      }
       const _fees = calculateFee(
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
@@ -229,6 +246,14 @@ export const commissionPayoutsRouter = router({
   approve: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      // SEC-04b: payout approval moves money — require an admin/manager
+      // (back-office supervisor) role, not just any authenticated session.
+      if (!["admin", "manager", "supervisor"].includes(ctx.user.role)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admin or manager role required to approve payouts",
+        });
+      }
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

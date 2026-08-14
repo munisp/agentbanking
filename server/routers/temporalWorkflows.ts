@@ -423,11 +423,9 @@ export const temporalWorkflowsRouter = router({
         action: "start",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "start",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "temporalWorkflows.start is not available in this deployment",
+      });
     }),
 });

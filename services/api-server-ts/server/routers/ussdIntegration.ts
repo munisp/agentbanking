@@ -330,22 +330,18 @@ export const ussdIntegrationRouter = router({
         "Executed ussdIntegration mutation"
       );
 
-      return {
-        success: true,
-        action: "startSession",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ussdIntegration.startSession is not available in this deployment",
+      });
     }),
   processInput: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "processInput",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ussdIntegration.processInput is not available in this deployment",
+      });
     }),
   getStats: protectedProcedure.query(async () => {
     return {

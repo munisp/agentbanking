@@ -167,7 +167,9 @@ export async function SettlementWorkflow(
         break;
       }
 
-      await executeSettlementTransfers([settlements[i]]);
+      // FF-6: pass batchId so the activity derives a deterministic,
+      // retry-safe operation id (SETTLE-{batchId}-{agentId}).
+      await executeSettlementTransfers([settlements[i]], input.batchId);
       status.agentsProcessed = i + 1;
       status.totalAmountSettled += settlements[i].amount;
     }

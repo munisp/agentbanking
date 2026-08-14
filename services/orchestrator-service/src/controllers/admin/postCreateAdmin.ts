@@ -11,6 +11,21 @@ import { createAdminWorkflow } from "../../workflows/createAdminWorkflow";
 export const postCreateAdmin = asyncHandler(async (req, res) => {
   const payload = validateRequest(CreateAdminSchema, req.body);
 
+  // SEC-10: no hard-coded default admin password. When the request omits the
+  // initial password, fall back to the ADMIN_INITIAL_PASSWORD environment
+  // variable and fail closed when it is not configured.
+  const rawPayload = payload as Record<string, unknown>;
+  if (!rawPayload.password) {
+    const envPassword = process.env.ADMIN_INITIAL_PASSWORD;
+    if (!envPassword) {
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        "Admin initial password is not configured: set ADMIN_INITIAL_PASSWORD on the orchestrator service or provide a password in the request.",
+      );
+    }
+    rawPayload.password = envPassword;
+  }
+
   const tenantId = req.headers["x-tenant-id"] as string;
   const keycloakRealm = "54agent_" + tenantId;
   const keycloakPublicKey = await tenantService.getKeycloakPublicKey(tenantId);

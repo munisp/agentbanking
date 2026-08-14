@@ -1,10 +1,10 @@
 // @ts-nocheck
 // Sprint 87: Double-entry validation, auto-balancing, reversal workflow
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { gl_journal_entries } from "../../drizzle/schema";
-import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
+import { gl_journal_entries, gl_accounts } from "../../drizzle/schema";
+import { eq, desc, and, count, sql, gte, lte, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { validateInput } from "../lib/routerHelpers";
 
@@ -185,7 +185,7 @@ export const gl_journal_entriesRouter = router({
         });
       }
     }),
-  create: protectedProcedure
+  create: adminProcedure
     .input(
       z.object({
         debitAccountId: z.number(),
@@ -216,9 +216,32 @@ export const gl_journal_entriesRouter = router({
             code: "BAD_REQUEST",
             message: "Debit and credit accounts must be different",
           });
+        // FF-11: both GL accounts must exist in the chart of accounts
+        const foundAccounts = await db
+          .select({ id: gl_accounts.id })
+          .from(gl_accounts)
+          .where(
+            inArray(gl_accounts.id, [
+              input.debitAccountId,
+              input.creditAccountId,
+            ])
+          );
+        if (foundAccounts.length !== 2)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Debit and/or credit GL account does not exist",
+          });
+        // FF-11: entryNumber is NOT NULL UNIQUE — generate it instead of
+        // omitting it (which made every create fail at runtime).
         const [row] = await db
           .insert(gl_journal_entries)
-          .values({ ...input, status: "posted", postedAt: new Date() } as any)
+          .values({
+            ...input,
+            entryNumber: `JE-${crypto.randomUUID()}`,
+            postedBy: String(ctx.user.id),
+            status: "posted",
+            postedAt: new Date(),
+          } as any)
           .returning();
         await writeAuditLog({
           agentId:
@@ -286,6 +309,7 @@ export const gl_journal_entriesRouter = router({
           .insert(gl_journal_entries)
           // @ts-expect-error middleware type mismatch
           .values({
+            entryNumber: `JE-REV-${crypto.randomUUID()}`,
             debitAccountId: original.creditAccountId,
             creditAccountId: original.debitAccountId,
             amount: original.amount,
@@ -320,27 +344,8 @@ export const gl_journal_entriesRouter = router({
         });
       }
     }),
-  delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        await db
-          .delete(gl_journal_entries)
-          .where(eq(gl_journal_entries.id, input.id));
-        // Middleware fan-out (fail-open)
-        await publishglJournalEntriesCrudMiddleware("delete", `${Date.now()}`, {
-          action: "delete",
-        }).catch(() => {});
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // FF-11: the delete endpoint was removed. The general ledger is
+  // append-only — posted journal entries must never be hard-deleted.
+  // Corrections are made via gl_journal_entries.reverse (compensating
+  // contra-entry), which preserves the audit trail.
 });

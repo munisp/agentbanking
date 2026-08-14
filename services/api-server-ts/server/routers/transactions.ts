@@ -58,6 +58,10 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  failIdempotencyKey,
+  hashIdempotencyPayload,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -371,6 +375,10 @@ export const transactionsRouter = router({
         "Executed transactions mutation"
       );
 
+      // FF-3: idempotency claim state (declared outside try so the catch block
+      // can release a claim whose operation failed).
+      let idemHash: string | null = null;
+      let idemClaimed = false;
       try {
         const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
         if (!agent) {
@@ -387,20 +395,30 @@ export const transactionsRouter = router({
             message: "Agent not found",
           });
 
-        // ── P0-A: Idempotency guard ────────────────────────────────────────────
+        // ── P0-A / FF-3: Idempotency — claim-first ─────────────────────────────
+        // The key is CLAIMED (INSERT ... ON CONFLICT DO NOTHING) before any
+        // money movement (TigerBeetle transfer, Postgres insert, float update),
+        // closing the old check-then-act race where two concurrent submissions
+        // with the same key both passed the existence check. The claim binds the
+        // key to a hash of the request payload: same key + different payload →
+        // 409 CONFLICT. A prior failed claim may be resumed by this same payload;
+        // a completed claim replays the stored result. DB errors fail closed
+        // (throw) inside claimIdempotencyKey.
         if (input.idempotencyKey) {
-          const db = (await getDb())!;
-          if (db) {
-            const existing = await db
-              .select()
-              .from(transactions)
-              .where(eq(transactions.idempotencyKey, input.idempotencyKey))
-              .limit(1);
-            if (existing.length > 0) {
-              // Return the existing transaction — idempotent replay
-              return existing[0];
-            }
+          idemHash = hashIdempotencyPayload({
+            agentId: agent.id,
+            type: input.type,
+            amount: input.amount,
+            customerAccount: input.customerAccount ?? null,
+            customerPhone: input.customerPhone ?? null,
+            destinationAccount: input.destinationAccount ?? null,
+          });
+          const claim = await claimIdempotencyKey(input.idempotencyKey, idemHash);
+          if (claim.kind === "replay") {
+            // Same key + same payload already completed — return stored result.
+            return claim.result as any;
           }
+          idemClaimed = true;
         }
 
         // ── Gate 0: Remote kill-switch (terminal disabled by admin) ──────────────
@@ -1008,7 +1026,7 @@ export const transactionsRouter = router({
             console.error("[Fraud] Engine import failed:", e)
           );
 
-        return {
+        const resultPayload = {
           success: true,
           ref,
           transactionId: tx.id,
@@ -1016,7 +1034,26 @@ export const transactionsRouter = router({
           pointsEarned,
           floatBalance: newFloatBalance,
         };
+        // FF-3: finalize the idempotency claim so a replay returns this result.
+        if (idemClaimed && input.idempotencyKey && idemHash) {
+          await completeIdempotencyKey(
+            input.idempotencyKey,
+            idemHash,
+            resultPayload
+          );
+        }
+        return resultPayload;
       } catch (error) {
+        // FF-3: release the claim (mark failed) so a retry presenting the same
+        // key + payload can safely resume. Only done when THIS request holds
+        // the claim — never touch another request's claim row.
+        if (idemClaimed && input.idempotencyKey && idemHash) {
+          await failIdempotencyKey(
+            input.idempotencyKey,
+            idemHash,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -1219,17 +1256,100 @@ export const transactionsRouter = router({
           };
         }
 
-        // Immediate reversal
-        await updateTransactionStatus(
-          tx.id,
-          "reversed",
-          input.reason ?? "Agent-initiated reversal"
-        );
-        if (tx.type === "Cash In") await updateAgentFloat(agent.id, -amount);
-        if (FLOAT_DEBIT_TYPES.has(tx.type))
-          await updateAgentFloat(agent.id, amount);
-
+        // Immediate reversal — FF-13: atomic status flip + float restore in ONE
+        // DB transaction. Only 'success' transactions are reversible; the
+        // conditional UPDATE makes a concurrent double-reversal (or an attempt
+        // on a pending/failed transaction) affect 0 rows → 409 CONFLICT.
         const reversalRef = generateRef();
+        await withTransaction(async dbTx => {
+          const flipped = await dbTx
+            .update(transactions)
+            .set({
+              status: "reversed",
+              failureReason: input.reason ?? "Agent-initiated reversal",
+            })
+            .where(
+              and(
+                eq(transactions.id, tx.id),
+                eq(transactions.status, "success")
+              )
+            )
+            .returning({ id: transactions.id });
+          if (flipped.length === 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Transaction is not in a reversible state — only successful transactions can be reversed (a concurrent reversal may have completed)",
+            });
+          }
+          // Guarded float restore — exact inverse of the original direction,
+          // executed in the same transaction as the status flip.
+          if (tx.type === "Cash In") {
+            // Original credited float → debit it back, never below zero.
+            const debited = await dbTx
+              .update(agents)
+              .set({
+                floatBalance: sql`"floatBalance" - ${String(tx.amount)}::numeric`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(agents.id, agent.id),
+                  sql`"floatBalance" >= ${String(tx.amount)}::numeric`
+                )
+              )
+              .returning({ id: agents.id });
+            if (debited.length === 0) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message:
+                  "Agent float is insufficient to reverse this Cash In — reversal rolled back",
+              });
+            }
+          }
+          if (FLOAT_DEBIT_TYPES.has(tx.type)) {
+            // Original debited float → credit it back.
+            await dbTx
+              .update(agents)
+              .set({
+                floatBalance: sql`"floatBalance" + ${String(tx.amount)}::numeric`,
+                updatedAt: new Date(),
+              })
+              .where(eq(agents.id, agent.id));
+          }
+        }, "transactions.reverse");
+
+        // TigerBeetle contra-entry: tbClient exposes NO post/void/contra API
+        // (inspected server/tbClient.ts at the pinned commit — only
+        // tbCreateTransfer / tbEnsureAgentAccount / tbGetAgentBalance /
+        // tbGetSyncStatus / tbIsHealthy). Posting a fresh swapped-accounts
+        // transfer would not be linked to the original transfer and cannot be
+        // retried safely, so instead of silently skipping the ledger leg we
+        // record a ledger_reconciliation_pending audit row carrying the exact
+        // contra-transfer the reconciliation job (or an operator) must post.
+        await writeAuditLog({
+          agentId: agent.id,
+          agentCode: agent.agentCode,
+          action: "LEDGER_RECONCILIATION_PENDING",
+          resource: "ledger_contra",
+          resourceId: input.ref,
+          status: "warning",
+          metadata: {
+            reason:
+              "tbClient has no post/void/contra API — TigerBeetle contra-transfer pending reconciliation",
+            originalRef: input.ref,
+            reversalRef,
+            contraDebitAccount: FLOAT_CREDIT_TYPES.has(tx.type)
+              ? `float-${agent.agentCode}`
+              : "sys-bank-reserve",
+            contraCreditAccount: FLOAT_CREDIT_TYPES.has(tx.type)
+              ? "sys-bank-reserve"
+              : `float-${agent.agentCode}`,
+            amountKobo: Math.round(amount * 100),
+            ledger: 2000,
+            code: 300,
+          },
+        });
         await writeAuditLog({
           agentId: agent.id,
           agentCode: agent.agentCode,

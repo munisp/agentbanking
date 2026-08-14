@@ -134,6 +134,7 @@ import com.nigerianremittance.cdp.MockCdpAuthService
 import com.nigerianremittance.cdp.OtpRequest
 import com.nigerianremittance.cdp.OtpVerificationRequest
 import com.nigerianremittance.ui.AuthStep
+import com.pos54link.app.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -178,7 +179,10 @@ data class LoginUiState(
  * @param authService The service responsible for communicating with the CDP authentication API.
  */
 class LoginViewModel(
-    private val authService: CdpAuthService = MockCdpAuthService() // Use Mock for demonstration
+    // Mock service only in debug builds. No real CDP OTP backend is connected
+    // in this source set, so release builds fail closed instead of generating
+    // and accepting a client-side OTP.
+    private val authService: CdpAuthService = if (BuildConfig.DEBUG) MockCdpAuthService() else throw IllegalStateException("OTP verification service unavailable")
 ) : ViewModel() {
 
     // Backing property to update the state internally
@@ -221,7 +225,7 @@ class LoginViewModel(
             currentState.copy(
                 otp = filteredOtp,
                 isOtpValid = isValid,
-                otpError = if (filteredOtp.isNotEmpty() && !isValid) "OTP must be 6 digits" else null,
+                otpError = if (isOtpValid.not() && !isValid) "OTP must be 6 digits" else null,
                 message = "", // Clear previous messages on input change
                 isError = false
             )

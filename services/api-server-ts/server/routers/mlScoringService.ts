@@ -387,22 +387,18 @@ export const mlScoringServiceRouter = router({
         "Executed mlScoringService mutation"
       );
 
-      return {
-        success: true,
-        action: "scoreTransaction",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "mlScoringService.scoreTransaction is not available in this deployment",
+      });
     }),
   batchScore: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "batchScore",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "mlScoringService.batchScore is not available in this deployment",
+      });
     }),
   explainScore: protectedProcedure
     .input(

@@ -138,61 +138,10 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    const txAmount =
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0;
-    const fees = calculateFee(txAmount, "transfer");
-    const commission = calculateCommission(fees.fee, "transfer");
-    const tax = calculateTax(fees.fee, "vat");
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(kycDocuments)
-          .where(eq(kycDocuments.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approve: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approve completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "approve completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "kycDocumentManagement.approve is not available in this deployment",
+    });
   });
 const reject = protectedProcedure
   .input(
@@ -202,54 +151,10 @@ const reject = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(kycDocuments)
-          .where(eq(kycDocuments.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "reject: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "reject completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "reject completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "kycDocumentManagement.reject is not available in this deployment",
+    });
   });
 const requestResubmission = protectedProcedure
   .input(

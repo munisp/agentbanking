@@ -1,17 +1,17 @@
 // 54Link NFC Tap-to-Pay Service — Go Microservice
 // Port: 8236
-// Purpose: NFC transaction processing, terminal registration, card network integration
+// Purpose: Card provisioning, payment processing, tokenization, offline sync
 // Integrations: Kafka (Dapr), Redis, Keycloak JWT, Temporal, Permify, APISIX,
 //               TigerBeetle (ledger), Fluvio (streaming), Mojaloop (interop),
 //               OpenSearch (indexing), OpenAppSec (WAF), Lakehouse (analytics)
 //
 // Endpoints:
+//   POST /api/v1/nfc/cards/provision — Provision NFC card for customer
+//   POST /api/v1/nfc/pay — Process NFC tap payment
+//   POST /api/v1/nfc/cards/{id}/block — Block NFC card
+//   POST /api/v1/nfc/cards/{id}/topup — Top up NFC card balance
+//   GET  /api/v1/nfc/cards/{id}/transactions — Card transaction history
 //   POST /api/v1/nfc/terminals/register — Register NFC terminal
-//   POST /api/v1/nfc/transactions/process — Process NFC tap payment
-//   GET  /api/v1/nfc/transactions/{id} — Transaction details
-//   POST /api/v1/nfc/tokens/create — Tokenize card data
-//   GET  /api/v1/nfc/terminals/{id}/status — Terminal health status
-//   POST /api/v1/nfc/terminals/{id}/activate — Activate terminal
 
 package main
 
@@ -92,19 +92,19 @@ func envOr(key, fallback string) string {
 // ── Kafka Topics ───────────────────────────────────────────────────────────────
 
 const (
-	TopicA = "nfc.tap.initiated"
-	TopicB = "nfc.transaction.completed"
-	TopicC = "nfc.terminal.registered"
-	TopicD = "nfc.fraud.detected"
+	TopicA = "nfc.card.provisioned"
+	TopicB = "nfc.payment.completed"
+	TopicC = "nfc.card.blocked"
+	TopicD = "nfc.offline.synced"
 )
 
 // ── Database Tables ────────────────────────────────────────────────────────────
 
 const (
-	TableA = "nfc_terminals"
-	TableB = "nfc_transactions"
-	TableC = "nfc_card_tokens"
-	TableD = "nfc_device_keys"
+	TableA = "nfc_cards"
+	TableB = "nfc_terminals"
+	TableC = "nfc_transactions"
+	TableD = "nfc_merchant_locations"
 )
 
 // ── Middleware Integration Clients ──────────────────────────────────────────────
@@ -383,7 +383,7 @@ func registerWithAPISIX(cfg Config, serviceName string, port string) {
 	req, _ := http.NewRequest("PUT",
 		fmt.Sprintf("%s/apisix/admin/routes/%s", cfg.ApisixAdminURL, serviceName),
 		bytes.NewReader(body))
-	req.Header.Set("X-API-KEY", "edd1c9f034335f136f87ad84b625c8f1")
+	req.Header.Set("X-API-KEY", os.Getenv("APISIX_ADMIN_KEY"))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
@@ -429,27 +429,25 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS nfc_transactions (
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS nfc_cards (
     id SERIAL PRIMARY KEY,
-    card_token_hash VARCHAR(128) NOT NULL,
-    terminal_id VARCHAR(64) NOT NULL,
-    amount NUMERIC(15,2) NOT NULL,
-    currency VARCHAR(8) DEFAULT 'NGN',
-    card_type VARCHAR(20) CHECK (card_type IN ('debit','credit','prepaid')),
-    network VARCHAR(20) CHECK (network IN ('visa','mastercard','verve')),
-    response_code VARCHAR(10),
-    auth_code VARCHAR(20),
+    card_token VARCHAR(128) NOT NULL UNIQUE,
+    card_type VARCHAR(50) DEFAULT 'debit',
+    nfc_enabled BOOLEAN DEFAULT true,
+    spending_limit NUMERIC(15,2) DEFAULT 50000,
+    daily_limit NUMERIC(15,2) DEFAULT 100000,
+    customer_id INTEGER,
     agent_id INTEGER,
-    status VARCHAR(50) DEFAULT 'pending',
+    status VARCHAR(50) DEFAULT 'active',
     data JSONB DEFAULT '{}',
     tenant_id VARCHAR(100) DEFAULT 'default',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 )`)
     if err != nil {
-        log.Printf("[Postgres] Table nfc_transactions creation failed: %v", err)
+        log.Printf("[Postgres] Table nfc_cards creation failed: %v", err)
     } else {
-        log.Printf("[Postgres] Table nfc_transactions ready (typed schema)")
+        log.Printf("[Postgres] Table nfc_cards ready (typed schema)")
     }
 	}
 
@@ -684,9 +682,10 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 type APISIXClient struct{ adminURL, apiKey string }
 
 func NewAPISIXClient(adminURL string) *APISIXClient {
+	// The admin key must come from the environment; no fallback is provided.
 	apiKey := os.Getenv("APISIX_ADMIN_KEY")
 	if apiKey == "" {
-		apiKey = "edd1c9f034335f136f87ad84b625c8f1"
+		log.Printf("[APISIX] WARNING: APISIX_ADMIN_KEY is not set; admin API calls will fail authentication")
 	}
 	return &APISIXClient{adminURL: adminURL, apiKey: apiKey}
 }
@@ -770,7 +769,7 @@ func main() {
 
 	// Stats endpoint
 	r.HandleFunc("/api/v1/stats", func(w http.ResponseWriter, _ *http.Request) {
-		stats := store.GetStats("nfc_terminals")
+		stats := store.GetStats("nfc_cards")
 		respondJSON(w, 200, stats)
 	}).Methods("GET")
 
@@ -778,13 +777,13 @@ func main() {
 	r.HandleFunc("/api/v1/list", func(w http.ResponseWriter, r *http.Request) {
 		limit := getQueryInt(r, "limit", 20)
 		offset := getQueryInt(r, "offset", 0)
-		items, total, err := store.List("nfc_terminals", limit, offset)
+		items, total, err := store.List("nfc_cards", limit, offset)
 		if err != nil {
 			respondJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
 		// Publish event via Kafka/Dapr
-		go store.dapr.Publish("nfc.tap.initiated", map[string]interface{}{"action": "list", "count": total})
+		go store.dapr.Publish("nfc.card.provisioned", map[string]interface{}{"action": "list", "count": total})
 		respondJSON(w, 200, map[string]interface{}{"items": items, "total": total})
 	}).Methods("GET")
 
@@ -801,13 +800,13 @@ func main() {
 		if body["status"] == nil {
 			body["status"] = "active"
 		}
-		id, err := store.Insert("nfc_terminals", body)
+		id, err := store.Insert("nfc_cards", body)
 		if err != nil {
 			respondJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
 		// Publish event via Kafka
-		go store.dapr.Publish("nfc.tap.initiated", map[string]interface{}{"id": id, "action": "created"})
+		go store.dapr.Publish("nfc.card.provisioned", map[string]interface{}{"id": id, "action": "created"})
 		// Record in TigerBeetle ledger
 		go store.tb.CreateTransfer(0, uint64(id), 0, 1, 1)
 		// Stream to Fluvio for real-time analytics
@@ -821,7 +820,7 @@ func main() {
 	r.HandleFunc("/api/v1/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
-		item, err := store.GetByID("nfc_terminals", id)
+		item, err := store.GetByID("nfc_cards", id)
 		if err != nil {
 			respondJSON(w, 404, map[string]string{"error": "not found"})
 			return
@@ -835,21 +834,21 @@ func main() {
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
 		body, _ := parseBody(r)
 		status, _ := body["status"].(string)
-		if err := store.UpdateStatus("nfc_terminals", id, status); err != nil {
+		if err := store.UpdateStatus("nfc_cards", id, status); err != nil {
 			respondJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
-		go store.dapr.Publish("nfc.tap.initiated", map[string]interface{}{"id": id, "status": status})
+		go store.dapr.Publish("nfc.card.provisioned", map[string]interface{}{"id": id, "status": status})
 		respondJSON(w, 200, map[string]interface{}{"id": id, "status": status})
 	}).Methods("PUT")
 
 	// Search endpoint (via OpenSearch)
 	r.HandleFunc("/api/v1/search", func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query().Get("q")
-		results, err := store.opensearch.Search("nfc_terminals", query)
+		results, err := store.opensearch.Search("nfc_cards", query)
 		if err != nil {
 			// Fallback to Postgres
-			items, total, _ := store.List("nfc_terminals", 20, 0)
+			items, total, _ := store.List("nfc_cards", 20, 0)
 			respondJSON(w, 200, map[string]interface{}{"items": items, "total": total})
 			return
 		}

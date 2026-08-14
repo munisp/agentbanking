@@ -338,34 +338,11 @@ export const disputesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database unavailable",
-        });
-
-      const [tx] = await db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.ref, input.transactionRef))
-        .limit(1);
-
-      if (!tx) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Transaction ${input.transactionRef} not found`,
-        });
-      }
-
-      // Middleware fan-out (fail-open)
-
-      await publishdisputesMiddleware("raise", `${Date.now()}`, {
-        action: "raise",
-      }).catch(() => {});
-
-      return { success: true, id: tx.id, transactionRef: input.transactionRef };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "disputes.raise is not available in this deployment",
+    });
+  }),
   addMessage: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {

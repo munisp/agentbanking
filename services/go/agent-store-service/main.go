@@ -858,7 +858,7 @@ func (mc *MiddlewareClients) registerAPIRoutes() {
 			"upstream": map[string]interface{}{"type": "roundrobin", "nodes": map[string]int{route.Upstream: 1}},
 		})
 		req, _ := http.NewRequest("PUT", mc.config.ApisixAdminURL+"/apisix/admin/routes/agent-store", bytes.NewReader(body))
-		req.Header.Set("X-API-KEY", "edd1c9f034335f136f87ad84b625c8f1")
+		req.Header.Set("X-API-KEY", os.Getenv("APISIX_ADMIN_KEY"))
 		req.Header.Set("Content-Type", "application/json")
 		mc.httpClient.Do(req)
 	}

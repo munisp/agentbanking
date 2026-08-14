@@ -225,7 +225,7 @@ class LoginViewModel(
             currentState.copy(
                 otp = filteredOtp,
                 isOtpValid = isValid,
-                otpError = if (isOtpValid.not() && !isValid) "OTP must be 6 digits" else null,
+                otpError = if (filteredOtp.isNotEmpty() && !isValid) "OTP must be 6 digits" else null,
                 message = "", // Clear previous messages on input change
                 isError = false
             )

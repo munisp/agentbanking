@@ -5,8 +5,26 @@ import { readEnv } from "../config/readEnv.config";
 import logger from "../config/logger.config";
 import { IKeycloakKeyConfig } from "../types/keycloak";
 
+// TLS certificate verification for the Keycloak Admin API is ON by default.
+// It may ONLY be disabled via the explicit opt-in env var
+// KEYCLOAK_ADMIN_INSECURE_TLS=true (e.g. a local dev Keycloak with a
+// self-signed certificate). In production this is a startup-fatal
+// misconfiguration: disabling verification exposes admin credentials and
+// tokens to MITM. (Matches the ShieldApiClient pattern, escalated to fatal.)
+const insecureTls = process.env.KEYCLOAK_ADMIN_INSECURE_TLS === "true";
+if (insecureTls) {
+  if (process.env.NODE_ENV === "production" || process.env.ENVIRONMENT === "production") {
+    throw new Error(
+      "FATAL: KEYCLOAK_ADMIN_INSECURE_TLS=true is not allowed in production — TLS certificate verification must stay enabled."
+    );
+  }
+  logger.warn(
+    "WARNING: KEYCLOAK_ADMIN_INSECURE_TLS=true — TLS certificate verification is DISABLED for the Keycloak admin client. Do not use in production."
+  );
+}
+
 const httpsAgent = new https.Agent({
-  rejectUnauthorized: false,
+  rejectUnauthorized: !insecureTls,
 });
 
 export class KeycloakAdminApiClient {

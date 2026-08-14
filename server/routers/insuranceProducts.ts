@@ -337,7 +337,14 @@ export const insuranceProductsRouter = router({
           .where(eq(systemConfig.key, "insurance_product_" + input.productId))
           .limit(1);
         if (rows.length === 0)
-          return { success: false, error: "Product not found" };
+          // Middleware fan-out (fail-open)
+          await publishinsuranceProductsMiddleware(
+            "updateProduct",
+            `${Date.now()}`,
+            { action: "updateProduct" }
+          ).catch(() => {});
+
+        return { success: false, error: "Product not found" };
         const existing = JSON.parse(String(rows[0].value ?? "{}"));
         const updated = {
           ...existing,
@@ -348,13 +355,6 @@ export const insuranceProductsRouter = router({
           .update(systemConfig)
           .set({ value: JSON.stringify(updated), updatedAt: new Date() })
           .where(eq(systemConfig.key, "insurance_product_" + input.productId));
-        // Middleware fan-out (fail-open)
-        await publishinsuranceProductsMiddleware(
-          "updateProduct",
-          `${Date.now()}`,
-          { action: "updateProduct" }
-        ).catch(() => {});
-
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

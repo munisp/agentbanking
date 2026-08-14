@@ -307,12 +307,10 @@ export const ussdIntegrationRouter = router({
         action: "processInput",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "processInput",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ussdIntegration.processInput is not available in this deployment",
+      });
     }),
   getStats: protectedProcedure.query(async () => {
     return {

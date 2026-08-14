@@ -1,7 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, desc, and, isNull, lt, gt } from "drizzle-orm";
+import { eq, desc, and, isNull, lt, gt, sql } from "drizzle-orm";
 import {
   agents,
   users,
@@ -269,27 +269,51 @@ export async function updateAgentLastLogin(id: number): Promise<void> {
     .where(eq(agents.id, id));
 }
 
+/**
+ * FF-4: Atomically adjust an agent's float balance.
+ *
+ * Replaces the previous unlocked read-modify-write (JS float arithmetic inside
+ * a transaction but with no row guard) which could lose concurrent updates and
+ * silently no-op'd on DB outage. This is a single guarded UPDATE: the balance
+ * change and the non-negative-balance check are one atomic statement, and 0
+ * affected rows (insufficient float, unknown agent, or DB outage) THROWS —
+ * callers must handle the error; money movement is never silently dropped.
+ *
+ * Same guarded pattern as repositories/agent.repository.ts adjustFloatBalance.
+ * It is inlined here because agent.repository imports this module (getDb), so
+ * delegating would create a circular import.
+ *
+ * Numeric safety: the delta is passed as a string and cast to PG numeric, so
+ * arithmetic is exact decimal — never JS float.
+ */
 export async function updateAgentFloat(
   id: number,
-  delta: number
+  delta: number | string
 ): Promise<void> {
   const db = await getDb();
-  if (!db) return;
-  if ((db as any)._isNoop) return;
-  await (db as any).transaction(async (tx: any) => {
-    const result = await tx
-      .select()
-      .from(agents)
-      .where(eq(agents.id, id))
-      .limit(1);
-    const agent = result[0];
-    if (!agent) return;
-    const newBalance = (Number(agent.floatBalance) + delta).toFixed(2);
-    await tx
-      .update(agents)
-      .set({ floatBalance: newBalance, updatedAt: new Date() })
-      .where(eq(agents.id, id));
-  });
+  if (!db || (db as any)._isNoop) {
+    // Fail closed: previously this returned silently, losing the float movement.
+    throw new Error("updateAgentFloat: database not available");
+  }
+  const deltaStr = typeof delta === "string" ? delta : delta.toFixed(2);
+  const result = await db
+    .update(agents)
+    .set({
+      floatBalance: sql`"floatBalance" + ${deltaStr}::numeric`,
+      updatedAt: new Date(),
+    } as any)
+    .where(
+      and(
+        eq(agents.id, id),
+        sql`"floatBalance" + ${deltaStr}::numeric >= 0`
+      )
+    )
+    .returning({ id: agents.id });
+  if (result.length === 0) {
+    throw new Error(
+      `updateAgentFloat: float update rejected for agent ${id} (delta ${deltaStr}) — insufficient float balance or agent not found`
+    );
+  }
 }
 
 export async function updateAgentCommission(

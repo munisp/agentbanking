@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { checkDailyLimit } from "../lib/cbnLimits";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { eq, desc, and, sql, count, sum } from "drizzle-orm";
+import { eq, desc, and, sql, count, sum, inArray } from "drizzle-orm";
 import {
   customers,
   transactions,
@@ -132,7 +132,15 @@ async function publishcustomerWalletSystemMiddleware(
 export const customerWalletSystemRouter = router({
   getBalance: protectedProcedure
     .input(z.object({ customerId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // SEC-03/FF-1: ownership check — non-admin callers may only access their
+      // own wallet (session user id doubles as the customer wallet id).
+      if (ctx.user.role !== "admin" && input.customerId !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You may only access your own wallet",
+        });
+      }
       try {
         const db = (await getDb())!;
         const [customer] = await db
@@ -147,7 +155,9 @@ export const customerWalletSystemRouter = router({
           .where(
             and(
               eq(transactions.agentId, input.customerId),
-              eq(transactions.type, "Cash In")
+              eq(transactions.type, "Cash In"),
+              // FF-1: only settled rows count towards the balance
+              inArray(transactions.status, ["success", "completed"])
             )
           )
           .limit(100);
@@ -157,7 +167,9 @@ export const customerWalletSystemRouter = router({
           .where(
             and(
               eq(transactions.agentId, input.customerId),
-              eq(transactions.type, "Cash Out")
+              eq(transactions.type, "Cash Out"),
+              // FF-1: only settled rows count towards the balance
+              inArray(transactions.status, ["success", "completed"])
             )
           )
           .limit(100);
@@ -177,7 +189,15 @@ export const customerWalletSystemRouter = router({
     }),
   getTransactions: protectedProcedure
     .input(z.object({ customerId: z.number(), limit: z.number().default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // SEC-03/FF-1: ownership check — non-admin callers may only access their
+      // own wallet (session user id doubles as the customer wallet id).
+      if (ctx.user.role !== "admin" && input.customerId !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You may only access your own wallet",
+        });
+      }
       try {
         const db = (await getDb())!;
         const rows = await db
@@ -196,7 +216,7 @@ export const customerWalletSystemRouter = router({
         });
       }
     }),
-  topUp: protectedProcedure
+  topUp: adminProcedure
     .input(
       z.object({
         customerId: z.number(),
@@ -204,105 +224,18 @@ export const customerWalletSystemRouter = router({
         source: z.string(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      try {
-        const db = (await getDb())!;
-        const [tx] = await db
-          .insert(transactions)
-          .values({
-            customerId: input.customerId,
-            amount: String(input.amount),
-            fee: String(fees.fee),
-            commission: String(commission.agentShare),
-            type: "Cash In",
-            status: "success",
-            channel: "App",
-            reference: "TOP-" + crypto.randomUUID(),
-          } as any)
-          .returning();
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-WLT-${Date.now()}`,
-          description: "Customer wallet topup",
-          debitAccountId: 1001,
-          creditAccountId: 2001,
-          amount: Math.round(input.amount * 100),
-          currency: "NGN",
-          referenceType: "transaction",
-          referenceId: String(tx.id),
-          postedBy: "system",
-          status: "posted",
-        });
-        await db.insert(auditLog).values({
-          action: "wallet_topup",
-          resource: "transactions",
-          resourceId: String(tx.id),
-          status: "success",
-          metadata: {
-            customerId: input.customerId,
-            amount: input.amount,
-            source: input.source,
-          },
-        } as any);
-        await writeAuditLog({
-          agentId:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.id ?? 0)
-              : 0,
-
-          agentCode:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.agentCode ?? "system")
-              : "system",
-
-          action: "MUTATION",
-
-          resource: "customerWalletSystem",
-
-          resourceId:
-            typeof input === "object" && input !== null && "id" in input
-              ? String((input as any).id)
-              : "new",
-
-          status: "success",
-
-          metadata: { input: typeof input === "object" ? input : {} },
-        });
-
-        await publishcustomerWalletSystemMiddleware("topUp", `${Date.now()}`, {
-          action: "topUp",
-        }).catch(() => {});
-
-        return { success: true, transactionId: tx.id, amount: input.amount };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    // SEC-03/FF-1: this endpoint previously inserted a status:"success"
+    // "Cash In" row for ANY customerId/amount with no source debit and no
+    // role check — arbitrary balance fabrication. It is now admin-gated AND
+    // fails closed: no funding rail is configured in this deployment, so no
+    // transaction row is written and no balance is credited until a funding
+    // rail confirms settlement.
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Wallet top-up is disabled: no funding rail is configured for this deployment. Balances are only credited after a funding rail confirms settlement.",
+      });
     }),
   getStats: protectedProcedure.query(async () => {
     try {

@@ -4,5 +4,7 @@ export enum PubsubTopics {
   NEW_NOTIFICATION = "54agent-new-notification",
   NEW_AUDIT = "54agent-audit",
 }
-
-export const DEFAULT_ADMIN_PASSWORD = "Admin12345!";
+// SEC-10: DEFAULT_ADMIN_PASSWORD ("Admin12345!") was removed. Hard-coded
+// fallback credentials are never acceptable. Callers must supply a password
+// explicitly or set the ADMIN_INITIAL_PASSWORD environment variable on the
+// orchestrator service; createAdminWorkflow fails closed when neither exists.

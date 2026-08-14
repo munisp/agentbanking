@@ -393,33 +393,14 @@ export const billingInvoiceRouter = router({
           (sum: any, item: any) => sum + item.total,
           0
         );
-        const taxAmount = subtotal * (input.taxRate / 100);
-        const total = subtotal + taxAmount;
-        const invoiceNumber = `INV-${input.tenantId}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}-${crypto.randomUUID().toUpperCase()}`;
-
-        const invoice: Invoice = {
-          id: `inv_${Date.now()}`,
-          tenantId: input.tenantId,
-          clientId: input.clientId,
-          invoiceNumber,
-          periodStart: input.periodStart,
-          periodEnd: input.periodEnd,
-          issueDate: new Date().toISOString(),
-          dueDate: new Date(
-            Date.now() + 30 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          status: "draft",
-          currency: input.currency,
-          subtotal,
-          taxRate: input.taxRate,
-          taxAmount,
-          total,
-          lineItems,
-          notes:
-            "Payment due within 30 days. Late payments subject to 2% monthly interest.",
-          paymentTerms: "Net 30",
-        };
-        return invoice;
+        // FAIL LOUD: no invoices table exists in the drizzle schema for this
+        // deployment, so a generated invoice cannot be persisted. Returning an
+        // unpersisted invoice object would fabricate a financial document.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "billingInvoice.generateInvoice is not available in this deployment",
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -439,31 +420,27 @@ export const billingInvoiceRouter = router({
       })
     )
     .query(async ({ input }) => {
-      try {
-        return { invoices: [], total: 0, limit: input.limit };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no invoices table exists in the drizzle schema for this
+      // deployment; the previous implementation always returned an empty,
+      // fabricated result.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "billingInvoice.listInvoices is not available in this deployment",
+      });
     }),
 
   getInvoice: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
     .query(async ({ input }) => {
-      try {
-        return { invoice: null, found: false };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no invoices table exists in the drizzle schema for this
+      // deployment; the previous implementation always returned a fabricated
+      // { invoice: null, found: false }.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "billingInvoice.getInvoice is not available in this deployment",
+      });
     }),
 
   markPaid: protectedProcedure
@@ -475,21 +452,12 @@ export const billingInvoiceRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          invoiceId: input.invoiceId,
-          status: "paid",
-          paymentRef: input.paymentRef,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no invoices table exists to mark paid; the previous
+      // implementation fabricated success without persistence.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "billingInvoice.markPaid is not available in this deployment",
+      });
     }),
 
   generateCreditNote: protectedProcedure
@@ -501,22 +469,13 @@ export const billingInvoiceRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return {
-          creditNoteNumber: `CN-${crypto.randomUUID().toUpperCase()}`,
-          invoiceId: input.invoiceId,
-          amount: input.amount,
-          reason: input.reason,
-          status: "issued",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no invoices/credit-notes table exists; the previous
+      // implementation fabricated a credit note without persistence.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "billingInvoice.generateCreditNote is not available in this deployment",
+      });
     }),
 
   exportInvoices: protectedProcedure
@@ -529,19 +488,13 @@ export const billingInvoiceRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return {
-          downloadUrl: `/api/billing/export/${input.tenantId}/${input.format}`,
-          expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: no invoices table exists to export; the previous
+      // implementation fabricated a download URL.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "billingInvoice.exportInvoices is not available in this deployment",
+      });
     }),
 
   convertCurrency: protectedProcedure
@@ -553,32 +506,13 @@ export const billingInvoiceRouter = router({
       })
     )
     .query(async ({ input }) => {
-      try {
-        const rates: Record<string, number> = {
-          USD: 0.00065,
-          EUR: 0.0006,
-          GBP: 0.00052,
-          GHS: 0.0078,
-          KES: 0.084,
-          ZAR: 0.012,
-        };
-        const rate = rates[input.to] || 1;
-        return {
-          originalAmount: input.amount,
-          convertedAmount: input.amount * rate,
-          rate,
-          from: input.from,
-          to: input.to,
-          timestamp: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // FAIL LOUD: previously used hardcoded static FX rates presented as
+      // current rates. No FX rate provider is configured in this deployment.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "billingInvoice.convertCurrency is not available in this deployment",
+      });
     }),
 
   // Sprint 82: Stripe Invoice Integration

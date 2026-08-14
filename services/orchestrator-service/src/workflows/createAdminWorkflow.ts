@@ -1,7 +1,6 @@
 import { ApplicationFailure, proxyActivities } from "@temporalio/workflow";
 import * as activities from "../activities";
 import { ICreateAdminWorkflow } from "../types/workflows";
-import { DEFAULT_ADMIN_PASSWORD } from "../utils/constants";
 import {
   CustomerRole,
   NotificationCategory,
@@ -29,6 +28,17 @@ export async function createAdminWorkflow(
     startToCloseTimeout: "1m",
   });
 
+  // SEC-10: no default/fallback admin password. The caller must supply one
+  // (postCreateAdmin injects ADMIN_INITIAL_PASSWORD from the environment when
+  // the request omits it). Fail closed and non-retryable when absent.
+  if (!args.password) {
+    throw new ApplicationFailure(
+      "Admin initial password is required: pass args.password or set ADMIN_INITIAL_PASSWORD on the orchestrator service.",
+      "NonRetriableApplicationError",
+      true,
+    );
+  }
+
   try {
     // 01a. Create Auth Profile with named Permify role (v2.perm)
     const auth = await createAuthProfile({
@@ -44,8 +54,8 @@ export async function createAdminWorkflow(
     // 01b. Setup Password
     await setupPassword({
       keycloak_id: auth.auth.keycloak_id,
-      password: args.password || DEFAULT_ADMIN_PASSWORD,
-      confirm_password: args.password || DEFAULT_ADMIN_PASSWORD,
+      password: args.password,
+      confirm_password: args.password,
       tenant_id: args.tenantId,
       keycloak_realm: args.keycloakRealm,
       keycloak_pub_key: args.keycloakPublicKey,

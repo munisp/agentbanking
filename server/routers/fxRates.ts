@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
@@ -254,8 +254,16 @@ export const fxRatesRouter = router({
         });
       }
     }),
-  updateRates: protectedProcedure
-    .input(z.object({ rates: z.record(z.string(), z.number()) }))
+  updateRates: adminProcedure
+    .input(
+      z.object({
+        // FF-14: rates must be positive, finite numbers
+        rates: z.record(z.string(), z.number().positive().finite()),
+        // Explicit override flag required when a new rate deviates more than
+        // 50x from the currently stored rate for that currency.
+        allowLargeDeviation: z.boolean().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       // ── Enforce STATUS_TRANSITIONS state machine ──
       if (typeof input === "object" && "status" in input) {
@@ -281,6 +289,31 @@ export const fxRatesRouter = router({
       const tax = calculateTax(fees.fee, "vat");
       try {
         const db = (await getDb())!;
+        // FF-14: sanity bounds — every rate must be > 0 and finite (enforced
+        // by the input schema), and unless allowLargeDeviation=true is passed
+        // explicitly, no rate may move more than 50x from the stored value.
+        const [existing] = await db
+          .select()
+          .from(systemConfig)
+          .where(eq(systemConfig.key, "fx_rates"))
+          .limit(1);
+        if (existing && !input.allowLargeDeviation) {
+          const parsedExisting = JSON.parse(String(existing.value));
+          const currentRates: Record<string, number> =
+            parsedExisting.rates ?? parsedExisting;
+          for (const [ccy, rate] of Object.entries(input.rates)) {
+            const prev = currentRates[ccy];
+            if (typeof prev === "number" && prev > 0) {
+              const ratio = rate / prev;
+              if (ratio > 50 || ratio < 1 / 50) {
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message: `Rate for ${ccy} deviates more than 50x from the stored rate (${prev} → ${rate}). Pass allowLargeDeviation=true to override.`,
+                });
+              }
+            }
+          }
+        }
         // Manual (admin-set) rates — stored in the documented shape with an
         // explicit base + fetchedAt so convert/getRates can reason about them.
         const payload = {
@@ -301,7 +334,11 @@ export const fxRatesRouter = router({
           resource: "fx_rates",
           resourceId: "rates",
           status: "success",
-          metadata: { rates: input.rates },
+          metadata: {
+            rates: input.rates,
+            actorUserId: ctx.user.id,
+            allowLargeDeviation: input.allowLargeDeviation === true,
+          },
         });
         await writeAuditLog({
           agentId:

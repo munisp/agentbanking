@@ -432,18 +432,11 @@ export const mlScoringServiceRouter = router({
     }),
   batchScore: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
-    .mutation(async ({ input }) => {
-      // Middleware fan-out (fail-open)
-      await publishmlScoringServiceMiddleware("batchScore", `${Date.now()}`, {
-        action: "batchScore",
-      }).catch(() => {});
-
-      return {
-        success: true,
-        action: "batchScore",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "mlScoringService.batchScore is not available in this deployment",
+      });
     }),
   explainScore: protectedProcedure
     .input(

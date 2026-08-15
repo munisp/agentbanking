@@ -18,10 +18,10 @@ export default function CustomerJourneyMapper() {
   >("overview");
 
   const kpis = [
-    { label: "Journeys Tracked", value: "45,231" },
-    { label: "Completion Rate", value: "78.4%" },
-    { label: "Avg Steps", value: "4.2" },
-    { label: "Drop-offs", value: "21.6%" },
+    { label: "Journeys Tracked", value: "—" },
+    { label: "Completion Rate", value: "—" },
+    { label: "Avg Steps", value: "—" },
+    { label: "Drop-offs", value: "—" },
   ];
 
   const columns = ["Journey ID", "Customer", "Steps", "Status", "Duration"];

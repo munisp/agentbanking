@@ -429,7 +429,7 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-	    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS nfc_transactions (
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS nfc_transactions (
     id SERIAL PRIMARY KEY,
     card_token_hash VARCHAR(128) NOT NULL,
     terminal_id VARCHAR(64) NOT NULL,

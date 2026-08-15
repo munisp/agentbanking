@@ -429,7 +429,7 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-	    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS pension_contributions (
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS pension_contributions (
     id SERIAL PRIMARY KEY,
     contributor_name VARCHAR(200) NOT NULL,
     pension_id VARCHAR(50) NOT NULL,

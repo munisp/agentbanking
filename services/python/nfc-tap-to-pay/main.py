@@ -1,8 +1,8 @@
 """
 54Link NFC Tap-to-Pay — Python Microservice
-Port: 8238
+Port: 8253
 
-Device fleet management, transaction analytics, fraud pattern detection
+Transaction analytics, tokenization metrics, terminal performance
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   GET  /api/v1/nfc/analytics/transactions — Transaction analytics
-#   GET  /api/v1/nfc/analytics/terminals — Terminal fleet analytics
-#   POST /api/v1/nfc/analytics/fraud-check — Real-time fraud detection
-#   GET  /api/v1/nfc/analytics/heatmap — Transaction heatmap by location
+#   GET  /api/v1/nfc/analytics/transactions — Tap transaction analytics
+#   GET  /api/v1/nfc/analytics/tokenization — Tokenization success metrics
+#   GET  /api/v1/nfc/analytics/terminals — Terminal performance analysis
+#   GET  /api/v1/nfc/analytics/fraud — Tap fraud pattern detection
 """
 
 import os
@@ -73,7 +73,7 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PORT = int(os.getenv("PORT", "8238"))
+PORT = int(os.getenv("PORT", "8253"))
 DAPR_HTTP_PORT = int(os.getenv("DAPR_HTTP_PORT", "3500"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/12")
 FLUVIO_ENDPOINT = os.getenv("FLUVIO_ENDPOINT", "localhost:9003")
@@ -130,7 +130,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
     title="NFC Tap-to-Pay Analytics Engine",
-    description="Device fleet management, transaction analytics, fraud pattern detection",
+    description="Transaction analytics, tokenization metrics, terminal performance",
     version="1.0.0",
 )
 
@@ -559,7 +559,10 @@ class APISIXClient:
     """APISIX API Gateway admin client for dynamic route management."""
 
     def __init__(self, admin_url: str = "http://localhost:9180",
-                 api_key: str = "edd1c9f034335f136f87ad84b625c8f1"):
+                 api_key: str = None):
+        api_key = api_key or os.environ.get("APISIX_ADMIN_KEY", "")
+        if not api_key:
+            raise RuntimeError("APISIX_ADMIN_KEY environment variable is required (no default admin key is permitted)")
         self.admin_url = admin_url
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=5.0)
@@ -865,7 +868,7 @@ async def register_apisix():
             await client.put(
                 f"{APISIX_ADMIN_URL}/apisix/admin/routes/nfc-tap-to-pay-analytics",
                 json=route,
-                headers={"X-API-KEY": "edd1c9f034335f136f87ad84b625c8f1"},
+                headers={"X-API-KEY": os.environ["APISIX_ADMIN_KEY"]},
             )
             logger.info(f"[APISIX] Registered nfc-tap-to-pay-analytics")
     except Exception as e:

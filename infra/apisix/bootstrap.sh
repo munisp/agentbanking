@@ -232,6 +232,7 @@ apisix_put "/routes/5" '{
   "uri": "/api/v1/fraud/*",
   "upstream_id": "5",
   "plugins": {
+    "key-auth": {},
     "limit-req": {"rate": 100, "burst": 200, "key": "remote_addr"}
   },
   "priority": 100

@@ -28,6 +28,9 @@ from circuit_breaker import circuit_breaker_registry, ResilientHttpClient
 from inventory_reservation import InventoryReservationManager, InsufficientInventoryError
 from idempotency import IdempotencyService, IdempotencyConflictError, IdempotencyInProgressError
 from kafka_consumer import (
+    InventoryEventConsumer, InventoryEventProducer,
+    InventoryEventType, create_default_consumer
+)
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -54,10 +57,6 @@ def _graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
-
-    InventoryEventConsumer, InventoryEventProducer,
-    InventoryEventType, create_default_consumer
-)
 from batch_inventory import BatchInventoryService, BatchItem, BatchResult
 from temporal_workflows import temporal_service, OrderRequest, OrderResult
 from carrier_api import (

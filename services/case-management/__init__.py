@@ -1,1 +1,1 @@
-"""Case management for disputes"""\n
+"""Case management for disputes"""

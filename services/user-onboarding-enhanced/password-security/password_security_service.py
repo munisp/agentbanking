@@ -248,7 +248,7 @@ class PasswordSecurityService:
             # HIBP (Have I Been Pwned) API requires SHA-1 k-anonymity model per spec
         # HIBP (Have I Been Pwned) API requires SHA-1 k-anonymity model per spec
         # HIBP (Have I Been Pwned) API requires SHA-1 k-anonymity model per spec
-        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest()  # noqa: S324 - HIBP protocol requirement  # noqa: S324 - HIBP protocol requirement  # noqa: S324 - HIBP protocol requirement.upper()
+            sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest()  # noqa: S324 - HIBP protocol requirement  # noqa: S324 - HIBP protocol requirement  # noqa: S324 - HIBP protocol requirement.upper()
             
             # Send only first 5 characters (k-anonymity)
             prefix = sha1_hash[:5]

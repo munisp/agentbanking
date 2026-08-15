@@ -362,16 +362,31 @@ export const settlementNettingEngineRouter = router({
   settleSession: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
     .mutation(async ({ input }) => {
-      const db = (await getDb())!;
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      }
       const numId = parseInt(input.sessionId.replace(/\D/g, "")) || 0;
+      const confirmationRef = `SREF-${Date.now()}`;
       try {
         await db
           .update(merchantSettlements)
-          .set({ status: "settled", settledAt: new Date() } as any)
+          .set({
+            status: "settled",
+            settledAt: new Date(),
+            bankRef: confirmationRef,
+          } as any)
           .where(eq(merchantSettlements.id, numId));
       } catch (e) {
         // @ts-expect-error middleware type mismatch
         logger.warn("[NettingEngine]", e);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to persist settlement confirmation",
+        });
       }
       try {
         await publishEvent(
@@ -384,7 +399,7 @@ export const settlementNettingEngineRouter = router({
         sessionId: input.sessionId,
         status: "settled",
         settledAt: new Date().toISOString(),
-        confirmationRef: `SREF-${Date.now()}`,
+        confirmationRef,
       };
     }),
 });

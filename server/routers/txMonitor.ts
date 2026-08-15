@@ -326,18 +326,18 @@ export const txMonitorRouter = router({
           .where(eq(systemConfig.key, "tx_alert_rule_" + input.ruleId))
           .limit(1);
         if (rows.length === 0)
-          // Middleware fan-out (fail-open)
-          await publishtxMonitorMiddleware("toggleRule", `${Date.now()}`, {
-            action: "toggleRule",
-          }).catch(() => {});
-
-        return { success: false, error: "Rule not found" };
+          return { success: false, error: "Rule not found" };
         const data = JSON.parse(String(rows[0].value ?? "{}"));
         data.enabled = input.enabled;
         await db
           .update(systemConfig)
           .set({ value: JSON.stringify(data), updatedAt: new Date() })
           .where(eq(systemConfig.key, "tx_alert_rule_" + input.ruleId));
+        // Middleware fan-out (fail-open)
+        await publishtxMonitorMiddleware("toggleRule", `${Date.now()}`, {
+          action: "toggleRule",
+        }).catch(() => {});
+
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

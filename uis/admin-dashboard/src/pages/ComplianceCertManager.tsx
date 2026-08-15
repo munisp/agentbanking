@@ -19,10 +19,10 @@ export default function ComplianceCertManager() {
   >("overview");
 
   const kpis = [
-    { label: "Active Certs", value: "2,341" },
-    { label: "Expiring Soon", value: "45" },
-    { label: "Revoked", value: "12" },
-    { label: "Renewal Rate", value: "98.2%" },
+    { label: "Active Certs", value: "—" },
+    { label: "Expiring Soon", value: "—" },
+    { label: "Revoked", value: "—" },
+    { label: "Renewal Rate", value: "—" },
   ];
 
   const columns = ["Certificate", "Type", "Agent", "Expires", "Status"];

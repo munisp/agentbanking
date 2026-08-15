@@ -2,7 +2,7 @@
 54Link IoT Smart POS — Python Microservice
 Port: 8268
 
-Predictive maintenance ML, failure prediction, fleet optimization
+Device telemetry analytics, transaction patterns, predictive maintenance
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   POST /api/v1/iot/ml/predict-failure — Predict device failure
-#   GET  /api/v1/iot/analytics/fleet — Fleet health analytics
-#   GET  /api/v1/iot/analytics/utilization — Device utilization patterns
-#   POST /api/v1/iot/ml/optimize-maintenance — Maintenance schedule optimization
+#   GET  /api/v1/pos/analytics/telemetry — Device telemetry dashboard
+#   GET  /api/v1/pos/analytics/patterns — Transaction pattern analysis
+#   POST /api/v1/pos/analytics/maintenance — Predictive maintenance alerts
+#   GET  /api/v1/pos/analytics/fleet — Fleet health overview
 """
 
 import os
@@ -101,14 +101,14 @@ _db_pool = None
 async def get_db_pool():
     global _db_pool
     if _db_pool is None:
-        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        _db_pool = await asyncpg.create_pool(DATABASE_URL)
     return _db_pool
 
 async def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
+        if pool:
+            await pool.execute(
                 "INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)",
                 action, entity_id, data,
             )
@@ -117,7 +117,7 @@ async def log_audit(action: str, entity_id: str, data: str = ""):
 
 app = FastAPI(
     title="IoT Smart POS Analytics Engine",
-    description="Predictive maintenance ML, failure prediction, fleet optimization",
+    description="Device telemetry analytics, transaction patterns, predictive maintenance",
     version="1.0.0",
 )
 apply_middleware(app, enable_auth=True)
@@ -547,7 +547,10 @@ class APISIXClient:
     """APISIX API Gateway admin client for dynamic route management."""
 
     def __init__(self, admin_url: str = "http://localhost:9180",
-                 api_key: str = "edd1c9f034335f136f87ad84b625c8f1"):
+                 api_key: str = None):
+        api_key = api_key or os.environ.get("APISIX_ADMIN_KEY", "")
+        if not api_key:
+            raise RuntimeError("APISIX_ADMIN_KEY environment variable is required (no default admin key is permitted)")
         self.admin_url = admin_url
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=5.0)
@@ -830,7 +833,7 @@ async def detect_anomalies(threshold: float = QueryParam(default=2.0)):
 @app.get("/api/v1/analytics/search")
 async def search_analytics(q: str = QueryParam(..., min_length=1)):
     # Try OpenSearch first
-    results = await opensearch.search("iot_devices", q)
+    results = await opensearch.search("pos_devices", q)
     if results:
         return {"items": results, "total": len(results), "source": "opensearch"}
     # Fallback to in-memory
@@ -853,7 +856,7 @@ async def register_apisix():
             await client.put(
                 f"{APISIX_ADMIN_URL}/apisix/admin/routes/iot-smart-pos-analytics",
                 json=route,
-                headers={"X-API-KEY": "edd1c9f034335f136f87ad84b625c8f1"},
+                headers={"X-API-KEY": os.environ["APISIX_ADMIN_KEY"]},
             )
             logger.info(f"[APISIX] Registered iot-smart-pos-analytics")
     except Exception as e:

@@ -24,7 +24,6 @@ import {
   auditLog,
   systemConfig,
   txMonitoringAlerts,
-  realtime_tx_alerts,
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
@@ -449,89 +448,20 @@ export const txMonitorRouter = router({
 
   acknowledgeAlert: openProcedure
     .input(z.object({ alertId: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const id = Number(input.alertId);
-        if (!Number.isInteger(id) || id <= 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "alertId must be a numeric alert id",
-          });
-        }
-        const acknowledgedAt = new Date();
-        const updated = await db
-          .update(realtime_tx_alerts)
-          .set({ acknowledged: true, acknowledgedAt })
-          .where(eq(realtime_tx_alerts.id, id))
-          .returning();
-        if (updated.length === 0) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `Alert ${input.alertId} not found`,
-          });
-        }
-        return {
-          success: true,
-          alertId: input.alertId,
-          status: "acknowledged",
-          acknowledgedAt: acknowledgedAt.toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "txMonitor.acknowledgeAlert is not available in this deployment",
+      });
     }),
 
   resolveAlert: openProcedure
     .input(z.object({ alertId: z.string(), resolution: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const id = Number(input.alertId);
-        if (!Number.isInteger(id) || id <= 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "alertId must be a numeric alert id",
-          });
-        }
-        const resolvedAt = new Date();
-        const updated = await db
-          .update(txMonitoringAlerts)
-          .set({
-            resolved: true,
-            resolvedAt,
-            metadata: JSON.stringify({ resolution: input.resolution }),
-          })
-          .where(eq(txMonitoringAlerts.id, id))
-          .returning();
-        if (updated.length === 0) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `Alert ${input.alertId} not found`,
-          });
-        }
-        return {
-          success: true,
-          alertId: input.alertId,
-          status: "resolved",
-          resolution: input.resolution,
-          resolvedAt: resolvedAt.toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "txMonitor.resolveAlert is not available in this deployment",
+      });
     }),
 
   getDashboard: openProcedure.query(async () => {

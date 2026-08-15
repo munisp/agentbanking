@@ -240,7 +240,7 @@ function FloatContent() {
                   <div className="font-medium">{name}</div>
                   <div className="text-xs text-muted-foreground">
                     {agentId}
-                    </div>
+                  </div>
                 </td>
                 <td className="p-3 text-right font-mono font-medium">
                   {formatNaira(balance)}

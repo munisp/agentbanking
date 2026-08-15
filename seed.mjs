@@ -1,12 +1,12 @@
-// SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 #!/usr/bin/env node
+// SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
  * seed.mjs — 54Link POS Shell Master Seed Script (Phase 163 — All 65 Tables)
  *
  * Usage:
  *   POSTGRES_URL=postgresql://... node seed.mjs
- *   # Or with default local connection:
- *   node seed.mjs
+ *   # Or, for local development only, with a passwordless localhost database:
+ *   ALLOW_INSECURE_LOCAL_DB=true node seed.mjs
  *
  * Safe to re-run — uses ON CONFLICT DO NOTHING for idempotency.
  */
@@ -16,10 +16,25 @@ import { randomUUID } from "crypto";
 
 const { Pool } = pg;
 
-const POSTGRES_URL =
-  process.env.POSTGRES_URL ??
-  process.env.DATABASE_URL ??
-  "postgresql://posadmin:pos54link2026@localhost:5432/pos54link";
+// The database connection must come from the environment; there is no
+// hardcoded credential default. A passwordless localhost DSN is allowed only
+// with an explicit ALLOW_INSECURE_LOCAL_DB=true opt-in, and never in production.
+const ALLOW_INSECURE_LOCAL_DB = process.env.ALLOW_INSECURE_LOCAL_DB === "true";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+let POSTGRES_URL = process.env.POSTGRES_URL ?? process.env.DATABASE_URL;
+if (!POSTGRES_URL) {
+  if (IS_PRODUCTION) {
+    console.error("FATAL: DATABASE_URL (or POSTGRES_URL) must be set when NODE_ENV=production; no default database credential exists.");
+    process.exit(1);
+  }
+  if (!ALLOW_INSECURE_LOCAL_DB) {
+    console.error("FATAL: DATABASE_URL (or POSTGRES_URL) is not set. Set it, or set ALLOW_INSECURE_LOCAL_DB=true to use a passwordless localhost DSN for local development only.");
+    process.exit(1);
+  }
+  console.warn("WARNING: ALLOW_INSECURE_LOCAL_DB=true — using passwordless localhost database DSN (development only).");
+  POSTGRES_URL = "postgresql://localhost:5432/pos54link";
+}
 
 const pool = new Pool({ connectionString: POSTGRES_URL, ssl: false });
 
@@ -409,7 +424,7 @@ async function seed() {
       GEOFENCE_IDS.push(id);
       await client.query(
         `INSERT INTO geofence_zones (id, name, center_lat, center_lon, radius_meters, is_active, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
         [id, zone.name, zone.lat, zone.lon, zone.radius, true, daysAgo(60)]
       );
     }
@@ -844,7 +859,7 @@ async function seed() {
     console.log("🔁 [54/65] erp_sync_log...");
     await client.query(
       `INSERT INTO erp_sync_log (id, entity_type, entity_id, status, synced_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [uid(), "transaction", uid(), "success", daysAgo(1)]
     );
     console.log("  ✓ 1 ERP sync log entry");

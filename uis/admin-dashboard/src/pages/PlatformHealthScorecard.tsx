@@ -18,10 +18,10 @@ export default function PlatformHealthScorecard() {
   >("overview");
 
   const kpis = [
-    { label: "Overall Score", value: "94.7" },
-    { label: "Subsystems OK", value: "18/20" },
-    { label: "Alerts", value: "3" },
-    { label: "Uptime", value: "99.98%" },
+    { label: "Overall Score", value: "—" },
+    { label: "Subsystems OK", value: "—" },
+    { label: "Alerts", value: "—" },
+    { label: "Uptime", value: "—" },
   ];
 
   const columns = ["Subsystem", "Score", "Status", "Last Check", "Trend"];

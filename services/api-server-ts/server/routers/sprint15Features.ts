@@ -294,33 +294,27 @@ export const bulkNotifRouter = router({
   createCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "createCampaign",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.createCampaign is not available in this deployment",
+    });
+  }),
   startCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "startCampaign",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.startCampaign is not available in this deployment",
+    });
+  }),
   pauseCampaign: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "pauseCampaign",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.pauseCampaign is not available in this deployment",
+    });
+  }),
 });
 
 // Retry Queue Router
@@ -337,42 +331,27 @@ export const retryQueueRouter = router({
   retry: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.retry is not available in this deployment",
+    });
+  }),
   retryNow: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "retryNow",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.retryNow is not available in this deployment",
+    });
+  }),
   purgeDeadLetters: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "purgeDeadLetters",
-        id: input?.id ?? null,
-        purged: 0,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.purgeDeadLetters is not available in this deployment",
+    });
+  }),
 });
 
 // Digest Router
@@ -401,30 +380,21 @@ export const rateLimitDashboardRouter = router({
   getStatus: protectedProcedure.query(async () => {
     return {
       endpoints: [],
-      globalLimit: 1000,
+      globalLimit: 0,
       currentUsage: 0,
-      windowMs: 60000,
-      resetAt: new Date(Date.now() + 60000).toISOString(),
+      windowMs: 0,
+      resetAt: null,
+      source: "unavailable",
     };
   }),
   updateLimit: protectedProcedure
     .input(z.object({ endpoint: z.string(), limit: z.number() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          endpoint: input.endpoint,
-          newLimit: input.limit,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.updateLimit is not available in this deployment",
+    });
+  }),
 });
 
 // System Config Router
@@ -440,21 +410,11 @@ export const sysConfigRouter = router({
   update: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          key: input.key,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.update is not available in this deployment",
+    });
+  }),
 });
 
 // Session Management Router
@@ -465,41 +425,27 @@ export const sessionMgmtRouter = router({
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          sessionId: input.sessionId,
-          revokedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.revoke is not available in this deployment",
+    });
+  }),
   forceLogout: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "forceLogout",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.forceLogout is not available in this deployment",
+    });
+  }),
   logoutAll: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "logoutAll",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.logoutAll is not available in this deployment",
+    });
+  }),
 });
 
 // Data Export Router
@@ -529,7 +475,12 @@ export const dataExportRouter = router({
     .input(z.object({ jobId: z.string() }))
     .query(async ({ input }) => {
       try {
-        return { jobId: input.jobId, status: "completed", downloadUrl: null };
+        return {
+          jobId: input.jobId,
+          status: "unknown",
+          downloadUrl: null,
+          source: "unavailable",
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -563,13 +514,11 @@ export const dataExportRouter = router({
   createJob: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "createJob",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.createJob is not available in this deployment",
+    });
+  }),
 });
 
 // Changelog Router
@@ -617,35 +566,20 @@ export const webhookRetryRouter = router({
   retryWebhook: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.retryWebhook is not available in this deployment",
+    });
+  }),
 });
 
 // Event Bus Router
 export const eventBusRouter = router({
   getTopics: protectedProcedure.query(async () => {
     return {
-      topics: [
-        "transactions",
-        "agents",
-        "settlements",
-        "disputes",
-        "compliance",
-      ],
+      topics: [],
       activeSubscribers: 0,
+      source: "unavailable",
     };
   }),
   publish: protectedProcedure
@@ -653,35 +587,21 @@ export const eventBusRouter = router({
       z.object({ topic: z.string(), payload: z.record(z.string(), z.any()) })
     )
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          topic: input.topic,
-          publishedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.publish is not available in this deployment",
+    });
+  }),
 });
 
 // Service Health Router
 export const serviceHealthRouter = router({
   getAll: protectedProcedure.query(async () => {
     return {
-      services: [
-        { name: "database", status: "healthy", latencyMs: 5 },
-        { name: "cache", status: "healthy", latencyMs: 1 },
-        { name: "queue", status: "healthy", latencyMs: 3 },
-        { name: "storage", status: "healthy", latencyMs: 10 },
-      ],
-      overallStatus: "healthy",
+      services: [],
+      overallStatus: "unknown",
       checkedAt: new Date().toISOString(),
+      source: "unavailable",
     };
   }),
 });
@@ -710,47 +630,14 @@ export const cacheRouter = router({
     const { getCacheMetrics } = await import("../lib/cacheAside");
     const m = getCacheMetrics();
     return [
-      {
-        id: "system-config",
-        name: "System Config",
-        prefix: "config:",
-        ttl: 3600,
-        strategy: "write_through",
-        entries: m.total,
-      },
-      {
-        id: "commission-rules",
-        name: "Commission Rules",
-        prefix: "commission:",
-        ttl: 1800,
-        strategy: "ttl",
-        entries: 0,
-      },
-      {
-        id: "exchange-rates",
-        name: "Exchange Rates",
-        prefix: "fx:",
-        ttl: 900,
-        strategy: "ttl",
-        entries: 0,
-      },
-      {
-        id: "platform-settings",
-        name: "Platform Settings",
-        prefix: "platform:",
-        ttl: 1800,
-        strategy: "event_driven",
-        entries: 0,
-      },
-      {
-        id: "session-data",
-        name: "Session Data",
-        prefix: "session:",
-        ttl: 86400,
-        strategy: "ttl",
-        entries: 0,
-      },
-    ];
+    ] as Array<{
+      id: string;
+      name: string;
+      prefix: string;
+      ttl: number;
+      strategy: string;
+      entries: number;
+    }>;;
   }),
   flush: protectedProcedure
     .input(z.object({ pattern: z.string().optional() }))
@@ -800,8 +687,9 @@ export const notificationAnalyticsRouter = router({
       totalSent: 0,
       totalDelivered: 0,
       totalFailed: 0,
-      deliveryRate: 1.0,
+      deliveryRate: 0,
       channels: { sms: 0, email: 0, push: 0 },
+      source: "unavailable",
     };
   }),
   getChannelBreakdown: protectedProcedure
@@ -826,6 +714,7 @@ export const notificationAnalyticsRouter = router({
       active: 0,
       pending: 0,
       lastUpdated: new Date().toISOString(),
+      source: "unavailable",
     };
   }),
   dailyTrend: protectedProcedure
@@ -844,10 +733,11 @@ export const userQuietHoursRouter = router({
   get: protectedProcedure.query(async () => {
     return {
       enabled: false,
-      startHour: 22,
-      endHour: 7,
-      timezone: "UTC",
-      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      startHour: null,
+      endHour: null,
+      timezone: null,
+      daysOfWeek: [],
+      source: "unavailable",
     };
   }),
   update: protectedProcedure
@@ -895,39 +785,19 @@ export const notifTemplateRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.update is not available in this deployment",
+    });
+  }),
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          deletedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sprint15Features.delete is not available in this deployment",
+    });
+  }),
   preview: protectedProcedure
     .input(
       z

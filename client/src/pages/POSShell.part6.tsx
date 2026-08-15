@@ -367,7 +367,9 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
   const [applying, setApplying] = useState(false);
   const [loanRef, setLoanRef] = useState<string | null>(null);
   const [loanStatus, setLoanStatus] = useState<string | null>(null);
-  const maxLoan = credit?.maxLoanAmount != null && credit.maxLoanAmount > 0 ? credit.maxLoanAmount : 500000;
+  // No fabricated borrowing limit: when the credit query has no data the
+  // slider is disabled and the limit renders as unavailable.
+  const maxLoan = credit?.maxLoanAmount != null && credit.maxLoanAmount > 0 ? credit.maxLoanAmount : null;
 
   // Interest/total are set by the server on approval — not computed from an
   // invented rate here.
@@ -448,16 +450,17 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
               <input
                 type="range"
                 min={10000}
-                max={maxLoan}
+                max={maxLoan ?? 10000}
                 step={10000}
                 value={amount}
                 onChange={e => setAmount(Number(e.target.value))}
+                disabled={maxLoan == null}
                 className="w-full mb-4"
                 style={{ accentColor: BLUE }}
               />
               <div className="flex justify-between text-xs text-gray-500 mb-4">
                 <span>₦10,000</span>
-                <span>₦{maxLoan.toLocaleString()}</span>
+                <span>{maxLoan != null ? `₦${maxLoan.toLocaleString()}` : "Limit unavailable"}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -501,12 +504,13 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
 
             <button
               onClick={() => setStep("confirm")}
-              className="w-full py-4 rounded-2xl font-bold text-white text-lg"
+              disabled={maxLoan == null}
+              className="w-full py-4 rounded-2xl font-bold text-white text-lg disabled:opacity-40"
               style={{
                 background: `linear-gradient(135deg, ${BLUE}, oklch(0.55 0.22 280))`,
               }}
             >
-              Apply for Loan →
+              {maxLoan == null ? "Loan Offer Unavailable" : "Apply for Loan →"}
             </button>
           </>
         )}

@@ -490,14 +490,14 @@ export const cbnReportingRouter = router({
           `/api/v1/cbn-reports/${input.reportId}/submit?cbn_reference=${encodeURIComponent(input.cbnReference)}`,
           "POST"
         );
-        return (
-          svc ?? {
-            success: true,
-            reportId: input.reportId,
-            cbnReference: input.cbnReference,
-            submittedAt: new Date().toISOString(),
-          }
-        );
+        if (svc == null) {
+          throw new TRPCError({
+            code: "NOT_IMPLEMENTED",
+            message:
+              "cbnReporting.markSubmitted is not available in this deployment",
+          });
+        }
+        return svc;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -40,7 +40,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// ── Configuration ─────────────────────────────────────────────────────────
+// ── Configuration ──────────────────────────────────────────────────────────────
 
 type Config struct {
 	Port            string
@@ -89,7 +89,7 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// ── Kafka Topics ──────────────────────────────────────────────────────────
+// ── Kafka Topics ───────────────────────────────────────────────────────────────
 
 const (
 	TopicA = "carbon.project.registered"
@@ -98,7 +98,7 @@ const (
 	TopicD = "carbon.retired"
 )
 
-// ── Database Tables ───────────────────────────────────────────────────────
+// ── Database Tables ────────────────────────────────────────────────────────────
 
 const (
 	TableA = "carbon_projects"
@@ -108,7 +108,7 @@ const (
 	TableE = "carbon_verifications"
 )
 
-// ── Middleware Integration Clients ────────────────────────────────────────
+// ── Middleware Integration Clients ──────────────────────────────────────────────
 
 type DaprClient struct{ httpPort string }
 type RedisClient struct{ url string }
@@ -336,7 +336,7 @@ func (l *LakehouseClient) Query(sqlQuery string) ([]map[string]interface{}, erro
 	return result.Results, nil
 }
 
-// ── Keycloak JWT Verification ─────────────────────────────────────────────
+// ── Keycloak JWT Verification ──────────────────────────────────────────────────
 
 type Claims struct {
 	Sub      string   `json:"sub"`
@@ -359,7 +359,7 @@ func (cfg Config) verifyJWT(tokenStr string) (*Claims, error) {
 	return &claims, nil
 }
 
-// ── OpenAppSec WAF Integration ────────────────────────────────────────────
+// ── OpenAppSec WAF Integration ─────────────────────────────────────────────────
 
 func openAppSecMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -370,7 +370,7 @@ func openAppSecMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ── APISIX Registration ───────────────────────────────────────────────────
+// ── APISIX Registration ────────────────────────────────────────────────────────
 
 func registerWithAPISIX(cfg Config, serviceName string, port string) {
 	route := map[string]interface{}{
@@ -400,7 +400,7 @@ func registerWithAPISIX(cfg Config, serviceName string, port string) {
 	log.Printf("[APISIX] Registered %s on port %s", serviceName, port)
 }
 
-// ── Data Store (Postgres) ─────────────────────────────────────────────────
+// ── Data Store (Postgres) ──────────────────────────────────────────────────────
 
 type DataStore struct {
 	db         *sql.DB
@@ -622,7 +622,7 @@ func (s *DataStore) GetStats(table string) map[string]interface{} {
 	}
 }
 
-// ── JSON helpers ──────────────────────────────────────────────────────────
+// ── JSON helpers ───────────────────────────────────────────────────────────────
 
 func respondJSON(w http.ResponseWriter, code int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -650,7 +650,7 @@ func getQueryInt(r *http.Request, key string, defaultVal int) int {
 	return i
 }
 
-// ── Auth Middleware ───────────────────────────────────────────────────────
+// ── Auth Middleware ─────────────────────────────────────────────────────────────
 
 func authMiddleware(cfg Config) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
@@ -683,7 +683,7 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 	}
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────────
 
 type APISIXClient struct{ adminURL, apiKey string }
 

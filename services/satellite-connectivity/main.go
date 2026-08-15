@@ -106,7 +106,7 @@ const (
 	TableD = "satellite_coverage_map"
 )
 
-// ── Middleware Integration Clients ─────────────────────────────────────────────
+// ── Middleware Integration Clients ──────────────────────────────────────────────
 
 type DaprClient struct{ httpPort string }
 type RedisClient struct{ url string }
@@ -644,7 +644,7 @@ func getQueryInt(r *http.Request, key string, defaultVal int) int {
 	return i
 }
 
-// ── Auth Middleware ────────────────────────────────────────────────────────────
+// ── Auth Middleware ─────────────────────────────────────────────────────────────
 
 func authMiddleware(cfg Config) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {

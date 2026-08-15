@@ -23,9 +23,6 @@ import httpx
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-sync-manager")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 import uvicorn
@@ -806,6 +803,10 @@ class TigerBeetleSyncManager:
 # Create service instance
 service = TigerBeetleSyncManager()
 app = service.app
+
+apply_middleware(app)
+setup_logging("tigerbeetle-sync-manager")
+app.include_router(metrics_router)
 
 if __name__ == "__main__":
     uvicorn.run(

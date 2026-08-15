@@ -15,11 +15,20 @@ function AnalyticsScreen({
   onBack: () => void;
   chartData?: typeof CHART_DATA;
 }) {
+  // Derived from the live hourly chart data only — no fabricated category
+  // breakdown. Categories without a live source are omitted entirely.
+  const series = chartData ?? CHART_DATA;
   const pieData = [
-    { name: "Cash In", value: 485250, color: GREEN },
-    { name: "Cash Out", value: 312000, color: BLUE },
-    { name: "Transfer", value: 94500, color: "#8b5cf6" },
-    { name: "Airtime", value: 45000, color: GOLD },
+    {
+      name: "Cash In",
+      value: series.reduce((acc, b) => acc + (Number(b?.in) || 0), 0),
+      color: GREEN,
+    },
+    {
+      name: "Cash Out",
+      value: series.reduce((acc, b) => acc + (Number(b?.out) || 0), 0),
+      color: BLUE,
+    },
   ];
   return (
     <div className="flex flex-col h-full">
@@ -129,11 +138,24 @@ function AnalyticsScreen({
           </ResponsiveContainer>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          {[
-            ["Avg Tx", "₦4,870"],
-            ["Peak Hour", "10:00"],
-            ["Busiest Day", "Saturday"],
-          ].map(([k, v]) => (
+          {(() => {
+            const rows = chartData ?? CHART_DATA;
+            let peak = "—";
+            if (rows.length > 0) {
+              const top = rows.reduce((a, b) =>
+                (Number(b?.in) || 0) + (Number(b?.out) || 0) >
+                (Number(a?.in) || 0) + (Number(a?.out) || 0)
+                  ? b
+                  : a
+              );
+              peak = String(top?.h ?? "—");
+            }
+            return [
+              ["Avg Tx", "—"],
+              ["Peak Hour", peak],
+              ["Busiest Day", "—"],
+            ];
+          })().map(([k, v]) => (
             <div
               key={k}
               className="rounded-2xl p-3 text-center"

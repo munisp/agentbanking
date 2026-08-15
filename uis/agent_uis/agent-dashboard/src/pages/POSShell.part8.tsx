@@ -207,9 +207,9 @@ function TerminalConfigScreen({ onBack }: { onBack: () => void }) {
             Device Information
           </div>
           {[
-            ["Model", TERMINAL.model],
-            ["Serial No.", TERMINAL.serialNo],
-            ["Agent Code", TERMINAL.agentCode],
+            ["Model", TERMINAL.model ?? "—"],
+            ["Serial No.", TERMINAL.serialNo ?? "—"],
+            ["Agent Code", TERMINAL.agentCode ?? "—"],
             ["Firmware", "v4.2.1-NG"],
             ["OS", "PAXBiz 3.1"],
             ["App Version", "54Link v14.0.0"],
@@ -570,38 +570,15 @@ export function AIFraudExplanationModal({
   };
   onClose: () => void;
 }) {
-  const features = [
-    {
-      name: "Transaction velocity (last 1h)",
-      value: 0.34,
-      direction: "risk" as const,
-      detail: "8 transactions in 60 min (avg: 2.1)",
-    },
-    {
-      name: "Amount deviation from baseline",
-      value: 0.28,
-      direction: "risk" as const,
-      detail: "₦85K vs avg ₦12K for this customer",
-    },
-    {
-      name: "Time of day anomaly",
-      value: 0.18,
-      direction: "risk" as const,
-      detail: "02:14 AM — 94th percentile for this agent",
-    },
-    {
-      name: "Customer account age",
-      value: 0.12,
-      direction: "safe" as const,
-      detail: "Account opened 3 years ago — low risk",
-    },
-    {
-      name: "Agent trust score",
-      value: 0.08,
-      direction: "safe" as const,
-      detail: "Agent score: 94/100 — high trust",
-    },
-  ];
+  // No fabricated SHAP feature importances: a live explanation service is not
+  // connected in this deployment, so there are no per-feature contributions
+  // to display. The alert's own risk score and reason above remain real.
+  const features: Array<{
+    name: string;
+    value: number;
+    direction: "risk" | "safe";
+    detail: string;
+  }> = [];
 
   return (
     <div
@@ -663,6 +640,11 @@ export function AIFraudExplanationModal({
           <h4 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">
             Feature Contributions
           </h4>
+          {features.length === 0 && (
+            <p className="text-gray-500 text-xs">
+              Per-feature breakdown is not available in this deployment.
+            </p>
+          )}
           {features.map((f, i) => (
             <div key={i} className="mb-3">
               <div className="flex items-center justify-between mb-1">
@@ -873,8 +855,8 @@ function CashInScreen({ onBack }: { onBack: () => void }) {
               ["Type", "Cash In (Deposit)"],
               ["Amount", fmt(num)],
               ["Customer Phone", phone],
-              ["Agent", TERMINAL.agentCode],
-              ["Terminal", TERMINAL.model],
+              ["Agent", TERMINAL.agentCode ?? "—"],
+              ["Terminal", TERMINAL.model ?? "—"],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center">
                 <span
@@ -970,7 +952,7 @@ export function USSDSimulator({ onClose }: { onClose: () => void }) {
     },
     balance: {
       title:
-        "ACCOUNT BALANCE\n\nFloat Balance:\n₦485,250.00\n\nCommission Earned:\n₦12,840.00\n\n0. Back",
+        "ACCOUNT BALANCE\n\nFloat Balance:\nUnavailable\n\nCommission Earned:\nUnavailable\n\n0. Back",
       options: [{ key: "0", label: "Back", next: "main" }],
     },
     airtime: {

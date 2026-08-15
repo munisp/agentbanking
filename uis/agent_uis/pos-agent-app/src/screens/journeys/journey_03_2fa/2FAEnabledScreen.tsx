@@ -18,12 +18,12 @@ import { APIClient } from '../../lib/APIClient';
 const apiClient = new APIClient();
 
 
-interface 2FAEnabledScreenProps {
+interface TwoFAEnabledScreenProps {
   navigation: any;
   route: any;
 }
 
-export const 2FAEnabledScreen: React.FC<2FAEnabledScreenProps> = ({ navigation, route }) => {
+export const TwoFAEnabledScreen: React.FC<TwoFAEnabledScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
 

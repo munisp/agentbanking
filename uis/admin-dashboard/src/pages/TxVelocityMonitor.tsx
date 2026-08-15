@@ -19,10 +19,10 @@ export default function TxVelocityMonitor() {
   >("overview");
 
   const kpis = [
-    { label: "Current TPS", value: "342" },
-    { label: "Peak TPS", value: "1,247" },
-    { label: "Circuit Breakers", value: "0 tripped" },
-    { label: "Avg Latency", value: "45ms" },
+    { label: "Current TPS", value: "—" },
+    { label: "Peak TPS", value: "—" },
+    { label: "Circuit Breakers", value: "—" },
+    { label: "Avg Latency", value: "—" },
   ];
 
   const columns = ["Gateway", "TPS", "Latency", "Status", "Threshold"];

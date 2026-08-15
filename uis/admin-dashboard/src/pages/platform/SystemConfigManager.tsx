@@ -19,10 +19,10 @@ export default function SystemConfigManager() {
   >("overview");
 
   const kpis = [
-    { label: "Config Entries", value: "156" },
-    { label: "Feature Flags", value: "24" },
-    { label: "Rate Limits", value: "12" },
-    { label: "Last Changed", value: "2h ago" },
+    { label: "Config Entries", value: "—" },
+    { label: "Feature Flags", value: "—" },
+    { label: "Rate Limits", value: "—" },
+    { label: "Last Changed", value: "—" },
   ];
 
   const columns = ["Key", "Value", "Type", "Updated", "Actions"];

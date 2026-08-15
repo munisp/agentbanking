@@ -19,10 +19,10 @@ export default function ReportScheduler() {
   >("overview");
 
   const kpis = [
-    { label: "Active Schedules", value: "24" },
-    { label: "Reports Today", value: "18" },
-    { label: "Failed", value: "0" },
-    { label: "Recipients", value: "156" },
+    { label: "Active Schedules", value: "—" },
+    { label: "Reports Today", value: "—" },
+    { label: "Failed", value: "—" },
+    { label: "Recipients", value: "—" },
   ];
 
   const columns = ["Report Name", "Schedule", "Last Run", "Status", "Actions"];

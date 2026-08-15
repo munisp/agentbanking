@@ -433,7 +433,7 @@ func NewDataStore(cfg Config) *DataStore {
 
 	// Initialize tables if Postgres is available
 	if db != nil {
-	    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS open_banking_partners (
+		    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS open_banking_partners (
     id SERIAL PRIMARY KEY,
     partner_name VARCHAR(200) NOT NULL,
     callback_url VARCHAR(500),

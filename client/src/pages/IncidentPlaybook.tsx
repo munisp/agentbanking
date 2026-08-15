@@ -11,48 +11,18 @@ export default function IncidentPlaybook() {
     undefined,
     { retry: 1 }
   );
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
+  // Render only real backend data — no fabricated fallback rows.
+  const mockData = liveData ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
   >("overview");
 
   const kpis = [
-    { label: "Active Incidents", value: "2" },
-    { label: "Playbooks", value: "15" },
-    { label: "Avg MTTR", value: "23 min" },
-    { label: "Resolved Today", value: "7" },
+    { label: "Active Incidents", value: "—" },
+    { label: "Playbooks", value: "—" },
+    { label: "Avg MTTR", value: "—" },
+    { label: "Resolved Today", value: "—" },
   ];
 
   const columns = ["Incident", "Severity", "Playbook", "Status", "Duration"];
@@ -148,6 +118,20 @@ export default function IncidentPlaybook() {
                 </tr>
               </thead>
               <tbody>
+                {isLoading && (
+                  <tr>
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500 animate-pulse">
+                    Loading…
+                  </td>
+                  </tr>
+                )}
+                {!isLoading && filtered.length === 0 && (
+                  <tr>
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500">
+                    No records available
+                  </td>
+                  </tr>
+                )}
                 {filtered.map((row: any) => (
                   <tr
                     key={row.id}

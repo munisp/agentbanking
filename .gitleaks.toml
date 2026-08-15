@@ -67,8 +67,6 @@ regexes = [
   '''example\.com''',
   # VAPID key format examples in docs (base64url, not real keys)
   '''BExample''',
-  # APISix well-known default key (documented in APISix README, not a real secret)
-  '''edd1c9f034335f136f87ad84b625c8f1''',
   # bcrypt hash examples in tests (not real passwords)
   '''\$2[ab]\$[0-9]+\$[A-Za-z0-9./]{53}''',
 ]

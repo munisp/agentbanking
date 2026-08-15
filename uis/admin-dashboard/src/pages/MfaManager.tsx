@@ -19,10 +19,10 @@ export default function MfaManager() {
   >("overview");
 
   const kpis = [
-    { label: "MFA Enabled", value: "1,247" },
-    { label: "TOTP Users", value: "892" },
-    { label: "SMS 2FA", value: "355" },
-    { label: "Bypass Requests", value: "3" },
+    { label: "MFA Enabled", value: "—" },
+    { label: "TOTP Users", value: "—" },
+    { label: "SMS 2FA", value: "—" },
+    { label: "Bypass Requests", value: "—" },
   ];
 
   const columns = ["User", "MFA Type", "Enabled", "Last Used", "Actions"];

@@ -1,9 +1,9 @@
 // @ts-nocheck
 import type { ChallengeType as MotionChallengeType } from "./useFaceMotionDetection";
 
-type TileSize = "sm" | "md" | "lg" | "wide";
+export type TileSize = "sm" | "md" | "lg" | "wide";
 
-type TileCategory =
+export type TileCategory =
   | "transactions"
   | "customers"
   | "finance"
@@ -14,7 +14,7 @@ type TileCategory =
   | "communication";
 
 
-interface Tile {
+export interface Tile {
   id: string;
   label: string;
   icon: string;
@@ -30,7 +30,7 @@ interface Tile {
 }
 
 
-interface Transaction {
+export interface Transaction {
   id: string;
   type: string;
   amount: number;
@@ -43,26 +43,26 @@ interface Transaction {
 }
 
 
-interface TerminalInfo {
-  model: string;
-  serialNo: string;
-  agentName: string;
-  agentCode: string;
-  floatBalance: number;
-  commissionBalance: number;
-  network: "4G" | "3G" | "WiFi" | "Offline";
-  signalStrength: number;
-  batteryLevel: number;
+export interface TerminalInfo {
+  model: string | null;
+  serialNo: string | null;
+  agentName: string | null;
+  agentCode: string | null;
+  floatBalance: number | null;
+  commissionBalance: number | null;
+  network: "4G" | "3G" | "WiFi" | "Offline" | null;
+  signalStrength: number | null;
+  batteryLevel: number | null;
   online: boolean;
-  location: string;
-  tier: "Bronze" | "Silver" | "Gold" | "Platinum";
-  paperLevel: number;
+  location: string | null;
+  tier: "Bronze" | "Silver" | "Gold" | "Platinum" | null;
+  paperLevel: number | null;
   txToday: number;
   txTarget: number;
 }
 
 
-interface FraudAlert {
+export interface FraudAlert {
   id: string;
   severity: "critical" | "high" | "medium" | "low";
   type: string;
@@ -75,56 +75,62 @@ interface FraudAlert {
 }
 
 
-interface GamificationData {
-  streak: number;
-  points: number;
-  level: string;
+export interface GamificationData {
+  streak: number | null;
+  points: number | null;
+  level: string | null;
   badges: string[];
-  weeklyTarget: number;
-  weeklyProgress: number;
-  rank: number;
-  totalAgents: number;
+  weeklyTarget: number | null;
+  weeklyProgress: number | null;
+  rank: number | null;
+  totalAgents: number | null;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+// ─── Terminal identity ──────────────────────────────────────────────────────
+// No fabricated agent identity, float, or device telemetry: every field starts
+// UNKNOWN and is populated only from the signed-in agent's profile / store.
 
-const TERMINAL: TerminalInfo = {
-  model: "PAX A920 MAX",
-  serialNo: "A920M-NG-20240315-0042",
-  agentName: "Adaeze Okonkwo",
-  agentCode: "AG-LOS-004821",
-  floatBalance: 485_250.0,
-  commissionBalance: 12_840.5,
-  network: "4G",
-  signalStrength: 87,
-  batteryLevel: 73,
-  online: true,
-  location: "Ikeja, Lagos",
-  tier: "Gold",
-  paperLevel: 68,
-  txToday: 5,
-  txTarget: 7,
+export const TERMINAL_UNKNOWN: TerminalInfo = {
+  model: null,
+  serialNo: null,
+  agentName: null,
+  agentCode: null,
+  floatBalance: null,
+  commissionBalance: null,
+  network: null,
+  signalStrength: null,
+  batteryLevel: null,
+  online: false,
+  location: null,
+  tier: null,
+  paperLevel: null,
+  txToday: 0,
+  txTarget: 0,
 };
 
+// Backwards-compatible alias — all fields are null and render as "—".
 
-const GAMIFICATION: GamificationData = {
-  streak: 12,
-  points: 8_450,
-  level: "Gold Agent",
-  badges: [
-    "🏆 First ₦1M Day",
-    "⚡ Speed Demon",
-    "🛡️ Zero Fraud Month",
-    "👥 100 Customers",
-  ],
-  weeklyTarget: 50,
-  weeklyProgress: 38,
-  rank: 14,
-  totalAgents: 1_247,
+export const TERMINAL: TerminalInfo = TERMINAL_UNKNOWN;
+
+// No fabricated streaks/points/ranks: populated only from the live
+// loyalty profile / agent store; null renders as "—".
+
+export const GAMIFICATION_EMPTY: GamificationData = {
+  streak: null,
+  points: null,
+  level: null,
+  badges: [],
+  weeklyTarget: null,
+  weeklyProgress: null,
+  rank: null,
+  totalAgents: null,
 };
 
+// Backwards-compatible alias — all fields null / empty.
 
-const TILE_REGISTRY: Tile[] = [
+export const GAMIFICATION: GamificationData = GAMIFICATION_EMPTY;
+
+export const TILE_REGISTRY: Tile[] = [
   // Transactions
   {
     id: "cash-in",
@@ -711,7 +717,7 @@ const TILE_REGISTRY: Tile[] = [
 ];
 
 
-const DEFAULT_LAYOUT = [
+export const DEFAULT_LAYOUT = [
   "cash-in",
   "cash-out",
   "transfer",
@@ -737,101 +743,44 @@ const DEFAULT_LAYOUT = [
 ];
 
 
-const FRAUD_ALERTS: FraudAlert[] = [
-  {
-    id: "FA-001",
-    severity: "critical",
-    type: "Velocity Breach",
-    customer: "Unknown Customer",
-    amount: 450000,
-    time: "09:44",
-    reason: "Amount 340% above 30-day average",
-    explanation: [
-      "Amount ₦450,000 exceeds your 30-day average by 340%",
-      "Customer has 3 failed attempts in the last hour",
-      "Transaction originates from flagged device ID",
-      "CBN Tier 2 daily limit would be exceeded",
-    ],
-  },
-  {
-    id: "FA-002",
-    severity: "high",
-    type: "Structuring Detected",
-    customer: "Emeka Eze",
-    amount: 199500,
-    time: "09:12",
-    reason: "Multiple sub-threshold transactions",
-    explanation: [
-      "3 transactions of ₦199,500 within 2 hours",
-      "Pattern matches known structuring behaviour",
-      "Customer BVN linked to 2 other flagged accounts",
-    ],
-  },
-];
+// Fabricated fraud alerts removed — alert lists come from trpc.fraud.list only.
 
 
-const TICKER_ITEMS = [
-  { label: "CASH-IN", value: "₦485,250", change: "+12.4%", up: true },
-  { label: "CASH-OUT", value: "₦312,000", change: "+8.1%", up: true },
-  { label: "TRANSFERS", value: "₦94,500", change: "-3.2%", up: false },
-  { label: "FLOAT", value: "₦485,250", change: "+2.1%", up: true },
-  { label: "COMMISSION", value: "₦12,840", change: "+18.7%", up: true },
-  { label: "TX COUNT", value: "247", change: "+31", up: true },
-  { label: "SUCCESS", value: "98.4%", change: "+0.3%", up: true },
-  { label: "ALERTS", value: "2", change: "+2", up: false },
-  { label: "STREAK", value: "12 days", change: "🔥", up: true },
-  { label: "RANK", value: "#14", change: "↑3", up: true },
-];
+export const TICKER_ITEMS: Array<{ label: string; value: string; change: string; up: boolean }> = []; // no fabricated ticker KPIs
 
 
-const CHART_DATA = [
-  { h: "08:00", in: 45000, out: 12000 },
-  { h: "09:00", in: 82000, out: 35000 },
-  { h: "10:00", in: 120000, out: 67000 },
-  { h: "11:00", in: 95000, out: 48000 },
-  { h: "12:00", in: 150000, out: 89000 },
-  { h: "13:00", in: 78000, out: 42000 },
-  { h: "14:00", in: 110000, out: 55000 },
-];
+export const CHART_DATA: Array<{ h: string; in: number; out: number }> = []; // no fabricated chart series
 
 
-const COMMISSION_DATA = [
-  { day: "Mon", earned: 1800 },
-  { day: "Tue", earned: 2400 },
-  { day: "Wed", earned: 1950 },
-  { day: "Thu", earned: 3100 },
-  { day: "Fri", earned: 2800 },
-  { day: "Sat", earned: 4200 },
-  { day: "Sun", earned: 590 },
-];
+export const COMMISSION_DATA: Array<{ day: string; earned: number }> = []; // no fabricated commission series
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-const BG = "oklch(0.09 0.01 240)";
+export const BG = "oklch(0.09 0.01 240)";
 
-const CARD = "oklch(0.13 0.012 240)";
+export const CARD = "oklch(0.13 0.012 240)";
 
-const BORDER = "oklch(0.18 0.012 240)";
+export const BORDER = "oklch(0.18 0.012 240)";
 
-const BLUE = "oklch(0.60 0.22 260)";
+export const BLUE = "oklch(0.60 0.22 260)";
 
-const GREEN = "#10b981";
+export const GREEN = "#10b981";
 
-const GOLD = "#f59e0b";
+export const GOLD = "#f59e0b";
 
-const RED = "#ef4444";
+export const RED = "#ef4444";
 
-const MONO = "var(--font-mono)";
+export const MONO = "var(--font-mono)";
 
-const DISP = "var(--font-display)";
-
-
-const QR_TTL_MS = 15 * 60 * 1000;
+export const DISP = "var(--font-display)";
 
 
-type KycStep = "status" | "liveness" | "document" | "complete";
+export const QR_TTL_MS = 15 * 60 * 1000;
 
-type DocType =
+
+export type KycStep = "status" | "liveness" | "document" | "complete";
+
+export type DocType =
   | "NIN"
   | "BVN_CARD"
   | "PASSPORT"
@@ -840,7 +789,7 @@ type DocType =
 
 // Liveness challenge pool for multi-challenge active verification
 
-const KYC_CHALLENGE_POOL: Array<{
+export const KYC_CHALLENGE_POOL: Array<{
   type: MotionChallengeType;
   instruction: string;
 }> = [

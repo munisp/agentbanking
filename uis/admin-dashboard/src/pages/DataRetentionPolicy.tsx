@@ -19,10 +19,10 @@ export default function DataRetentionPolicy() {
   >("overview");
 
   const kpis = [
-    { label: "Active Policies", value: "8" },
-    { label: "Records Archived", value: "2.4M" },
-    { label: "Storage Saved", value: "12.3 GB" },
-    { label: "Next Run", value: "2h 15m" },
+    { label: "Active Policies", value: "—" },
+    { label: "Records Archived", value: "—" },
+    { label: "Storage Saved", value: "—" },
+    { label: "Next Run", value: "—" },
   ];
 
   const columns = ["Policy", "Entity", "Retention", "Records", "Status"];

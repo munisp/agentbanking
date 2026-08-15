@@ -19,10 +19,10 @@ export default function DeviceFleetManager() {
   >("overview");
 
   const kpis = [
-    { label: "Total Devices", value: "1,847" },
-    { label: "Online", value: "1,692" },
-    { label: "Needs Update", value: "45" },
-    { label: "Decommissioned", value: "110" },
+    { label: "Total Devices", value: "—" },
+    { label: "Online", value: "—" },
+    { label: "Needs Update", value: "—" },
+    { label: "Decommissioned", value: "—" },
   ];
 
   const columns = ["Serial", "Model", "Agent", "Firmware", "Status"];

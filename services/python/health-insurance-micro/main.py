@@ -2,7 +2,7 @@
 54Link Health Insurance Micro-Products — Python Microservice
 Port: 8256
 
-Claims analytics, fraud detection, underwriting risk modeling
+Actuarial modeling, claims prediction, provider analytics, fraud detection
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   GET  /api/v1/health/analytics/claims — Claims processing analytics
-#   POST /api/v1/health/analytics/fraud — Fraud detection scoring
-#   GET  /api/v1/health/analytics/utilization — Healthcare utilization patterns
-#   GET  /api/v1/health/analytics/underwriting — Underwriting risk metrics
+#   GET  /api/v1/health/analytics/actuarial — Actuarial projections
+#   GET  /api/v1/health/analytics/claims — Claims analytics and trends
+#   POST /api/v1/health/analytics/fraud-detect — Claims fraud detection
+#   GET  /api/v1/health/analytics/provider-performance — Provider analytics
 """
 
 import os
@@ -130,7 +130,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
     title="Health Insurance Micro-Products Analytics Engine",
-    description="Claims analytics, fraud detection, underwriting risk modeling",
+    description="Actuarial modeling, claims prediction, provider analytics, fraud detection",
     version="1.0.0",
 )
 

@@ -68,54 +68,10 @@ const approve = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "reversalApproval",
-      "mutation",
-      "Executed reversalApproval mutation"
-    );
-
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approve: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approve completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "approve completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reversalApproval.approve is not available in this deployment",
+    });
   });
 const reject = protectedProcedure
   .input(
@@ -125,39 +81,10 @@ const reject = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "reject: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "reject completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "reject completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reversalApproval.reject is not available in this deployment",
+    });
   });
 const escalate = protectedProcedure
   .input(
@@ -167,39 +94,10 @@ const escalate = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "escalate: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "escalate completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "escalate completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reversalApproval.escalate is not available in this deployment",
+    });
   });
 const getStats = protectedProcedure
   .input(

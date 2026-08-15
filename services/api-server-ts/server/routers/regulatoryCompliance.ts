@@ -70,54 +70,10 @@ const runCheck = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "regulatoryCompliance",
-      "mutation",
-      "Executed regulatoryCompliance mutation"
-    );
-
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "runCheck: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "runCheck completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "runCheck completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "regulatoryCompliance.runCheck is not available in this deployment",
+    });
   });
 const getStats = protectedProcedure
   .input(

@@ -2,7 +2,7 @@
 54Link Health Insurance Micro-Products — Python Microservice
 Port: 8256
 
-Actuarial modeling, claims prediction, provider analytics, fraud detection
+Claims analytics, fraud detection, underwriting risk modeling
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   GET  /api/v1/health/analytics/actuarial — Actuarial projections
-#   GET  /api/v1/health/analytics/claims — Claims analytics and trends
-#   POST /api/v1/health/analytics/fraud-detect — Claims fraud detection
-#   GET  /api/v1/health/analytics/provider-performance — Provider analytics
+#   GET  /api/v1/health/analytics/claims — Claims processing analytics
+#   POST /api/v1/health/analytics/fraud — Fraud detection scoring
+#   GET  /api/v1/health/analytics/utilization — Healthcare utilization patterns
+#   GET  /api/v1/health/analytics/underwriting — Underwriting risk metrics
 """
 
 import os
@@ -130,7 +130,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
     title="Health Insurance Micro-Products Analytics Engine",
-    description="Actuarial modeling, claims prediction, provider analytics, fraud detection",
+    description="Claims analytics, fraud detection, underwriting risk modeling",
     version="1.0.0",
 )
 
@@ -559,7 +559,10 @@ class APISIXClient:
     """APISIX API Gateway admin client for dynamic route management."""
 
     def __init__(self, admin_url: str = "http://localhost:9180",
-                 api_key: str = "edd1c9f034335f136f87ad84b625c8f1"):
+                 api_key: str = None):
+        api_key = api_key or os.environ.get("APISIX_ADMIN_KEY", "")
+        if not api_key:
+            raise RuntimeError("APISIX_ADMIN_KEY environment variable is required (no default admin key is permitted)")
         self.admin_url = admin_url
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=5.0)
@@ -865,7 +868,7 @@ async def register_apisix():
             await client.put(
                 f"{APISIX_ADMIN_URL}/apisix/admin/routes/health-insurance-micro-analytics",
                 json=route,
-                headers={"X-API-KEY": "edd1c9f034335f136f87ad84b625c8f1"},
+                headers={"X-API-KEY": os.environ["APISIX_ADMIN_KEY"]},
             )
             logger.info(f"[APISIX] Registered health-insurance-micro-analytics")
     except Exception as e:

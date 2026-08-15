@@ -380,9 +380,10 @@ export const agentHierarchyRouter = router({
   }),
   reassignParent: protectedProcedure
     .input(z.object({ agentId: z.number(), newParentId: z.number() }))
-    .mutation(async ({ input }) => ({
-      agentId: input.agentId,
-      newParentId: input.newParentId,
-      success: true,
-    })),
+    .mutation(async ({ input }) => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "agentHierarchy.reassignParent is not available in this deployment",
+    });
+  }),
 });

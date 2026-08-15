@@ -559,7 +559,10 @@ class APISIXClient:
     """APISIX API Gateway admin client for dynamic route management."""
 
     def __init__(self, admin_url: str = "http://localhost:9180",
-                 api_key: str = "edd1c9f034335f136f87ad84b625c8f1"):
+                 api_key: str = None):
+        api_key = api_key or os.environ.get("APISIX_ADMIN_KEY", "")
+        if not api_key:
+            raise RuntimeError("APISIX_ADMIN_KEY environment variable is required (no default admin key is permitted)")
         self.admin_url = admin_url
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=5.0)
@@ -865,7 +868,7 @@ async def register_apisix():
             await client.put(
                 f"{APISIX_ADMIN_URL}/apisix/admin/routes/agritech-payments-analytics",
                 json=route,
-                headers={"X-API-KEY": "edd1c9f034335f136f87ad84b625c8f1"},
+                headers={"X-API-KEY": os.environ["APISIX_ADMIN_KEY"]},
             )
             logger.info(f"[APISIX] Registered agritech-payments-analytics")
     except Exception as e:

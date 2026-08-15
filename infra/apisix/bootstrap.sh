@@ -8,12 +8,16 @@
 #
 # Environment variables:
 #   APISIX_ADMIN_URL  — APISix admin endpoint (default: http://localhost:9180)
-#   APISIX_ADMIN_KEY  — APISix admin API key (default: edd1c9f034335f136f87ad84b625c8f1)
+#   APISIX_ADMIN_KEY  — APISix admin API key (required; no default, must be set)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 APISIX_ADMIN_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-}"
+if [[ -z "$APISIX_ADMIN_KEY" ]]; then
+  echo "[ERROR] APISIX_ADMIN_KEY is not set; refusing to bootstrap without an explicit admin key." >&2
+  exit 1
+fi
 APISIX_BASE="${APISIX_ADMIN_URL}/apisix/admin"
 
 # Parse CLI args

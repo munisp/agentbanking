@@ -252,7 +252,10 @@ fi
 step "9/13 — Bootstrapping APISix routes"
 
 APISIX_ADMIN_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-if curl -sf -H "X-API-KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}" "${APISIX_ADMIN_URL}/apisix/admin/routes" &>/dev/null; then
+if [ -z "${APISIX_ADMIN_KEY:-}" ]; then
+  error "APISIX_ADMIN_KEY is required (no default admin key is permitted); set it in the environment or .env.production"
+fi
+if curl -sf -H "X-API-KEY: ${APISIX_ADMIN_KEY}" "${APISIX_ADMIN_URL}/apisix/admin/routes" &>/dev/null; then
   run "bash infra/apisix/bootstrap.sh --host ${APISIX_ADMIN_URL}"
   log "APISix routes and upstreams configured"
 else

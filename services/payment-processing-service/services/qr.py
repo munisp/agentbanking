@@ -1,4 +1,4 @@
-import datetime, json, base64
+import datetime, json, base64, os
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 from schemas import GenerateQRSchema, ValidateQRSchema, Context
@@ -67,14 +67,24 @@ class QRService:
             return False
     
     def sign_qr_payload(self, payload: dict) -> str:
-        with open("qr_private.key", "rb") as f:
-            private_key = serialization.load_pem_private_key(f.read(), password=None)
+        # The Ed25519 private key must be provided via the QR_PRIVATE_KEY_PEM
+        # environment variable (PEM-encoded). It is no longer read from a
+        # committed file. ROTATION: generate a new Ed25519 keypair, update
+        # QR_PRIVATE_KEY_PEM in the secret store, redeploy, then distribute
+        # the new public key (qr_public.key) to verifiers and revoke the old one.
+        pem = os.environ.get("QR_PRIVATE_KEY_PEM")
+        if not pem:
+            raise RuntimeError(
+                "QR_PRIVATE_KEY_PEM is not set; cannot sign QR payloads. "
+                "Provide the PEM-encoded Ed25519 private key via the environment."
+            )
+        private_key = serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
 
-            if not isinstance(private_key, ed25519.Ed25519PrivateKey):
-                raise TypeError("Loaded private key is not of type Ed25519PrivateKey")
+        if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+            raise TypeError("Loaded private key is not of type Ed25519PrivateKey")
 
-            message = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        message = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
 
-            signature = private_key.sign(message)
+        signature = private_key.sign(message)
 
-            return base64.b64encode(signature).decode("utf-8")
+        return base64.b64encode(signature).decode("utf-8")

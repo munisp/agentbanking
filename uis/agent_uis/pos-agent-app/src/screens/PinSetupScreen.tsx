@@ -148,8 +148,8 @@ const createBiometricKey = async () => {
 // --- MAIN COMPONENT ---
 
 const PinSetupScreen: React.FC<PinSetupScreenProps> = ({
-  const styles = makeStyles(colors);
  navigation }) => {
+  const styles = makeStyles(colors);
   const [state, setState] = useState<PinSetupState>({
     pin: '',
     confirmPin: '',

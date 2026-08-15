@@ -160,12 +160,12 @@ A comprehensive security audit was conducted across all 5,101 source files spann
 
 **INFO-01 — TOTP SHA-1 (INFORMATIONAL) — DOCUMENTED**
 
-| Field          | Detail                                                                                                                                                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **File**       | `services/python/mfa/main.py`                                                                                                                                                                                                          |
-| **Finding**    | HMAC-SHA1 used in TOTP — SHA-1 is deprecated                                                                                                                                                                                           |
+| Field          | Detail                                                                                                                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **File**       | `services/python/mfa/main.py`                                                                                                                                                                                  |
+| **Finding**    | HMAC-SHA1 used in TOTP — SHA-1 is deprecated                                                                                                                                                                   |
 | **Resolution** | RFC 6238 (TOTP) mandates HMAC-SHA1 for compatibility with Google Authenticator, Authy, etc. Added `# noqa: S324` comment with protocol justification. Migrate to TOTP SHA-256 (RFC 6238 §4) when dropping legacy authenticator support |
-| **Status**     | Documented (protocol requirement)                                                                                                                                                                                                      |
+| **Status**     | Documented (protocol requirement)                                                                                                                                                                              |
 
 **INFO-02 — HIBP SHA-1 (INFORMATIONAL) — DOCUMENTED**
 
@@ -218,7 +218,7 @@ All tRPC procedures validated with Zod schemas. Input size limits enforced:
 | Field       | Detail                                                                                                    |
 | ----------- | --------------------------------------------------------------------------------------------------------- |
 | **File**    | `server/_core/env.ts`                                                                                     |
-| **Finding** | APISix default admin key `edd1c9f034335f136f87ad84b625c8f1` (the well-known APISix default) was hardcoded |
+| **Finding** | APISix default admin key `edd1…` (the well-known APISix default) was hardcoded |
 | **Fix**     | Default changed to empty string. Production deployment must set `APISIX_ADMIN_KEY`                        |
 | **Status**  | Resolved                                                                                                  |
 
@@ -359,7 +359,7 @@ The following proactive security controls were added beyond fixing existing vuln
 | `X-Request-ID` middleware    | Distributed tracing correlation header    |
 | `CRON_SECRET` env var        | Protects internal scheduler endpoints     |
 | `INTERNAL_API_KEY` env var   | Service-to-service authentication         |
-| Body size limit 50MB → 10MB  | DoS protection                            |
+| Body size limit 50mb → 10mb  | DoS protection                            |
 | CORS allowlist for Socket.IO | Prevents cross-origin WebSocket hijacking |
 | VAPID key guard              | Graceful degradation when keys not set    |
 | `.gitignore` secrets entries | Prevents accidental secret commits        |

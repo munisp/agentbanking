@@ -337,7 +337,7 @@ impl MojaloopClient {
 struct APISIXClient { admin_url: String, api_key: String, client: reqwest::Client }
 impl APISIXClient {
     fn new(admin_url: String) -> Self {
-        Self { admin_url, api_key: std::env::var("APISIX_ADMIN_KEY").unwrap_or_else(|_| "edd1c9f034335f136f87ad84b625c8f1".into()), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap() }
+        Self { admin_url, api_key: std::env::var("APISIX_ADMIN_KEY").expect("APISIX_ADMIN_KEY must be set (no default admin key is permitted)"), client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap() }
     }
     async fn register_upstream(&self, upstream_id: &str, nodes: &serde_json::Value) -> bool {
         let url = format!("{}/apisix/admin/upstreams/{}", self.admin_url, upstream_id);

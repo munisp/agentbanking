@@ -810,8 +810,13 @@ export class APISIXConnector {
 
   constructor() {
     this.adminUrl = process.env.APISIX_ADMIN_URL ?? "http://localhost:9180";
-    this.apiKey =
-      process.env.APISIX_ADMIN_KEY ?? "edd1c9f034335f136f87ad84b625c8f1";
+    const adminKey = process.env.APISIX_ADMIN_KEY;
+    if (!adminKey) {
+      throw new Error(
+        "APISIX_ADMIN_KEY is not set; refusing to construct APISIXConnector without an explicit admin key"
+      );
+    }
+    this.apiKey = adminKey;
   }
 
   async createRoute(route: {

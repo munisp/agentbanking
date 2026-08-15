@@ -336,7 +336,11 @@ export const bulkOperationsRouter = router({
     }),
   analytics: protectedProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { totalJobs: 0, totalProcessed: 0, successRate: 100 };
+    if (!db)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Database unavailable",
+      });
     const [totalRow] = await db.select({ value: count() }).from(transactions);
     return {
       totalJobs: Number(totalRow.value),

@@ -36,9 +36,9 @@ export default function AgentLoanFacilityPage() {
 
   const loansQuery = {data: [], isLoading: false, refetch: () => {}};
   const statsQuery = {data: null, isLoading: false, refetch: () => {}};
-  const applyMutation = {mutate: () => toast.success("Feature coming soon"), isPending: false};
-  const approveMutation = {mutate: () => toast.success("Feature coming soon"), isPending: false};
-  const rejectMutation = {mutate: () => toast.success("Feature coming soon"), isPending: false};
+  const applyMutation = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
+  const approveMutation = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
+  const rejectMutation = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
 
   const loans: any[] = [];
   const stats: any = statsQuery.data;

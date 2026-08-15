@@ -8,8 +8,8 @@ import { Ban, Search, UserX, UserCheck, AlertTriangle } from "lucide-react";
 export default function AgentSuspensionWorkflowPage() {
   const [search, setSearch] = useState("");
   const data = {data: null, isLoading: false};
-  const suspendMut = {mutate: () => toast.success("Feature coming soon"), isPending: false};
-  const reinstateMut = {mutate: () => toast.success("Feature coming soon"), isPending: false};
+  const suspendMut = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
+  const reinstateMut = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
   const agents: any[] = [];
 
   return (

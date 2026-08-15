@@ -20,10 +20,10 @@ export default function AgentLoanOriginationV2() {
   >("overview");
 
   const kpis = [
-    { label: "Applications", value: "342" },
-    { label: "Approved", value: "289" },
-    { label: "Disbursed", value: "₦45.2M" },
-    { label: "Default Rate", value: "2.1%" },
+    { label: "Applications", value: "—" },
+    { label: "Approved", value: "—" },
+    { label: "Disbursed", value: "—" },
+    { label: "Default Rate", value: "—" },
   ];
 
   const columns = ["Application ID", "Agent", "Amount", "Status", "Date"];

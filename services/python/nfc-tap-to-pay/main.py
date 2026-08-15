@@ -1,8 +1,8 @@
 """
 54Link NFC Tap-to-Pay — Python Microservice
-Port: 8253
+Port: 8238
 
-Transaction analytics, tokenization metrics, terminal performance
+Device fleet management, transaction analytics, fraud pattern detection
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   GET  /api/v1/nfc/analytics/transactions — Tap transaction analytics
-#   GET  /api/v1/nfc/analytics/tokenization — Tokenization success metrics
-#   GET  /api/v1/nfc/analytics/terminals — Terminal performance analysis
-#   GET  /api/v1/nfc/analytics/fraud — Tap fraud pattern detection
+#   GET  /api/v1/nfc/analytics/transactions — Transaction analytics
+#   GET  /api/v1/nfc/analytics/terminals — Terminal fleet analytics
+#   POST /api/v1/nfc/analytics/fraud-check — Real-time fraud detection
+#   GET  /api/v1/nfc/analytics/heatmap — Transaction heatmap by location
 """
 
 import os
@@ -73,7 +73,7 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PORT = int(os.getenv("PORT", "8253"))
+PORT = int(os.getenv("PORT", "8238"))
 DAPR_HTTP_PORT = int(os.getenv("DAPR_HTTP_PORT", "3500"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/12")
 FLUVIO_ENDPOINT = os.getenv("FLUVIO_ENDPOINT", "localhost:9003")
@@ -130,7 +130,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
     title="NFC Tap-to-Pay Analytics Engine",
-    description="Transaction analytics, tokenization metrics, terminal performance",
+    description="Device fleet management, transaction analytics, fraud pattern detection",
     version="1.0.0",
 )
 

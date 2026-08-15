@@ -15,14 +15,12 @@ from typing import List, Optional, Dict, Any, Union
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 
+import asyncio
 import asyncpg
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, Body, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("commission-payout-and-dispute-resolution-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, validator, Field
 import json
@@ -39,6 +37,10 @@ app = FastAPI(
     description="Advanced commission payout management and dispute resolution system",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("commission-payout-and-dispute-resolution-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

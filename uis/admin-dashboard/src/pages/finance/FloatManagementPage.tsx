@@ -15,96 +15,7 @@ import {
   BarChart3,
 } from "lucide-react";
 
-const FALLBACK_FLOAT_DATA = [
-  {
-    id: 1,
-    agentId: "AGT-0012",
-    name: "Adebayo Ogundimu",
-    balance: 2500000,
-    limit: 5000000,
-    utilized: 50,
-    lastTopUp: "2026-04-22T02:00:00Z",
-    topUpAmount: 1000000,
-    status: "healthy",
-  },
-  {
-    id: 2,
-    agentId: "AGT-0034",
-    name: "Chidinma Okafor",
-    balance: 450000,
-    limit: 3000000,
-    utilized: 85,
-    lastTopUp: "2026-04-21T18:00:00Z",
-    topUpAmount: 500000,
-    status: "warning",
-  },
-  {
-    id: 3,
-    agentId: "AGT-0056",
-    name: "Ibrahim Musa",
-    balance: 3200000,
-    limit: 5000000,
-    utilized: 36,
-    lastTopUp: "2026-04-22T01:00:00Z",
-    topUpAmount: 2000000,
-    status: "healthy",
-  },
-  {
-    id: 4,
-    agentId: "AGT-0078",
-    name: "Funke Adeyemi",
-    balance: 120000,
-    limit: 2000000,
-    utilized: 94,
-    lastTopUp: "2026-04-20T12:00:00Z",
-    topUpAmount: 300000,
-    status: "critical",
-  },
-  {
-    id: 5,
-    agentId: "AGT-0023",
-    name: "Emeka Nwosu",
-    balance: 1800000,
-    limit: 4000000,
-    utilized: 55,
-    lastTopUp: "2026-04-22T00:30:00Z",
-    topUpAmount: 1500000,
-    status: "healthy",
-  },
-  {
-    id: 6,
-    agentId: "AGT-0045",
-    name: "Aisha Bello",
-    balance: 780000,
-    limit: 3000000,
-    utilized: 74,
-    lastTopUp: "2026-04-21T22:00:00Z",
-    topUpAmount: 800000,
-    status: "warning",
-  },
-  {
-    id: 7,
-    agentId: "AGT-0067",
-    name: "Olumide Bakare",
-    balance: 2100000,
-    limit: 3500000,
-    utilized: 40,
-    lastTopUp: "2026-04-21T20:00:00Z",
-    topUpAmount: 1200000,
-    status: "healthy",
-  },
-  {
-    id: 8,
-    agentId: "AGT-0089",
-    name: "Grace Eze",
-    balance: 50000,
-    limit: 1500000,
-    utilized: 97,
-    lastTopUp: "2026-04-19T15:00:00Z",
-    topUpAmount: 200000,
-    status: "critical",
-  },
-];
+// Fabricated fallback float rows removed — render only real backend data.
 
 function formatNaira(n: number) {
   return new Intl.NumberFormat("en-NG", {
@@ -152,7 +63,7 @@ function FloatContent() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const floatData = liveData ?? FALLBACK_FLOAT_DATA;
+  const floatData = liveData ?? [];
 
   const filtered = useMemo(() => {
     return floatData.filter((f: any) => {
@@ -308,6 +219,13 @@ function FloatContent() {
             </tr>
           </thead>
           <tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={6} className="p-6 text-center text-sm text-muted-foreground">
+                  No float records available
+                </td>
+              </tr>
+            )}
             {filtered.map((f: any, idx: number) => {
               const name = f.name ?? f.agent_name ?? "—";
               const agentId = f.agentId ?? f.agent_id ?? "—";
@@ -322,7 +240,7 @@ function FloatContent() {
                   <div className="font-medium">{name}</div>
                   <div className="text-xs text-muted-foreground">
                     {agentId}
-                  </div>
+                    </div>
                 </td>
                 <td className="p-3 text-right font-mono font-medium">
                   {formatNaira(balance)}

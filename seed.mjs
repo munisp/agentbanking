@@ -499,7 +499,7 @@ async function seed() {
     console.log("⚙️  [25/65] sim_orchestrator_config...");
     await client.query(
       `INSERT INTO sim_orchestrator_config (id, agent_code, primary_carrier, fallback_carrier, failover_threshold_ms, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "MTN", "Airtel", 5000, daysAgo(30)]
     );
     console.log("  ✓ 1 SIM orchestrator config");
@@ -526,7 +526,7 @@ async function seed() {
     for (let i = 0; i < DEVICE_IDS.length; i++) {
       await client.query(
         `INSERT INTO ota_update_log (id, device_id, version, status, started_at, completed_at)
-         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
         [uid(), DEVICE_IDS[i], "3.2.1", "success", daysAgo(5), daysAgo(4)]
       );
     }
@@ -674,7 +674,7 @@ async function seed() {
     for (let i = 0; i < Math.min(CUSTOMER_IDS.length, 4); i++) {
       await client.query(
         `INSERT INTO data_rights_requests (id, customer_id, request_type, status, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
         [uid(), CUSTOMER_IDS[i], drTypes[i], i === 0 ? "completed" : "pending", daysAgo(i * 5)]
       );
     }
@@ -685,7 +685,7 @@ async function seed() {
     for (const topic of ["transactions.completed", "fraud.alerts", "notifications.push"]) {
       await client.query(
         `INSERT INTO dlq_messages (id, topic, payload, error_message, retry_count, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
         [uid(), topic, JSON.stringify({ id: uid(), type: "test" }),
          "Connection timeout after 3 retries", 3, daysAgo(1)]
       );
@@ -697,7 +697,7 @@ async function seed() {
     const DISPUTE_ID = uid();
     await client.query(
       `INSERT INTO disputes (id, agent_code, reason, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [DISPUTE_ID, "AGT001", "Customer claims cash was not dispensed", "open", daysAgo(3)]
     );
     await client.query(
@@ -721,7 +721,7 @@ async function seed() {
     console.log("🔗 [43/65] shareable_links...");
     await client.query(
       `INSERT INTO shareable_links (id, agent_code, type, token, expires_at, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "referral", uid().replace(/-/g, ""), daysFromNow(30), daysAgo(5)]
     );
     console.log("  ✓ 1 shareable link");
@@ -730,7 +730,7 @@ async function seed() {
     console.log("↩️  [44/65] reversal_requests...");
     await client.query(
       `INSERT INTO reversal_requests (id, agent_code, reason, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "Wrong amount entered by agent", "pending", daysAgo(1)]
     );
     console.log("  ✓ 1 reversal request");
@@ -811,7 +811,7 @@ async function seed() {
     ]) {
       await client.query(
         `INSERT INTO analytics_metrics (id, metric_name, value, unit, recorded_at)
-         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
         [uid(), metric.name, metric.value, metric.unit, now()]
       );
     }
@@ -859,7 +859,7 @@ async function seed() {
     console.log("🔁 [54/65] erp_sync_log...");
     await client.query(
       `INSERT INTO erp_sync_log (id, entity_type, entity_id, status, synced_at)
-       VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [uid(), "transaction", uid(), "success", daysAgo(1)]
     );
     console.log("  ✓ 1 ERP sync log entry");

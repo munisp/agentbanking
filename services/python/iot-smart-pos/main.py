@@ -2,7 +2,7 @@
 54Link IoT Smart POS — Python Microservice
 Port: 8268
 
-Device telemetry analytics, transaction patterns, predictive maintenance
+Predictive maintenance ML, failure prediction, fleet optimization
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   GET  /api/v1/pos/analytics/telemetry — Device telemetry dashboard
-#   GET  /api/v1/pos/analytics/patterns — Transaction pattern analysis
-#   POST /api/v1/pos/analytics/maintenance — Predictive maintenance alerts
-#   GET  /api/v1/pos/analytics/fleet — Fleet health overview
+#   POST /api/v1/iot/ml/predict-failure — Predict device failure
+#   GET  /api/v1/iot/analytics/fleet — Fleet health analytics
+#   GET  /api/v1/iot/analytics/utilization — Device utilization patterns
+#   POST /api/v1/iot/ml/optimize-maintenance — Maintenance schedule optimization
 """
 
 import os
@@ -101,14 +101,14 @@ _db_pool = None
 async def get_db_pool():
     global _db_pool
     if _db_pool is None:
-        _db_pool = await asyncpg.create_pool(DATABASE_URL)
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     return _db_pool
 
 async def log_audit(action: str, entity_id: str, data: str = ""):
     try:
         pool = await get_db_pool()
-        if pool:
-            await pool.execute(
+        async with pool.acquire() as conn:
+            await conn.execute(
                 "INSERT INTO audit_log (action, entity_id, data) VALUES ($1, $2, $3)",
                 action, entity_id, data,
             )
@@ -117,7 +117,7 @@ async def log_audit(action: str, entity_id: str, data: str = ""):
 
 app = FastAPI(
     title="IoT Smart POS Analytics Engine",
-    description="Device telemetry analytics, transaction patterns, predictive maintenance",
+    description="Predictive maintenance ML, failure prediction, fleet optimization",
     version="1.0.0",
 )
 apply_middleware(app, enable_auth=True)
@@ -833,7 +833,7 @@ async def detect_anomalies(threshold: float = QueryParam(default=2.0)):
 @app.get("/api/v1/analytics/search")
 async def search_analytics(q: str = QueryParam(..., min_length=1)):
     # Try OpenSearch first
-    results = await opensearch.search("pos_devices", q)
+    results = await opensearch.search("iot_devices", q)
     if results:
         return {"items": results, "total": len(results), "source": "opensearch"}
     # Fallback to in-memory

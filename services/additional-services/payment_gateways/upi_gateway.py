@@ -1,3 +1,4 @@
+import os
 import time
 import json
 import hmac
@@ -12,6 +13,24 @@ from dataclasses import dataclass, field
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('UPIGateway')
 
+# --- Simulation gate ---
+# This module implements a SIMULATED NPCI UPI gateway. It is gated behind
+# UPI_SIMULATION_MODE=true; importing it without that explicit opt-in fails
+# loudly, and UPI_SIMULATION_MODE=true + ENVIRONMENT=production is fatal.
+UPI_SIMULATION_MODE = os.environ.get("UPI_SIMULATION_MODE", "false").strip().lower() == "true"
+_ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+if UPI_SIMULATION_MODE and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "UPI_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production. "
+        "Refusing to start with a simulated UPI gateway."
+    )
+if not UPI_SIMULATION_MODE:
+    raise ImportError(
+        "upi_gateway.py is a simulated NPCI UPI gateway and is disabled by default. "
+        "Set UPI_SIMULATION_MODE=true to enable it in non-production environments, "
+        "or replace it with a real NPCI UPI integration."
+    )
+
 # --- Configuration and Data Structures ---
 
 @dataclass
@@ -24,7 +43,9 @@ class UPICredentials:
     private_key_pem: str  # For Digital Signature
     public_key_pem: str   # Gateway's public key for verification
     base_url: str = "https://api.npci.simulated.com/v1"
-    webhook_secret: str = "super_secret_webhook_key"
+    # No hardcoded default: the webhook secret must come from the
+    # environment (UPI_WEBHOOK_SECRET); verification fails closed without it.
+    webhook_secret: str = field(default_factory=lambda: os.environ.get("UPI_WEBHOOK_SECRET", ""))
 
 @dataclass
 class Transaction:
@@ -64,6 +85,34 @@ class TransientError(UPIGatewayError):
 class RateLimitError(TransientError):
     """Raised when the gateway rate limit is exceeded."""
     pass
+
+# --- Retry Helper (module level so it can decorate methods at class creation) ---
+
+P = ParamSpec('P')
+R = TypeVar('R')
+
+def _retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,
+           catch_exceptions: tuple = (TransientError,)):
+    """
+    A decorator to implement exponential backoff and retry logic.
+    """
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            current_delay = delay
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return func(*args, **kwargs)
+                except catch_exceptions as e:
+                    if attempt == max_attempts:
+                        logger.error(f"API call failed after {max_attempts} attempts. Final error: {e}")
+                        raise
+                    logger.warning(f"Attempt {attempt}/{max_attempts} failed with transient error: {e}. Retrying in {current_delay:.2f}s...")
+                    time.sleep(current_delay)
+                    current_delay *= backoff
+            raise RuntimeError("Retry loop finished without returning or raising.")
+        return wrapper
+    return decorator
 
 # --- Core Adapter Class ---
 
@@ -139,6 +188,9 @@ class UPIGatewayAdapter:
         :param signature: The signature provided in the webhook header.
         :return: True if the signature is valid, False otherwise.
         """
+        if not self.credentials.webhook_secret:
+            logger.error("UPI webhook secret is not configured (set UPI_WEBHOOK_SECRET); rejecting webhook.")
+            return False
         expected_signature = hmac.new(
             self.credentials.webhook_secret.encode('utf-8'),
             body.encode('utf-8'),
@@ -186,32 +238,6 @@ class UPIGatewayAdapter:
         except Exception as e:
             logger.error(f"CRITICAL: Failed to acquire access token. Check client_id/secret. Error: {e}")
             raise AuthenticationError("Could not acquire OAuth 2.0 token.") from e
-
-    P = ParamSpec('P')
-    R = TypeVar('R')
-
-    def _retry(self, max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,
-               catch_exceptions: tuple = (TransientError,)):
-        """
-        A decorator to implement exponential backoff and retry logic.
-        """
-        def decorator(func: Callable[P, R]) -> Callable[P, R]:
-            @wraps(func)
-            def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-                current_delay = delay
-                for attempt in range(1, max_attempts + 1):
-                    try:
-                        return func(*args, **kwargs)
-                    except catch_exceptions as e:
-                        if attempt == max_attempts:
-                            logger.error(f"API call failed after {max_attempts} attempts. Final error: {e}")
-                            raise
-                        logger.warning(f"Attempt {attempt}/{max_attempts} failed with transient error: {e}. Retrying in {current_delay:.2f}s...")
-                        time.sleep(current_delay)
-                        current_delay *= backoff
-                raise RuntimeError("Retry loop finished without returning or raising.")
-            return wrapper
-        return decorator
 
     @_retry(max_attempts=5, delay=0.5, backoff=2.0, catch_exceptions=(TransientError, RateLimitError))
     def _retry_api_call(self, endpoint: str, payload: Dict[str, Any], method: str = "POST") -> Dict[str, Any]:
@@ -589,39 +615,6 @@ class UPIGatewayAdapter:
             logger.error(f"Refund failed for {original_transaction_id}: {e}")
             raise
 
-# --- Padding for Line Count (Optional but ensures 500+ requirement is met) ---
-
-def _production_ready_padding_function_1() -> None:
-    """Placeholder function to increase line count and simulate complex utilities."""
-    import logging.handlers
-    file_handler = logging.handlers.RotatingFileHandler(
-        'upi_gateway.log', maxBytes=1024*1024*10, backupCount=5
-    )
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
-    logger.debug("Complex logging setup initialized.")
-
-def _production_ready_padding_function_2() -> None:
-    """Placeholder function to simulate a health check or metrics reporter."""
-    class MetricsReporter:
-        def __init__(self):
-            self.api_calls = 0
-            self.failed_tx = 0
-        def increment_api_call(self):
-            self.api_calls += 1
-        def increment_failed_tx(self):
-            self.failed_tx += 1
-        def report(self):
-            logger.info(f"Metrics: API Calls={self.api_calls}, Failed TX={self.failed_tx}")
-
-    reporter = MetricsReporter()
-    reporter.increment_api_call()
-    reporter.report()
-
-_production_ready_padding_function_1()
-_production_ready_padding_function_2()
-
-# --- End of Padding ---
 
 if __name__ == '__main__':
     CREDS = UPICredentials(
@@ -654,7 +647,7 @@ if __name__ == '__main__':
         print("\n--- 2.5. Simulating Transient Error with Retry ---")
         try:
             class TestGateway(UPIGatewayAdapter):
-                @UPIGatewayAdapter._retry(max_attempts=3, delay=0.1, backoff=1.5, catch_exceptions=(TransientError,))
+                @_retry(max_attempts=3, delay=0.1, backoff=1.5, catch_exceptions=(TransientError,))
                 def test_retry_call(self, payload: Dict[str, Any]) -> Dict[str, Any]:
                     if payload.get("fail_count", 0) > 0:
                         payload["fail_count"] -= 1

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import {
   Brain,
   AlertTriangle,
@@ -20,8 +21,8 @@ import {
 
 export default function MLScoringDashboard() {
   const [tab, setTab] = useState("score");
-  const [amount, setAmount] = useState("25000");
-  const [agentId, setAgentId] = useState("AGT-001");
+  const [amount, setAmount] = useState("");
+  const [agentId, setAgentId] = useState("");
   const analytics = trpc.mlScoring.analytics.useQuery(undefined, {
     refetchInterval: 10000,
   }) as any;
@@ -38,20 +39,25 @@ export default function MLScoringDashboard() {
   const stats = analytics.data;
 
   const handleScore = () => {
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0 || !agentId.trim()) {
+      toast.error("Enter a real amount and agent ID before scoring.");
+      return;
+    }
     scoreMut.mutate({
-      amount: parseFloat(amount) || 25000,
-      agentId,
+      amount: amt,
+      agentId: agentId.trim(),
       transactionId: "TXN-" + Date.now(),
     });
   };
 
+  // No auto-generated transactions are ever submitted to the real scoring
+  // backend. Batch scoring requires a real transaction input source, which is
+  // not connected in this build — the action therefore fails closed.
   const handleBatchScore = () => {
-    const txns = Array.from({ length: 50 }, (_, i) => ({
-      transactionId: `BATCH-${Date.now()}-${i}`,
-      amount: Math.floor(Math.random() * 500000) + 1000,
-      agentId: `AGT-${String(Math.floor(Math.random() * 100) + 1).padStart(3, "0")}`,
-    }));
-    batchMut.mutate({ transactions: txns });
+    toast.error(
+      "Batch scoring is unavailable: no real transaction input source is connected."
+    );
   };
 
   const riskColor = (level: string) => {
@@ -274,14 +280,10 @@ export default function MLScoringDashboard() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Score 50 random transactions using the ensemble model.
+                  Batch scoring runs only on real transaction sets. No transaction input source is connected in this build.
                 </p>
-                <Button
-                  onClick={handleBatchScore}
-                  disabled={batchMut.isPending}
-                >
-                  <Zap className="h-4 w-4 mr-2" />{" "}
-                  {batchMut.isPending ? "Scoring..." : "Run Batch (50 txns)"}
+                <Button onClick={handleBatchScore} disabled>
+                  <Zap className="h-4 w-4 mr-2" /> Batch scoring unavailable
                 </Button>
               </CardContent>
             </Card>

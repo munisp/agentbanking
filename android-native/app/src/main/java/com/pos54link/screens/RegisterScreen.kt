@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
+import com.pos54link.app.BuildConfig
 
 // --- 1. Data Layer: API Service Interface and Mock Implementation ---
 
@@ -124,7 +125,10 @@ data class RegisterUiState(
  * @property apiService The dependency for making CDP API calls.
  */
 class RegisterViewModel(
-    private val apiService: CdpApiService = MockCdpApiService()
+    // Mock service only in debug builds. No real CDP registration backend is
+    // connected in this source set, so release builds fail closed instead of
+    // accepting the hardcoded OTP "123456".
+    private val apiService: CdpApiService = if (BuildConfig.DEBUG) MockCdpApiService() else throw IllegalStateException("OTP verification service unavailable")
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RegisterUiState())

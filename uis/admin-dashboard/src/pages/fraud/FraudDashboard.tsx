@@ -74,174 +74,13 @@ interface AgentRisk {
 }
 
 // ─── Mock Data Generators ─────────────────────────────────────────────────────
-const AGENTS = [
-  {
-    code: "AG-LOS-004821",
-    name: "Adaeze Okonkwo",
-    location: "Ikeja, Lagos",
-    tier: "Gold",
-  },
-  {
-    code: "AG-ABJ-002341",
-    name: "Emeka Eze",
-    location: "Wuse, Abuja",
-    tier: "Silver",
-  },
-  {
-    code: "AG-KAN-007812",
-    name: "Aminu Garba",
-    location: "Kano City",
-    tier: "Platinum",
-  },
-  {
-    code: "AG-PHC-003219",
-    name: "Chioma Obi",
-    location: "Port Harcourt",
-    tier: "Gold",
-  },
-  {
-    code: "AG-IBD-005543",
-    name: "Tunde Bakare",
-    location: "Ibadan, Oyo",
-    tier: "Bronze",
-  },
-  {
-    code: "AG-ENU-001187",
-    name: "Ngozi Adeyemi",
-    location: "Enugu",
-    tier: "Silver",
-  },
-  {
-    code: "AG-KAD-009934",
-    name: "Musa Aliyu",
-    location: "Kaduna",
-    tier: "Bronze",
-  },
-  {
-    code: "AG-LOS-008876",
-    name: "Biodun Olatunji",
-    location: "Victoria Island",
-    tier: "Platinum",
-  },
-];
+// Fabricated event generator removed — only real fraud alerts are shown.
 
-const TX_TYPES = [
-  "Cash In",
-  "Cash Out",
-  "Transfer",
-  "Card Payment",
-  "Airtime",
-  "Bill Payment",
-];
-const REASONS = [
-  "Transaction velocity exceeded 3× normal rate",
-  "Amount 4.2σ above agent 30-day mean",
-  "Structuring pattern detected across 3 accounts",
-  "Customer account opened < 24 hours ago",
-  "Unusual time-of-day pattern (2:14 AM)",
-  "Multiple failed PIN attempts before success",
-  "Geographic anomaly — 400km from usual location",
-  "Round-amount clustering (₦50K × 4 in 1 hour)",
-];
-
-const SHAP_TEMPLATES = [
-  [
-    {
-      name: "Transaction velocity (1h)",
-      value: 0.34,
-      direction: "risk" as const,
-    },
-    { name: "Amount deviation", value: 0.28, direction: "risk" as const },
-    { name: "Time of day anomaly", value: 0.18, direction: "risk" as const },
-    { name: "Account age", value: 0.12, direction: "safe" as const },
-    { name: "Agent trust score", value: 0.08, direction: "safe" as const },
-  ],
-  [
-    {
-      name: "Round-amount clustering",
-      value: 0.41,
-      direction: "risk" as const,
-    },
-    { name: "Beneficiary age", value: 0.22, direction: "risk" as const },
-    { name: "Geographic anomaly", value: 0.19, direction: "risk" as const },
-    { name: "Historical behaviour", value: 0.15, direction: "safe" as const },
-    { name: "KYC tier", value: 0.03, direction: "safe" as const },
-  ],
-];
-
-let _eventCounter = 0;
-function generateEvent(): FraudEvent {
-  _eventCounter++;
-  const agent = AGENTS[Math.floor(Math.random() * AGENTS.length)];
-  const risk = Math.floor(Math.random() * 60) + 40;
-  const severity: Severity =
-    risk >= 85
-      ? "critical"
-      : risk >= 70
-        ? "high"
-        : risk >= 55
-          ? "medium"
-          : "low";
-  const now = new Date();
-  return {
-    id: `EVT-${Date.now()}-${_eventCounter}`,
-    agentCode: agent.code,
-    agentName: agent.name,
-    location: agent.location,
-    txType: TX_TYPES[Math.floor(Math.random() * TX_TYPES.length)],
-    amount: Math.floor(Math.random() * 490_000) + 10_000,
-    customer: [
-      "Emeka Eze",
-      "Fatima Bello",
-      "Chidi Obi",
-      "Ngozi Adeyemi",
-      "Tunde Bakare",
-    ][Math.floor(Math.random() * 5)],
-    riskScore: risk,
-    severity,
-    reason: REASONS[Math.floor(Math.random() * REASONS.length)],
-    time: now.toLocaleTimeString("en-NG", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    timestamp: now.getTime(),
-    status: "open",
-    channel: ["POS", "USSD", "Mobile", "Web"][Math.floor(Math.random() * 4)],
-    shapFeatures:
-      SHAP_TEMPLATES[Math.floor(Math.random() * SHAP_TEMPLATES.length)],
-  };
-}
-
-const INITIAL_EVENTS: FraudEvent[] = Array.from(
-  { length: 12 },
-  generateEvent
-).map((e, i) => ({
-  ...e,
-  status:
-    i < 3 ? "open" : i < 6 ? "investigating" : i < 9 ? "resolved" : "escalated",
-  time: `${String(9 + Math.floor(i / 2)).padStart(2, "0")}:${String((i * 5) % 60).padStart(2, "0")}`,
-}));
-
-const AGENT_RISKS: AgentRisk[] = AGENTS.map((a, i) => ({
-  agentCode: a.code,
-  agentName: a.name,
-  location: a.location,
-  riskScore: [72, 45, 88, 31, 65, 52, 91, 28][i],
-  txCount: [142, 98, 203, 67, 55, 89, 44, 178][i],
-  flaggedCount: [8, 2, 14, 1, 5, 3, 11, 0][i],
-  tier: a.tier,
-}));
+const AGENT_RISKS: AgentRisk[] = []; // no fabricated agent risk scores — populated only from real backend data (none connected)
 
 // HOURLY_DATA is now fetched live via trpc.fraud.hourlyStats in the component
 
-const RISK_CATEGORIES = [
-  { name: "Velocity Abuse", value: 34, color: RED },
-  { name: "Amount Anomaly", value: 28, color: ORANGE },
-  { name: "Structuring", value: 19, color: GOLD },
-  { name: "Account Takeover", value: 12, color: PURPLE },
-  { name: "Geographic", value: 7, color: CYAN },
-];
+const RISK_CATEGORIES: Array<{ name: string; value: number; color: string }> = []; // no fabricated risk distribution
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 const SEV_COLOR: Record<Severity, string> = {
@@ -418,10 +257,8 @@ function EventRow({
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function FraudDashboard() {
-  const [events, setEvents] = useState<FraudEvent[]>(INITIAL_EVENTS);
-  const [selected, setSelected] = useState<FraudEvent | null>(
-    INITIAL_EVENTS[0]
-  );
+  const [events, setEvents] = useState<FraudEvent[]>([]);
+  const [selected, setSelected] = useState<FraudEvent | null>(null);
   const [tab, setTab] = useState<"feed" | "agents" | "analytics">("feed");
   const [filterSev, setFilterSev] = useState<Severity | "all">("all");
   const [filterStatus, setFilterStatus] = useState<CaseStatus | "all">("all");
@@ -531,25 +368,8 @@ export default function FraudDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeEvents.length]);
 
-  // Fallback: also keep local simulation when socket not yet connected
-  useEffect(() => {
-    if (paused || storeEvents.length > 0) return;
-    const iv = setInterval(
-      () => {
-        const evt = generateEvent();
-        setEvents(prev => [evt, ...prev].slice(0, 50));
-        setNewCount(c => c + 1);
-        if (evt.severity === "critical") {
-          toast.error(
-            `🚨 CRITICAL: ${evt.agentName} — ${fmt(evt.amount)} ${evt.txType}`,
-            { duration: 5000 }
-          );
-        }
-      },
-      4500 + Math.random() * 3000
-    );
-    return () => clearInterval(iv);
-  }, [paused, storeEvents.length]);
+  // No local simulation fallback: when no live alerts/events exist the
+  // dashboard shows its honest empty state.
 
   // ── Live hourly stats from DB ───────────────────────────────────────────────
   const { data: liveHourlyData } = trpc.fraud.hourlyStats.useQuery(undefined, {
@@ -992,8 +812,7 @@ export default function FraudDashboard() {
                       ["Time", selected.time],
                       [
                         "Agent Tier",
-                        AGENTS.find(a => a.code === selected.agentCode)?.tier ||
-                          "—",
+                        "—"
                       ],
                     ].map(([k, v]) => (
                       <div

@@ -276,17 +276,12 @@ export function CardPaymentScreen({ onBack }: { onBack: () => void }) {
             onChange={async v => {
               if (v.length <= 4) setPin(v);
               if (v.length === 4) {
-                toast.success("Processing payment...");
-                const result = await submit({
-                  type: "Card Payment",
-                  amount: num,
-                  customerName: "Card Holder",
-                  channel: "Card",
-                });
-                if (result) {
-                  setTxRef(result.ref);
-                  setStep("success");
-                }
+                // Fail closed: this build has no card-PIN verification rail, so
+                // no transaction is created from unverified PIN entry.
+                setPin("");
+                toast.error(
+                  "Card PIN verification is unavailable in this build — payment not processed."
+                );
               }
             }}
           />
@@ -908,24 +903,19 @@ export function NFCPaymentScreen({ onBack }: { onBack: () => void }) {
               ISO 14443-A/B · Visa Paywave · Mastercard Tap
             </div>
           </div>
+          {/* No fabricated hardware events: this build has no NFC reader bridge,
+              so there is no simulate button and no transaction is created
+              without a real tap. */}
           <button
-            onClick={async () => {
-              toast.success("NFC tap detected!");
-              const result = await submit({
-                type: "NFC Payment",
-                amount: num,
-                customerName: "Contactless",
-                channel: "NFC",
-              });
-              if (result) {
-                setTxRef(result.ref);
-                setStep("success");
-              }
+            onClick={() => {
+              toast.error(
+                "NFC reader is not connected in this build — payment not processed."
+              );
             }}
-            className="w-full py-4 rounded-xl font-bold text-white"
+            className="w-full py-4 rounded-xl font-bold text-white opacity-60"
             style={{ background: "#ec4899", fontFamily: DISP }}
           >
-            Simulate NFC Tap
+            NFC Reader Unavailable
           </button>
         </div>
       )}

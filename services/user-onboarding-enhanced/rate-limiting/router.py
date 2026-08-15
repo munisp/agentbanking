@@ -355,12 +355,12 @@ async def verify_otp(
     description="Retrieves the current verification status for a given phone number.",
 )
 async def check_status(
+    service: Annotated[PhoneVerificationService, Depends(get_verification_service)],
     phone_number: constr(regex=r"^\+\d{1,3}\d{6,14}$") = Query(
         ...,
         example="+15551234567",
         description="Phone number in E.164 format."
     ),
-    service: Annotated[PhoneVerificationService, Depends(get_verification_service)],
 ):
     """
     Handles the request to check the verification status.

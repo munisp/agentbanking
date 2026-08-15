@@ -389,23 +389,11 @@ export const disputeNotificationsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-      return {
-        success: true,
-        message: "Notification channels configured",
-        channels: input.channels ?? ["email", "sms", "push"],
-        enabled: input.enabled ?? true,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "disputeNotifications.configureChannels is not available in this deployment",
+    });
+  }),
 
   getDeliveryStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

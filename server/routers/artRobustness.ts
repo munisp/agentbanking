@@ -412,12 +412,10 @@ export const artRobustnessRouter = router({
         action: "runAttack",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "runAttack",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "artRobustness.runAttack is not available in this deployment",
+      });
     }),
   runFullSuite: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
@@ -427,11 +425,9 @@ export const artRobustnessRouter = router({
         action: "runFullSuite",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "runFullSuite",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "artRobustness.runFullSuite is not available in this deployment",
+      });
     }),
 });

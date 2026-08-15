@@ -327,12 +327,12 @@ async def transfer_funds_endpoint(
 @router.get("/accounts/{account_id}/transactions", response_model=List[TransactionInDB], tags=["Transactions"])
 async def list_account_transactions_endpoint(
     account_id: uuid.UUID,
-    skip: int = 0,
-    limit: int = 100,
     transaction_service: Annotated[TransactionService, Depends(get_transaction_service)],
     account_service: Annotated[AccountService, Depends(get_account_service)],
     customer_service: Annotated[CustomerService, Depends(get_customer_service)],
     current_user: Annotated[User, Depends(get_current_active_user)],
+    skip: int = 0,
+    limit: int = 100,
 ):
     """List all transactions for a specific account. User must own the account or be a superuser."""
     try:

@@ -298,14 +298,7 @@ export const transactionReceiptGeneratorRouter = router({
           .where(eq(transactions.id, input.transactionId))
           .limit(1);
         if (txRows.length === 0)
-          // Middleware fan-out (fail-open)
-          await publishtransactionReceiptGeneratorMiddleware(
-            "generateReceipt",
-            `${Date.now()}`,
-            { action: "generateReceipt" }
-          ).catch(() => {});
-
-        return { success: false, error: "Transaction not found" };
+          return { success: false, error: "Transaction not found" };
         const tx = txRows[0];
         const receiptId = "RCT-" + crypto.randomUUID().toUpperCase();
         await db.insert(auditLog).values({
@@ -319,6 +312,13 @@ export const transactionReceiptGeneratorRouter = router({
             type: tx.type,
           },
         });
+        // Middleware fan-out (fail-open)
+        await publishtransactionReceiptGeneratorMiddleware(
+          "generateReceipt",
+          `${Date.now()}`,
+          { action: "generateReceipt" }
+        ).catch(() => {});
+
         return {
           success: true,
           receiptId,

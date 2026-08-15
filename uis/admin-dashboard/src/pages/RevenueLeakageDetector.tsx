@@ -18,10 +18,10 @@ export default function RevenueLeakageDetector() {
   >("overview");
 
   const kpis = [
-    { label: "Scans Run", value: "156" },
-    { label: "Discrepancies", value: "23" },
-    { label: "Revenue Lost", value: "₦1.2M" },
-    { label: "Recovered", value: "₦890K" },
+    { label: "Scans Run", value: "—" },
+    { label: "Discrepancies", value: "—" },
+    { label: "Revenue Lost", value: "—" },
+    { label: "Recovered", value: "—" },
   ];
 
   const columns = ["Transaction", "Expected", "Actual", "Difference", "Status"];

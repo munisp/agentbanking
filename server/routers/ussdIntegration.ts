@@ -238,66 +238,11 @@ export const ussdIntegrationRouter = router({
     }),
   startSession: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
-    .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      await writeAuditLog({
-        agentId:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.id ?? 0)
-            : 0,
-
-        agentCode:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.agentCode ?? "system")
-            : "system",
-
-        action: "MUTATION",
-
-        resource: "ussdIntegration",
-
-        resourceId:
-          typeof input === "object" && input !== null && "id" in input
-            ? String((input as any).id)
-            : "new",
-
-        status: "success",
-
-        metadata: { input: typeof input === "object" ? input : {} },
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ussdIntegration.startSession is not available in this deployment",
       });
-
-      // Middleware fan-out (fail-open)
-
-      await publishussdIntegrationMiddleware("startSession", `${Date.now()}`, {
-        action: "startSession",
-      }).catch(() => {});
-
-      return {
-        success: true,
-        action: "startSession",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
     }),
   processInput: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
@@ -307,12 +252,10 @@ export const ussdIntegrationRouter = router({
         action: "processInput",
       }).catch(() => {});
 
-      return {
-        success: true,
-        action: "processInput",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "ussdIntegration.processInput is not available in this deployment",
+      });
     }),
   getStats: protectedProcedure.query(async () => {
     return {

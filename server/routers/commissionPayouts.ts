@@ -159,6 +159,22 @@ export const commissionPayoutsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // SEC-04b/SEC-07: IDOR fix — an agent may only request a payout for its
+      // own agent code. Back-office admins may request on behalf of any agent.
+      // Fail closed when the session carries no agentCode.
+      if (ctx.user.role !== "admin") {
+        const sessionAgentCode = (ctx.user as { agentCode?: string }).agentCode;
+        if (
+          !sessionAgentCode ||
+          sessionAgentCode.toUpperCase() !== input.agentCode.toUpperCase()
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Agents may only request payouts for their own agent code",
+          });
+        }
+      }
       await enforcePermission({
         subjectType: "user",
         subjectId: String(ctx.user?.id ?? "0"),
@@ -329,6 +345,14 @@ export const commissionPayoutsRouter = router({
   approve: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      // SEC-04b: payout approval moves money — require an admin/manager
+      // (back-office supervisor) role, not just any authenticated session.
+      if (!["admin", "manager", "supervisor"].includes(ctx.user.role)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admin or manager role required to approve payouts",
+        });
+      }
       await enforcePermission({
         subjectType: "user",
         subjectId: String(ctx?.user?.id ?? "0"),

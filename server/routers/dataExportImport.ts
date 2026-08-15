@@ -84,61 +84,10 @@ const createExport = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    const txAmount =
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0;
-    const fees = calculateFee(txAmount, "transfer");
-    const commission = calculateCommission(fees.fee, "transfer");
-    const tax = calculateTax(fees.fee, "vat");
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createExport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createExport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "createExport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dataExportImport.createExport is not available in this deployment",
+    });
   });
 const createImport = protectedProcedure
   .input(
@@ -148,54 +97,10 @@ const createImport = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createImport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createImport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "createImport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dataExportImport.createImport is not available in this deployment",
+    });
   });
 const getExportStatus = protectedProcedure
   .input(
@@ -205,54 +110,10 @@ const getExportStatus = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    // ── Enforce STATUS_TRANSITIONS state machine ──
-    if (typeof input === "object" && "status" in input) {
-      const newStatus = (input as Record<string, unknown>).status as string;
-      const currentStatus =
-        ((input as Record<string, unknown>).currentStatus as string) ||
-        "pending";
-      const allowed =
-        STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-      if (allowed && !allowed.includes(newStatus)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        });
-      }
-    }
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "getExportStatus: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "getExportStatus completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "getExportStatus completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dataExportImport.getExportStatus is not available in this deployment",
+    });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

@@ -58,6 +58,19 @@ function escapeCSVValue(val: unknown): string {
   return str;
 }
 
+// ── Identifier Safety ─────────────────────────────────────────────────────
+// PostgreSQL identifiers cannot be passed as bound parameters; before any
+// identifier is interpolated (quoted) into SQL text it must match a strict
+// whitelist so no SQL can be smuggled through a table/column name.
+const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function assertSafeIdentifier(name: string): void {
+  if (!SAFE_IDENTIFIER.test(name)) {
+    throw new Error(
+      `[BulkInsert] Unsafe SQL identifier rejected: ${JSON.stringify(name)}`
+    );
+  }
+}
+
 // ── Multi-Row VALUES Insert (Drizzle-compatible) ─────────────────────────────
 
 /**
@@ -92,23 +105,31 @@ export async function bulkInsertValues(
   // Process in chunks to avoid exceeding PostgreSQL parameter limits (65535 params max)
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    const colList = columns.map(c => `"${c}"`).join(", ");
 
-    // Build parameterized VALUES clause
-    const valuesClauses: string[] = [];
-    const params: unknown[] = [];
-    let paramIdx = 1;
+    // SEC-22: identifiers (table/column names) cannot be bound parameters, so
+    // they are quoted via sql.raw after a strict identifier whitelist check;
+    // all row VALUES are bound parameters via drizzle sql templates — no
+    // values are ever inlined into the query text.
+    assertSafeIdentifier(table);
+    for (const c of columns) assertSafeIdentifier(c);
+    const tableSql = sql.raw(`"${table}"`);
+    const colListSql = sql.raw(columns.map(c => `"${c}"`).join(", "));
 
-    for (const row of chunk) {
-      const placeholders = row.map(() => `$${paramIdx++}`);
-      valuesClauses.push(`(${placeholders.join(", ")})`);
-      params.push(...row);
-    }
+    // Build the parameterized VALUES clause with sql.join (bound params)
+    const rowSqls = chunk.map(
+      row =>
+        sql`(${sql.join(
+          row.map(v => sql`${v}`),
+          sql`, `
+        )})`
+    );
+    const valuesSql = sql.join(rowSqls, sql`, `);
 
-    const conflictClause = onConflictDoNothing ? " ON CONFLICT DO NOTHING" : "";
-    const query = `INSERT INTO "${table}" (${colList}) VALUES ${valuesClauses.join(", ")}${conflictClause}`;
+    const query = onConflictDoNothing
+      ? sql`INSERT INTO ${tableSql} (${colListSql}) VALUES ${valuesSql} ON CONFLICT DO NOTHING`
+      : sql`INSERT INTO ${tableSql} (${colListSql}) VALUES ${valuesSql}`;
 
-    await db.execute(sql.raw(query));
+    await db.execute(query);
     totalInserted += chunk.length;
 
     // P2-3: Progress reporting every 100 settlements

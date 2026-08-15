@@ -447,21 +447,17 @@ export const lakehouseAiIntegrationRouter = router({
   promoteModel: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "promoteModel",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "lakehouseAiIntegration.promoteModel is not available in this deployment",
+    });
+  }),
   submitBatchJob: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "submitBatchJob",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "lakehouseAiIntegration.submitBatchJob is not available in this deployment",
+    });
+  }),
 });

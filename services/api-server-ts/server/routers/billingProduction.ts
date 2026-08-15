@@ -344,18 +344,33 @@ export const billingProductionRouter = router({
   getPaymentMethods: protectedProcedure.query(async () => ({ methods: [] })),
   addPaymentMethod: protectedProcedure
     .input(z.object({ type: z.string(), token: z.string() }))
-    .mutation(async ({ input }) => ({ success: true, type: input.type })),
+    .mutation(async ({ input }) => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.addPaymentMethod is not available in this deployment",
+    });
+  }),
   getBillingAlerts: protectedProcedure.query(async () => ({ alerts: [] })),
   configureBillingAlerts: protectedProcedure
     .input(z.object({ threshold: z.number(), enabled: z.boolean() }))
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.configureBillingAlerts is not available in this deployment",
+    });
+  }),
   getDunningStatus: protectedProcedure.query(async () => ({
     status: "healthy",
     overdue: 0,
   })),
   applyGracePeriod: protectedProcedure
     .input(z.object({ invoiceId: z.string(), days: z.number() }))
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.applyGracePeriod is not available in this deployment",
+    });
+  }),
   getReconciliationSchedule: protectedProcedure.query(async () => ({
     schedule: "daily",
     lastRun: new Date().toISOString(),
@@ -374,10 +389,20 @@ export const billingProductionRouter = router({
         perHour: z.number().optional(),
       })
     )
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.updateRateLimits is not available in this deployment",
+    });
+  }),
   createDispute: protectedProcedure
     .input(z.object({ invoiceId: z.string(), reason: z.string() }))
-    .mutation(async () => ({ success: true, disputeId: "DSP-001" })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.createDispute is not available in this deployment",
+    });
+  }),
   getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
   getRevenueForecast: protectedProcedure.query(async () => ({
     forecast: [],
@@ -391,10 +416,12 @@ export const billingProductionRouter = router({
     })),
   migratePlan: protectedProcedure
     .input(z.object({ fromPlan: z.string(), toPlan: z.string() }))
-    .mutation(async () => ({
-      success: true,
-      effectiveDate: new Date().toISOString(),
-    })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.migratePlan is not available in this deployment",
+    });
+  }),
   generateInvoicePdf: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
     .mutation(async () => ({ url: "", generated: true })),
@@ -408,5 +435,10 @@ export const billingProductionRouter = router({
   })),
   topUpCredits: protectedProcedure
     .input(z.object({ amount: z.number() }))
-    .mutation(async () => ({ success: true, newBalance: 0 })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingProduction.topUpCredits is not available in this deployment",
+    });
+  }),
 });

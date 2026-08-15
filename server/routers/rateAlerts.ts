@@ -261,65 +261,11 @@ export const rateAlertsRouter = router({
 
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "transfer");
-      const commission = calculateCommission(fees.fee, "transfer");
-      const tax = calculateTax(fees.fee, "vat");
-      await writeAuditLog({
-        agentId:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.id ?? 0)
-            : 0,
-
-        agentCode:
-          typeof ctx === "object" && ctx !== null && "user" in ctx
-            ? ((ctx as any).user?.agentCode ?? "system")
-            : "system",
-
-        action: "MUTATION",
-
-        resource: "rateAlerts",
-
-        resourceId:
-          typeof input === "object" && input !== null && "id" in input
-            ? String((input as any).id)
-            : "new",
-
-        status: "success",
-
-        metadata: { input: typeof input === "object" ? input : {} },
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rateAlerts.create is not available in this deployment",
       });
-
-      // Middleware fan-out (fail-open)
-
-      await publishrateAlertsMiddleware("create", `${Date.now()}`, {
-        action: "create",
-      }).catch(() => {});
-
-      return {
-        success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
     }),
 
   delete: protectedProcedure
@@ -336,23 +282,43 @@ export const rateAlertsRouter = router({
   }),
 
   getStats: protectedProcedure.query(async () => {
+    // Merged implementation — this router previously declared getStats twice;
+    // the second (hardcoded zeros) silently overwrote this real query.
     const database = await getDb();
     if (!database)
       return {
         total: 0,
         active: 0,
         recent: 0,
+        totalAlerts: 0,
+        activeAlerts: 0,
+        triggeredToday: 0,
         lastUpdated: new Date().toISOString(),
       };
     try {
       const [totalRow] = await database
         .select({ total: count() })
         .from(rateAlerts);
-      const total = totalRow?.total ?? 0;
+      const total = Number(totalRow?.total ?? 0);
+      const [activeRow] = await database
+        .select({ cnt: count() })
+        .from(rateAlerts)
+        .where(eq(rateAlerts.status, "active"));
+      const active = Number(activeRow?.cnt ?? 0);
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const [triggeredRow] = await database
+        .select({ cnt: count() })
+        .from(rateAlerts)
+        .where(gte(rateAlerts.triggeredAt, startOfDay));
+      const triggeredToday = Number(triggeredRow?.cnt ?? 0);
       return {
         total,
-        active: total,
+        active,
         recent: Math.min(total, 50),
+        totalAlerts: total,
+        activeAlerts: active,
+        triggeredToday,
         lastUpdated: new Date().toISOString(),
       };
     } catch {
@@ -360,6 +326,9 @@ export const rateAlertsRouter = router({
         total: 0,
         active: 0,
         recent: 0,
+        totalAlerts: 0,
+        activeAlerts: 0,
+        triggeredToday: 0,
         lastUpdated: new Date().toISOString(),
       };
     }
@@ -407,20 +376,46 @@ export const rateAlertsRouter = router({
         channel: z.enum(["email", "sms", "push"]).default("email"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Middleware fan-out (fail-open)
       await publishrateAlertsMiddleware("subscribe", `${Date.now()}`, {
         action: "subscribe",
       }).catch(() => {});
 
+      const [baseCurrency, targetCurrency] = input.currencyPair.split("/");
+      if (!baseCurrency || !targetCurrency) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "currencyPair must be in BASE/TARGET format",
+        });
+      }
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const inserted = await database
+        .insert(rateAlerts)
+        .values({
+          agentId: (ctx as any)?.user?.id ?? 0,
+          baseCurrency: baseCurrency.slice(0, 3).toUpperCase(),
+          targetCurrency: targetCurrency.slice(0, 3).toUpperCase(),
+          targetRate: String(input.threshold),
+          direction: input.direction,
+          status: "active",
+          notifiedVia: [input.channel],
+        })
+        .returning();
+      const row = inserted[0];
       return {
-        id: `alert-${Date.now()}`,
+        id: row?.id,
         currencyPair: input.currencyPair,
         threshold: input.threshold,
         direction: input.direction,
         channel: input.channel,
         active: true,
-        createdAt: new Date().toISOString(),
+        createdAt: row?.createdAt ?? new Date().toISOString(),
       };
     }),
   update: protectedProcedure
@@ -431,12 +426,32 @@ export const rateAlertsRouter = router({
         active: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => ({ id: input.id, updated: true })),
-  getStats: protectedProcedure.query(async () => ({
-    totalAlerts: 0,
-    activeAlerts: 0,
-    triggeredToday: 0,
-  })),
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.threshold !== undefined)
+        set.targetRate = String(input.threshold);
+      if (input.active !== undefined)
+        set.status = input.active ? "active" : "paused";
+      const updated = await database
+        .update(rateAlerts)
+        .set(set)
+        .where(eq(rateAlerts.id, input.id))
+        .returning();
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Rate alert ${input.id} not found`,
+        });
+      }
+      return { id: input.id, updated: true };
+    }),
+
   quickCreate: protectedProcedure
     .input(
       z.object({
@@ -445,9 +460,36 @@ export const rateAlertsRouter = router({
         direction: z.enum(["above", "below"]),
       })
     )
-    .mutation(async ({ input }) => ({
-      id: Date.now(),
-      ...input,
-      active: true,
-    })),
+    .mutation(async ({ input, ctx }) => {
+      const [baseCurrency, targetCurrency] = input.currencyPair.split("/");
+      if (!baseCurrency || !targetCurrency) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "currencyPair must be in BASE/TARGET format",
+        });
+      }
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      const inserted = await database
+        .insert(rateAlerts)
+        .values({
+          agentId: (ctx as any)?.user?.id ?? 0,
+          baseCurrency: baseCurrency.slice(0, 3).toUpperCase(),
+          targetCurrency: targetCurrency.slice(0, 3).toUpperCase(),
+          targetRate: String(input.threshold),
+          direction: input.direction,
+          status: "active",
+        })
+        .returning();
+      const row = inserted[0];
+      return {
+        id: row?.id,
+        ...input,
+        active: true,
+      };
+    }),
 });

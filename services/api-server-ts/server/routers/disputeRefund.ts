@@ -1,14 +1,16 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { disputes } from "../../drizzle/schema";
+import { getDb, writeAuditLog } from "../db";
+import { disputes, gl_journal_entries, refunds } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import crypto from "crypto";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
+import { ingestToLakehouse } from "../lakehouse";
 import { permifyCheck } from "../_core/permify";
 import { TRPCError } from "@trpc/server";
 import {
@@ -325,14 +327,78 @@ export const disputeRefundRouter = router({
         .optional()
     )
     .query(async ({ input }) => {
-      return { items: [], refunds: [], total: 0 };
+      // Real query against the refunds table — no fabricated rows.
+      const database = await getDb();
+      if (!database) return { items: [], refunds: [], total: 0 };
+      const rows = await database
+        .select()
+        .from(refunds)
+        .orderBy(desc(refunds.id))
+        .limit(input?.limit ?? 20)
+        .offset(input?.offset ?? 0);
+      const _totalRows = await database.select({ total: count() }).from(refunds);
+      const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
+      return { items: rows, refunds: rows, total: totalResult?.total ?? 0 };
     }),
   stats: protectedProcedure.input(z.object({}).optional()).query(async () => {
+    // Real aggregates from disputes + refunds tables.
+    const database = await getDb();
+    if (!database) {
+      return {
+        totalRecords: 0,
+        activeItems: 0,
+        disputes: { open: 0, closed: 0, total: 0 },
+        refunds: { pending: 0, processed: 0, rejected: 0, total: 0 },
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    const disputeRows = await database
+      .select({ status: disputes.status, cnt: count() })
+      .from(disputes)
+      .groupBy(disputes.status);
+    const disputeByStatus: Record<string, number> = {};
+    disputeRows.forEach(r => {
+      disputeByStatus[String(r.status)] = Number(r.cnt);
+    });
+    const disputesTotal = Object.values(disputeByStatus).reduce(
+      (a, b) => a + b,
+      0
+    );
+    const disputesClosed =
+      (disputeByStatus["closed"] ?? 0) +
+      (disputeByStatus["resolved"] ?? 0) +
+      (disputeByStatus["false_positive"] ?? 0);
+
+    const refundRows = await database
+      .select({ status: refunds.status, cnt: count() })
+      .from(refunds)
+      .groupBy(refunds.status);
+    const refundByStatus: Record<string, number> = {};
+    refundRows.forEach(r => {
+      refundByStatus[String(r.status)] = Number(r.cnt);
+    });
+    const refundsTotal = Object.values(refundByStatus).reduce(
+      (a, b) => a + b,
+      0
+    );
+
     return {
-      totalRecords: 0,
-      activeItems: 0,
-      disputes: { open: 0, closed: 0, total: 0 },
-      refunds: { pending: 0, processed: 0, rejected: 0, total: 0 },
+      totalRecords: disputesTotal + refundsTotal,
+      activeItems: disputesTotal - disputesClosed,
+      disputes: {
+        open: disputesTotal - disputesClosed,
+        closed: disputesClosed,
+        total: disputesTotal,
+      },
+      refunds: {
+        pending: refundByStatus["pending"] ?? 0,
+        processed:
+          (refundByStatus["processed"] ?? 0) +
+          (refundByStatus["completed"] ?? 0) +
+          (refundByStatus["approved"] ?? 0),
+        rejected: refundByStatus["rejected"] ?? 0,
+        total: refundsTotal,
+      },
       lastUpdated: new Date().toISOString(),
     };
   }),
@@ -343,33 +409,147 @@ export const disputeRefundRouter = router({
           id: z.string().optional(),
           transactionRef: z.string().optional(),
           reason: z.string().optional(),
-          amount: z.number().optional(),
+          amount: z.number().min(0).optional(),
           category: z.string().optional(),
           refundAmount: z.number().optional(),
         })
         .optional()
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
+      // ── Enforce STATUS_TRANSITIONS state machine ──
+      if (typeof input === "object" && "status" in input) {
+        const newStatus = (input as Record<string, unknown>).status as string;
+        const currentStatus =
+          ((input as Record<string, unknown>).currentStatus as string) ||
+          "pending";
+        const allowed =
+          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
+        if (allowed && !allowed.includes(newStatus)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
+          });
+        }
+      }
+      const txAmount =
         typeof input === "object" && "amount" in input
           ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "disputeRefund",
-        "mutation",
-        "Executed disputeRefund mutation"
-      );
+          : 0;
+      const fees = calculateFee(txAmount, "transfer");
+      const commission = calculateCommission(fees.fee, "transfer");
+      const tax = calculateTax(fees.fee, "vat");
+      await writeAuditLog({
+        agentId:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.id ?? 0)
+            : 0,
+
+        agentCode:
+          typeof ctx === "object" && ctx !== null && "user" in ctx
+            ? ((ctx as any).user?.agentCode ?? "system")
+            : "system",
+
+        action: "MUTATION",
+
+        resource: "disputeRefund",
+
+        resourceId:
+          typeof input === "object" && input !== null && "id" in input
+            ? String((input as any).id)
+            : "new",
+
+        status: "success",
+
+        metadata: { input: typeof input === "object" ? input : {} },
+      });
+
+      const refundAmount = input?.refundAmount ?? input?.amount ?? 0;
+      const refundRef = `REF-${Date.now()}-${crypto.randomInt(10000)}`;
+
+      // GL reversal entry for the refund (ported from root tree fix)
+      if (refundAmount > 0) {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable — refund not persisted",
+          });
+        await db.transaction(async tx => {
+          await tx.insert(gl_journal_entries).values({
+            entryNumber: `JE-${refundRef}`,
+            description: `Dispute refund for ${input?.transactionRef ?? input?.id ?? "unknown"}`,
+            debitAccountId: 5002, // Refund Expense
+            creditAccountId: 1001, // Cash on Hand (returned to customer)
+            amount: Math.round(refundAmount * 100),
+            currency: "NGN",
+            referenceType: "dispute",
+            referenceId: String(input?.id ?? refundRef),
+            postedBy: "system",
+            status: "posted",
+          });
+
+          // Persist the refund record itself so listRefunds/stats reflect it
+          await tx.insert(refunds).values({
+            ref: refundRef.slice(0, 32),
+            disputeId:
+              input?.id !== undefined && /^\d+$/.test(String(input.id))
+                ? Number(input.id)
+                : null,
+            transactionRef: input?.transactionRef ?? null,
+            agentId:
+              typeof ctx === "object" && ctx !== null && "user" in ctx
+                ? ((ctx as any).user?.id ?? 0)
+                : 0,
+            originalAmount: Math.round((input?.amount ?? refundAmount) * 100),
+            refundAmount: Math.round(refundAmount * 100),
+            reason: input?.reason ?? "dispute_refund",
+            category: input?.category ?? "general",
+            status: "pending",
+          });
+        });
+
+        publishEvent("pos.disputes.resolved", refundRef, {
+          type: "refund",
+          refundRef,
+          disputeId: input?.id,
+          transactionRef: input?.transactionRef,
+          refundAmount,
+          reason: input?.reason,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+
+        // TigerBeetle double-entry: refund expense (5002) → cash (1001)
+        tbCreateTransfer({
+          debitAccountId: "5002",
+          creditAccountId: "1001",
+          amount: Math.round(refundAmount * 100),
+          ref: refundRef,
+          txType: "dispute_refund",
+          agentCode: "system",
+        }).catch(() => {});
+        fluvioProduce("tx.created", {
+          value: JSON.stringify({
+            txRef: refundRef,
+            amount: refundAmount,
+            type: "dispute_refund",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        ingestToLakehouse("dispute_refunds", {
+          refundRef,
+          disputeId: input?.id,
+          transactionRef: input?.transactionRef,
+          refundAmount,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+      }
 
       return {
         success: true,
         action: "requestRefund",
         id: input?.id ?? null,
-        refundRef: `REF-${Date.now()}`,
+        refundRef,
+        refundAmount,
         timestamp: new Date().toISOString(),
       };
     }),

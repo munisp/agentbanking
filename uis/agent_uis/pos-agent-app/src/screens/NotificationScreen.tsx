@@ -39,14 +39,7 @@ function fmt(d: Date): string {
   return `${Math.floor(diff / 86400000)}d ago`;
 }
 
-const INITIAL: AppNotification[] = [
-  { id: 'n1', type: 'transaction', title: 'Cash-In Successful', body: 'NGN 50,000 deposited to account ending 4521. Reference: TXN-20240412-001', timestamp: new Date(Date.now() - 5 * 60000), isRead: false, actionRoute: 'TransactionHistory' },
-  { id: 'n2', type: 'alert', title: 'Low Float Balance', body: 'Your float balance is NGN 12,500 — below the recommended NGN 25,000 threshold.', timestamp: new Date(Date.now() - 3600000), isRead: false, actionRoute: 'FloatManagement' },
-  { id: 'n3', type: 'kyc', title: 'KYC Verification Required', body: 'Customer John Doe (BVN: 2234****890) requires identity re-verification.', timestamp: new Date(Date.now() - 3 * 3600000), isRead: true, actionRoute: 'KYC' },
-  { id: 'n4', type: 'system', title: 'App Update Available', body: '54Link v2.5.1 is available. New features: rate lock, biometric login, and improved offline sync.', timestamp: new Date(Date.now() - 86400000), isRead: true },
-  { id: 'n5', type: 'promotion', title: 'Bonus Commission This Week', body: 'Earn 1.5x commission on all international transfers until Sunday. T&Cs apply.', timestamp: new Date(Date.now() - 2 * 86400000), isRead: false, actionRoute: 'SendMoney' },
-  { id: 'n6', type: 'transaction', title: 'Transfer Completed', body: 'NGN 25,000 sent to Fatima Abubakar (GTBank ****7890). Commission: NGN 125.', timestamp: new Date(Date.now() - 3 * 86400000), isRead: true, actionRoute: 'TransactionHistory' },
-];
+const INITIAL: AppNotification[] = []; // no fabricated inbox — notifications come from the backend push/notification service only
 
 const FILTERS: (NotificationType | null)[] = [null, 'transaction', 'alert', 'system', 'promotion', 'kyc'];
 
@@ -174,7 +167,7 @@ export default function NotificationScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>🔔</Text>
-            <Text style={styles.emptyText}>No notifications</Text>
+            <Text style={styles.emptyText}>No notifications yet</Text>
           </View>
         }
       />

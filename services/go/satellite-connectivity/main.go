@@ -382,7 +382,7 @@ func registerWithAPISIX(cfg Config, serviceName string, port string) {
 	req, _ := http.NewRequest("PUT",
 		fmt.Sprintf("%s/apisix/admin/routes/%s", cfg.ApisixAdminURL, serviceName),
 		bytes.NewReader(body))
-	req.Header.Set("X-API-KEY", "edd1c9f034335f136f87ad84b625c8f1")
+	req.Header.Set("X-API-KEY", os.Getenv("APISIX_ADMIN_KEY"))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
@@ -682,9 +682,10 @@ func authMiddleware(cfg Config) mux.MiddlewareFunc {
 type APISIXClient struct{ adminURL, apiKey string }
 
 func NewAPISIXClient(adminURL string) *APISIXClient {
+	// The admin key must come from the environment; no fallback is provided.
 	apiKey := os.Getenv("APISIX_ADMIN_KEY")
 	if apiKey == "" {
-		apiKey = "edd1c9f034335f136f87ad84b625c8f1"
+		log.Printf("[APISIX] WARNING: APISIX_ADMIN_KEY is not set; admin API calls will fail authentication")
 	}
 	return &APISIXClient{adminURL: adminURL, apiKey: apiKey}
 }

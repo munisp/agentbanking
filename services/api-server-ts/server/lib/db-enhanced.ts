@@ -250,25 +250,11 @@ export async function withRetryTransaction<T>(
   throw lastError!;
 }
 
-/**
- * Execute a function within a named savepoint (nested transaction).
- * Rolls back to savepoint on error without aborting the outer transaction.
- */
-export async function withSavepoint<T>(
-  tx: any,
-  savepointName: string,
-  fn: () => Promise<T>
-): Promise<T> {
-  await tx.execute(sql`SAVEPOINT ${sql.raw(savepointName)}`);
-  try {
-    const result = await fn();
-    await tx.execute(sql`RELEASE SAVEPOINT ${sql.raw(savepointName)}`);
-    return result;
-  } catch (err) {
-    await tx.execute(sql`ROLLBACK TO SAVEPOINT ${sql.raw(savepointName)}`);
-    throw err;
-  }
-}
+// SEC-22: withSavepoint() was removed. It interpolated the caller-supplied
+// savepoint name via sql.raw (SQL-injection-prone; savepoint identifiers
+// cannot be bound parameters) and had zero call sites in the repo. Use
+// Drizzle's built-in nested transaction support (tx.transaction()) instead,
+// which generates safe savepoint names internally.
 
 // ─── Connection Health Monitor ────────────────────────────────────────────────
 

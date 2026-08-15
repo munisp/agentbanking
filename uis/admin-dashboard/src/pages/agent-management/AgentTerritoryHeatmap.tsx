@@ -14,10 +14,10 @@ export default function AgentTerritoryHeatmap() {
   >("overview");
 
   const kpis = [
-    { label: "Active Territories", value: "156" },
-    { label: "Coverage", value: "87.3%" },
-    { label: "Avg Volume", value: "₦2.4M" },
-    { label: "Underserved", value: "12" },
+    { label: "Active Territories", value: "—" },
+    { label: "Coverage", value: "—" },
+    { label: "Avg Volume", value: "—" },
+    { label: "Underserved", value: "—" },
   ];
 
   const columns = ["Territory", "Agents", "Volume", "Coverage", "Performance"];

@@ -18,10 +18,10 @@ export default function TrainingCertification() {
   >("overview");
 
   const kpis = [
-    { label: "Courses", value: "24" },
-    { label: "Enrolled", value: "1,847" },
-    { label: "Completed", value: "1,234" },
-    { label: "Badges Issued", value: "3,456" },
+    { label: "Courses", value: "—" },
+    { label: "Enrolled", value: "—" },
+    { label: "Completed", value: "—" },
+    { label: "Badges Issued", value: "—" },
   ];
 
   const columns = ["Course", "Agent", "Progress", "Score", "Badge"];

@@ -351,67 +351,9 @@ export function ArchitecturePanel({ onClose }: { onClose: () => void }) {
 // ─── Disputes Screen ──────────────────────────────────────────────────────────
 
 export function MicroInsuranceScreen({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<"browse" | "select" | "confirm" | "success">(
-    "browse"
-  );
-  const [selected, setSelected] = useState<{
-    name: string;
-    premium: number;
-    cover: number;
-    period: string;
-  } | null>(null);
-
-  const products = [
-    {
-      name: "Life Cover Basic",
-      icon: "🛡️",
-      premium: 500,
-      cover: 500000,
-      period: "Monthly",
-      desc: "₦500K life insurance for ₦500/month",
-    },
-    {
-      name: "Health Micro Plan",
-      icon: "🏥",
-      premium: 800,
-      cover: 200000,
-      period: "Monthly",
-      desc: "Outpatient & emergency cover",
-    },
-    {
-      name: "Crop Insurance",
-      icon: "🌾",
-      premium: 1200,
-      cover: 1000000,
-      period: "Seasonal",
-      desc: "Protect farm income from weather events",
-    },
-    {
-      name: "Device Protection",
-      icon: "📱",
-      premium: 300,
-      cover: 150000,
-      period: "Monthly",
-      desc: "Cover for POS terminal & mobile devices",
-    },
-    {
-      name: "Travel Accident",
-      icon: "✈️",
-      premium: 200,
-      cover: 300000,
-      period: "Per trip",
-      desc: "Accidental death & disability cover",
-    },
-    {
-      name: "Business Interruption",
-      icon: "🏪",
-      premium: 1500,
-      cover: 2000000,
-      period: "Monthly",
-      desc: "Income protection for your agency",
-    },
-  ];
-
+  // The micro-insurance product catalog and enrolment endpoints are not
+  // connected to this build. We therefore show an honest unavailable state
+  // instead of fabricated products, premiums, or a fake "subscription" success.
   return (
     <div className="flex flex-col h-screen" style={{ background: BG }}>
       <ScreenHeader
@@ -430,214 +372,15 @@ export function MicroInsuranceScreen({ onBack }: { onBack: () => void }) {
           </span>
         }
       />
-
-      <div className="flex-1 overflow-y-auto p-4">
-        {step === "browse" && (
-          <>
-            <div
-              className="rounded-2xl p-4 mb-4"
-              style={{
-                background: "oklch(0.55 0.22 300 / 0.1)",
-                border: "1px solid oklch(0.55 0.22 300 / 0.3)",
-              }}
-            >
-              <p className="text-gray-300 text-sm">
-                Protect yourself and your customers with affordable
-                micro-insurance products. Premiums deducted from your commission
-                balance.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3">
-              {products.map((p, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    setSelected(p);
-                    setStep("select");
-                  }}
-                  className="flex items-center gap-4 p-4 rounded-2xl text-left transition-all active:scale-98"
-                  style={{ background: CARD, border: `1px solid ${BORDER}` }}
-                >
-                  <div className="text-3xl">{p.icon}</div>
-                  <div className="flex-1">
-                    <div
-                      className="font-bold text-white text-sm"
-                      style={{ fontFamily: DISP }}
-                    >
-                      {p.name}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-0.5">{p.desc}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        className="text-xs font-bold"
-                        style={{ color: GREEN, fontFamily: MONO }}
-                      >
-                        ₦{p.premium.toLocaleString()}/{p.period}
-                      </span>
-                      <span className="text-xs text-gray-600">·</span>
-                      <span className="text-xs text-gray-400">
-                        Cover: ₦{p.cover.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-gray-500">›</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {step === "select" && selected && (
-          <>
-            <div
-              className="rounded-2xl p-6 mb-4 text-center"
-              style={{
-                background: CARD,
-                border: `1px solid oklch(0.55 0.22 300 / 0.4)`,
-              }}
-            >
-              <div className="text-5xl mb-3">
-                {products.find(p => p.name === selected.name)?.icon}
-              </div>
-              <h3
-                className="text-white font-bold text-xl mb-1"
-                style={{ fontFamily: DISP }}
-              >
-                {selected.name}
-              </h3>
-              <p className="text-gray-400 text-sm mb-4">
-                Coverage: ₦{selected.cover.toLocaleString()}
-              </p>
-              <div
-                className="text-3xl font-bold"
-                style={{ color: GREEN, fontFamily: MONO }}
-              >
-                ₦{selected.premium.toLocaleString()}
-              </div>
-              <p className="text-gray-500 text-sm">
-                per {selected.period.toLowerCase()}
-              </p>
-            </div>
-            <div
-              className="rounded-xl p-4 mb-4"
-              style={{ background: BG, border: `1px solid ${BORDER}` }}
-            >
-              {[
-                ["Coverage Amount", `₦${selected.cover.toLocaleString()}`],
-                [
-                  "Premium",
-                  `₦${selected.premium.toLocaleString()}/${selected.period}`,
-                ],
-                ["Payment Method", "Commission Balance"],
-                ["Provider", "AXA Mansard Insurance"],
-                ["Underwriter", "NAICOM Licensed"],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex justify-between py-2 border-b last:border-0"
-                  style={{ borderColor: BORDER }}
-                >
-                  <span className="text-gray-500 text-sm">{k}</span>
-                  <span
-                    className="text-white text-sm font-semibold"
-                    style={{ fontFamily: MONO }}
-                  >
-                    {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep("browse")}
-                className="flex-1 py-3 rounded-xl font-semibold text-gray-400"
-                style={{ background: CARD, border: `1px solid ${BORDER}` }}
-              >
-                ← Back
-              </button>
-              <button
-                onClick={() => setStep("confirm")}
-                className="flex-2 flex-grow py-3 rounded-xl font-bold text-white"
-                style={{ background: "oklch(0.55 0.22 300)" }}
-              >
-                Subscribe →
-              </button>
-            </div>
-          </>
-        )}
-
-        {step === "confirm" && selected && (
-          <>
-            <div
-              className="rounded-2xl p-6 mb-4 text-center"
-              style={{ background: CARD, border: `1px solid ${GOLD}40` }}
-            >
-              <div className="text-4xl mb-3">🔐</div>
-              <h3
-                className="text-white font-bold text-xl mb-2"
-                style={{ fontFamily: DISP }}
-              >
-                Confirm Subscription
-              </h3>
-              <p className="text-gray-400 text-sm mb-4">
-                ₦{selected.premium.toLocaleString()} will be deducted from your
-                commission balance {selected.period.toLowerCase()}
-              </p>
-              <div
-                className="text-2xl font-bold"
-                style={{ color: GOLD, fontFamily: MONO }}
-              >
-                ₦{selected.premium.toLocaleString()}/{selected.period}
-              </div>
-            </div>
-            <button
-              onClick={() => setStep("success")}
-              className="w-full py-4 rounded-2xl font-bold text-white text-lg mb-3"
-              style={{ background: GREEN }}
-            >
-              ✓ Confirm Subscription
-            </button>
-            <button
-              onClick={() => setStep("select")}
-              className="w-full py-3 rounded-2xl font-semibold text-gray-400"
-              style={{ background: CARD, border: `1px solid ${BORDER}` }}
-            >
-              ← Back
-            </button>
-          </>
-        )}
-
-        {step === "success" && selected && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-12">
-            <div className="text-7xl mb-6">🎉</div>
-            <h3
-              className="text-white font-bold text-2xl mb-2"
-              style={{ fontFamily: DISP }}
-            >
-              Subscribed!
-            </h3>
-            <p className="text-gray-400 mb-4">{selected.name} is now active</p>
-            <div
-              className="rounded-xl px-6 py-3 mb-6"
-              style={{
-                background: "oklch(0.55 0.22 300 / 0.15)",
-                border: "1px solid oklch(0.55 0.22 300 / 0.3)",
-              }}
-            >
-              <p className="text-purple-400 font-semibold">Policy Number</p>
-              <p className="text-white font-mono font-bold">
-                POL-{Date.now().toString().slice(-8)}
-              </p>
-            </div>
-            <button
-              onClick={onBack}
-              className="px-8 py-3 rounded-2xl font-bold text-white"
-              style={{ background: BLUE }}
-            >
-              Back to Home
-            </button>
-          </div>
-        )}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
+        <div className="text-5xl">🛡️</div>
+        <p className="text-white font-bold" style={{ fontFamily: DISP }}>
+          Micro-insurance is currently unavailable
+        </p>
+        <p className="text-gray-400 text-sm">
+          Insurance products will appear here once the insurance service is
+          connected. No premiums can be purchased in this build.
+        </p>
       </div>
     </div>
   );
@@ -919,67 +662,39 @@ function MyLimitsScreen({ onBack }: { onBack: () => void }) {
 // 18. Audit Log ─────────────────────────────────────────────────────────────────
 
 function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<
-    "idle" | "checking" | "available" | "downloading" | "installing" | "done"
-  >("idle");
-  const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState<"idle" | "checking" | "available">("idle");
   const [latestRelease, setLatestRelease] = useState<{
     version: string;
     releaseNotes: string;
     fileSize: number;
   } | null>(null);
-  // Fetch latest OTA release from MDM router
-  const { data: releasesData } = trpc.mdm.listOtaReleases.useQuery(
-    { limit: 1, offset: 0 },
-    { enabled: false }
-  );
-  const releases = releasesData?.items;
-  const recordUpdateMut = trpc.mdm.recordOtaUpdate.useMutation();
-  const check = () => {
+  // Fetch latest OTA release from the MDM router (real query — enabled).
+  const { data: releasesData, refetch: refetchReleases, isFetching: checkingReleases } =
+    trpc.mdm.listOtaReleases.useQuery({ limit: 1, offset: 0 }) as any;
+  // A firmware package can only be flashed by the device MDM agent — this UI
+  // can check for releases, but never simulates a download/install and never
+  // records a fabricated OTA result.
+  const check = async () => {
     setStep("checking");
-    // Try to get latest release from server; fall back to known version
-    const raw = releases?.[0];
-    const latest = raw
-      ? {
-          version: raw.version,
-          releaseNotes:
-            raw.releaseNotes ?? "Security patch, performance improvements",
-          fileSize: raw.fileSize,
-        }
-      : {
-          version: "v4.3.0-NG",
-          releaseNotes: "Security patch, performance improvements",
-          fileSize: 12_400_000,
-        };
-    setTimeout(() => {
-      setLatestRelease(latest);
+    const res = await refetchReleases();
+    const raw = res.data?.items?.[0];
+    if (raw) {
+      setLatestRelease({
+        version: raw.version,
+        releaseNotes: raw.releaseNotes ?? "",
+        fileSize: raw.fileSize,
+      });
       setStep("available");
-    }, 1200);
+    } else {
+      setLatestRelease(null);
+      setStep("idle");
+      toast.info("No firmware updates available for this terminal.");
+    }
   };
   const install = () => {
-    setStep("downloading");
-    setProgress(0);
-    const iv = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) {
-          clearInterval(iv);
-          setStep("installing");
-          setTimeout(() => {
-            // Record successful OTA update in MDM
-            recordUpdateMut.mutate({
-              deviceId: 1, // terminal device DB id
-              releaseId: releases?.[0]?.id ?? 1,
-              status: "success",
-              fromVersion: "v4.2.1-NG",
-              toVersion: latestRelease?.version ?? "v4.3.0-NG",
-            });
-            setStep("done");
-          }, 2000);
-          return 100;
-        }
-        return p + 2;
-      });
-    }, 80);
+    toast.error(
+      "Firmware installation runs through the device MDM agent and cannot be started from this screen."
+    );
   };
   return (
     <div className="flex flex-col h-full">
@@ -991,12 +706,12 @@ function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
             className="px-2 py-0.5 rounded text-xs font-bold"
             style={{ background: "oklch(0.78 0.18 80 / 0.2)", color: GOLD }}
           >
-            Update Available
+            {latestRelease ? "Update Available" : "Check for Updates"}
           </div>
         }
       />
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-        {/* Current version */}
+        {/* Version information — only real MDM data, never invented versions */}
         <div
           className="rounded-2xl p-4"
           style={{ background: CARD, border: `1px solid ${BORDER}` }}
@@ -1008,11 +723,10 @@ function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
             Version Information
           </div>
           {[
-            ["Current Firmware", "v4.2.1-NG"],
-            ["Latest Available", "v4.3.0-NG"],
-            ["Release Date", "2024-03-15"],
-            ["Size", "12.4 MB"],
-            ["Model", TERMINAL.model],
+            ["Current Firmware", "Reported by the device MDM agent"],
+            ["Latest Available", latestRelease?.version ?? "—"],
+            ["Size", latestRelease?.fileSize != null ? `${(latestRelease.fileSize / 1_000_000).toFixed(1)} MB` : "—"],
+            ["Model", TERMINAL.model ?? "—"],
           ].map(([k, v]) => (
             <div
               key={k}
@@ -1038,10 +752,7 @@ function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
           ))}
         </div>
         {/* Release notes */}
-        {(step === "available" ||
-          step === "downloading" ||
-          step === "installing" ||
-          step === "done") && (
+        {step === "available" && latestRelease && (
           <div
             className="rounded-2xl p-4"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}
@@ -1050,130 +761,42 @@ function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
               className="text-sm font-bold text-white mb-2"
               style={{ fontFamily: DISP }}
             >
-              Release Notes v4.3.0-NG
-            </div>
-            {[
-              "🔒 Enhanced EMV kernel security patch",
-              "⚡ 15% faster transaction processing",
-              "📶 Improved 4G/LTE connectivity",
-              "🖨 80mm paper detection fix",
-              "🇳🇬 CBN compliance updates (March 2024)",
-            ].map(n => (
-              <div
-                key={n}
-                className="text-xs text-gray-300 py-1 border-b last:border-0"
-                style={{ borderColor: BORDER, fontFamily: DISP }}
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Progress */}
-        {(step === "downloading" || step === "installing") && (
-          <div
-            className="rounded-2xl p-4"
-            style={{ background: CARD, border: `1px solid ${BORDER}` }}
-          >
-            <div className="flex justify-between mb-2">
-              <span
-                className="text-sm font-bold text-white"
-                style={{ fontFamily: DISP }}
-              >
-                {step === "downloading" ? "Downloading…" : "Installing…"}
-              </span>
-              <span
-                className="text-sm font-bold"
-                style={{ color: BLUE, fontFamily: MONO }}
-              >
-                {progress}%
-              </span>
+              Release Notes {latestRelease.version}
             </div>
             <div
-              className="h-3 rounded-full overflow-hidden"
-              style={{ background: BORDER }}
-            >
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${progress}%`, background: BLUE }}
-              />
-            </div>
-            <div
-              className="text-xs text-gray-400 mt-2"
+              className="text-xs text-gray-300 py-1 whitespace-pre-wrap"
               style={{ fontFamily: DISP }}
             >
-              {step === "downloading"
-                ? "Do not power off terminal"
-                : "Installing — do not interrupt"}
+              {latestRelease.releaseNotes || "No release notes provided."}
             </div>
           </div>
         )}
-        {step === "done" && (
-          <div
-            className="rounded-2xl p-5 flex flex-col items-center gap-3"
-            style={{
-              background: "oklch(0.65 0.18 160 / 0.1)",
-              border: `1px solid ${GREEN}`,
-            }}
-          >
-            <div className="text-4xl">✓</div>
-            <div
-              className="text-base font-bold"
-              style={{ color: GREEN, fontFamily: DISP }}
-            >
-              Update Complete
-            </div>
-            <div
-              className="text-xs text-gray-400 text-center"
-              style={{ fontFamily: DISP }}
-            >
-              Firmware v4.3.0-NG installed successfully. Terminal will restart.
-            </div>
-            <button
-              onClick={onBack}
-              className="px-6 py-2 rounded-xl font-bold text-white"
-              style={{ background: GREEN, fontFamily: DISP }}
-            >
-              Done
-            </button>
-          </div>
-        )}
-        {step === "idle" && (
+
+        {step !== "available" && (
           <button
             onClick={check}
-            className="w-full py-4 rounded-2xl font-bold text-white transition-all active:scale-95"
+            disabled={step === "checking" || checkingReleases}
+            className="w-full py-4 rounded-2xl font-bold text-white transition-all active:scale-95 disabled:opacity-50"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            Check for Updates
+            {step === "checking" || checkingReleases
+              ? "Checking for Updates…"
+              : "Check for Updates"}
           </button>
         )}
-        {step === "checking" && (
-          <div className="flex items-center justify-center gap-3 py-4">
-            <div className="w-5 h-5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-            <span
-              className="text-sm text-blue-400"
-              style={{ fontFamily: DISP }}
-            >
-              Checking for updates…
-            </span>
-          </div>
-        )}
-        {step === "available" && (
+        {step === "available" && latestRelease && (
           <button
             onClick={install}
             className="w-full py-4 rounded-2xl font-bold text-white transition-all active:scale-95"
             style={{ background: GOLD, fontFamily: DISP }}
           >
-            Download & Install v4.3.0-NG
+            Install {latestRelease.version}
           </button>
         )}
       </div>
     </div>
   );
 }
-
-// ─── Gamification Panel ───────────────────────────────────────────────────────
-// FloatBalance Screen ─────────────────────────────────────────────────────
 
 function ReceiptModal({
   tx,
@@ -1476,7 +1099,7 @@ function FloatHeader({ terminal }: { terminal: TerminalInfo }) {
             className="flex items-center gap-1 text-xs"
             style={{ color: GOLD, fontFamily: MONO }}
           >
-            🔥 {terminal.tier} · {GAMIFICATION.streak}d streak
+            🔥 {terminal.tier ?? "—"} · {GAMIFICATION.streak != null ? `${GAMIFICATION.streak}d streak` : "—"}
           </div>
         </div>
       </div>

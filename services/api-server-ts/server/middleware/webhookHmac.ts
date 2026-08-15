@@ -23,12 +23,30 @@ export function verifyWebhookHmac(
   secretEnvKey: string,
   headerName = "x-webhook-signature"
 ) {
+  // SEC-09: fail closed at middleware-init time — in production a missing
+  // webhook secret is a startup-fatal misconfiguration, never a silent skip.
+  if (process.env.NODE_ENV === "production" && !process.env[secretEnvKey]) {
+    throw new Error(
+      `[WebhookHmac] FATAL: ${secretEnvKey} must be set in production. Refusing to register an unverified webhook endpoint.`
+    );
+  }
   return (req: Request, res: Response, next: NextFunction) => {
     const secret = process.env[secretEnvKey];
     if (!secret) {
-      // If no secret is configured, skip verification (dev/test mode)
+      // Defense in depth: even if the env var is removed after startup,
+      // production requests are rejected instead of skipping verification.
+      if (process.env.NODE_ENV === "production") {
+        console.error(
+          `[WebhookHmac] FATAL: ${secretEnvKey} not set in production — rejecting request (fail-closed)`
+        );
+        res.status(500).json({
+          error: "Webhook signature verification is not configured",
+        });
+        return;
+      }
+      // Non-production only: skip verification with a loud warning
       console.warn(
-        `[WebhookHmac] ${secretEnvKey} not set — skipping signature check`
+        `[WebhookHmac] ${secretEnvKey} not set — skipping signature check (non-production ONLY; this would be fatal in production)`
       );
       return next();
     }

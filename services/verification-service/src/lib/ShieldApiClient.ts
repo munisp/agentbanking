@@ -18,6 +18,12 @@ class ShieldApiClient {
     // disabling verification exposes identity-verification traffic to MITM.
     const insecureTls = readEnv("SHIELD_API_INSECURE_TLS") === "true";
     if (insecureTls) {
+      // SEC-12 hardening: escalate from warn to startup-fatal in production.
+      if (process.env.NODE_ENV === "production" || process.env.ENVIRONMENT === "production") {
+        throw new Error(
+          "FATAL: SHIELD_API_INSECURE_TLS=true is not allowed in production — TLS certificate verification must stay enabled."
+        );
+      }
       this._logger.warn(
         "WARNING: SHIELD_API_INSECURE_TLS=true — TLS certificate verification is DISABLED for the Shield identity client. Do not use in production."
       );

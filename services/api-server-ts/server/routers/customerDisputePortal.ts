@@ -358,12 +358,11 @@ export const customerDisputePortalRouter = router({
   escalateDispute: protectedProcedure
     .input(z.object({ disputeId: z.number(), reason: z.string() }))
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        escalatedAt: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "customerDisputePortal.escalateDispute is not available in this deployment",
+    });
+  }),
   updateDispute: protectedProcedure
     .input(
       z.object({
@@ -373,10 +372,9 @@ export const customerDisputePortalRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        updatedAt: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "customerDisputePortal.updateDispute is not available in this deployment",
+    });
+  }),
 });

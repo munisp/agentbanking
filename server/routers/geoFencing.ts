@@ -197,7 +197,11 @@ export const geoFencingRouter = router({
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { id: input.id, name: "", coordinates: [], active: true };
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
       const [zone] = await db
         .select()
         .from(geofenceZones)
@@ -248,7 +252,11 @@ export const geoFencingRouter = router({
       const commission = calculateCommission(fees.fee, "transfer");
       const tax = calculateTax(fees.fee, "vat");
       const db = await getDb();
-      if (!db) return { id: "zone-1", name: input.name, created: true };
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — zone not created",
+        });
       const [zone] = await db
         .insert(geofenceZones)
         .values({
@@ -270,7 +278,11 @@ export const geoFencingRouter = router({
     .input(z.object({ id: z.string(), active: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { id: input.id, active: input.active, updated: true };
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — zone not updated",
+        });
       await db
         .update(geofenceZones)
         .set({ isActive: input.active, updatedAt: new Date() })
@@ -341,16 +353,10 @@ export const geoFencingRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db)
-        // Middleware fan-out (fail-open)
-        await publishgeoFencingMiddleware("createZone", `${Date.now()}`, {
-          action: "createZone",
-        }).catch(() => {});
-
-      return {
-        id: `zone-${Date.now()}`,
-        name: input.name,
-        createdAt: new Date().toISOString(),
-      };
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — zone not created",
+        });
       const [zone] = await db
         .insert(geofenceZones)
         .values({
@@ -362,6 +368,11 @@ export const geoFencingRouter = router({
           isActive: true,
         })
         .returning();
+      // Middleware fan-out (fail-open)
+      await publishgeoFencingMiddleware("createZone", `${Date.now()}`, {
+        action: "createZone",
+      }).catch(() => {});
+
       return {
         id: String(zone.id),
         name: zone.name,
@@ -373,7 +384,11 @@ export const geoFencingRouter = router({
     .input(z.object({ zoneId: z.string().min(1).max(255) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { success: true, zoneId: input.zoneId };
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — zone not deleted",
+        });
       await db
         .delete(geofenceZones)
         .where(eq(geofenceZones.id, Number(input.zoneId)));

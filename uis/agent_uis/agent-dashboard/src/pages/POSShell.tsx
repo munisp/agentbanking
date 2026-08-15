@@ -775,7 +775,7 @@ export default function POSShell() {
             ·
           </span>
           <span className="text-xs text-gray-400" style={{ fontFamily: DISP }}>
-            {terminal.agentCode}
+            {terminal.agentCode ?? "—"}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -806,24 +806,27 @@ export default function POSShell() {
           <div className="flex items-center gap-1">
             <div
               className="w-6 h-3 rounded-sm border flex items-center px-0.5"
-              style={{ borderColor: terminal.batteryLevel > 20 ? GREEN : RED }}
+              style={{
+              borderColor:
+                (terminal.batteryLevel ?? 0) > 20 ? GREEN : RED,
+            }}
             >
               <div
                 className="h-1.5 rounded-sm"
                 style={{
-                  width: `${terminal.batteryLevel}%`,
-                  background: terminal.batteryLevel > 20 ? GREEN : RED,
+                  width: `${terminal.batteryLevel ?? 0}%`,
+                  background: (terminal.batteryLevel ?? 0) > 20 ? GREEN : RED,
                 }}
               />
             </div>
             <span
               className="text-xs"
               style={{
-                color: terminal.batteryLevel > 20 ? GREEN : RED,
+                color: (terminal.batteryLevel ?? 0) > 20 ? GREEN : RED,
                 fontFamily: MONO,
               }}
             >
-              {terminal.batteryLevel}%
+              {terminal.batteryLevel != null ? `${terminal.batteryLevel}%` : "—"}
             </span>
           </div>
           <span
@@ -961,20 +964,20 @@ export default function POSShell() {
               className="text-sm font-bold text-white"
               style={{ fontFamily: DISP }}
             >
-              {terminal.agentName}
+              {terminal.agentName ?? "—"}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <div
                 className="px-1.5 py-0.5 rounded text-xs font-bold"
                 style={{ background: "oklch(0.78 0.18 80 / 0.2)", color: GOLD }}
               >
-                {terminal.tier}
+                {terminal.tier ?? "—"}
               </div>
               <span
                 className="text-xs text-gray-400"
                 style={{ fontFamily: DISP }}
               >
-                {terminal.location}
+                {terminal.location ?? "—"}
               </span>
             </div>
           </div>
@@ -1036,13 +1039,13 @@ export default function POSShell() {
                 className="text-xs font-bold"
                 style={{ color: GOLD, fontFamily: MONO }}
               >
-                🏆 #{gamification.rank}
+                🏆 {gamification.rank != null ? `#${gamification.rank}` : "—"}
               </div>
               <div
                 className="text-xs text-gray-400"
                 style={{ fontFamily: DISP }}
               >
-                🔥 {gamification.streak}d streak
+                🔥 {gamification.streak != null ? `${gamification.streak}d streak` : "—"}
               </div>
             </button>
           </div>
@@ -1273,7 +1276,7 @@ export default function POSShell() {
             style={{ background: wsStatus === "connected" ? GREEN : GOLD }}
           />
           <span className="text-xs text-gray-500" style={{ fontFamily: MONO }}>
-            {TERMINAL.model}
+            {TERMINAL.model ?? "—"}
           </span>
         </div>
       </div>

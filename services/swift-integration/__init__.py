@@ -1,1 +1,1 @@
-"""SWIFT payment integration"""\n
+"""SWIFT payment integration"""

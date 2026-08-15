@@ -19,10 +19,10 @@ export default function AgentBenchmarking() {
   >("overview");
 
   const kpis = [
-    { label: "Top Performers", value: "45" },
-    { label: "Avg Score", value: "78.3" },
-    { label: "Below Target", value: "12" },
-    { label: "Improvement Rate", value: "+5.2%" },
+    { label: "Top Performers", value: "—" },
+    { label: "Avg Score", value: "—" },
+    { label: "Below Target", value: "—" },
+    { label: "Improvement Rate", value: "—" },
   ];
 
   const columns = ["Agent", "Score", "Percentile", "Rank", "Trend"];

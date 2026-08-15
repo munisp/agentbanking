@@ -17,11 +17,13 @@ import {
   floatTopUpRequests,
   agents,
   supervisorAgents,
+  gl_journal_entries,
 } from "../../drizzle/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, count, max } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { floatTopupRequestsTotal } from "../metrics";
+import crypto from "crypto";
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
@@ -198,26 +200,44 @@ export const floatTopUpRouter = router({
             message: "Agent session required",
           });
 
-          // Check for existing pending request
-          const existing = await db
-            .select()
-            .from(floatTopUpRequests)
-            .where(eq(floatTopUpRequests.agentId, session.id))
-            .orderBy(desc(floatTopUpRequests.createdAt))
-            .limit(1);
-          if (existing[0] && existing[0].status === "pending") {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                "You already have a pending top-up request. Please wait for approval.",
-            });
-          }
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database connection unavailable",
+          });
 
-          // Phase 48: determine if supervisor approval is required
-          const requiresSupervisor =
-            input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
+        // Fail-closed duplicate guard: check for existing pending request.
+        // NOTE: application-level check only — a UNIQUE partial index on
+        // float_topup_requests(agentId) WHERE status = 'pending' is required
+        // to make this guard race-safe under concurrent submissions.
+        const existing = await db
+          .select()
+          .from(floatTopUpRequests)
+          .where(eq(floatTopUpRequests.agentId, session.id))
+          .orderBy(desc(floatTopUpRequests.createdAt))
+          .limit(1);
+        if (existing[0] && existing[0].status === "pending") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "You already have a pending top-up request. Please wait for approval.",
+          });
+        }
 
-          const result = await db
+        // Phase 48: determine if supervisor approval is required
+        const requiresSupervisor =
+          input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
+
+        // Funds-flow hardening: the top-up request row and its double-entry
+        // GL journal entry are written atomically in a single transaction —
+        // either both persist or neither does.
+        // Collision-safe journal entry number: timestamp + random suffix.
+        const entryNumber = `JE-${Date.now()}-${crypto
+          .randomBytes(4)
+          .toString("hex")}`;
+        const result = await db.transaction(async tx => {
+          const inserted = await tx
             .insert(floatTopUpRequests)
             .values({
               agentId: session.id,
@@ -229,79 +249,18 @@ export const floatTopUpRouter = router({
             .returning();
 
           // Double-entry GL journal entry
-          await db.insert(gl_journal_entries).values({
-            entryNumber: `JE-${Date.now()}`,
+          await tx.insert(gl_journal_entries).values({
+            entryNumber,
             description: `floatTopUp transaction`,
             debitAccountId: 2001,
             creditAccountId: 1001,
-            amount: Math.round(
-              (typeof input === "object" && "amount" in input
-                ? Number((input as any).amount)
-                : 0) * 100
-            ),
+            amount: Math.round(input.amount * 100),
             currency: "NGN",
             status: "posted",
           });
 
-          await writeAuditLog({
-            agentId: session.id,
-            agentCode: session.agentCode,
-            action: "FLOAT_TOPUP_REQUESTED",
-            resource: "float_topup",
-            resourceId: String(result[0].id),
-            status: "success",
-            metadata: { amount: input.amount, requiresSupervisor },
-          });
-
-          // Notify supervisor(s) assigned to this agent if threshold exceeded
-          if (requiresSupervisor) {
-            try {
-              const { notifyOwner } = await import("../_core/notification");
-              await notifyOwner({
-                title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
-                content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
-              });
-            } catch {
-              // Non-critical
-            }
-          }
-
-          floatTopupRequestsTotal.labels("submitted").inc();
-
-          await publishfloatTopUpMiddleware("submit", `${Date.now()}`, {
-            action: "submit",
-          }).catch(() => {});
-
-          return {
-            success: true,
-            requestId: result[0].id,
-            requiresSupervisorApproval: requiresSupervisor,
-            message: requiresSupervisor
-              ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
-              : "Top-up request submitted. Awaiting admin approval.",
-          };
-        } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-          });
-        }
-
-        // Phase 48: determine if supervisor approval is required
-        const requiresSupervisor = input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
-
-        const result = await db
-          .insert(floatTopUpRequests)
-          .values({
-            agentId: session.id,
-            requestedAmount: String(input.amount),
-            status: "pending",
-            notes: input.notes ?? null,
-            supervisorApprovalRequired: requiresSupervisor,
-          })
-          .returning();
+          return inserted;
+        });
 
         await writeAuditLog({
           agentId: session.id,
@@ -569,11 +528,33 @@ export const floatTopUpRouter = router({
 
   // ── Additional query/mutation procedures ─────────────────────
   getStats_floatTopUp: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      status: "operational",
-    };
+    try {
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
+      const [row] = await db
+        .select({
+          total: count(),
+          lastUpdated: max(floatTopUpRequests.updatedAt),
+        })
+        .from(floatTopUpRequests);
+      return {
+        totalRecords: Number(row?.total ?? 0),
+        lastUpdated: (row?.lastUpdated ?? new Date()).toISOString(),
+        status: "operational",
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
   }),
 
   healthCheck_floatTopUp: protectedProcedure.query(async () => {

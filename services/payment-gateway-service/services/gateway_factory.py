@@ -21,7 +21,7 @@ from .gateways.opay_gateway import OpayGateway
 from .gateways.kuda_gateway import KudaGateway
 from .gateways.chipper_cash_gateway import ChipperCashGateway
 from .gateways.nibss_gateway import NIBSSGateway
-from .gateways.gtpay_gateway import GTPay Gateway
+from .gateways.gtpay_gateway import GTPayGateway
 from .gateways.ecobank_gateway import EcobankGateway
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class GatewayFactory:
         "kuda": KudaGateway,
         "chipper_cash": ChipperCashGateway,
         "nibss": NIBSSGateway,
-        "gtpay": GTPay,
+        "gtpay": GTPayGateway,
         "ecobank": EcobankGateway,
     }
     

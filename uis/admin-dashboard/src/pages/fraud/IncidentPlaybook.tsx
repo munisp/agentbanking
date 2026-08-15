@@ -19,10 +19,10 @@ export default function IncidentPlaybook() {
   >("overview");
 
   const kpis = [
-    { label: "Active Incidents", value: "2" },
-    { label: "Playbooks", value: "15" },
-    { label: "Avg MTTR", value: "23 min" },
-    { label: "Resolved Today", value: "7" },
+    { label: "Active Incidents", value: "—" },
+    { label: "Playbooks", value: "—" },
+    { label: "Avg MTTR", value: "—" },
+    { label: "Resolved Today", value: "—" },
   ];
 
   const columns = ["Incident", "Severity", "Playbook", "Status", "Duration"];

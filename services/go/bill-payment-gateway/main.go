@@ -1,18 +1,19 @@
 package main
 
 import (
-	"database/sql"
-	_ "github.com/lib/pq"
-	"syscall"
-	"os/signal"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 type Biller struct {
@@ -41,6 +42,30 @@ var billers = []Biller{
 	{ID: "FIRS", Name: "Federal Inland Revenue", Category: "government", Active: true},
 }
 
+// Simulation mode is only honoured outside production; in production the
+// combination BILLER_SIMULATION_MODE=true + ENVIRONMENT=production is fatal.
+var (
+	simulationMode = os.Getenv("BILLER_SIMULATION_MODE") == "true"
+	environment    = os.Getenv("ENVIRONMENT")
+)
+
+func findBiller(id string) *Biller {
+	for i := range billers {
+		if billers[i].ID == id {
+			return &billers[i]
+		}
+	}
+	return nil
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": message}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "bill-payment-gateway"})
@@ -65,13 +90,30 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"valid":             true,
-		"billerId":          req.BillerID,
-		"customerReference": req.CustomerRef,
-		"customerName":      "Customer " + req.CustomerRef,
-	})
+	biller := findBiller(req.BillerID)
+	if biller == nil {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("unknown billerId: %s", req.BillerID))
+		return
+	}
+
+	if simulationMode {
+		log.Printf("WARNING: returning simulated customer validation for biller %s (BILLER_SIMULATION_MODE)", req.BillerID)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"valid":             true,
+			"billerId":          req.BillerID,
+			"customerReference": req.CustomerRef,
+			"customerName":      "SIMULATED CUSTOMER " + req.CustomerRef,
+			"simulated":         true,
+		})
+		return
+	}
+
+	// No real biller aggregator API is configured; fail loud rather than
+	// fabricating a customer name for an arbitrary meter/smartcard number.
+	log.Printf("Refusing validation for biller %s: no biller validation API configured", req.BillerID)
+	writeJSONError(w, http.StatusServiceUnavailable,
+		"biller validation API is not configured; refusing to fabricate a customer name")
 }
 
 func payHandler(w http.ResponseWriter, r *http.Request) {
@@ -89,25 +131,41 @@ func payHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := PaymentResult{
-		Reference: fmt.Sprintf("BPG-%d", time.Now().UnixNano()),
-		BillerID:  req.BillerID,
-		Amount:    req.Amount,
-		Status:    "success",
-		Timestamp: time.Now(),
+	biller := findBiller(req.BillerID)
+	if biller == nil {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("unknown billerId: %s", req.BillerID))
+		return
+	}
+	if req.Amount <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "amount must be greater than zero")
+		return
 	}
 
-	if req.BillerID == "IKEDC" || req.BillerID == "EKEDC" || req.BillerID == "AEDC" {
-		result.Token = fmt.Sprintf("%04d-%04d-%04d-%04d-%04d",
-			time.Now().UnixNano()%10000, time.Now().UnixNano()%9999,
-			time.Now().UnixNano()%8888, time.Now().UnixNano()%7777,
-			time.Now().UnixNano()%6666)
+	if simulationMode {
+		log.Printf("WARNING: returning simulated payment result for biller %s (BILLER_SIMULATION_MODE)", req.BillerID)
+		result := PaymentResult{
+			Reference: fmt.Sprintf("SIM-BPG-%d", time.Now().UnixNano()),
+			BillerID:  req.BillerID,
+			Amount:    req.Amount,
+			Status:    "simulated_success",
+			Timestamp: time.Now(),
+		}
+
+		if biller.Category == "electricity" {
+			result.Token = "SIMULATED-TOKEN-NOT-VALID"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	// No real biller payment API is configured; fail loud rather than
+	// fabricating a success reference or an electricity token.
+	log.Printf("Refusing payment for biller %s: no biller payment API configured", req.BillerID)
+	writeJSONError(w, http.StatusServiceUnavailable,
+		"biller payment API is not configured; refusing to fabricate a payment reference or token")
 }
-
 
 // recoverMiddleware catches panics and returns 500 instead of crashing
 func recoverMiddleware(next http.Handler) http.Handler {
@@ -151,28 +209,16 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-// Auth Middleware - validates Bearer token on all non-health endpoints
-func authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
-			return
-		}
-		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
-			http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func main() {
+	if simulationMode && environment == "production" {
+		log.Fatal("BILLER_SIMULATION_MODE=true is forbidden when ENVIRONMENT=production")
+	}
+	if simulationMode {
+		log.Println("WARNING: running with SIMULATED biller responses (non-production only)")
+	} else {
+		log.Println("WARNING: no biller API configured; /api/v1/validate and /api/v1/pay will return 503")
+	}
+
 	initDB()
 
 	port := os.Getenv("PORT")
@@ -180,13 +226,23 @@ func main() {
 		port = "8141"
 	}
 
-	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/api/v1/billers", billersHandler)
-	http.HandleFunc("/api/v1/validate", validateHandler)
-	http.HandleFunc("/api/v1/pay", payHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/api/v1/billers", billersHandler)
+	mux.HandleFunc("/api/v1/validate", validateHandler)
+	mux.HandleFunc("/api/v1/pay", payHandler)
+
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%s", port),
+		Handler:           recoverMiddleware(jwtAuthMiddleware(mux)),
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	setupGracefulShutdown(srv)
 
 	log.Printf("Bill Payment Gateway starting on port %s", port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", jwtAuthMiddleware(port)), nil))
+	log.Fatal(srv.ListenAndServe())
 }
 
 // --- Production: Graceful Shutdown ---
@@ -207,7 +263,6 @@ func setupGracefulShutdown(srv *http.Server) {
 
 // --- PostgreSQL persistence ---
 
-
 var db *sql.DB
 
 func initDB() {
@@ -216,7 +271,7 @@ func initDB() {
 		dbURL = "postgres://postgres:postgres@localhost:5432/bill_payment_gateway?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	db, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("DB init warning: %v", err)
 		return
@@ -240,12 +295,14 @@ func logAudit(action, entityID, data string) {
 
 func setState(key, value string) {
 	if db != nil {
-		db.Exec("INSERT OR REPLACE INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW())", key, value)
+		db.Exec("INSERT INTO state_store (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()", key, value)
 	}
 }
 
 func getState(key string) string {
-	if db == nil { return "" }
+	if db == nil {
+		return ""
+	}
 	var val string
 	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
 	return val

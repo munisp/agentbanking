@@ -432,12 +432,9 @@ export const vaultSecretsRouter = router({
         .optional()
     )
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "rotateSecret",
-        id: input?.id ?? null,
-        path: input?.path ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "vaultSecrets.rotateSecret is not available in this deployment",
+    });
+  }),
 });

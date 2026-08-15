@@ -19,10 +19,10 @@ export default function GatewayHealthMonitor() {
   >("overview");
 
   const kpis = [
-    { label: "Gateways Up", value: "5/5" },
-    { label: "Avg Uptime", value: "99.97%" },
-    { label: "Incidents Today", value: "0" },
-    { label: "Avg Latency", value: "89ms" },
+    { label: "Gateways Up", value: "—" },
+    { label: "Avg Uptime", value: "—" },
+    { label: "Incidents Today", value: "—" },
+    { label: "Avg Latency", value: "—" },
   ];
 
   const columns = ["Gateway", "Status", "Uptime", "Latency", "Last Incident"];

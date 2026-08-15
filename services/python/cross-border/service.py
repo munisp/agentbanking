@@ -1,4 +1,8 @@
+import json
 import logging
+import os
+import urllib.error
+import urllib.request
 import uuid
 from typing import List, Optional
 from decimal import Decimal
@@ -36,7 +40,7 @@ class InvalidTransactionError(Exception):
     """Raised for invalid transaction parameters or state transitions."""
     def __init__(self, message: str) -> None:
         self.message = message
-        super().__init>(message)
+        super().__init__(message)
 
 # --- Helper Functions ---
 
@@ -143,6 +147,56 @@ class TransactionService:
         self.db = db
         self.party_service = PartyService(db)
         self.fx_service = FXRateService(db)
+        # Compliance screening provider (optional). Without one, transactions
+        # keep a NULL (pending) compliance score instead of a fabricated value.
+        self.screening_api_url = os.getenv("COMPLIANCE_SCREENING_API_URL", "").strip() or None
+        self.screening_api_key = os.getenv("COMPLIANCE_SCREENING_API_KEY", "").strip() or None
+
+    def _screen_compliance(self, sender: Party, receiver: Party, amount: Decimal) -> Optional[int]:
+        """Screen the transaction with the configured compliance provider.
+
+        Returns the provider's risk score, or None when no screening provider
+        is configured (score stays pending). Raises when a configured provider
+        is unreachable or returns no score — compliance results are never
+        fabricated.
+        """
+        if not self.screening_api_url:
+            return None
+
+        payload = {
+            "sender": {
+                "name": sender.name,
+                "country_code": sender.country_code,
+                "account_number": sender.account_number,
+            },
+            "receiver": {
+                "name": receiver.name,
+                "country_code": receiver.country_code,
+                "account_number": receiver.account_number,
+            },
+            "amount": str(amount),
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.screening_api_key:
+            headers["Authorization"] = f"Bearer {self.screening_api_key}"
+
+        request = urllib.request.Request(
+            f"{self.screening_api_url.rstrip('/')}/screen",
+            data=json.dumps(payload).encode(),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.loads(response.read().decode())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            logger.error(f"Compliance screening call failed: {e}")
+            raise InvalidTransactionError(f"Compliance screening unavailable: {e}")
+
+        score = data.get("score")
+        if score is None:
+            raise InvalidTransactionError("Compliance screening provider did not return a score")
+        return int(score)
 
     def create_transaction(self, transaction_in: TransactionCreate) -> Transaction:
         logger.info(f"Attempting to create new transaction from {transaction_in.sender_id} to {transaction_in.receiver_id}")
@@ -173,8 +227,12 @@ class TransactionService:
         # 3. Calculate Target Amount
         target_amount = _calculate_target_amount(transaction_in.source_amount, fx_rate)
         
-        # 4. Compliance Check (Placeholder)
-        compliance_score = 50 # Mock score
+        # 4. Compliance Screening
+        # Score comes from the configured screening provider; without one the
+        # score stays NULL (pending review) rather than a fabricated number.
+        compliance_score = self._screen_compliance(
+            sender, receiver, transaction_in.source_amount
+        )
 
         # 5. Create Transaction
         db_transaction = Transaction(

@@ -12,6 +12,12 @@ import { KycWorkflowResult } from "../types/workflow";
 // MITM attacks.
 const insecureTls = readEnv("WEBHOOK_INSECURE_TLS") === "true";
 if (insecureTls) {
+  // SEC-12 hardening: escalate from warn to startup-fatal in production.
+  if (process.env.NODE_ENV === "production" || process.env.ENVIRONMENT === "production") {
+    throw new Error(
+      "FATAL: WEBHOOK_INSECURE_TLS=true is not allowed in production — TLS certificate verification must stay enabled."
+    );
+  }
   logger.warn(
     "WARNING: WEBHOOK_INSECURE_TLS=true — TLS certificate verification is DISABLED for outbound webhooks. Do not use in production."
   );

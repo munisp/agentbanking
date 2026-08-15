@@ -67,36 +67,7 @@ interface SupportAgent {
 }
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
-const SUPPORT_AGENTS: SupportAgent[] = [
-  {
-    name: "Kemi Adeyemi",
-    avatar: "KA",
-    status: "online",
-    speciality: "Transactions & Float",
-    responseTime: "< 2 min",
-  },
-  {
-    name: "Chukwu Obi",
-    avatar: "CO",
-    status: "online",
-    speciality: "Technical Support",
-    responseTime: "< 3 min",
-  },
-  {
-    name: "Fatima Musa",
-    avatar: "FM",
-    status: "busy",
-    speciality: "Compliance & KYC",
-    responseTime: "< 5 min",
-  },
-  {
-    name: "Tunde Afolabi",
-    avatar: "TA",
-    status: "online",
-    speciality: "Account Management",
-    responseTime: "< 2 min",
-  },
-];
+const SUPPORT_AGENTS: SupportAgent[] = []; // no invented online agents — presence data is not connected
 
 const CANNED_RESPONSES = [
   {
@@ -125,101 +96,9 @@ const CANNED_RESPONSES = [
   },
 ];
 
-const BOT_RESPONSES: Record<string, string[]> = {
-  transaction: [
-    "I can see your concern about the transaction. Let me pull up the details from our system.",
-    "I've located the transaction in our records. Can you confirm the customer's phone number for verification?",
-    "I'm escalating this to our transaction team. You'll receive a resolution within 15 minutes.",
-  ],
-  technical: [
-    "I understand you're having a technical issue. Let me run a remote diagnostic on your terminal.",
-    "The diagnostic shows your terminal firmware is up to date. Please try restarting the terminal.",
-    "I'm connecting you with our Level 2 technical team for further assistance.",
-  ],
-  float: [
-    "I can see your current float balance. Let me check your eligibility for an emergency top-up.",
-    "You're eligible for an emergency float of up to ₦200,000 based on your transaction history.",
-    "The float top-up has been approved and will reflect in your balance within 2 minutes.",
-  ],
-  compliance: [
-    "I understand your compliance concern. Let me review the flagged transaction details.",
-    "I've reviewed the case and I'm connecting you with our compliance officer.",
-    "The compliance team has been notified. Please do not process further transactions with this customer until cleared.",
-  ],
-  default: [
-    "Thank you for reaching out to 54Link support. I'm reviewing your request now.",
-    "I understand your concern. Let me check our system for more details.",
-    "I'm looking into this for you. This should only take a moment.",
-    "I've found the relevant information. Here's what I can tell you...",
-  ],
-};
+// Canned bot replies removed — no fabricated support messages are ever posted.
 
-const HISTORY_TICKETS: SupportTicket[] = [
-  {
-    id: "TKT-2024-0891",
-    category: "transaction",
-    subject: "Failed Cash-Out — Customer Debited",
-    status: "resolved",
-    priority: "urgent",
-    createdAt: "Yesterday 14:32",
-    rating: 5,
-    supportAgent: "Kemi Adeyemi",
-    messages: [
-      {
-        id: "1",
-        role: "agent",
-        text: "My customer's account was debited ₦50,000 but cash was not dispensed.",
-        time: "14:32",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "2",
-        role: "support",
-        text: "I can see the transaction. Processing reversal now — will complete in 3 minutes.",
-        time: "14:34",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "3",
-        role: "system",
-        text: "Reversal processed. ₦50,000 returned to customer account.",
-        time: "14:37",
-        timestamp: 0,
-        read: true,
-      },
-    ],
-  },
-  {
-    id: "TKT-2024-0876",
-    category: "technical",
-    subject: "Printer Paper Jam — Cannot Print Receipts",
-    status: "resolved",
-    priority: "normal",
-    createdAt: "3 days ago",
-    rating: 4,
-    supportAgent: "Chukwu Obi",
-    messages: [
-      {
-        id: "1",
-        role: "agent",
-        text: "My printer is jammed and I cannot print receipts for customers.",
-        time: "10:15",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "2",
-        role: "support",
-        text: "Please follow these steps: 1. Open the printer cover 2. Remove paper 3. Clean roller 4. Reload paper.",
-        time: "10:17",
-        timestamp: 0,
-        read: true,
-      },
-    ],
-  },
-];
+const HISTORY_TICKETS: SupportTicket[] = []; // no fabricated ticket history — real tickets come from the support backend
 
 const fmt = (n: number) => `₦${n.toLocaleString()}`;
 
@@ -264,12 +143,12 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
   const [unread, setUnread] = useState(2);
-  const [queuePos] = useState(Math.floor(Math.random() * 3) + 1);
+  const queuePos: number | null = null; // queue position unknown — no fabricated value
   const [sessionRef, setSessionRef] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const assignedAgent = SUPPORT_AGENTS[0];
+  const assignedAgent: SupportAgent | null = null; // no agent assignment without a live session
 
   // ── tRPC mutations ────────────────────────────────────────────────────────────
   // @ts-ignore Sprint 85
@@ -321,28 +200,6 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
   }, [messages, scrollToBottom]);
 
   // Simulate support agent typing + response
-  const simulateResponse = useCallback((category: SupportCategory) => {
-    setIsTyping(true);
-    const delay = 1500 + Math.random() * 2000;
-    setTimeout(() => {
-      setIsTyping(false);
-      const pool = BOT_RESPONSES[category] || BOT_RESPONSES.default;
-      const text = pool[Math.floor(Math.random() * pool.length)];
-      const msg: Message = {
-        id: Date.now().toString(),
-        role: "support",
-        text,
-        time: new Date().toLocaleTimeString("en-NG", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        timestamp: Date.now(),
-        read: false,
-      };
-      setMessages(prev => [...prev, msg]);
-    }, delay);
-  }, []);
-
   const sendMessage = useCallback(() => {
     const text = input.trim();
     if (!text) return;
@@ -368,8 +225,10 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
         { sessionRef, content: text },
         {
           onError: () => {
-            // Fallback to local simulation if API unavailable
-            simulateResponse(category);
+            setIsTyping(false);
+            toast.error(
+              "Support is currently unavailable — your message could not be delivered. Please try again later."
+            );
           },
         }
       );
@@ -377,12 +236,13 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
       socketSend(text);
       setIsTyping(true);
     } else {
-      simulateResponse(category);
+      toast.error(
+        "Support is currently unavailable — start a session first. Your message was not delivered."
+      );
     }
   }, [
     input,
     category,
-    simulateResponse,
     sessionRef,
     sendMessageMutation,
     socketSend,
@@ -428,51 +288,19 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
           setUnread(0);
         },
         onError: () => {
-          // Fallback: local simulation
-          const systemMsg: Message = {
-            id: "sys-1",
-            role: "system",
-            text: `Chat started · Ticket ID: TKT-${Date.now().toString().slice(-6)} · Category: ${category} · Assigned to: ${assignedAgent.name}`,
-            time: new Date().toLocaleTimeString("en-NG", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            timestamp: Date.now(),
-            read: true,
-          };
-          const welcomeMsg: Message = {
-            id: "sup-1",
-            role: "support",
-            text: `Hello! I'm ${assignedAgent.name} from 54Link Support. I can see your ticket about "${subject}". How can I assist you today?`,
-            time: new Date().toLocaleTimeString("en-NG", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            timestamp: Date.now() + 100,
-            read: false,
-          };
-          setMessages([systemMsg, welcomeMsg]);
-          setView("chat");
-          setUnread(0);
+          toast.error(
+            "Support is currently unavailable — a chat session could not be started. Please try again later."
+          );
         },
       }
     );
   }, [subject, category, assignedAgent, startSessionMutation]);
 
   const handleEscalate = () => {
-    const msg: Message = {
-      id: Date.now().toString(),
-      role: "system",
-      text: "Ticket escalated to Level 2 Compliance Team. A senior agent will respond within 10 minutes.",
-      time: new Date().toLocaleTimeString("en-NG", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      timestamp: Date.now(),
-      read: true,
-    };
-    setMessages(prev => [...prev, msg]);
-    toast.success("Escalated to compliance team");
+    // Escalation has no connected backend in this build — never claim success.
+    toast.error(
+      "Escalation is currently unavailable — no escalation service is connected."
+    );
   };
 
   const handleEndChat = () => {
@@ -549,11 +377,11 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                 className="text-xs font-bold"
                 style={{ color: GREEN, fontFamily: MONO }}
               >
-                ~{queuePos * 2} min
+                —
               </span>
             </div>
             <div className="text-xs text-gray-400">
-              Queue position: #{queuePos} ·{" "}
+              Queue position unavailable · 
               {SUPPORT_AGENTS.filter(a => a.status === "online").length} agents
               available
             </div>
@@ -825,17 +653,17 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                 className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white"
                 style={{ background: `${BLUE}30` }}
               >
-                {assignedAgent.avatar}
+                {assignedAgent?.avatar ?? "—"}
               </div>
               <div>
                 <div
                   className="text-sm font-bold text-white"
                   style={{ fontFamily: DISP }}
                 >
-                  {assignedAgent.name}
+                  {assignedAgent?.name ?? "Support"}
                 </div>
                 <div className="text-xs text-gray-400">
-                  {assignedAgent.speciality} · {assignedAgent.responseTime}
+                  {"Support availability unavailable"}
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-1">
@@ -889,14 +717,14 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
             className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
             style={{ background: `${BLUE}40` }}
           >
-            {assignedAgent.avatar}
+            {assignedAgent?.avatar ?? "—"}
           </div>
           <div className="flex-1">
             <div
               className="text-sm font-bold text-white"
               style={{ fontFamily: DISP }}
             >
-              {assignedAgent.name}
+              {assignedAgent?.name ?? "Support"}
             </div>
             <div className="flex items-center gap-1.5">
               <div
@@ -965,13 +793,13 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                         className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white"
                         style={{ background: `${BLUE}40` }}
                       >
-                        {assignedAgent.avatar}
+                        {assignedAgent?.avatar ?? "—"}
                       </div>
                       <span
                         className="text-xs text-gray-500"
                         style={{ fontFamily: DISP }}
                       >
-                        {assignedAgent.name}
+                        {assignedAgent?.name ?? "Support"}
                       </span>
                     </div>
                   )}

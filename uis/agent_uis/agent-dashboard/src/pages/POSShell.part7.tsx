@@ -15,9 +15,44 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
   );
   const [amount, setAmount] = useState(50000);
   const [tenor, setTenor] = useState(30);
+  const loanAgent = usePosStore(s => s.agent);
+  const loanAgentId = loanAgent?.id ?? 0;
 
-  const interest = Math.round(amount * 0.025);
-  const total = amount + interest;
+  // Real credit score from the backend — never an invented number.
+  const { data: credit, isLoading: creditLoading } =
+    trpc.agentLoanFacility.creditScore.useQuery(
+      { agentId: loanAgentId },
+      { enabled: loanAgentId > 0, retry: false }
+    ) as any;
+  const applyLoanMut = trpc.agentLoanFacility.applyLoan.useMutation() as any;
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [loanRef, setLoanRef] = useState<string | null>(null);
+  const [loanStatus, setLoanStatus] = useState<string | null>(null);
+  // No fabricated borrowing limit: without a real score the slider stays disabled.
+  const maxLoan = credit?.maxLoanAmount != null && credit.maxLoanAmount > 0 ? credit.maxLoanAmount : null;
+
+  // Interest/total are set by the server on approval — not computed from an
+  // invented rate here.
+  const submitApplication = async () => {
+    setApplyError(null);
+    setApplying(true);
+    try {
+      const resp: any = await applyLoanMut.mutateAsync({
+        agentId: loanAgentId,
+        loanType: "float_advance",
+        principalAmount: amount,
+        tenorDays: tenor,
+      });
+      setLoanRef(resp?.loanId != null ? `LOAN-${resp.loanId}` : resp?.id != null ? `LOAN-${resp.id}` : null);
+      setLoanStatus(resp?.status ?? "submitted");
+      setStep("success");
+    } catch (err: any) {
+      setApplyError(err?.message || "Loan application failed — nothing was disbursed.");
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen" style={{ background: BG }}>
@@ -40,10 +75,14 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
                     className="text-3xl font-bold"
                     style={{ color: GREEN, fontFamily: MONO }}
                   >
-                    742
+                    {creditLoading ? "…" : credit?.score != null ? credit.score : "—"}
                   </p>
                   <p className="text-green-400 text-xs">
-                    Excellent — Pre-approved
+                    {creditLoading
+                      ? "Checking score…"
+                      : credit?.score != null
+                        ? credit.eligible ? "Eligible to apply" : "Not currently eligible"
+                        : "Score unavailable"}
                   </p>
                 </div>
                 <div className="text-5xl">🏆</div>
@@ -72,16 +111,17 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
               <input
                 type="range"
                 min={10000}
-                max={500000}
+                max={maxLoan ?? 10000}
                 step={10000}
                 value={amount}
                 onChange={e => setAmount(Number(e.target.value))}
+                disabled={maxLoan == null}
                 className="w-full mb-4"
                 style={{ accentColor: BLUE }}
               />
               <div className="flex justify-between text-xs text-gray-500 mb-4">
                 <span>₦10,000</span>
-                <span>₦500,000</span>
+                <span>{maxLoan != null ? `₦${maxLoan.toLocaleString()}` : "Limit unavailable"}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -109,15 +149,15 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-400">Interest (2.5%)</span>
+                  <span className="text-gray-400">Interest</span>
                   <span className="text-white" style={{ fontFamily: MONO }}>
-                    ₦{interest.toLocaleString()}
+                    Set by the server on approval
                   </span>
                 </div>
                 <div className="flex justify-between text-sm font-bold">
                   <span className="text-gray-300">Total Repayment</span>
                   <span style={{ color: GOLD, fontFamily: MONO }}>
-                    ₦{total.toLocaleString()}
+                    Confirmed on approval
                   </span>
                 </div>
               </div>
@@ -125,12 +165,13 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
 
             <button
               onClick={() => setStep("confirm")}
-              className="w-full py-4 rounded-2xl font-bold text-white text-lg"
+              disabled={maxLoan == null}
+              className="w-full py-4 rounded-2xl font-bold text-white text-lg disabled:opacity-40"
               style={{
                 background: `linear-gradient(135deg, ${BLUE}, oklch(0.55 0.22 280))`,
               }}
             >
-              Apply for Loan →
+              {maxLoan == null ? "Loan Offer Unavailable" : "Apply for Loan →"}
             </button>
           </>
         )}
@@ -149,7 +190,7 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
                 Confirm Loan Application
               </h3>
               <p className="text-gray-400 text-sm mb-4">
-                Funds will be credited to your float account instantly
+                Disbursement follows server approval — timing is confirmed by the server
               </p>
               <div
                 className="text-4xl font-bold mb-1"
@@ -158,15 +199,24 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
                 ₦{amount.toLocaleString()}
               </div>
               <p className="text-gray-500 text-sm">
-                Repay ₦{total.toLocaleString()} in {tenor} days
+                Repayment terms are confirmed by the server on approval
               </p>
             </div>
+            {applyError && (
+              <div
+                className="text-xs text-center rounded-xl p-3 mb-3"
+                style={{ color: "#f87171", border: "1px solid #7f1d1d" }}
+              >
+                {applyError}
+              </div>
+            )}
             <button
-              onClick={() => setStep("success")}
-              className="w-full py-4 rounded-2xl font-bold text-white text-lg mb-3"
+              onClick={submitApplication}
+              disabled={applying || loanAgentId <= 0 || credit?.eligible === false}
+              className="w-full py-4 rounded-2xl font-bold text-white text-lg mb-3 disabled:opacity-40"
               style={{ background: GREEN }}
             >
-              ✓ Confirm & Disburse
+              {applying ? "Submitting…" : "✓ Submit Loan Application"}
             </button>
             <button
               onClick={() => setStep("offer")}
@@ -185,26 +235,28 @@ export function NanoLoanScreen({ onBack }: { onBack: () => void }) {
               className="text-white font-bold text-2xl mb-2"
               style={{ fontFamily: DISP }}
             >
-              Loan Approved!
+              Application {loanStatus ?? "Submitted"}
             </h3>
             <p className="text-gray-400 mb-4">
-              ₦{amount.toLocaleString()} credited to your float
+              ₦{amount.toLocaleString()} requested — disbursement is confirmed by the server
             </p>
-            <div
-              className="rounded-xl px-6 py-3 mb-6"
-              style={{
-                background: `${GREEN}20`,
-                border: `1px solid ${GREEN}40`,
-              }}
-            >
-              <p className="text-green-400 font-semibold">New Float Balance</p>
-              <p
-                className="text-3xl font-bold"
-                style={{ color: GREEN, fontFamily: MONO }}
+            {loanRef && (
+              <div
+                className="rounded-xl px-6 py-3 mb-6"
+                style={{
+                  background: `${GREEN}20`,
+                  border: `1px solid ${GREEN}40`,
+                }}
               >
-                ₦{(485250 + amount).toLocaleString()}
-              </p>
-            </div>
+                <p className="text-green-400 font-semibold">Application Reference</p>
+                <p
+                  className="text-2xl font-bold"
+                  style={{ color: GREEN, fontFamily: MONO }}
+                >
+                  {loanRef}
+                </p>
+              </div>
+            )}
             <button
               onClick={onBack}
               className="px-8 py-3 rounded-2xl font-bold text-white"
@@ -313,13 +365,13 @@ function FraudAlertsScreen({ onBack }: { onBack: () => void }) {
             </div>
             <div className="text-sm text-gray-300" style={{ fontFamily: DISP }}>
               {selected.aiExplanation ??
-                "Transaction velocity exceeded 3× normal rate for this agent. Structuring pattern detected. Confidence: 94.7% · Model: FraudNet v2.1"}
+                "No AI explanation is available for this alert."}
             </div>
             <div
               className="mt-2 text-xs"
               style={{ color: BLUE, fontFamily: MONO }}
             >
-              Score: {selected.fraudScore ?? "N/A"} · FraudNet v2.1
+              Score: {selected.fraudScore ?? "—"}
             </div>
           </div>
           <div className="flex gap-3">
@@ -664,6 +716,11 @@ function PrinterTestScreen({ onBack }: { onBack: () => void }) {
     setResult("idle");
     setTimeout(() => {
       setPrinting(false);
+      if (TERMINAL.paperLevel == null) {
+        setResult("idle");
+        toast.error("Printer status unavailable — paper level unknown");
+        return;
+      }
       const r = TERMINAL.paperLevel > 20 ? "success" : "low-paper";
       setResult(r);
       if (r === "success") toast.success(`${type} print successful`);
@@ -697,11 +754,11 @@ function PrinterTestScreen({ onBack }: { onBack: () => void }) {
                 <span
                   className="text-xs font-bold"
                   style={{
-                    color: TERMINAL.paperLevel > 30 ? GREEN : RED,
+                    color: (TERMINAL.paperLevel ?? 0) > 30 ? GREEN : RED,
                     fontFamily: MONO,
                   }}
                 >
-                  {TERMINAL.paperLevel}%
+                  {TERMINAL.paperLevel != null ? `${TERMINAL.paperLevel}%` : "—"}
                 </span>
               </div>
               <div
@@ -711,14 +768,14 @@ function PrinterTestScreen({ onBack }: { onBack: () => void }) {
                 <div
                   className="h-full rounded-full"
                   style={{
-                    width: `${TERMINAL.paperLevel}%`,
-                    background: TERMINAL.paperLevel > 30 ? GREEN : RED,
+                    width: `${TERMINAL.paperLevel != null ? `${TERMINAL.paperLevel}%` : "—"}`,
+                    background: (TERMINAL.paperLevel ?? 0) > 30 ? GREEN : RED,
                   }}
                 />
               </div>
             </div>
             <div className="text-3xl">
-              {TERMINAL.paperLevel > 30 ? "📄" : "⚠️"}
+              {(TERMINAL.paperLevel ?? 0) > 30 ? "📄" : "⚠️"}
             </div>
           </div>
           <div
@@ -878,7 +935,8 @@ function CashOutScreen({ onBack }: { onBack: () => void }) {
   const storeFloat = usePosStore(
     s => s.agent?.floatBalance ?? TERMINAL.floatBalance
   );
-  const floatOk = num <= storeFloat;
+  // Float unknown (no live balance) must fail closed, never assume a balance.
+  const floatOk = storeFloat != null && num <= storeFloat;
   const { submit, isProcessing } = useTransactionCreate();
 
   if (step === "success")
@@ -939,7 +997,7 @@ function CashOutScreen({ onBack }: { onBack: () => void }) {
           >
             <span className="text-xs" style={{ color: GOLD, fontFamily: DISP }}>
               Available Float:{" "}
-              <span style={{ fontFamily: MONO }}>{fmt(storeFloat)}</span>
+              <span style={{ fontFamily: MONO }}>{storeFloat != null ? fmt(storeFloat) : "— unavailable"}</span>
             </span>
           </div>
           <AmountDisplay value={amount} label="Withdrawal Amount" />
@@ -1011,7 +1069,7 @@ function CashOutScreen({ onBack }: { onBack: () => void }) {
               ["Type", "Cash Out (Withdrawal)"],
               ["Amount", fmt(num)],
               ["Customer Phone", phone],
-              ["Float After", fmt(storeFloat - num)],
+              ["Float After", storeFloat != null ? fmt(storeFloat - num) : "—"],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center">
                 <span

@@ -1,1 +1,1 @@
-"""Interest calculation service"""\n
+"""Interest calculation service"""

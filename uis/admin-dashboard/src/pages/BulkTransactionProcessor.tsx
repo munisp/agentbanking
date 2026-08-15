@@ -18,10 +18,10 @@ export default function BulkTransactionProcessor() {
   >("overview");
 
   const kpis = [
-    { label: "Batches Today", value: "12" },
-    { label: "Transactions", value: "4,521" },
-    { label: "Success Rate", value: "99.2%" },
-    { label: "Total Volume", value: "₦234M" },
+    { label: "Batches Today", value: "—" },
+    { label: "Transactions", value: "—" },
+    { label: "Success Rate", value: "—" },
+    { label: "Total Volume", value: "—" },
   ];
 
   const columns = ["Batch ID", "File", "Records", "Status", "Amount"];

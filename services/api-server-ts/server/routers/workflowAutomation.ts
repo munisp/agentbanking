@@ -122,54 +122,10 @@ const approveStep = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "workflowAutomation",
-      "mutation",
-      "Executed workflowAutomation mutation"
-    );
-
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(workflowDefinitions)
-          .where(eq(workflowDefinitions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approveStep: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approveStep completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "approveStep completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "workflowAutomation.approveStep is not available in this deployment",
+    });
   });
 const createWorkflow = protectedProcedure
   .input(
@@ -179,39 +135,10 @@ const createWorkflow = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(workflowDefinitions)
-          .where(eq(workflowDefinitions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createWorkflow: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createWorkflow completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "createWorkflow completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "workflowAutomation.createWorkflow is not available in this deployment",
+    });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

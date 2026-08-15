@@ -366,7 +366,12 @@ export const emailNotificationsRouter = router({
         frequency: z.string().optional(),
       })
     )
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "emailNotifications.updatePreferences is not available in this deployment",
+    });
+  }),
   sendTest: protectedProcedure
     .input(z.object({ email: z.string() }))
     .mutation(async () => ({ sent: true })),

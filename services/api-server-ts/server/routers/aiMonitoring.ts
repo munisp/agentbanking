@@ -411,11 +411,9 @@ export const aiMonitoringRouter = router({
   acknowledgeAlert: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        action: "acknowledgeAlert",
-        id: input?.id ?? null,
-        timestamp: new Date().toISOString(),
-      };
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "aiMonitoring.acknowledgeAlert is not available in this deployment",
+    });
+  }),
 });

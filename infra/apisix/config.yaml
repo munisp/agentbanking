@@ -5,10 +5,15 @@ apisix:
   enable_admin: true
   admin_key:
     - name: admin
-      key: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
+      # SEC-02: the previous default (${APISIX_ADMIN_KEY:-edd1...}) embedded a
+      # publicly leaked admin key. There is NO default anymore:
+      # APISIX_ADMIN_KEY MUST be set in the environment or the gateway must
+      # refuse to start with the admin API enabled.
+      key: ${APISIX_ADMIN_KEY}
       role: admin
     - name: viewer
-      key: ${APISIX_VIEWER_KEY:-4054f7cf07e344346cd3f287985e76a2}
+      # Same hardening: no default viewer key — APISIX_VIEWER_KEY MUST be set.
+      key: ${APISIX_VIEWER_KEY}
       role: viewer
 
 deployment:

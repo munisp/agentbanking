@@ -374,10 +374,17 @@ export const agentLoanFacilityRouter = router({
             sql`UPDATE agents SET float_balance = CAST(float_balance AS numeric) + ${Number(loan.principal_amount)} WHERE id = ${loan.agent_id}`
           );
 
-          // Update loan status
-          await tx.execute(
-            sql`UPDATE "agent_loans" SET status = 'disbursed', disbursed_at = NOW(), updated_at = NOW() WHERE id = ${input.loanId}`
+          // Update loan status — FF-2 (port): conditional transition; only a
+          // loan still 'approved' is disbursed, so a concurrent repeat
+          // disbursement affects 0 rows and throws, rolling back the float
+          // credit and GL entry above.
+          const disbursed = await tx.execute(
+            sql`UPDATE "agent_loans" SET status = 'disbursed', disbursed_at = NOW(), updated_at = NOW() WHERE id = ${input.loanId} AND status = 'approved' RETURNING id`
           );
+          if (!((disbursed as any).rows?.length > 0))
+            throw new Error(
+              "Loan is no longer approved — duplicate disbursement rejected"
+            );
 
           // GL entry: Debit Agent Float (2001), Credit Loan Payable (2004)
           const ref = `LOAN-DISB-${input.loanId}-${Date.now()}`;
@@ -502,14 +509,28 @@ export const agentLoanFacilityRouter = router({
           const loan = (loanResult as any).rows?.[0];
           if (!loan) throw new Error("Loan not found");
 
-          const newRepaid =
-            parseFloat(String(loan.amount_repaid || "0")) + input.amount;
+          const prevRepaid = parseFloat(String(loan.amount_repaid || "0"));
+          const newRepaid = prevRepaid + input.amount;
           const totalRepayable = parseFloat(String(loan.total_repayable));
           const isFullyRepaid = newRepaid >= totalRepayable;
 
-          await tx.execute(
-            sql`UPDATE "agent_loans" SET amount_repaid = ${String(newRepaid)}, status = ${isFullyRepaid ? "completed" : "repaying"}, updated_at = NOW() WHERE id = ${input.loanId}`
+          // FF-2 (port): reject overpayment beyond the remaining balance.
+          const remainingBalance = totalRepayable - prevRepaid;
+          if (input.amount > remainingBalance + 0.005)
+            throw new Error(
+              `Overpayment rejected: remaining balance is ${remainingBalance.toFixed(2)}, attempted ${input.amount.toFixed(2)}`
+            );
+
+          // FF-2 (port): guarded UPDATE — the amount_repaid predicate is an
+          // optimistic concurrency token; a concurrent committed repayment
+          // makes this affect 0 rows → throw → roll back.
+          const repaidUpd = await tx.execute(
+            sql`UPDATE "agent_loans" SET amount_repaid = ${newRepaid.toFixed(2)}, status = ${isFullyRepaid ? "completed" : "repaying"}, updated_at = NOW() WHERE id = ${input.loanId} AND amount_repaid = ${prevRepaid.toFixed(2)}::numeric AND status IN ('disbursed', 'repaying') RETURNING id`
           );
+          if (!((repaidUpd as any).rows?.length > 0))
+            throw new Error(
+              "Concurrent repayment detected or loan not active — no amount recorded"
+            );
 
           // GL entry: Debit Loan Payable (2004), Credit Agent Float (2001)
           const ref = `LOAN-REPAY-${input.loanId}-${Date.now()}`;

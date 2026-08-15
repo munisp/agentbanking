@@ -17,6 +17,12 @@ const DB_SSL_ENABLED = readEnv("DB_SSL_ENABLED");
 // exposes the database connection to MITM attacks.
 const DB_SSL_INSECURE_TLS = readEnv("DB_SSL_INSECURE_TLS") === "true";
 if (DB_SSL_INSECURE_TLS) {
+  // SEC-12 hardening: escalate from warn to startup-fatal in production.
+  if (process.env.NODE_ENV === "production" || process.env.ENVIRONMENT === "production") {
+    throw new Error(
+      "FATAL: DB_SSL_INSECURE_TLS=true is not allowed in production — database TLS certificate verification must stay enabled."
+    );
+  }
   logger.warn(
     "WARNING: DB_SSL_INSECURE_TLS=true — TLS certificate verification is DISABLED for the database connection. Do not use in production."
   );

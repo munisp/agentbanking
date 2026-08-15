@@ -310,62 +310,19 @@ function AirtimeScreen({ onBack }: { onBack: () => void }) {
 // 8. Bill Payment ─────────────────────────────────────────────────────────────
 
 export function NotificationPanel({ onClose }: { onClose: () => void }) {
-  const notifications = [
-    {
-      id: 1,
-      type: "alert",
-      title: "Fraud Alert",
-      body: "Unusual transaction pattern detected on terminal T-0042",
-      time: "2m ago",
-      read: false,
-      color: RED,
-    },
-    {
-      id: 2,
-      type: "approval",
-      title: "Approval Required",
-      body: "₦850,000 transfer pending supervisor approval",
-      time: "5m ago",
-      read: false,
-      color: GOLD,
-    },
-    {
-      id: 3,
-      type: "success",
-      title: "Settlement Complete",
-      body: "Daily settlement of ₦2.4M processed successfully",
-      time: "1h ago",
-      read: true,
-      color: GREEN,
-    },
-    {
-      id: 4,
-      type: "info",
-      title: "Firmware Update",
-      body: "PAX A920 MAX firmware v3.2.1 available for download",
-      time: "2h ago",
-      read: true,
-      color: BLUE,
-    },
-    {
-      id: 5,
-      type: "warning",
-      title: "Low Float Warning",
-      body: "Agent float balance below ₦50,000 threshold",
-      time: "3h ago",
-      read: true,
-      color: GOLD,
-    },
-    {
-      id: 6,
-      type: "success",
-      title: "KYC Approved",
-      body: "Customer Aminu Garba KYC verification approved",
-      time: "4h ago",
-      read: true,
-      color: GREEN,
-    },
-  ];
+  // No fabricated notifications: the notifications backend is not connected to
+  // this build, so the panel starts honestly empty instead of showing invented
+  // fraud alerts, pending approvals, or settlements.
+  const notifications: Array<{
+    id: number;
+    type: string;
+    title: string;
+    body: string;
+    time: string;
+    read: boolean;
+    color: string;
+  }> = [];
+
 
   const [items, setItems] = useState(notifications);
   const unread = items.filter(n => !n.read).length;
@@ -414,6 +371,11 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="max-h-96 overflow-y-auto">
+          {items.length === 0 && (
+            <div className="p-8 text-center text-sm text-gray-500" style={{ fontFamily: DISP }}>
+              No notifications yet
+            </div>
+          )}
           {items.map(n => (
             <div
               key={n.id}
@@ -929,35 +891,9 @@ function BiometricScreen({ onBack }: { onBack: () => void }) {
 function CustomerLookupScreen({ onBack }: { onBack: () => void }) {
   const [query, setQuery] = useState("");
   const [searched, setSearched] = useState(false);
-  const customers = [
-    {
-      name: "Emeka Eze",
-      phone: "0803-456-7890",
-      acct: "2034567890",
-      bank: "GTBank",
-      tier: "Tier 2",
-      kyc: "Verified",
-      balance: "₦45,200",
-    },
-    {
-      name: "Fatima Bello",
-      phone: "0812-345-6789",
-      acct: "3045678901",
-      bank: "Access Bank",
-      tier: "Tier 1",
-      kyc: "Pending",
-      balance: "₦8,500",
-    },
-    {
-      name: "Chidi Obi",
-      phone: "0701-234-5678",
-      acct: "4056789012",
-      bank: "First Bank",
-      tier: "Tier 3",
-      kyc: "Verified",
-      balance: "₦234,000",
-    },
-  ];
+  // No customer search endpoint is connected to this build — the screen shows
+  // an honest unavailable state instead of fabricated customer records.
+  const customers: any[] = [];
   const results = searched
     ? customers.filter(
         c =>
@@ -999,7 +935,7 @@ function CustomerLookupScreen({ onBack }: { onBack: () => void }) {
             className="text-center text-gray-500 py-8"
             style={{ fontFamily: DISP }}
           >
-            No customers found
+            Customer search is unavailable — the customer directory service is not connected.
           </div>
         )}
         {results.map(c => (
@@ -1353,17 +1289,12 @@ function CardPaymentScreen({ onBack }: { onBack: () => void }) {
             onChange={async v => {
               if (v.length <= 4) setPin(v);
               if (v.length === 4) {
-                toast.success("Processing payment...");
-                const result = await submit({
-                  type: "Card Payment",
-                  amount: num,
-                  customerName: "Card Holder",
-                  channel: "Card",
-                });
-                if (result) {
-                  setTxRef(result.ref);
-                  setStep("success");
-                }
+                // Fail closed: this build has no card-PIN verification rail, so
+                // no transaction is created from unverified PIN entry.
+                setPin("");
+                toast.error(
+                  "Card PIN verification is unavailable in this build — payment not processed."
+                );
               }
             }}
           />

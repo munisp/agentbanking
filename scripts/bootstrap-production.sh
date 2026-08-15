@@ -71,7 +71,7 @@ echo "  ███████╗██╗  ██╗██╗     ██╗█�
 echo "  ██╔════╝██║  ██║██║     ██║████╗  ██║██║ ██╔╝"
 echo "  ███████╗███████║██║     ██║██╔██╗ ██║█████╔╝ "
 echo "  ╚════██║╚════██║██║     ██║██║╚██╗██║██╔═██╗ "
-echo "  ███████║     ██║███████╗██║██║ ╚████║██║  ██╗"
+echo "  ███████║     ██║███████╗██║██║ ╚████║██║  ██║"
 echo "  ╚══════╝     ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝"
 echo ""
 echo "  Agency Banking Platform — Production Bootstrap"
@@ -79,104 +79,39 @@ echo "  Version: 2.0.0 (Phase 161)"
 echo ""
 
 # ── Step 1: Prerequisites ─────────────────────────────────────────────────────
-step "1/13 — Checking prerequisites"
+step "1/13 — Validating prerequisites"
 
-check_cmd() {
-  if ! command -v "$1" &>/dev/null; then
-    error "Required command not found: $1. Please install it first."
+for cmd in docker jq curl openssl; do
+  if ! command -v $cmd &>/dev/null; then
+    error "$cmd is required but not installed"
   fi
-  log "Found: $1 ($(command -v "$1"))"
-}
+done
 
-check_cmd docker
-check_cmd docker-compose || check_cmd "docker compose"
-check_cmd curl
-check_cmd jq
-
-DOCKER_VERSION=$(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)
-info "Docker version: ${DOCKER_VERSION}"
-
-# Check Docker daemon is running
-docker info &>/dev/null || error "Docker daemon is not running. Please start Docker."
-log "Docker daemon is running"
-
-# ── Step 2: Environment file ──────────────────────────────────────────────────
-step "2/13 — Environment configuration"
-
-if [[ ! -f ".env.production" ]]; then
-  if [[ -f ".env.production.example" ]]; then
-    warn ".env.production not found — copying from .env.production.example"
-    cp .env.production.example .env.production
-    warn "IMPORTANT: Edit .env.production and set all required secrets before proceeding!"
-    warn "Press Enter to continue with example values, or Ctrl+C to abort."
-    read -r
-  else
-    error ".env.production not found and no .env.production.example available."
-  fi
-else
-  log ".env.production found"
+if ! docker compose version &>/dev/null; then
+  error "Docker Compose v2 is required"
 fi
 
-# Source env file for use in this script
-set -a; source .env.production 2>/dev/null || true; set +a
+log "All prerequisites satisfied"
+
+# ── Step 2: Environment file ──────────────────────────────────────────────────
+step "2/13 — Preparing environment"
+
+if [[ ! -f .env.production ]]; then
+  if [[ -f .env.production.template ]]; then
+    cp .env.production.template .env.production
+    warn "Created .env.production from template — EDIT IT before continuing in a real deployment"
+  else
+    error ".env.production not found and no template available"
+  fi
+fi
+
+# shellcheck disable=SC2046
+export $(grep -v '^#' .env.production | grep -v '^$' | xargs) || true
 
 DOMAIN="${DOMAIN:-54link.io}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@54link.io}"
-info "Domain: ${DOMAIN}"
-info "Admin email: ${ADMIN_EMAIL}"
 
-# ── VAPID key auto-generation ─────────────────────────────────────────────────
-if [[ -z "${VAPID_PUBLIC_KEY:-}" ]] || [[ -z "${VAPID_PRIVATE_KEY:-}" ]]; then
-  info "VAPID keys not set — auto-generating cryptographically secure VAPID key pair..."
-  # Use web-push CLI (available as project devDependency)
-  if node -e "require('./node_modules/web-push')" &>/dev/null 2>&1; then
-    VAPID_JSON=$(node -e "
-      const wp = require('./node_modules/web-push');
-      const k = wp.generateVAPIDKeys();
-      process.stdout.write(JSON.stringify(k));
-    " 2>/dev/null || echo "")
-    if [[ -n "${VAPID_JSON}" ]]; then
-      GENERATED_PUBLIC=$(echo "${VAPID_JSON}"  | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).publicKey));")
-      GENERATED_PRIVATE=$(echo "${VAPID_JSON}" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).privateKey));")
-      # Persist to .env.production
-      if grep -q '^VAPID_PUBLIC_KEY=' .env.production 2>/dev/null; then
-        sed -i "s|^VAPID_PUBLIC_KEY=.*|VAPID_PUBLIC_KEY=${GENERATED_PUBLIC}|" .env.production
-        sed -i "s|^VAPID_PRIVATE_KEY=.*|VAPID_PRIVATE_KEY=${GENERATED_PRIVATE}|" .env.production
-      else
-        { echo ""; echo "# Auto-generated VAPID keys ($(date -u '+%Y-%m-%dT%H:%M:%SZ'))"; echo "VAPID_PUBLIC_KEY=${GENERATED_PUBLIC}"; echo "VAPID_PRIVATE_KEY=${GENERATED_PRIVATE}"; } >> .env.production
-      fi
-      export VAPID_PUBLIC_KEY="${GENERATED_PUBLIC}" VAPID_PRIVATE_KEY="${GENERATED_PRIVATE}"
-      log "VAPID keys generated and persisted to .env.production"
-      log "  Public key prefix: ${GENERATED_PUBLIC:0:24}..."
-    else
-      warn "web-push key generation returned empty output — push notifications disabled"
-    fi
-  else
-    warn "web-push not available in node_modules — run 'pnpm install' first"
-    warn "Then re-run this script, or manually run: npx web-push generate-vapid-keys"
-  fi
-else
-  log "VAPID keys already configured (${VAPID_PUBLIC_KEY:0:16}...)"
-fi
-
-# ── Validate critical secrets ─────────────────────────────────────────────────
-MISSING_SECRETS=()
-[[ -z "${JWT_SECRET:-}" ]]              && MISSING_SECRETS+=("JWT_SECRET")
-[[ -z "${POSTGRES_URL:-}" ]]           && MISSING_SECRETS+=("POSTGRES_URL")
-[[ -z "${KEYCLOAK_CLIENT_SECRET:-}" ]] && MISSING_SECRETS+=("KEYCLOAK_CLIENT_SECRET")
-[[ -z "${MINIO_SECRET_KEY:-}" ]]       && MISSING_SECRETS+=("MINIO_SECRET_KEY")
-[[ -z "${APISIX_ADMIN_KEY:-}" ]]       && MISSING_SECRETS+=("APISIX_ADMIN_KEY")
-[[ -z "${CRON_SECRET:-}" ]]            && MISSING_SECRETS+=("CRON_SECRET")
-if [[ ${#MISSING_SECRETS[@]} -gt 0 ]]; then
-  warn "The following required secrets are not set in .env.production:"
-  for secret in "${MISSING_SECRETS[@]}"; do
-    warn "  ✗ ${secret}"
-  done
-  warn "The platform will start but some features will be degraded."
-  warn "Set these secrets in .env.production before going live."
-else
-  log "All critical secrets validated"
-fi
+log "Environment loaded (domain: ${DOMAIN})"
 
 # ── Step 3: Pull images ───────────────────────────────────────────────────────
 step "3/13 — Pulling Docker images"
@@ -184,54 +119,71 @@ step "3/13 — Pulling Docker images"
 if [[ "${SKIP_PULL}" == "true" ]]; then
   warn "Skipping image pull (--skip-pull)"
 else
-  run "docker compose -f docker-compose.production.yml --profile ${COMPOSE_PROFILE} pull --quiet"
+  run "docker compose -f docker-compose.production.yml pull"
   log "All images pulled"
 fi
 
-# ── Step 4: Start infrastructure tier ────────────────────────────────────────
-step "4/13 — Starting infrastructure services"
+# ── Step 4: Infrastructure tier ───────────────────────────────────────────────
+step "4/13 — Starting infrastructure tier"
 
-run "docker compose -f docker-compose.production.yml --profile infra up -d"
+INFRA_SERVICES="postgres redis kafka tigerbeetle minio vault apisix etcd fluvio"
 
-info "Waiting for infrastructure services to be healthy..."
-INFRA_SERVICES=(postgres redis kafka tigerbeetle minio vault keycloak)
-for svc in "${INFRA_SERVICES[@]}"; do
-  info "Waiting for ${svc}..."
-  for i in $(seq 1 60); do
-    STATUS=$(docker compose -f docker-compose.production.yml ps --format json "${svc}" 2>/dev/null | jq -r '.[0].Health // "unknown"' 2>/dev/null || echo "unknown")
-    if [[ "${STATUS}" == "healthy" ]]; then
-      log "${svc} is healthy"
-      break
-    fi
-    [[ $i -eq 60 ]] && warn "${svc} did not become healthy after 60 attempts (continuing anyway)"
-    sleep 3
-  done
+if [[ "${COMPOSE_PROFILE}" == "all" ]]; then
+  run "docker compose -f docker-compose.production.yml up -d ${INFRA_SERVICES}"
+else
+  run "docker compose -f docker-compose.production.yml --profile ${COMPOSE_PROFILE} up -d"
+fi
+
+info "Waiting for infrastructure to be healthy..."
+sleep 15
+
+# Wait for PostgreSQL
+for i in $(seq 1 30); do
+  if docker compose -f docker-compose.production.yml exec -T postgres pg_isready -U postgres &>/dev/null; then
+    log "PostgreSQL is ready"
+    break
+  fi
+  sleep 2
+done
+
+# Wait for Redis
+for i in $(seq 1 15); do
+  if docker compose -f docker-compose.production.yml exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+    log "Redis is ready"
+    break
+  fi
+  sleep 2
 done
 
 # ── Step 5: Database migrations ───────────────────────────────────────────────
 step "5/13 — Running database migrations"
 
-run "docker compose -f docker-compose.production.yml run --rm app pnpm db:push"
-log "Database migrations complete"
+if [[ -d db/migrations ]]; then
+  run "bash db/migrations/run-all.sh --env production"
+  log "Database migrations applied"
+else
+  warn "No db/migrations directory — skipping"
+fi
 
-# ── Step 6: MinIO initialisation ──────────────────────────────────────────────
+# ── Step 6: MinIO buckets ─────────────────────────────────────────────────────
 step "6/13 — Initialising MinIO buckets"
 
-run "docker compose -f docker-compose.production.yml run --rm minio-init"
-log "MinIO buckets and lifecycle policies configured"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+if curl -sf "${MINIO_ENDPOINT}/minio/health/live" &>/dev/null; then
+  run "bash infra/minio/init-buckets.sh"
+  log "MinIO buckets created with lifecycle policies"
+else
+  warn "MinIO not reachable at ${MINIO_ENDPOINT} — skipping bucket init"
+fi
 
-# ── Step 7: Vault initialisation ─────────────────────────────────────────────
-step "7/13 — Bootstrapping HashiCorp Vault"
+# ── Step 7: Vault ─────────────────────────────────────────────────────────────
+step "7/13 — Initialising HashiCorp Vault"
 
 if [[ "${SKIP_VAULT}" == "true" ]]; then
   warn "Skipping Vault initialisation (--skip-vault)"
 else
   VAULT_ADDR="${VAULT_ADDR:-http://localhost:8200}"
-  VAULT_INIT_STATUS=$(curl -sf "${VAULT_ADDR}/v1/sys/init" | jq -r '.initialized' 2>/dev/null || echo "false")
-
-  if [[ "${VAULT_INIT_STATUS}" == "true" ]]; then
-    warn "Vault already initialised — skipping init"
-  else
+  if curl -sf "${VAULT_ADDR}/v1/sys/health" &>/dev/null; then
     run "bash infra/vault/init-vault-complete.sh"
     log "Vault initialised and AppRole configured"
   fi
@@ -252,7 +204,10 @@ fi
 step "9/13 — Bootstrapping APISix routes"
 
 APISIX_ADMIN_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-if curl -sf -H "X-API-KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}" "${APISIX_ADMIN_URL}/apisix/admin/routes" &>/dev/null; then
+if [ -z "${APISIX_ADMIN_KEY:-}" ]; then
+  error "APISIX_ADMIN_KEY is required (no default admin key is permitted); set it in the environment or .env.production"
+fi
+if curl -sf -H "X-API-KEY: ${APISIX_ADMIN_KEY}" "${APISIX_ADMIN_URL}/apisix/admin/routes" &>/dev/null; then
   run "bash infra/apisix/bootstrap.sh --host ${APISIX_ADMIN_URL}"
   log "APISix routes and upstreams configured"
 else
@@ -273,64 +228,63 @@ fi
 # ── Step 11: Start application tier ──────────────────────────────────────────
 step "11/13 — Starting application services"
 
-run "docker compose -f docker-compose.production.yml --profile app up -d"
-log "Application services started"
+if [[ "${COMPOSE_PROFILE}" == "all" ]]; then
+  run "docker compose -f docker-compose.production.yml up -d"
+  log "All application services started"
+else
+  run "docker compose -f docker-compose.production.yml --profile ${COMPOSE_PROFILE} up -d"
+fi
 
-# ── Step 12: Start monitoring tier ────────────────────────────────────────────
-step "12/13 — Starting monitoring services"
+info "Waiting for services to be healthy..."
+sleep 20
 
-run "docker compose -f docker-compose.production.yml --profile monitoring up -d"
-log "Monitoring services started (Prometheus, Grafana, Alertmanager)"
+# ── Step 12: Monitoring tier ──────────────────────────────────────────────────
+step "12/13 — Starting monitoring tier"
+
+run "docker compose -f docker-compose.production.yml up -d prometheus grafana alertmanager"
+log "Monitoring stack started"
 
 # ── Step 13: Health checks ────────────────────────────────────────────────────
 step "13/13 — Running health checks"
 
-APP_URL="${APP_URL:-http://localhost:3000}"
-SERVICES_TO_CHECK=(
-  "${APP_URL}/health:Main App"
-  "http://localhost:9090/-/healthy:Prometheus"
-  "http://localhost:3001/api/health:Grafana"
-  "http://localhost:9000/minio/health/live:MinIO"
-  "http://localhost:9080:APISix"
+HEALTH_ENDPOINTS=(
+  "http://localhost:8080/health|API Gateway"
+  "http://localhost:9090/-/healthy|Prometheus"
+  "http://localhost:3000/api/health|Grafana"
 )
 
-HEALTHY=0
-UNHEALTHY=0
-for entry in "${SERVICES_TO_CHECK[@]}"; do
-  url="${entry%%:*}"
-  name="${entry##*:}"
-  if curl -sf --max-time 5 "${url}" &>/dev/null; then
-    log "${name}: healthy"
-    ((HEALTHY++))
+FAILED=0
+for entry in "${HEALTH_ENDPOINTS[@]}"; do
+  url="${entry%%|*}"
+  name="${entry##*|}"
+  if curl -sf "$url" &>/dev/null; then
+    log "${name} healthy"
   else
-    warn "${name}: not responding at ${url}"
-    ((UNHEALTHY++))
+    warn "${name} not responding at $url"
+    FAILED=$((FAILED+1))
   fi
 done
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo "  54Link Production Bootstrap Complete"
-echo "═══════════════════════════════════════════════════════════════"
+echo "════════════════════════════════════════════════════════════════"
+echo "  54Link Production Environment — Bootstrap Complete"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
-echo "  Services healthy: ${HEALTHY}/${#SERVICES_TO_CHECK[@]}"
+echo "  API Gateway:    https://api.${DOMAIN}"
+echo "  Admin Console:  https://admin.${DOMAIN}"
+echo "  Grafana:        https://grafana.${DOMAIN}"
+echo "  Vault:          https://vault.${DOMAIN}"
 echo ""
-echo "  Access URLs:"
-echo "    Main App:      ${APP_URL}"
-echo "    Grafana:       http://localhost:3001  (admin / admin)"
-echo "    Prometheus:    http://localhost:9090"
-echo "    Alertmanager:  http://localhost:9093"
-echo "    MinIO Console: http://localhost:9001"
-echo "    Keycloak:      http://localhost:8080"
-echo "    Vault:         http://localhost:8200"
-echo "    APISix:        http://localhost:9080"
+echo "  Health check failures: ${FAILED}"
 echo ""
-echo "  Logs:  docker compose -f docker-compose.production.yml logs -f"
-echo "  Stop:  docker compose -f docker-compose.production.yml down"
-echo ""
-if [[ ${UNHEALTHY} -gt 0 ]]; then
-  warn "${UNHEALTHY} service(s) did not respond to health checks."
-  warn "Check logs: docker compose -f docker-compose.production.yml logs --tail=50"
+echo "  Next steps:"
+echo "    1. Verify DNS records point to this host"
+echo "    2. Configure TLS certificates (certbot or cert-manager)"
+echo "    3. Review .env.production and rotate default credentials"
+echo "    4. Run integration tests: make test-integration"
+eecho ""
+
+if [[ ${FAILED} -gt 0 ]]; then
+  warn "Some health checks failed — review logs: docker compose -f docker-compose.production.yml logs"
 fi
-echo "═══════════════════════════════════════════════════════════════"

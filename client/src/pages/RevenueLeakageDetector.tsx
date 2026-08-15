@@ -10,48 +10,18 @@ export default function RevenueLeakageDetector() {
   const { data: liveData, isLoading } =
     // @ts-ignore Sprint 85
     trpc.revenueLeakageDetector.list.useQuery(undefined, { retry: 1 });
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${((crypto.getRandomValues(new Uint32Array(1))[0] / 4294967295) * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
+  // Render only real backend data — no fabricated fallback rows.
+  const mockData = liveData ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
   >("overview");
 
   const kpis = [
-    { label: "Scans Run", value: "156" },
-    { label: "Discrepancies", value: "23" },
-    { label: "Revenue Lost", value: "₦1.2M" },
-    { label: "Recovered", value: "₦890K" },
+    { label: "Scans Run", value: "—" },
+    { label: "Discrepancies", value: "—" },
+    { label: "Revenue Lost", value: "—" },
+    { label: "Recovered", value: "—" },
   ];
 
   const columns = ["Transaction", "Expected", "Actual", "Difference", "Status"];
@@ -147,6 +117,20 @@ export default function RevenueLeakageDetector() {
                 </tr>
               </thead>
               <tbody>
+                {isLoading && (
+                  <tr>
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500 animate-pulse">
+                    Loading…
+                  </td>
+                  </tr>
+                )}
+                {!isLoading && filtered.length === 0 && (
+                  <tr>
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500">
+                    No records available
+                  </td>
+                  </tr>
+                )}
                 {filtered.map((row: any) => (
                   <tr
                     key={row.id}

@@ -499,7 +499,7 @@ async function seed() {
     console.log("⚙️  [25/65] sim_orchestrator_config...");
     await client.query(
       `INSERT INTO sim_orchestrator_config (id, agent_code, primary_carrier, fallback_carrier, failover_threshold_ms, created_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "MTN", "Airtel", 5000, daysAgo(30)]
     );
     console.log("  ✓ 1 SIM orchestrator config");
@@ -526,7 +526,7 @@ async function seed() {
     for (let i = 0; i < DEVICE_IDS.length; i++) {
       await client.query(
         `INSERT INTO ota_update_log (id, device_id, version, status, started_at, completed_at)
-         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
         [uid(), DEVICE_IDS[i], "3.2.1", "success", daysAgo(5), daysAgo(4)]
       );
     }
@@ -536,7 +536,7 @@ async function seed() {
     console.log("💾 [28/65] software_updates...");
     await client.query(
       `INSERT INTO software_updates (id, version, description, is_mandatory, released_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
       [uid(), "3.2.1", "Security patch and performance improvements", false, daysAgo(30)]
     );
     console.log("  ✓ 1 software update");
@@ -685,7 +685,7 @@ async function seed() {
     for (const topic of ["transactions.completed", "fraud.alerts", "notifications.push"]) {
       await client.query(
         `INSERT INTO dlq_messages (id, topic, payload, error_message, retry_count, created_at)
-         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
         [uid(), topic, JSON.stringify({ id: uid(), type: "test" }),
          "Connection timeout after 3 retries", 3, daysAgo(1)]
       );
@@ -721,7 +721,7 @@ async function seed() {
     console.log("🔗 [43/65] shareable_links...");
     await client.query(
       `INSERT INTO shareable_links (id, agent_code, type, token, expires_at, created_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "referral", uid().replace(/-/g, ""), daysFromNow(30), daysAgo(5)]
     );
     console.log("  ✓ 1 shareable link");

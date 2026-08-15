@@ -336,12 +336,10 @@ export const managementRouter = router({
         try {
           const db = (await getDb())!;
           if (!db)
-            return {
-              txCount: 0,
-              volume: "0",
-              commission: "0",
-              successRate: 100,
-            };
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Database unavailable",
+            });
           const [agent] = await db
             .select()
             .from(agents)
@@ -456,7 +454,11 @@ export const managementRouter = router({
       }),
     stats: mgmtProcedure.query(async () => {
       const db = (await getDb())!;
-      if (!db) return { total: 0, volume: "0", successRate: 100 };
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
       const [stats] = await db
         .select({
           total: count(),
@@ -1197,7 +1199,10 @@ export const managementRouter = router({
         try {
           const db = (await getDb())!;
           if (!db)
-            return { txCount: 0, volume: "0", agentCount: 0, successRate: 100 };
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Database unavailable",
+            });
           const conditions = [];
           if (input.from)
             conditions.push(gte(transactions.createdAt, input.from));

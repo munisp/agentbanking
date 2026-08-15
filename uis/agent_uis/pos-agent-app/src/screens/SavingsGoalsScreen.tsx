@@ -216,7 +216,7 @@ const SavingsGoalsScreen = () => {
 const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: #0052CC,
+    backgroundColor: "#0052CC",
   },
   header: {
     flexDirection: 'row',
@@ -264,7 +264,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   goalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: #0052CC,
+    color: "#0052CC",
   },
   goalCategory: {
     fontSize: 12,
@@ -283,7 +283,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   currentAmount: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: #0052CC,
+    color: "#0052CC",
   },
   targetAmount: {
     fontSize: 14,
@@ -372,7 +372,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: #0052CC,
+    color: "#0052CC",
   },
   submitButton: {
     backgroundColor: '#6C63FF',

@@ -69,54 +69,10 @@ const suspendBilling = protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    const _fees = calculateFee(
-      typeof input === "object" && "amount" in input
-        ? Number((input as Record<string, unknown>).amount)
-        : 0,
-      "transfer"
-    );
-    const _commission = calculateCommission(_fees.fee, "transfer");
-    const _tax = calculateTax(_fees.fee, "vat");
-    auditFinancialAction(
-      "UPDATE",
-      "billingLifecycle",
-      "mutation",
-      "Executed billingLifecycle mutation"
-    );
-
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "suspendBilling: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "suspendBilling completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "suspendBilling completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.suspendBilling is not available in this deployment",
+    });
   });
 const terminateContract = protectedProcedure
   .input(
@@ -159,39 +115,10 @@ const reactivateBilling = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "reactivateBilling: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "reactivateBilling completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "reactivateBilling completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.reactivateBilling is not available in this deployment",
+    });
   });
 const getAlerts = protectedProcedure
   .input(
@@ -250,39 +177,10 @@ const configureAlertThresholds = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "configureAlertThresholds: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "configureAlertThresholds completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "configureAlertThresholds completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.configureAlertThresholds is not available in this deployment",
+    });
   });
 const getSlaMetrics = protectedProcedure
   .input(
@@ -394,39 +292,10 @@ const deleteWebhook = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "deleteWebhook: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "deleteWebhook completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "deleteWebhook completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.deleteWebhook is not available in this deployment",
+    });
   });
 const archiveOldRecords = protectedProcedure
   .input(
@@ -436,39 +305,10 @@ const archiveOldRecords = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "archiveOldRecords: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "archiveOldRecords completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "archiveOldRecords completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.archiveOldRecords is not available in this deployment",
+    });
   });
 const generateComplianceReport = protectedProcedure
   .input(
@@ -478,39 +318,10 @@ const generateComplianceReport = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "generateComplianceReport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "generateComplianceReport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "generateComplianceReport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.generateComplianceReport is not available in this deployment",
+    });
   });
 const getNotificationPreferences = protectedProcedure
   .input(
@@ -569,39 +380,10 @@ const updateNotificationPreferences = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "updateNotificationPreferences: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "updateNotificationPreferences completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "updateNotificationPreferences completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.updateNotificationPreferences is not available in this deployment",
+    });
   });
 const getRevenueForecast = protectedProcedure
   .input(
@@ -726,39 +508,10 @@ const resolveDispute = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "resolveDispute: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "resolveDispute completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "resolveDispute completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "billingLifecycle.resolveDispute is not available in this deployment",
+    });
   });
 
 // ── Transaction Safety ─────────────────────────────────────────────────────

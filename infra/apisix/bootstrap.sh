@@ -245,6 +245,7 @@ apisix_put "/routes/6" '{
   "uri": "/api/v1/settlement/*",
   "upstream_id": "6",
   "plugins": {
+    "key-auth": {},
     "limit-req": {"rate": 20, "burst": 50, "key": "remote_addr"}
   },
   "priority": 100
@@ -257,6 +258,7 @@ apisix_put "/routes/7" '{
   "uri": "/api/v1/kyc/*",
   "upstream_id": "7",
   "plugins": {
+    "key-auth": {},
     "limit-req": {"rate": 30, "burst": 60, "key": "remote_addr"}
   },
   "priority": 100

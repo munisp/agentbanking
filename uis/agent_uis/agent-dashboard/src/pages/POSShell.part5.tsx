@@ -29,10 +29,11 @@ function FloatBalanceScreen({ onBack }: { onBack: () => void }) {
   const agent = usePosStore(s => s.agent);
   // Prefer live float balance from platform (getFloatBalance), then agentDayStats, then store
   const float =
-    floatData?.balance ?? ds?.float ?? agent?.floatBalance ?? 485250;
+    floatData?.balance ?? ds?.float ?? agent?.floatBalance ?? null;
   const floatSource = floatData?.source ?? "local";
-  const limit = 1000000;
-  const pct = Math.round((float / limit) * 100);
+  // No fabricated float limit: without a live limit the usage bar is hidden.
+  const limit: number | null = null;
+  const pct = float != null && limit != null && limit > 0 ? Math.round((float / limit) * 100) : null;
 
   const submitTopUpMut = trpc.agentMgmt.submitTopUpRequest.useMutation({
     onSuccess: () => {
@@ -95,7 +96,7 @@ function FloatBalanceScreen({ onBack }: { onBack: () => void }) {
               className="text-4xl font-bold"
               style={{ fontFamily: MONO, color: GOLD }}
             >
-              ₦{fmt(float)}
+              {fmt(float)}
             </div>
             <div className="mt-3">
               <div
@@ -111,14 +112,14 @@ function FloatBalanceScreen({ onBack }: { onBack: () => void }) {
               >
                 <div
                   className="h-full rounded-full transition-all"
-                  style={{ width: `${pct}%`, background: GOLD }}
+                  style={{ width: `${pct ?? 0}%`, background: GOLD }}
                 />
               </div>
               <div
                 className="text-right text-xs mt-1"
                 style={{ color: GOLD, fontFamily: MONO }}
               >
-                {pct}% available
+                {pct != null ? `${pct}% available` : "Limit unavailable"}
               </div>
             </div>
           </div>
@@ -139,7 +140,7 @@ function FloatBalanceScreen({ onBack }: { onBack: () => void }) {
             },
             {
               label: "Float Utilization",
-              val: pct + "%",
+              val: pct != null ? pct + "%" : "—",
               sub: "Of daily limit",
             },
             {
@@ -473,11 +474,19 @@ function UssdTransactionScreen({ onBack }: { onBack: () => void }) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [history]);
 
+  const ussdAgent = usePosStore(s => s.agent) as any;
   const handleDial = async (code?: string) => {
+    // Never dial with a fabricated phone/agent identity — require the signed-in agent's real details.
+    const phoneNumber: string | null = ussdAgent?.phone ?? null;
+    const agentCode: string | null = ussdAgent?.code ?? null;
+    if (!phoneNumber || !agentCode) {
+      toast.error("Agent phone/code unavailable — cannot start USSD session");
+      return;
+    }
     try {
       const result = await startSession.mutateAsync({
-        phoneNumber: "+2348012345678",
-        agentCode: "AGT-NG-0042",
+        phoneNumber,
+        agentCode,
         carrier: "MTN",
         menuCode: code || selectedShortcut || "*384#",
       });
@@ -816,8 +825,13 @@ export function ReconciliationWizard({ onBack }: { onBack: () => void }) {
     (sum: any, d: any) => sum + d * (cashCount[String(d)] || 0),
     0
   );
-  const systemBalance = 485250;
-  const variance = physicalCash - systemBalance;
+  // System balance comes from the live float balance query — never a constant.
+  const { data: eodFloat } = trpc.transactions.getFloatBalance.useQuery(
+    undefined,
+    { refetchInterval: 30_000 }
+  );
+  const systemBalance: number | null = eodFloat?.balance ?? null;
+  const variance = systemBalance != null ? physicalCash - systemBalance : null;
 
   const steps = [
     "Count Cash",
@@ -1000,7 +1014,7 @@ export function ReconciliationWizard({ onBack }: { onBack: () => void }) {
               className="rounded-2xl p-5 mb-4"
               style={{
                 background: CARD,
-                border: `1px solid ${Math.abs(variance) > 1000 ? RED : GREEN}40`,
+                border: `1px solid ${variance != null && Math.abs(variance) > 1000 ? RED : GREEN}40`,
               }}
             >
               <div className="flex justify-between mb-3">
@@ -1009,7 +1023,7 @@ export function ReconciliationWizard({ onBack }: { onBack: () => void }) {
                   className="font-bold"
                   style={{ color: BLUE, fontFamily: MONO }}
                 >
-                  ₦{systemBalance.toLocaleString()}
+                  {systemBalance != null ? `₦${systemBalance.toLocaleString()}` : "—"}
                 </span>
               </div>
               <div className="flex justify-between mb-3">
@@ -1027,15 +1041,15 @@ export function ReconciliationWizard({ onBack }: { onBack: () => void }) {
                 <span
                   className="font-bold text-xl"
                   style={{
-                    color: Math.abs(variance) > 1000 ? RED : GREEN,
+                    color: variance != null && Math.abs(variance) > 1000 ? RED : GREEN,
                     fontFamily: MONO,
                   }}
                 >
-                  {variance >= 0 ? "+" : ""}₦{variance.toLocaleString()}
+                  {variance != null ? `${variance >= 0 ? "+" : ""}₦${variance.toLocaleString()}` : "—"}
                 </span>
               </div>
             </div>
-            {Math.abs(variance) > 1000 ? (
+            {variance != null && Math.abs(variance) > 1000 ? (
               <div
                 className="rounded-xl p-4"
                 style={{ background: `${RED}15`, border: `1px solid ${RED}40` }}
@@ -1388,7 +1402,8 @@ function NetworkTestScreen({ onBack }: { onBack: () => void }) {
 }
 // 26. FirmwareOTA ───────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
+function fmt(n: number | null | undefined) {
+  if (n == null) return "—"; // unknown balance renders as an honest placeholder
   return (
     "₦" +
     n.toLocaleString("en-NG", {
@@ -1397,5 +1412,6 @@ function fmt(n: number) {
     })
   );
 }
+
 
 

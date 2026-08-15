@@ -424,7 +424,7 @@ async function seed() {
       GEOFENCE_IDS.push(id);
       await client.query(
         `INSERT INTO geofence_zones (id, name, center_lat, center_lon, radius_meters, is_active, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
         [id, zone.name, zone.lat, zone.lon, zone.radius, true, daysAgo(60)]
       );
     }
@@ -536,7 +536,7 @@ async function seed() {
     console.log("💾 [28/65] software_updates...");
     await client.query(
       `INSERT INTO software_updates (id, version, description, is_mandatory, released_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [uid(), "3.2.1", "Security patch and performance improvements", false, daysAgo(30)]
     );
     console.log("  ✓ 1 software update");
@@ -674,7 +674,7 @@ async function seed() {
     for (let i = 0; i < Math.min(CUSTOMER_IDS.length, 4); i++) {
       await client.query(
         `INSERT INTO data_rights_requests (id, customer_id, request_type, status, created_at)
-         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
         [uid(), CUSTOMER_IDS[i], drTypes[i], i === 0 ? "completed" : "pending", daysAgo(i * 5)]
       );
     }
@@ -697,7 +697,7 @@ async function seed() {
     const DISPUTE_ID = uid();
     await client.query(
       `INSERT INTO disputes (id, agent_code, reason, status, created_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [DISPUTE_ID, "AGT001", "Customer claims cash was not dispensed", "open", daysAgo(3)]
     );
     await client.query(
@@ -730,7 +730,7 @@ async function seed() {
     console.log("↩️  [44/65] reversal_requests...");
     await client.query(
       `INSERT INTO reversal_requests (id, agent_code, reason, status, created_at)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "Wrong amount entered by agent", "pending", daysAgo(1)]
     );
     console.log("  ✓ 1 reversal request");
@@ -811,7 +811,7 @@ async function seed() {
     ]) {
       await client.query(
         `INSERT INTO analytics_metrics (id, metric_name, value, unit, recorded_at)
-         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
         [uid(), metric.name, metric.value, metric.unit, now()]
       );
     }
@@ -859,7 +859,7 @@ async function seed() {
     console.log("🔁 [54/65] erp_sync_log...");
     await client.query(
       `INSERT INTO erp_sync_log (id, entity_type, entity_id, status, synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
       [uid(), "transaction", uid(), "success", daysAgo(1)]
     );
     console.log("  ✓ 1 ERP sync log entry");

@@ -376,9 +376,9 @@ export const bulkOperationsRouter = router({
   retry: protectedProcedure
     .input(z.object({ id: z.string().optional() }).optional())
     .mutation(async ({ input }) => {
-      throw new TRPCError({
-        code: "NOT_IMPLEMENTED",
-        message: "bulkOperations.retry is not available in this deployment",
-      });
-    }),
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "bulkOperations.retry is not available in this deployment",
+    });
+  }),
 });

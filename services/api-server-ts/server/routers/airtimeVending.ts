@@ -6,7 +6,7 @@
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { publicProcedure, adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { transactions, agents, commissionRules } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
@@ -562,7 +562,7 @@ export const airtimeVendingRouter = router({
       total: 1,
     };
   }),
-  dataBundles: publicProcedure
+  dataBundles: adminProcedure
     .input(z.object({ networkId: z.string().optional() }).optional())
     .query(async () => {
       return {

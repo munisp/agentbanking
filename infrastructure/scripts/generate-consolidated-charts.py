@@ -13,8 +13,8 @@ CHARTS_DIR    = "infrastructure/charts"
 ROUTES_DIR    = "infrastructure/apisix-resources/routes"
 
 COMMON_SECRETS = {
-    "DATABASE_URL":              "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking",
-    "DATABASE_URI":              "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking",
+    "DATABASE_URL":              os.environ["DATABASE_URL"],
+    "DATABASE_URI":              os.environ["DATABASE_URL"],
     "DATABASE_POOL_SIZE":        "3",
     "DATABASE_MAX_OVERFLOW":     "2",
     "DATABASE_POOL_TIMEOUT":     "30",
@@ -22,8 +22,8 @@ COMMON_SECRETS = {
     "DB_HOST":                   "db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com",
     "DB_PORT":                   "25060",
     "DB_NAME":                   "link_core_banking",
-    "DB_USER":                   "doadmin",
-    "DB_PASSWORD":               "AVNS_MSy6CW3EGXnA8wJgkLv",
+    "DB_USER":                   os.environ["DB_USER"],
+    "DB_PASSWORD":               os.environ["DB_PASSWORD"],
     "REDIS_URL":                 "redis-master.redis.svc.cluster.local:6379",
     "REDIS_ADDRESS":             "redis-master.redis.svc.cluster.local:6379",
     "REDIS_HOST":                "redis-master.redis.svc.cluster.local",
@@ -138,7 +138,7 @@ GROUPS = [
          services=["chaos-engineering","distributed-tracing","logging-service","metrics-service","monitoring","monitoring-dashboard","telemetry-aggregator","telemetry-api-gateway","telemetry-collector","telemetry-ingestion"]),
     dict(name="kyc-aml",              port_base=9493, lang="python", mem=1664,
          desc="KYC/AML — document verification, biometric OCR, KYB, sanctions screening",
-         services=["background-check","bank-verification","case-management","deepfake-detection","docling-service","document-fraud-detection","document-management","document-processing","kyb-analytics","kyb-engine","kyb-risk-engine","kyb-verification","kyc-document-verifier","kyc-enforcement-go","kyc-enhanced","kyc-event-consumer","kyc-kyb-service","kyc-service","kyc-workflow-orchestration","kyc-workflow-orchestrator","multi-ocr-service","ocr-processing","ocr-service","paddle-ocr-service","rust-ocr-bridge","vlm-document-service"]),
+         services=["background-check","bank-verification","case-management","deepfake-detection","docling-service","document-fraud-detection","document-management","document-processing","kyb-analytics","kyb-engine","kyb-risk-engine","kyb-verification","kyc-document-verifier","kyc-enforcement-go","kyc-enhanced","kyc-event-consumer","kyc-kyb-service","kyc-workflow-orchestration","kyc-workflow-orchestrator","multi-ocr-service","ocr-processing","ocr-service","paddle-ocr-service","rust-ocr-bridge","vlm-document-service"]),
     dict(name="lending-credit",       port_base=9521, lang="python", mem=320,
          desc="Lending & credit — loans, BNPL, credit scoring, carbon credit marketplace",
          services=["bnpl-engine","carbon-credit-marketplace","credit-scoring","loan-management","loan-service"]),

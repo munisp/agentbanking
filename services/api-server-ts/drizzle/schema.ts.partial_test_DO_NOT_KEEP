@@ -1,0 +1,43 @@
+import { sql } from "drizzle-orm";
+import { bigserial, boolean, check, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+export const roleEnum = pgEnum("role", ["user", "admin", "supervisor"]);
+export const agentTierEnum = pgEnum("agent_tier", [
+  "Bronze",
+  "Silver",
+  "Gold",
+  "Platinum",
+]);
+export const txTypeEnum = pgEnum("tx_type", [
+  "Cash In",
+  "Cash Out",
+  "Transfer",
+  "Card Payment",
+  "QR Payment",
+  "NFC Payment",
+  "Airtime",
+  "Bill Payment",
+  "Reversal",
+  "Nano Loan",
+  "Insurance",
+  "Float Transfer",
+]);
+export const txChannelEnum = pgEnum("tx_channel", [
+  "Cash",
+  "Card",
+  "USSD",
+  "QR",
+  "NFC",
+  "App",
+]);
+export const txStatusEnum = pgEnum("tx_status", [
+  "success",
+  "pending",
+  "failed",
+  "reversed",
+  "pending_reversal_approval",
+  "flagged",
+  "under_review",
+  "resolved_note",
+]);

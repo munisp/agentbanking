@@ -132,18 +132,9 @@ async def lifespan(app: FastAPI) -> None:
     logger.info(f"Shutting down {settings.APP_NAME}...")
 
 # --- FastAPI Application Instance ---
+
+
 app = FastAPI(
-
-@app.get("/health")
-
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
-
-apply_middleware(app, enable_auth=True)
-async def health():
-    return {"status": "ok", "service": "core-banking"}
-
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="A production-ready Core Banking API built with FastAPI and SQLAlchemy.",
@@ -151,6 +142,16 @@ async def health():
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "core-banking"}
+
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 # --- Middleware ---
 

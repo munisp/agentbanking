@@ -101,13 +101,10 @@ except Exception:
 
 _idem_store = IdempotencyStore("gpg-pay", _redis_client)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/global_payment_gateway")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -139,14 +136,17 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "global-payment-gateway"}
-
+app = FastAPI(
     title="Global Payment Gateway",
     description="Handles multi-currency payments for the e-commerce platform",
     version="1.0.0"
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "global-payment-gateway"}
+
 
 @app.on_event("startup")
 async def _init_pg_pool():

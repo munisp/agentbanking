@@ -28,7 +28,7 @@ COMMON_SECRETS = {
     "REDIS_ADDRESS":             "redis-master.redis.svc.cluster.local:6379",
     "REDIS_HOST":                "redis-master.redis.svc.cluster.local",
     "REDIS_PORT":                "6379",
-    "REDIS_PASSWORD":            "3phHSv7qbAuZLb2pi9FWED2X",
+    "REDIS_PASSWORD":            os.environ["REDIS_PASSWORD"],
     "KAFKA_BROKERS":             "mojaloop-kafka-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092",
     "KAFKA_BOOTSTRAP_SERVERS":   "mojaloop-kafka-cluster-kafka-bootstrap.kafka.svc:9092",
     "KAFKA_SECURITY_PROTOCOL":   "PLAINTEXT",
@@ -45,7 +45,7 @@ COMMON_SECRETS = {
     "KEYCLOAK_URL":              "https://keycloak.servers.upi.dev",
     "KEYCLOAK_BASE_URL":         "https://keycloak.servers.upi.dev",
     "KEYCLOAK_ADMIN_USERNAME":   "admin",
-    "KEYCLOAK_ADMIN_PASSWORD":   "0lQ09=4+Wcpi)DW",
+    "KEYCLOAK_ADMIN_PASSWORD":   os.environ["KEYCLOAK_ADMIN_PASSWORD"],
     "DEFAULT_KEYCLOAK_REALM":    "54link",
     "ALLOWED_ORIGINS":           "*",
     "PERMIFY_URL":               "http://permify.permify.svc.cluster.local:3476",
@@ -338,7 +338,7 @@ spec:
       annotations:
         dapr.io/app-id: "{{{{ .Values.dapr.appId }}}}"
         dapr.io/app-port: "{{{{ .Values.dapr.appPort }}}}"
-        dapr.io/enable-metrics: "{{{{ .Values.dapr.enableMetrics }}}}"
+        dapr.io/enable-metrics: "{{{{ .Values.dapr.enableMetrics }}}}",
         dapr.io/enabled: "{{{{ .Values.dapr.enabled }}}}"
         dapr.io/metrics-port: "{{{{ .Values.dapr.metricsPort }}}}"
         dapr.io/sidecar-listen-addresses: "{{{{ .Values.dapr.sidecarListenAddresses }}}}"

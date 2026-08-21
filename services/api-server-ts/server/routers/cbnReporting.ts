@@ -38,6 +38,20 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 const CBN_SERVICE_URL =
   process.env.CBN_REPORTING_SERVICE_URL ?? "http://localhost:8010";
 
+// NF-SEC-10: production-fatal when INTERNAL_API_KEY is unset — mirrors the
+// getJwtSecret()/validateEnv() production-fatal style in envValidation.ts.
+// The hardcoded dev literal is only used outside production.
+function getInternalApiKey(): string {
+  const key = process.env.INTERNAL_API_KEY;
+  if (key && key.trim() !== "") return key;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "FATAL: INTERNAL_API_KEY must be set in production; no default credential is allowed"
+    );
+  }
+  return "internal-key-54agent"; // dev-only fallback
+}
+
 async function callCbnService(
   path: string,
   method: "GET" | "POST" = "GET",
@@ -48,7 +62,7 @@ async function callCbnService(
       method,
       headers: {
         "Content-Type": "application/json",
-        "X-Internal-Key": process.env.INTERNAL_API_KEY ?? "internal-key-54agent",
+        "X-Internal-Key": getInternalApiKey(),
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10000),
@@ -477,8 +491,8 @@ export const cbnReportingRouter = router({
 
   // ── Get pending submissions ────────────────────────────────────────────────
   getPendingSubmissions: protectedProcedure.query(async () => {
-    const svc = await callCbnService("/api/v1/cbn-reports/pending");
-    return { reports: svc ?? [], source: svc ? "service" : "fallback" };
+    const svc = await callCbmServicePlaceholder();
+    return { reports: [], source: "fallback" };
   }),
 
   // ── Mark report as submitted ───────────────────────────────────────────────

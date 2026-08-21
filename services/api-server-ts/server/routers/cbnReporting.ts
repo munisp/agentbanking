@@ -491,8 +491,8 @@ export const cbnReportingRouter = router({
 
   // ── Get pending submissions ────────────────────────────────────────────────
   getPendingSubmissions: protectedProcedure.query(async () => {
-    const svc = await callCbmServicePlaceholder();
-    return { reports: [], source: "fallback" };
+    const svc = await callCbnService("/api/v1/cbn-reports/pending");
+    return { reports: svc ?? [], source: svc ? "service" : "fallback" };
   }),
 
   // ── Mark report as submitted ───────────────────────────────────────────────

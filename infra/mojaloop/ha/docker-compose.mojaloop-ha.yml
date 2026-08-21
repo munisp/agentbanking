@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     ports: ["3001:3001"]
     environment:
-      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@mysql-primary:3306/central_ledger"
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:?must be set}@mysql-primary:3306/central_ledger"
       CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
       CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
       CLEDG_SIDECAR__DISABLED: "true"
@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
     ports: ["3003:3001"]
     environment:
-      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:-ml-secret}@mysql-primary:3306/central_ledger"
+      CLEDG_DATABASE_URI: "mysql://central_ledger:${ML_DB_PASSWORD:?must be set}@mysql-primary:3306/central_ledger"
       CLEDG_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
       CLEDG_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
       CLEDG_SIDECAR__DISABLED: "true"
@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
     ports: ["4002:4002"]
     environment:
-      ALS_DATABASE_URI: "mysql://account_lookup:${ML_DB_PASSWORD:-ml-secret}@mysql-primary:3306/account_lookup"
+      ALS_DATABASE_URI: "mysql://account_lookup:${ML_DB_PASSWORD:?must be set}@mysql-primary:3306/account_lookup"
       ALS_CENTRAL_LEDGER_URL: http://central-ledger-1:3001
     networks: [pos54-net]
 
@@ -76,7 +76,7 @@ services:
     restart: unless-stopped
     ports: ["3007:3007"]
     environment:
-      CSL_DATABASE_URI: "mysql://central_settlement:${ML_DB_PASSWORD:-ml-secret}@mysql-primary:3306/central_settlement"
+      CSL_DATABASE_URI: "mysql://central_settlement:${ML_DB_PASSWORD:?must be set}@mysql-primary:3306/central_settlement"
       CSL_KAFKA__PRODUCER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
       CSL_KAFKA__CONSUMER__BROKER_LIST: kafka-1:9092,kafka-2:9092,kafka-3:9092
     networks: [pos54-net]

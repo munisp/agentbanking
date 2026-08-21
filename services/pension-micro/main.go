@@ -64,7 +64,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:            envOr("PORT", "8278"),
-		PostgresURL:     envOr("DATABASE_URL", "postgresql://ngapp:password@localhost:5432/ngapp"),
+		PostgresURL: mustEnvOr("DATABASE_URL"), // NF-SEC-6: required, no hardcoded credential fallback
 		RedisURL:        envOr("REDIS_URL", "redis://localhost:6379/10"),
 		KafkaBrokers:    envOr("KAFKA_BROKERS", "localhost:9092"),
 		TemporalHost:    envOr("TEMPORAL_HOST", "localhost:7233"),
@@ -79,6 +79,15 @@ func loadConfig() Config {
 		LakehouseURL:    envOr("LAKEHOUSE_URL", "http://localhost:8181"),
 		Environment:     envOr("ENVIRONMENT", "development"),
 	}
+}
+
+// NF-SEC-6: mustEnvOr fails closed when a required secret-bearing env var is unset.
+func mustEnvOr(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("%s environment variable must be set", key)
+	}
+	return v
 }
 
 func envOr(key, fallback string) string {

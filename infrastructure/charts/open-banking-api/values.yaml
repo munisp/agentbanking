@@ -77,4 +77,5 @@ secrets:
   MQTT_PASSWORD: ""  # REQUIRED: no default committed
   MINIO_ACCESS_KEY: ""  # REQUIRED: no default committed
   NODE_ENV: "production"
-  SECURITY_FAIL_OPEN: "true"
+  # NF-SEC-5: never fail open on security checks in production
+  SECURITY_FAIL_OPEN: "false"

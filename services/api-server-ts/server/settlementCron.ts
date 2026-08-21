@@ -5,11 +5,13 @@
  *
  * Runs at 17:00 WAT (16:00 UTC) every weekday.
  * For each active agent:
- *   1. Sets floatLocked = true on all agents (Phase 47: float lock during settlement)
+ *   1. Sets floatLocked = true per agent while that agent is settled
+ *      (Phase 47 float lock, FF-15: per-agent scope + finally-release + TTL)
  *   2. Aggregates today's transaction volume and commission from PostgreSQL
  *   3. Sends a settlement summary SMS via Termii (reuses shared sendSms helper)
  *   4. Writes an audit log entry for the settlement run
- *   5. Sets floatLocked = false on all agents after settlement completes
+ *   5. Sets floatLocked = false per agent in a finally block so every exit
+ *      path (throw / abort) releases the lock
  *
  * Registered in server/_core/index.ts after server startup.
  */
@@ -26,6 +28,7 @@ import {
 } from "../drizzle/schema";
 import { notifyOwner } from "./_core/notification";
 import { sendSms } from "./termii";
+import { cacheIncr, cacheDel } from "./redisClient";
 import { settlementPlatform } from "./_core/platformClient.js";
 import { ENV } from "./_core/env";
 
@@ -59,6 +62,16 @@ interface SettlementResult {
   runAt: Date;
 }
 
+// ── FF-15: per-agent float lock with TTL-bounded Redis advisory key ──────────
+// Mirrors the settlement.runNow lock pattern (middleware/settlementMiddleware.ts
+// acquireSettlementLock: cacheIncr with a TTL, released in a finally block).
+// The previous implementation locked EVERY agent with one global UPDATE and
+// unlocked only on the success path — a mid-run throw or process kill left the
+// entire platform frozen. Locks are now acquired per agent, released in a
+// finally block on every path, and backstopped by an expiring Redis lock key so
+// a killed run freezes at most one agent, and never indefinitely.
+const SETTLEMENT_FLOAT_LOCK_TTL = 1800; // seconds — matches SETTLEMENT_LOCK_TTL
+
 async function runDailySettlement(): Promise<SettlementResult> {
   console.log("[settlement] Starting daily settlement run...");
   const db = await getDb();
@@ -68,23 +81,6 @@ async function runDailySettlement(): Promise<SettlementResult> {
       agentCount: 0,
       smsSent: 0,
       errors: ["DB unavailable"],
-      runAt: new Date(),
-    };
-  }
-
-  // ── Phase 47: Lock all agents at start of settlement ──────────────────────
-  try {
-    await db.update(agents).set({ floatLocked: true });
-    console.log("[settlement] Float locked for all agents");
-  } catch (err) {
-    console.error(
-      "[settlement] Failed to lock floats — aborting settlement:",
-      err
-    );
-    return {
-      agentCount: 0,
-      smsSent: 0,
-      errors: [`Float lock failed: ${String(err)}`],
       runAt: new Date(),
     };
   }
@@ -110,88 +106,153 @@ async function runDailySettlement(): Promise<SettlementResult> {
   let smsSent = 0;
   const errors: string[] = [];
 
-  for (const agent of activeAgents) {
+  // FF-15: agents this run has locked — every exit path must release them.
+  const lockedAgentIds = new Set<number>();
+
+  const lockAgent = async (agentId: number, agentCode: string): Promise<void> => {
+    // Redis advisory lock key with TTL (SET NX PX equivalent via cacheIncr):
+    // auto-expires even if this process is killed mid-run. cacheIncr returns
+    // 1 on acquisition, >1 if already held, 0 when Redis is unavailable
+    // (same fail-open posture as acquireSettlementLock — DB lock still applies).
+    const key = `settlement:floatlock:${agentId}`;
+    const acquired = await cacheIncr(key, SETTLEMENT_FLOAT_LOCK_TTL);
+    if (acquired > 1) {
+      throw new Error(`float lock for agent ${agentCode} is already held`);
+    }
+    await db
+      .update(agents)
+      .set({ floatLocked: true })
+      .where(eq(agents.id, agentId));
+    lockedAgentIds.add(agentId);
+    console.log(`[settlement] Float locked for agent ${agentCode}`);
+  };
+
+  const unlockAgent = async (agentId: number): Promise<void> => {
     try {
-      const txRows = await db
-        .select({
-          amount: transactions.amount,
-          commission: transactions.commission,
-        })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.agentId, agent.id),
-            eq(transactions.status, "success"),
-            gte(transactions.createdAt, dayStart),
-            lte(transactions.createdAt, dayEnd)
-          )
-        );
+      await db
+        .update(agents)
+        .set({ floatLocked: false })
+        .where(eq(agents.id, agentId));
+    } finally {
+      lockedAgentIds.delete(agentId);
+      await cacheDel(`settlement:floatlock:${agentId}`);
+    }
+  };
 
-      const txCount = txRows.length;
-      const totalVolume = txRows.reduce((sum, r) => sum + Number(r.amount), 0);
-      const totalCommission = txRows.reduce(
-        (sum, r) => sum + Number(r.commission),
-        0
+  try {
+    for (const agent of activeAgents) {
+    // ── Phase 47 / FF-15: lock THIS agent's float for its settlement only ────
+    try {
+      await lockAgent(agent.id, agent.agentCode);
+    } catch (err) {
+      console.error(
+        `[settlement] Failed to lock float for agent ${agent.agentCode} — skipping:`,
+        err
       );
+      errors.push(`${agent.agentCode}: Float lock failed: ${String(err)}`);
+      continue;
+    }
 
-      const settlementData: AgentSettlement = {
-        agentId: agent.id,
-        agentCode: agent.agentCode,
-        name: agent.name,
-        phone: agent.phone,
-        txCount,
-        totalVolume,
-        totalCommission,
-        floatBalance: Number(agent.floatBalance),
-      };
+    try {
+        const txRows = await db
+          .select({
+            amount: transactions.amount,
+            commission: transactions.commission,
+          })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.agentId, agent.id),
+              eq(transactions.status, "success"),
+              gte(transactions.createdAt, dayStart),
+              lte(transactions.createdAt, dayEnd)
+            )
+          );
 
-      const message = buildSettlementSms(settlementData);
-      const smsResult = await sendSms(agent.phone, message);
-      if (smsResult.success) {
-        smsSent++;
-      } else {
-        console.error(
-          `[settlement] SMS failed for agent ${agent.agentCode}: ${smsResult.error}`
+        const txCount = txRows.length;
+        const totalVolume = txRows.reduce((sum, r) => sum + Number(r.amount), 0);
+        const totalCommission = txRows.reduce(
+          (sum, r) => sum + Number(r.commission),
+          0
         );
-      }
 
-      await db.insert(auditLog).values({
-        agentId: agent.id,
-        agentCode: agent.agentCode,
-        action: "DAILY_SETTLEMENT_SENT",
-        resource: "settlement",
-        resourceId: today.toISOString().split("T")[0],
-        status: "success",
-        metadata: {
+        const settlementData: AgentSettlement = {
+          agentId: agent.id,
+          agentCode: agent.agentCode,
+          name: agent.name,
+          phone: agent.phone,
           txCount,
           totalVolume,
           totalCommission,
           floatBalance: Number(agent.floatBalance),
-          date: today.toISOString().split("T")[0],
-        },
-      });
+        };
 
-      successCount++;
+        const message = buildSettlementSms(settlementData);
+        const smsResult = await sendSms(agent.phone, message);
+        if (smsResult.success) {
+          smsSent++;
+        } else {
+          console.error(
+            `[settlement] SMS failed for agent ${agent.agentCode}: ${smsResult.error}`
+          );
+        }
+
+        await db.insert(auditLog).values({
+          agentId: agent.id,
+          agentCode: agent.agentCode,
+          action: "DAILY_SETTLEMENT_SENT",
+          resource: "settlement",
+          resourceId: today.toISOString().split("T")[0],
+          status: "success",
+          metadata: {
+            txCount,
+            totalVolume,
+            totalCommission,
+            floatBalance: Number(agent.floatBalance),
+            date: today.toISOString().split("T")[0],
+          },
+        });
+
+        successCount++;
     } catch (err) {
       console.error(
         `[settlement] Error processing agent ${agent.agentCode}:`,
         err
       );
       errors.push(`${agent.agentCode}: ${String(err)}`);
+    } finally {
+      // FF-15: release THIS agent's lock on every path (success, handler
+      // error, or throw). Critical on failure: log prominently.
+      try {
+        await unlockAgent(agent.id);
+        console.log(`[settlement] Float unlocked for agent ${agent.agentCode}`);
+      } catch (unlockErr) {
+        console.error(
+          `[settlement] CRITICAL: Failed to unlock float for agent ${agent.agentCode}:`,
+          unlockErr
+        );
+        errors.push(
+          `${agent.agentCode}: Float unlock failed: ${String(unlockErr)}`
+        );
+      }
     }
   }
-
-  // ── Phase 47: Unlock all agents after settlement completes ────────────────
-  try {
-    await db.update(agents).set({ floatLocked: false });
-    console.log("[settlement] Float unlocked for all agents");
-  } catch (err) {
-    // Critical: if unlock fails, agents cannot transact. Log prominently.
-    console.error(
-      "[settlement] CRITICAL: Failed to unlock floats after settlement:",
-      err
-    );
-    errors.push(`Float unlock failed: ${String(err)}`);
+  } finally {
+    // FF-15: safety net — if the loop aborts with an uncaught error, release
+    // any per-agent locks this run still holds before the error propagates.
+    for (const agentId of Array.from(lockedAgentIds)) {
+      try {
+        await unlockAgent(agentId);
+      } catch (unlockErr) {
+        console.error(
+          `[settlement] CRITICAL: Failed to release float lock for agent id ${agentId} during abort:`,
+          unlockErr
+        );
+        errors.push(
+          `Float unlock failed for agent id ${agentId}: ${String(unlockErr)}`
+        );
+      }
+    }
   }
 
   // ── Platform settlement trigger (fail-open: local settlement is authoritative) ──

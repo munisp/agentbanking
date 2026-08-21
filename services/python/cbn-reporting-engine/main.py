@@ -105,19 +105,13 @@ async def lifespan(app: FastAPI):
     cbn_scheduler.stop()
     logger.info("[CBN] APScheduler stopped.")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cbn_reporting_engine")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -139,6 +133,23 @@ def init_db():
 init_db()
 
 REPORT_TYPES = ["daily_returns", "weekly_summary", "monthly_prudential", "quarterly_cbn", "annual_compliance"]
+
+
+
+app = FastAPI(
+    title="CBN Automated Reporting Engine",
+    version="2.0.0",
+    description=(
+        "Generates and submits all mandatory CBN reports: "
+        "Monthly Activity, Quarterly Fraud, Annual KYC, SAR, Network Expansion."
+    ),
+    lifespan=lifespan,
+)
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.post("/api/v1/reports/generate")
 async def generate_report(request: Request):
@@ -197,14 +208,6 @@ async def get_report(report_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Report not found")
     return {"id": row[0], "type": row[1], "period": row[2], "status": row[3]}
-    title="CBN Automated Reporting Engine",
-    version="2.0.0",
-    description=(
-        "Generates and submits all mandatory CBN reports: "
-        "Monthly Activity, Quarterly Fraud, Annual KYC, SAR, Network Expansion."
-    ),
-    lifespan=lifespan,
-)
 
 app.add_middleware(
     CORSMiddleware,

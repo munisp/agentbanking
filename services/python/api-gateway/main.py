@@ -112,23 +112,24 @@ async def lifespan(app: FastAPI) -> None:
     logger.info("Application shutdown.")
 
 # --- FastAPI Application Initialization ---
+
+
 app = FastAPI(
-
-@app.get("/health")
-
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
-
-apply_middleware(app, enable_auth=True)
-async def health():
-    return {"status": "ok", "service": "api-gateway"}
-
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,
     lifespan=lifespan
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "api-gateway"}
+
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 # --- Middleware ---
 

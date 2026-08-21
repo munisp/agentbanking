@@ -1245,8 +1245,13 @@ export const transactionsRouter = router({
               title: `Reversal Approval Required — ₦${amount.toLocaleString()}`,
               content: `Agent ${agent.agentCode} (${agent.name}) requested reversal of ₦${amount.toLocaleString()} for ${input.ref}. Reason: ${input.reason ?? "Not specified"}. Review in Admin Panel → Pending Reversals.`,
             });
-          } catch {
-            // Non-critical
+          } catch (notifyErr) {
+            // MB-15/16: non-blocking, but NOT silent — a missed admin
+            // notification stalls the reversal approval workflow.
+            console.error(
+              `[transactions] reversal-approval notification failed for ${input.ref}:`,
+              notifyErr instanceof Error ? notifyErr.message : notifyErr
+            );
           }
 
           return {

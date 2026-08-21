@@ -171,7 +171,7 @@ class Alert(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     service_id: Mapped[int] = mapped_column(
-        ForeignKey("alerts.id", ondelete="RESTRICT"), # RESTRICT to prevent deleting an alert that caused an incident
+        ForeignKey("services.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         doc="Foreign key to the Service that triggered the alert."

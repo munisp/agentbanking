@@ -2,7 +2,8 @@
 
 **Date:** 2026-04-09  
 **Version:** Phase 136 (Checkpoint `329e940a`)  
-**Test Results:** 244 Node.js · 43 Rust · 8 Go = **295 tests passing, 0 failures**
+**Test Results (Phase 136, self-reported):** 244 Node.js · 43 Rust · 8 Go = 295 tests reported passing
+**2026-08 re-verification (@ `505705ac`):** not reproducible from the current tree — `services/api-server-ts` currently contains 2 test files with 174 test cases (155 in `server/stakeholder-smoke-tests.test.ts`, 19 in `server/caddy-tls-validation.test.ts`). Treat the 295 figure as historical.
 
 ---
 
@@ -20,7 +21,9 @@
 | Mobile Applications            | Scaffolded           | 6/10       |
 | Production Deployment          | Complete             | 9/10       |
 | Testing                        | Complete             | 10/10      |
-| **Overall**                    | **Production-Ready** | **92/100** |
+| **Overall**                    | **Near-Production (self-assessed)** | **92/100** |
+
+> ⚠️ **2026-08 assurance re-verification (@ `505705ac`):** several figures in this scorecard are Phase 136 self-assessments and are not reproducible from the current tree. Known corrections: `docker-compose.production.yml` does not exist in the repo; `tsc --noEmit` is not error-free (remediation in progress); the Flutter/RN apps are not "ready to build" (no `pubspec.yaml` repo-wide; `mobile-rn/` is a 5-file skeleton). See inline edits below.
 
 ---
 
@@ -114,15 +117,15 @@
 
 | Feature             | Status        | Notes                                     |
 | ------------------- | ------------- | ----------------------------------------- |
-| React Native (Expo) | 🔶 Scaffolded | pos-mobile-rn/ — needs Expo build         |
-| Flutter             | 🔶 Scaffolded | pos-mobile-flutter/ — needs flutter build |
+| React Native (Expo) | 🔶 Skeleton   | mobile-rn/ — 5 files, 0 screens; not a buildable app |
+| Flutter             | 🔶 Source only | mobile-flutter/ — 455 screen files but no pubspec.yaml; cannot build without recreating the project manifest |
 | PWA (manifest + SW) | ✅ Complete   | manifest.json, offline.html, SW v3        |
 
 ### 9. Production Deployment ✅
 
 | Feature                       | Status      | Notes                                |
 | ----------------------------- | ----------- | ------------------------------------ |
-| docker-compose.production.yml | ✅ Complete | 20+ services, health checks          |
+| docker-compose.production.yml | ❌ Missing  | File absent from the repo (verified @ `505705ac`); root `docker-compose.yml` (30+ services, profiles) is the only full-stack compose file. `Makefile.production` still references the missing file |
 | nginx TLS reverse proxy       | ✅ Complete | 5 vhosts, WebSocket proxy            |
 | Makefile.production           | ✅ Complete | deploy, test-all, vault-init targets |
 | .env.production.example       | ✅ Complete | 40+ variables documented             |
@@ -135,17 +138,17 @@
 
 | Suite             | Count    | Status         |
 | ----------------- | -------- | -------------- |
-| Node.js (Vitest)  | 244      | ✅ All passing |
-| Rust (cargo test) | 43       | ✅ All passing |
-| Go (go test)      | 8        | ✅ All passing |
+| Node.js (Vitest)  | 244      | ⚠️ Historical claim — not reproducible from current tree (2026-08 re-check: 174 test cases in `services/api-server-ts`) |
+| Rust (cargo test) | 43       | ⚠️ Historical claim — not re-verified |
+| Go (go test)      | 8        | ⚠️ Historical claim — not re-verified |
 | Playwright E2E    | 5        | ✅ Scaffolded  |
-| TypeScript        | 0 errors | ✅ Clean       |
+| TypeScript        | not clean | ❌ `tsc --noEmit` reports errors (e.g. `uis/admin-dashboard`); remediation in progress |
 
 ---
 
 ## Known Gaps (Non-Blocking for Production)
 
-1. **React Native / Flutter builds** — Expo and Flutter CLIs not installed in sandbox; source code is complete and ready to build on a developer machine.
+1. **React Native / Flutter builds** — "ready to build" is **not accurate** (2026-08 re-verification @ `505705ac`): `mobile-flutter/` contains 455 screen source files but the repo has **no `pubspec.yaml` anywhere**, so `flutter build` cannot run without recreating the project manifest; `mobile-rn/` is a 5-file skeleton with no screen files.
 2. **Playwright E2E** — Tests are scaffolded and will run against a live server; browser binaries need `playwright install chromium` on CI.
 3. **Fluvio SmartModule (WASM)** — Velocity and anomaly check logic is defined; WASM compilation requires `cargo build --target wasm32-wasi` on a machine with Fluvio CLI.
 4. **TigerBeetle production cluster** — Demo uses single-node; production requires 3-node cluster with replica configuration.

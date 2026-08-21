@@ -4481,7 +4481,7 @@ export const billingAuditLog = pgTable(
     userIdx: index("bal_user_idx").on(t.userId),
     actionIdx: index("bal_action_idx").on(t.action),
     resourceIdx: index("bal_resource_idx").on(t.resourceType, t.resourceId),
-    createdAtIdx: index("bal_createdAt_idx").on(t.createdAt),
+    createdAtIdx: index("bal_created_at_idx").on(t.createdAt),
   })
 );
 export type BillingAuditLogEntry = typeof billingAuditLog.$inferSelect;
@@ -4807,7 +4807,7 @@ export const ecommerceOrders = pgTable(
   t => ({
     orderNumIdx: uniqueIndex("ecom_order_num_idx").on(t.orderNumber),
     customerIdx: index("ecom_order_customer_idx").on(t.customerId),
-    merchantIdx: index("ecom_prod_merchant_idx").on(t.merchantId),
+    merchantIdx: index("ecom_order_merchant_idx").on(t.merchantId),
     statusIdx: index("ecom_order_status_idx").on(t.status),
     offlineIdx: index("ecom_order_offline_idx").on(t.offlineCreated),
   })

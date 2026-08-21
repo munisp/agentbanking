@@ -139,14 +139,14 @@ eventHandlers.set("payment.failed", async event => {
 eventHandlers.set("agent.registered", async event => {
   const { agentId, name, region, tier } = event.payload as any;
   console.log(
-    `[Kafka] Agent registered: agentId=${agentId} name=${name} region=${region}`
+    `[Kafka] Agent registered: ${agentId} name=${name} region=${region}`
   );
   // Initialize float account, send welcome notification, assign to region
 });
 
 eventHandlers.set("agent.suspended", async event => {
   const { agentId, reason, suspendedBy } = event.payload as any;
-  console.log(`[Kafka] Agent suspended: agentId=${agentId} reason=${reason}`);
+  console.log(`[Kafka] Agent suspended: ${agentId} reason=${reason}`);
   // Lock float, disable terminal, notify compliance
 });
 

@@ -850,13 +850,13 @@ func generateSettlementRef() string {
 
 // SettlementPolicy controls platform-wide settlement behaviour
 type SettlementPolicy struct {
-	ID                   uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AllowAgentWithdrawal bool      `json:"allow_agent_withdrawal" gorm:"default:true"`
-	MinWithdrawalAmount  float64   `json:"min_withdrawal_amount" gorm:"default:0"`
-	AutoProcessOnEod     bool      `json:"auto_process_on_eod" gorm:"default:true"`
-	EodCutoffHour        int       `json:"eod_cutoff_hour" gorm:"default:23"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                    uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AllowAgentWithdrawal  bool      `json:"allow_agent_withdrawal" gorm:"default:true"`
+	MinWithdrawalAmount   float64   `json:"min_withdrawal_amount" gorm:"default:0"`
+	AutoProcessOnEod      bool      `json:"auto_process_on_eod" gorm:"default:true"`
+	EodCutoffHour         int       `json:"eod_cutoff_hour" gorm:"default:23"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // CommissionClawback represents a commission recovery case
@@ -917,20 +917,20 @@ type PerformanceStats struct {
 
 // EodAgentResult summarises the EOD outcome for a single agent
 type EodAgentResult struct {
-	AgentID         uuid.UUID `json:"agent_id"`
-	SettlementID    uuid.UUID `json:"settlement_id"`
-	SettlementRef   string    `json:"settlement_ref"`
-	TotalAmount     float64   `json:"total_amount"`
-	CommissionCount int       `json:"commission_count"`
-	Status          string    `json:"status"`
-	Error           string    `json:"error,omitempty"`
+	AgentID        uuid.UUID `json:"agent_id"`
+	SettlementID   uuid.UUID `json:"settlement_id"`
+	SettlementRef  string    `json:"settlement_ref"`
+	TotalAmount    float64   `json:"total_amount"`
+	CommissionCount int      `json:"commission_count"`
+	Status         string    `json:"status"`
+	Error          string    `json:"error,omitempty"`
 }
 
 // EodResult summarises an entire EOD run
 type EodResult struct {
-	RunAt           time.Time        `json:"run_at"`
-	AgentsProcessed int              `json:"agents_processed"`
-	TotalPaid       float64          `json:"total_paid"`
+	RunAt          time.Time        `json:"run_at"`
+	AgentsProcessed int             `json:"agents_processed"`
+	TotalPaid       float64         `json:"total_paid"`
 	Succeeded       []EodAgentResult `json:"succeeded"`
 	Failed          []EodAgentResult `json:"failed"`
 }
@@ -1199,11 +1199,11 @@ func (s *CommissionService) callPaymentServicePayout(settlement Settlement) erro
 	}
 
 	payload := map[string]interface{}{
-		"agent_id":        settlement.AgentID.String(),
-		"amount":          settlement.TotalAmount,
-		"currency":        settlement.Currency,
-		"settlement_ref":  settlement.SettlementRef,
-		"note":            fmt.Sprintf("Commission settlement %s", settlement.SettlementRef),
+		"agent_id":       settlement.AgentID.String(),
+		"amount":         settlement.TotalAmount,
+		"currency":       settlement.Currency,
+		"settlement_ref": settlement.SettlementRef,
+		"note":           fmt.Sprintf("Commission settlement %s", settlement.SettlementRef),
 		"payment_details": settlement.PaymentDetails,
 	}
 
@@ -1525,17 +1525,17 @@ func (h *CommissionHandler) GetAgentBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":                    balance.ID,
-		"agent_id":              balance.AgentID,
-		"pending_balance":       balance.PendingBalance,
-		"available_balance":     balance.AvailableBalance,
-		"settled_balance":       balance.SettledBalance,
-		"total_earned":          balance.TotalEarned,
-		"currency":              balance.Currency,
-		"last_settlement_at":    balance.LastSettlementAt,
-		"created_at":            balance.CreatedAt,
-		"updated_at":            balance.UpdatedAt,
-		"withdrawal_allowed":    withdrawalAllowed,
+		"id":                  balance.ID,
+		"agent_id":            balance.AgentID,
+		"pending_balance":     balance.PendingBalance,
+		"available_balance":   balance.AvailableBalance,
+		"settled_balance":     balance.SettledBalance,
+		"total_earned":        balance.TotalEarned,
+		"currency":            balance.Currency,
+		"last_settlement_at":  balance.LastSettlementAt,
+		"created_at":          balance.CreatedAt,
+		"updated_at":          balance.UpdatedAt,
+		"withdrawal_allowed":  withdrawalAllowed,
 		"min_withdrawal_amount": minWithdrawal,
 	})
 }

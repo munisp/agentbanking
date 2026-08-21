@@ -4,7 +4,7 @@
  * Document upload, verification workflow, compliance checks, merchant activation
  */
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { merchantKycDocs } from "../../drizzle/schema";
@@ -322,7 +322,7 @@ export const merchantKycOnboardingRouter = router({
       }
     }),
 
-  verifyDoc: protectedProcedure
+  verifyDoc: adminProcedure
     .input(
       z.object({
         docId: z.number(),
@@ -334,15 +334,29 @@ export const merchantKycOnboardingRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
+        // NF-FF-31: admin-only KYC decision; conditional UPDATE — only a
+        // pending doc may be decided. 0 rows => not found or already decided.
+        const [updated] = await db
           .update(merchantKycDocs)
           .set({
             status: input.approved ? "approved" : "rejected",
-            verifiedBy: ctx.user?.id,
+            verifiedBy: ctx.user.id,
             verifiedAt: new Date(),
             rejectionReason: input.rejectionReason,
           })
-          .where(eq(merchantKycDocs.id, input.docId));
+          .where(
+            and(
+              eq(merchantKycDocs.id, input.docId),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .returning({ id: merchantKycDocs.id });
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "KYC document not found or already decided — cannot verify",
+          });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

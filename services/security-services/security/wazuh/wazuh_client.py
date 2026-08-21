@@ -127,7 +127,7 @@ if __name__ == "__main__":
     wazuh = WazuhIntegration(
         api_url="https://localhost:55000",
         username="wazuh-wui",
-        password="MyS3cr37P450r.*-"
+        password="CHANGE_ME_EXAMPLE"
     )
     
     # Get agent status

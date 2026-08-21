@@ -29,18 +29,18 @@ import {
 import { useFraudSocket } from "../hooks/useSocket";
 import AgentManagementTab from "../components/admin/AgentManagementTab";
 import FloatTopUpTab from "../components/admin/FloatTopUpTab";
-import { MDMTab } from "../components/admin/MDMTab";
-import { DisputesAdminTab } from "../components/admin/DisputesAdminTab";
-import { SecurityTab } from "../components/admin/SecurityTab";
-import { GeofencingTab } from "../components/admin/GeofencingTab";
-import { FluvioStreamTab } from "../components/admin/FluvioStreamTab";
+import MDMTab from "../components/admin/MDMTab";
+import DisputesAdminTab from "../components/admin/DisputesAdminTab";
+import SecurityTab from "../components/admin/SecurityTab";
+import GeofencingTab from "../components/admin/GeofencingTab";
+import FluvioStreamTab from "../components/admin/FluvioStreamTab";
 import ERPConfigTab from "../components/admin/ERPConfigTab";
 import { FraudRulesTab } from "./admin/FraudRulesTab";
-import { SystemConfigTab } from "../components/admin/SystemConfigTab";
-import { SimOrchestratorTab } from "../components/admin/SimOrchestratorTab";
-import { FailoverHistoryTab } from "../components/admin/FailoverHistoryTab";
-import { MQTTBridgeTab } from "../components/admin/MQTTBridgeTab";
-import { CoverageMap } from "../components/admin/CoverageMap";
+import SystemConfigTab from "../components/admin/SystemConfigTab";
+import SimOrchestratorTab from "../components/admin/SimOrchestratorTab";
+import FailoverHistoryTab from "../components/admin/FailoverHistoryTab";
+import MQTTBridgeTab from "../components/admin/MQTTBridgeTab";
+import CoverageMap from "../components/admin/CoverageMap";
 
 // ─── Design tokens (match POS Shell) ─────────────────────────────────────────
 const BG = "#0a0e1a";

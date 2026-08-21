@@ -14,8 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomDrawerContent from './navigation/CustomDrawerContent';
 
 // ── Screen imports (191 screens) ──
-import 2FAEnabledScreen from './screens/journeys/journey_03_2fa/2FAEnabledScreen';
-import 2FAIntroScreen from './screens/journeys/journey_03_2fa/2FAIntroScreen';
+//import 2FAEnabledScreen from './screens/journeys/journey_03_2fa/2FAEnabledScreen'; // TODO: 2FA screens not ported to mobile-rn (RV-10)
+//import 2FAIntroScreen from './screens/journeys/journey_03_2fa/2FAIntroScreen'; // TODO: 2FA screens not ported to mobile-rn (RV-10)
 import AcceptLoanScreen from './screens/journeys/journey_23_loan/AcceptLoanScreen';
 import AccountCreatedScreen from './screens/journeys/journey_17_virtual_account/AccountCreatedScreen';
 import AccountDetailsScreen from './screens/journeys/journey_17_virtual_account/AccountDetailsScreen';
@@ -208,8 +208,8 @@ import WiseTrackingScreen from './screens/journeys/journey_12_wise/WiseTrackingS
 
 // ── Type definitions ──
 export type RootStackParamList = {
-  2FAEnabledScreen: undefined;
-  2FAIntroScreen: undefined;
+//  2FAEnabledScreen: undefined; // TODO: 2FA screens not ported to mobile-rn (RV-10)
+//  2FAIntroScreen: undefined; // TODO: 2FA screens not ported to mobile-rn (RV-10)
   AcceptLoanScreen: undefined;
   AccountCreatedScreen: undefined;
   AccountDetailsScreen: undefined;
@@ -481,8 +481,8 @@ function DrawerNavigator() {
         component={BottomTabNavigator}
         options={{ title: '54Link POS' }}
       />
-      <Drawer.Screen name="2FAEnabledScreen" component={2FAEnabledScreen} options={{ title: "2FAEnabled" }} />
-      <Drawer.Screen name="2FAIntroScreen" component={2FAIntroScreen} options={{ title: "2FAIntro" }} />
+      {/* <Drawer.Screen name="2FAEnabledScreen" component={2FAEnabledScreen} options={{ title: "2FAEnabled" }} /> */} // TODO: 2FA screens not ported to mobile-rn (RV-10)
+      {/* <Drawer.Screen name="2FAIntroScreen" component={2FAIntroScreen} options={{ title: "2FAIntro" }} /> */} // TODO: 2FA screens not ported to mobile-rn (RV-10)
       <Drawer.Screen name="AcceptLoanScreen" component={AcceptLoanScreen} options={{ title: "AcceptLoan" }} />
       <Drawer.Screen name="AccountCreatedScreen" component={AccountCreatedScreen} options={{ title: "AccountCreated" }} />
       <Drawer.Screen name="AccountDetailsScreen" component={AccountDetailsScreen} options={{ title: "AccountDetails" }} />

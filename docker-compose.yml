@@ -1016,7 +1016,7 @@ services:
       LAKEHOUSE_ENDPOINT: http://lakehouse:8181
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: 54link
-      PERMIFY_ENDPOINT: permify:3476
+      PERMIFY_ENDPOINT: http://permify:3476
       TB_HUB_URL: http://tigerbeetle-middleware-hub:9300
       TB_BRIDGE_URL: http://tigerbeetle-middleware-bridge:9400
     networks:

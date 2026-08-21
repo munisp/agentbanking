@@ -91,14 +91,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- FastAPI Application Initialization ---
-app = FastAPI(
 
 import psycopg2
 import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/upi_connector")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -118,6 +116,20 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+
+
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="A robust and production-ready FastAPI service for connecting to the UPI payment network.",
+    version="1.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+)
+apply_middleware(app, enable_auth=True)
 
 @app.get("/api/v1/items")
 async def list_items():
@@ -208,12 +220,6 @@ async def delete_item(item_id: int):
 async def health():
     return {"status": "ok", "service": "upi-connector"}
 
-    title=settings.APP_NAME,
-    description="A robust and production-ready FastAPI service for connecting to the UPI payment network.",
-    version="1.0.0",
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
-)
 
 # --- Startup Event Handler ---
 @app.on_event("startup")

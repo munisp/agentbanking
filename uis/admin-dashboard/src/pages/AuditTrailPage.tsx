@@ -68,7 +68,7 @@ export default function AuditTrailPage() {
 
   // @ts-ignore Sprint 85
   const { data: stats } = trpc.sprint27Export.auditStats.useQuery();
-  const { exportCSV } = useDataExport();
+  const { exportToCsv: exportCSV } = useDataExport();
 
   const entries = (auditData as any)?.entries || [];
   const total = auditData?.total || 0;

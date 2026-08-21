@@ -185,8 +185,6 @@ async def lifespan(app: FastAPI):
     if redis_client:
         await redis_client.close()
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -221,6 +219,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Voice AI Service",
     description="Production-ready Voice AI conversational commerce",
     version="2.0.0",

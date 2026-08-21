@@ -186,18 +186,16 @@ spec:
       component: app
 
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: pos-shell-secrets
-  namespace: pos-shell
-type: Opaque
-stringData:
-  database-url: "postgresql://pos:pos_secret@postgres:5432/pos_shell"
-  redis-url: "redis://redis:6379"
-  jwt-secret: "change-this-in-production"
-  stripe-secret-key: "sk_test_default"
-  stripe-webhook-secret: "whsec_default"
+# The Secret "pos-shell-secrets" (namespace: pos-shell) is intentionally NOT
+# committed. Create it externally before deploying, e.g.:
+#   kubectl create secret generic pos-shell-secrets -n pos-shell \
+#     --from-literal=database-url="$DATABASE_URL" \
+#     --from-literal=redis-url="$REDIS_URL" \
+#     --from-literal=jwt-secret="$JWT_SECRET" \
+#     --from-literal=stripe-secret-key="$STRIPE_SECRET_KEY" \
+#     --from-literal=stripe-webhook-secret="$STRIPE_WEBHOOK_SECRET"
+# Required keys: database-url, redis-url, jwt-secret, stripe-secret-key,
+# stripe-webhook-secret (consumed via secretKeyRef by the Deployment above).
 
 ---
 apiVersion: v1

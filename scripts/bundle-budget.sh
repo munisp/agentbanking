@@ -36,8 +36,9 @@ echo "▸ Analyzing bundle sizes..."
 TOTAL_KB=0
 OVER_BUDGET=false
 
-for f in dist/assets/*.js 2>/dev/null; do
-  [ -f "$f" ] || continue
+shopt -s nullglob  # NF-Q-2: no match expands to nothing instead of a literal pattern
+for f in dist/assets/*.js; do
+  [ -e "$f" ] || continue
   SIZE_BYTES=$(wc -c < "$f")
   SIZE_KB=$((SIZE_BYTES / 1024))
 

@@ -11,7 +11,7 @@ export default function DisputeWorkflowEngine() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  const statsQuery = {data: null, isLoading: false, refetch: () => {}};
+  const statsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const stats = statsQuery.data;
 
   const statCards = [

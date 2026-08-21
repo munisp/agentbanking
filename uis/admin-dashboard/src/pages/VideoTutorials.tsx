@@ -8,6 +8,7 @@
  * - Related guide links
  * - Duration and difficulty level
  */
+import { useLocation } from "wouter";
 import { useState, useCallback, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";

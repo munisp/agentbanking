@@ -8,8 +8,7 @@ from models import Base # Import Base from models.py
 # Use the database URL from settings
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
-else:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
 # SessionLocal is the factory for creating new Session objects
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

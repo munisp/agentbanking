@@ -1,1 +1,1 @@
-"""Authentication and authorization service"""\n
+"""Authentication and authorization service"""

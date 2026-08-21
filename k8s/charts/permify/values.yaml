@@ -75,7 +75,7 @@ affinity:
         topologyKey: kubernetes.io/hostname
 
 config:
-  PERMIFY_DB_URI: "postgres://user:password@postgres:5432/permify?sslmode=disable"
+  PERMIFY_DB_URI: ""  # REQUIRED: Set via --set config.PERMIFY_DB_URI or a K8S secret; e.g. postgres://permify:$PERMIFY_DB_PASSWORD@postgres:5432/permify?sslmode=disable
   PERMIFY_HTTP_PORT: "3478"
   PERMIFY_GRPC_PORT: "3476"
 

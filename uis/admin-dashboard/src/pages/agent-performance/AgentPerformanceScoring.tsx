@@ -80,7 +80,7 @@ export default function AgentPerformanceScoring() {
             <h2 className="font-semibold text-gray-800">KPI Breakdown — {selected.name}</h2>
           </div>
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(selected.breakdown).map(([key, kpi]) => (
+            {Object.entries(selected.breakdown).map(([key, kpi]: [string, any]) => (
               <div key={key} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-700 capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>

@@ -88,6 +88,46 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  # ─── TigerBeetle (double-entry ledger) ────────────────────────────────────
+  # Single-node replica for compose deployments. HA cluster: see
+  # infra/tigerbeetle/docker-compose.cluster.yml. Image pinned to 0.16.43 for
+  # wire compatibility with the tigerbeetle-go v0.16.x clients in this repo.
+  # First run: docker compose --profile init run --rm tigerbeetle-format
+  tigerbeetle-format:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
+    command: format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
+    volumes:
+      - tigerbeetle-data:/data
+    profiles:
+      - init
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
+    command: start --addresses=0.0.0.0:3000 --replica=0 --replica-count=1 --cluster=0 /data/0_0.tigerbeetle
+    ports:
+      - "3000:3000"
+    volumes:
+      - tigerbeetle-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3000 || exit 1"]
+      <<: *healthcheck
+    restart: unless-stopped
+
+  # ─── Fluvio (event streaming) ────────────────────────────────────────────
+  # Minimal SC derived from infra/fluvio/ha/docker-compose.fluvio-ha.yml
+  # (infinyon/fluvio:0.11.11). Dependents connect at fluvio:9003.
+  fluvio:
+    image: infinyon/fluvio:0.11.11
+    command: >
+      /fluvio-run sc start
+      --bind-public 0.0.0.0:9003
+      --bind-private 0.0.0.0:9004
+    ports:
+      - "9003:9003"
+    environment:
+      RUST_LOG: info
+    restart: unless-stopped
+
   # ─── Main Application (Node.js) ──────────────────────────────────────────
 
   app:
@@ -117,9 +157,12 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       <<: *healthcheck
     restart: unless-stopped
-    # MB-14: MOJALOOP_URL points at mojaloop-simulator, which is not defined in this
-    # compose file — gate the dependent service behind the "simulation" profile so
-    # default runs do not start with a dangling Mojaloop dependency.
+    # MB-14: MOJALOOP_URL points at mojaloop-simulator, which is not defined in
+    # this compose file — no Mojaloop simulator image/config exists in this repo
+    # (only the full HA hub overlay under infra/mojaloop/ha). Gate the dependent
+    # service behind the "simulation" profile so default runs do not start with
+    # a dangling Mojaloop dependency. tigerbeetle and fluvio ARE defined above
+    # (TIGERBEETLE_ADDRESSES / FLUVIO_ENDPOINT resolve).
     profiles: ["simulation"]
 
   # ─── Consolidated Go Services ─────────────────────────────────────────────
@@ -291,6 +334,9 @@ services:
     environment:
       <<: *common-env
       SERVICE_GROUP: payments
+      # payment-processing defaults TB_ADDRESS to localhost ("3000"); point it at
+      # the tigerbeetle service defined above.
+      TB_ADDRESS: tigerbeetle:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -455,3 +501,4 @@ volumes:
   lakehouse-data:
   prometheus-data:
   opensearch-data:
+  tigerbeetle-data:

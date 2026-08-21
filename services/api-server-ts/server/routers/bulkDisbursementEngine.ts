@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import { getDb } from "../db";
-import { auditLog, transactions } from "../../drizzle/schema";
+import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -225,6 +226,24 @@ const _bulkDisbursementEngine_db = {
 // withTransaction wraps DB operations in a single ACID transaction.
 // On failure, withTransaction automatically rolls back all changes.
 // db.transaction() is the underlying mechanism used by withTransaction.
+
+// NF-FF-32: scope financial reads to the calling agent's own transactions.
+// Admins (platform admin role or admin agent session) may read unscoped.
+async function resolveTransactionScope(ctx: {
+  req: any;
+  user?: { id: number; role?: string } | null;
+}): Promise<number | null> {
+  const session = await getAgentFromCookie(ctx.req);
+  const isAdmin = ctx.user?.role === "admin" || session?.role === "admin";
+  if (isAdmin) return null; // null = unscoped (admin)
+  if (!session)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Agent session required to access transaction data",
+    });
+  return session.id;
+}
+
 export const bulkDisbursementEngineRouter = router({
   list: protectedProcedure
     .input(
@@ -234,20 +253,33 @@ export const bulkDisbursementEngineRouter = router({
         search: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+        if (!database)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        // NF-FF-32: scope to the calling agent (admins unscoped); correct
+        // ordering key is transactions.id (was wrong-table auditLog.id).
+        const scopeAgentId = await resolveTransactionScope(ctx);
+        const scopeWhere =
+          scopeAgentId !== null
+            ? eq(transactions.agentId, scopeAgentId)
+            : undefined;
         const results = await database
           .select()
           .from(transactions)
-          .orderBy(desc(auditLog.id))
+          .where(scopeWhere)
+          .orderBy(desc(transactions.id))
           .limit(input.limit)
           .offset(input.offset);
 
         const _totalRows = await database
           .select({ total: count() })
-          .from(transactions);
+          .from(transactions)
+          .where(scopeWhere);
         const totalResult = Array.isArray(_totalRows)
           ? _totalRows[0]
           : _totalRows;
@@ -258,24 +290,45 @@ export const bulkDisbursementEngineRouter = router({
           limit: input.limit,
           offset: input.offset,
         };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
       }
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      // NF-FF-32: scope to the calling agent and predicate on the correct
+      // table key (transactions.id, not auditLog.id).
+      const scopeAgentId = await resolveTransactionScope(ctx);
+      const recordWhere =
+        scopeAgentId !== null
+          ? and(
+              eq(transactions.id, input.id),
+              eq(transactions.agentId, scopeAgentId)
+            )
+          : eq(transactions.id, input.id);
       const [record] = await database
         .select()
         .from(transactions)
-        .where(eq(auditLog.id, input.id))
+        .where(recordWhere)
         .limit(1);
 
       if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Record with id ${input.id} not found`,
+        });
       }
       return record;
     }),
@@ -301,19 +354,43 @@ export const bulkDisbursementEngineRouter = router({
         limit: z.number().min(1).max(50).default(10),
       })
     )
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+    .query(async ({ input, ctx }) => {
+      try {
+        const database = await getDb();
+        if (!database)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const since = new Date();
+        since.setDate(since.getDate() - input.days);
 
-      const results = await database
-        .select()
-        .from(transactions)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
+        // NF-FF-32: scope to the calling agent, predicate/order on
+        // transactions columns (was wrong-table auditLog.id), and actually
+        // apply the requested time window.
+        const scopeAgentId = await resolveTransactionScope(ctx);
+        const windowWhere =
+          scopeAgentId !== null
+            ? and(
+                eq(transactions.agentId, scopeAgentId),
+                gte(transactions.createdAt, since)
+              )
+            : gte(transactions.createdAt, since);
+        const results = await database
+          .select()
+          .from(transactions)
+          .where(windowWhere)
+          .orderBy(desc(transactions.id))
+          .limit(input.limit);
 
-      return results;
+        return results;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
     }),
 
   getStats: protectedProcedure.query(async () => {

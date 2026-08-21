@@ -278,15 +278,14 @@ def log_audit(action: str, entity_id: str, data: str = ""):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 app = FastAPI(
-    title="TigerBeetle Service (Production)
+    title="TigerBeetle Service (Production)",
+    description="Production-ready Financial Ledger using TigerBeetle (Zig) with PostgreSQL bi-directional sync",
+    version="2.0.0"
+)
 
 @app.on_event("startup")
 async def _init_pg_pool():
     await get_pg_pool()
-",
-    description="Production-ready Financial Ledger using TigerBeetle (Zig) with PostgreSQL bi-directional sync",
-    version="2.0.0"
-)
 
 if HAS_SHARED:
     try:

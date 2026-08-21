@@ -102,18 +102,12 @@ ALLOWED_ORIGINS = os.getenv(
     "http://localhost:5173,http://localhost:3000"
 ).split(",")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyb_verification")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -144,10 +138,17 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="KYB Verification Service",
     description="KYB Verification for Remittance Platform — delegates to kyb_service, deep_kyb, and kyc_kyb_service",
     version="2.0.0"
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,

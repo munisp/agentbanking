@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Sprint 87: Full domain logic — auto-matching, variance detection, exception handling
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { floatReconciliations, gl_journal_entries } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
@@ -37,7 +37,8 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const VARIANCE_THRESHOLD_PERCENT = 5; // 5% variance triggers escalation
-const AUTO_RESOLVE_THRESHOLD = 100; // Auto-resolve discrepancies under ₦100
+// NF-FF-24: AUTO_RESOLVE_THRESHOLD removed — new reconciliations are always
+// created with status "open"; only an admin may resolve them explicitly.
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -251,13 +252,8 @@ export const floatReconciliationsRouter = router({
         const discrepancy = actual - expected;
         const variancePercent =
           expected > 0 ? Math.abs(discrepancy / expected) * 100 : 0;
-        // Auto-resolve small discrepancies
-        const autoResolved = Math.abs(discrepancy) < AUTO_RESOLVE_THRESHOLD;
-        const status = autoResolved
-          ? "resolved"
-          : variancePercent > VARIANCE_THRESHOLD_PERCENT
-            ? "escalated"
-            : "pending";
+        // NF-FF-24: always create as "open" — no auto-resolve shortcut; an
+        // admin must explicitly resolve via the resolve mutation.
         const [row] = await db
           .insert(floatReconciliations)
           .values({
@@ -266,10 +262,8 @@ export const floatReconciliationsRouter = router({
             expectedBalance: input.expectedBalance,
             actualBalance: input.actualBalance,
             discrepancy: discrepancy.toFixed(2),
-            status,
-            notes: autoResolved
-              ? `Auto-resolved: discrepancy ₦${Math.abs(discrepancy).toFixed(2)} below threshold`
-              : input.notes || null,
+            status: "open",
+            notes: input.notes || null,
           })
           .returning();
 
@@ -314,7 +308,6 @@ export const floatReconciliationsRouter = router({
 
         return {
           ...row,
-          autoResolved,
           variancePercent: Math.round(variancePercent * 100) / 100,
           severity:
             variancePercent > VARIANCE_THRESHOLD_PERCENT
@@ -330,42 +323,39 @@ export const floatReconciliationsRouter = router({
         });
       }
     }),
-  resolve: protectedProcedure
+  resolve: adminProcedure
     .input(
       z.object({
         id: z.number(),
-        resolvedBy: z.number(),
         notes: z.string().min(5),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        const [existing] = await db
-          .select()
-          .from(floatReconciliations)
-          .where(eq(floatReconciliations.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Reconciliation not found",
-          });
-        if (existing.status === "resolved")
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Already resolved",
-          });
+        // NF-FF-24: resolver identity comes from the session (ctx.user.id),
+        // never from client input. Conditional update — only a row not already
+        // resolved can transition; 0 rows => 409 CONFLICT.
         const [row] = await db
           .update(floatReconciliations)
           .set({
             status: "resolved",
-            resolvedBy: input.resolvedBy,
+            resolvedBy: ctx.user.id,
             resolvedAt: new Date(),
             notes: input.notes,
           })
-          .where(eq(floatReconciliations.id, input.id))
+          .where(
+            and(
+              eq(floatReconciliations.id, input.id),
+              sql`${floatReconciliations.status} <> 'resolved'`
+            )
+          )
           .returning();
+        if (!row)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Reconciliation not found or already resolved",
+          });
         // Middleware fan-out (fail-open)
         await publishfloatReconciliationsCrudMiddleware(
           "resolve",

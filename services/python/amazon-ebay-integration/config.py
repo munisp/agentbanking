@@ -10,7 +10,7 @@ class Settings:
     Application settings loaded from environment variables.
     """
     # Database settings
-            DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/amazon_ebay_integration")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/amazon_ebay_integration")
     
     # Other application settings can be added here
     SERVICE_NAME: str = "amazon-ebay-integration"

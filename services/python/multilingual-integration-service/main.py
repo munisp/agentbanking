@@ -100,16 +100,11 @@ from datetime import datetime
 import uvicorn
 import httpx
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/multilingual_integration_service")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
 
 def get_db():
@@ -141,10 +136,16 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Multi-lingual Integration Service",
     description="Platform-wide translation for Nigerian languages",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,14 +192,14 @@ UI_TRANSLATIONS = {
         },
         "transfer": {
             "en": "Transfer",
-            "yo": "Fi owo ranṣẹ",
+            "yo": "Fi owo ranşẹ",
             "ig": "Zipu ego",
             "ha": "Tura kudi",
             "pcm": "Transfer"
         },
         "transaction_history": {
             "en": "Transaction History",
-            "yo": "Itan Iṣowo",
+            "yo": "Itan İşowo",
             "ig": "Akụkọ Azụmahịa",
             "ha": "Tarihin Ciniki",
             "pcm": "Transaction History"
@@ -272,14 +273,14 @@ UI_TRANSLATIONS = {
         },
         "order": {
             "en": "Order",
-            "yo": "Aṣẹ",
+            "yo": "Aşẹ",
             "ig": "Ọda",
             "ha": "Oda",
             "pcm": "Order"
         },
         "place_order": {
             "en": "Place Order",
-            "yo": "Fi aṣẹ silẹ",
+            "yo": "Fi aşẹ silẹ",
             "ig": "Tinye ọda",
             "ha": "Sanya oda",
             "pcm": "Place Order"
@@ -378,7 +379,7 @@ UI_TRANSLATIONS = {
         },
         "filter": {
             "en": "Filter",
-            "yo": "Ṣẹ",
+            "yo": "Şẹ",
             "ig": "Họrọ",
             "ha": "Tace",
             "pcm": "Filter"
@@ -424,35 +425,35 @@ UI_TRANSLATIONS = {
     "messages": {
         "success": {
             "en": "Operation successful!",
-            "yo": "Iṣẹ ṣaṣeyọri!",
+            "yo": "İşẹ şaşeyọri!",
             "ig": "Ọrụ gara nke ọma!",
             "ha": "Aikin ya yi nasara!",
             "pcm": "Operation don successful!"
         },
         "error": {
             "en": "An error occurred. Please try again.",
-            "yo": "Aṣiṣe kan ṣẹlẹ. Jọwọ gbiyanju lẹẹkansi.",
+            "yo": "Aşişe kan şẹlẹ. Jọwọ gbiyanju lẹẹkansi.",
             "ig": "Njehie mere. Biko nwaa ọzọ.",
             "ha": "Kuskure ya faru. Don Allah sake gwadawa.",
             "pcm": "Error happen. Abeg try again."
         },
         "loading": {
             "en": "Loading...",
-            "yo": "N ṣiṣẹ...",
+            "yo": "N şişẹ...",
             "ig": "Na-ebu...",
             "ha": "Ana lodawa...",
             "pcm": "Dey load..."
         },
         "confirm": {
             "en": "Are you sure?",
-            "yo": "Ṣe o da ọ loju?",
+            "yo": "Şe o da ọ loju?",
             "ig": "Ị ji n'aka?",
             "ha": "Ka tabbata?",
             "pcm": "You sure?"
         },
         "delete_confirm": {
             "en": "Are you sure you want to delete this?",
-            "yo": "Ṣe o da ọ loju pe o fẹ pa eyi rẹ?",
+            "yo": "Şe o da ọ loju pe o fẹ pa eyi rẹ?",
             "ig": "Ị ji n'aka na ịchọrọ ihicha nke a?",
             "ha": "Ka tabbata kana son share wannan?",
             "pcm": "You sure say you wan delete this?"

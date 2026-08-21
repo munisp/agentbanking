@@ -29,11 +29,13 @@ app = FastAPI(
 
 app.add_middleware(
     RequiredHeadersMiddleware,
+    # NF-FF-21: x-ledger-id / x-mint-account-id are no longer accepted from
+    # callers; the payment API derives them from TB_LEDGER_ID /
+    # TB_MINT_ACCOUNT_ID env config. Callers must not be forced to supply
+    # ledger identity values the server would previously have trusted.
     required_headers=[
         "x-tenant-id",
         "x-keycloak-id",
-        "x-ledger-id",
-        "x-mint-account-id",
     ],
     exclude_prefixes=["/health", "/dapr", "/charges", "/transfers", "/api/v1/transactions"],
 )

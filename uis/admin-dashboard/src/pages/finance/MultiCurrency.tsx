@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { trpc } from "@/lib/trpc";
+import { useState, useMemo, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,86 +13,90 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
 import {
+  ArrowUpDown,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  RefreshCw,
+  Globe,
+  Calculator,
+  BarChart3,
+  Minus,
+  Search,
+  Clock,
+  History,
+  Zap,
+} from "lucide-react";
+import {
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Area,
-  AreaChart,
   ReferenceLine,
 } from "recharts";
-import {
-  ArrowUpDown,
-  TrendingUp,
-  TrendingDown,
-  RefreshCw,
-  Search,
-  Calculator,
-  BarChart3,
-  Globe,
-  Clock,
-  Zap,
-  ArrowRight,
-  Minus,
-  History,
-} from "lucide-react";
 
-// ── Sparkline Mini Component ─────────────────────────────────────────────────
-
-function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
+// Sparkline component (inline SVG, no library needed)
+function Sparkline({
+  data,
+  width = 80,
+  height = 24,
+  positive = true,
+}: {
+  data: number[];
+  width?: number;
+  height?: number;
+  positive?: boolean;
+}) {
+  if (!data || data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const points = data
     .map(
       (v, i) =>
-        `${(i / (data.length - 1)) * 60},${30 - ((v - min) / range) * 28}`
+        `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * height}`
     )
     .join(" ");
-
   return (
-    <svg width="60" height="30" viewBox="0 0 60 30" className="inline-block">
+    <svg width={width} height={height} className="inline-block">
       <polyline
-        points={points}
         fill="none"
         stroke={positive ? "#22c55e" : "#ef4444"}
         strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        points={points}
       />
     </svg>
   );
 }
 
-// ── Conversion History Item ──────────────────────────────────────────────────
-
-interface ConversionRecord {
-  id: number;
-  from: string;
-  to: string;
-  amount: number;
-  result: number;
-  rate: number;
-  time: Date;
+// Format rate with appropriate precision
+function formatRate(rate: number): string {
+  if (rate === 0) return "0.00";
+  if (rate >= 1000)
+    return rate.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  if (rate >= 1) return rate.toFixed(4);
+  if (rate >= 0.001) return rate.toFixed(6);
+  return rate.toFixed(8);
 }
 
 export default function MultiCurrency() {
-  // ── State ──────────────────────────────────────────────────────────────────
   const [baseCurrency, setBaseCurrency] = useState("NGN");
+  const [activeTab, setActiveTab] = useState("rates");
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("rates");
 
   // Calculator state
+  const [calcAmount, setCalcAmount] = useState("1000");
   const [calcFrom, setCalcFrom] = useState("NGN");
   const [calcTo, setCalcTo] = useState("USD");
-  const [calcAmount, setCalcAmount] = useState("1000");
-  const [conversionHistory, setConversionHistory] = useState<
-    ConversionRecord[]
-  >([]);
-  const [historyCounter, setHistoryCounter] = useState(0);
 
   // Chart state
   const [chartFrom, setChartFrom] = useState("NGN");
@@ -101,94 +105,98 @@ export default function MultiCurrency() {
     "30d"
   );
 
-  // ── Queries ────────────────────────────────────────────────────────────────
-  const ratesQuery = trpc.fxRates.getRates.useQuery(
-    // @ts-expect-error Sprint 85 — type inference mismatch
-    { base: baseCurrency, category: activeCategory },
-    { refetchInterval: 60000 }
+  // Conversion history (localStorage)
+  const [conversionHistory, setConversionHistory] = useState<
+    Array<{
+      id: number;
+      from: string;
+      to: string;
+      amount: number;
+      result: number;
+      rate: number;
+      time: Date;
+    }>
+  >([]);
+
+  // tRPC queries
+  const ratesQuery = trpc.exchangeRates.rates.useQuery(
+    { base: baseCurrency },
+    { refetchInterval: 300000 }
   ) as any;
 
-  const parsedCalcAmount = parseFloat(calcAmount) || 0;
-  const convertQuery = trpc.fxRates.convert.useQuery(
+  const convertQuery = trpc.exchangeRates.convert.useQuery(
     {
+      amount: parseFloat(calcAmount) || 0,
       from: calcFrom,
       to: calcTo,
-      amount: parsedCalcAmount > 0 ? parsedCalcAmount : 1,
     },
-    { enabled: parsedCalcAmount > 0 }
+    {
+      enabled:
+        parseFloat(calcAmount) > 0 && calcFrom !== "" && calcTo !== "",
+    }
   ) as any;
 
-  const historicalQuery = trpc.fxRates.historical.useQuery(
-    // @ts-expect-error Sprint 85 — type inference mismatch
-    { from: chartFrom, to: chartTo, period: chartPeriod },
-    { enabled: activeTab === "charts" }
-  ) as any;
-
-  const currenciesQuery = trpc.fxRates.currencies.useQuery() as any;
-  const refreshMutation = trpc.fxRates.refresh.useMutation({
-    onSuccess: () => ratesQuery.refetch(),
+  const historicalQuery = trpc.exchangeRates.historical.useQuery({
+    from: chartFrom,
+    to: chartTo,
+    period: chartPeriod,
   }) as any;
 
-  // ── Derived Data ───────────────────────────────────────────────────────────
+  const refreshMutation = trpc.exchangeRates.refresh.useMutation({
+    onSuccess: () => {
+      toast.success("Exchange rates refreshed");
+      ratesQuery.refetch();
+    },
+    onError: () => {
+      toast.error("Failed to refresh rates");
+    },
+  }) as any;
+
+  // Filter rates by category and search
   const filteredRates = useMemo(() => {
     if (!ratesQuery.data?.rates) return [];
-    if (!searchQuery) return ratesQuery.data.rates;
-    const q = searchQuery.toLowerCase();
-    return ratesQuery.data.rates.filter(
-      (r: any) =>
-        r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
-    );
-  }, [ratesQuery.data?.rates, searchQuery]);
+    let rates = ratesQuery.data.rates;
+    if (activeCategory !== "all") {
+      rates = rates.filter((r: any) => r.category === activeCategory);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      rates = rates.filter(
+        (r: any) =>
+          r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
+      );
+    }
+    return rates;
+  }, [ratesQuery.data, activeCategory, searchQuery]);
 
-  const currencyOptions = useMemo(() => {
-    return currenciesQuery.data?.currencies || [];
-  }, [currenciesQuery.data]);
+  // Save conversion to history when result changes
+  const saveConversion = useCallback(() => {
+    if (!convertQuery.data) return;
+    const entry = {
+      id: Date.now(),
+      from: calcFrom,
+      to: calcTo,
+      amount: parseFloat(calcAmount) || 0,
+      result: convertQuery.data.converted,
+      rate: convertQuery.data.effectiveRate,
+      time: new Date(),
+    };
+    setConversionHistory(prev => [entry, ...prev].slice(0, 10));
+  }, [convertQuery.data, calcFrom, calcTo, calcAmount]);
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleSwap = useCallback(() => {
+  const handleSwap = () => {
     setCalcFrom(calcTo);
     setCalcTo(calcFrom);
-  }, [calcFrom, calcTo]);
+  };
 
-  const addToHistory = useCallback(() => {
-    if (convertQuery.data && parsedCalcAmount > 0) {
-      setConversionHistory(prev => [
-        {
-          id: historyCounter,
-          from: convertQuery.data!.from,
-          to: convertQuery.data!.to,
-          amount: convertQuery.data!.amount,
-          result: convertQuery.data!.converted,
-          rate: convertQuery.data!.midMarketRate,
-          time: new Date(),
-        },
-        ...prev.slice(0, 9),
-      ]);
-      setHistoryCounter(c => c + 1);
-    }
-  }, [convertQuery.data, parsedCalcAmount, historyCounter]);
-
-  // Auto-add to history when conversion completes
-  useEffect(() => {
-    if (convertQuery.data && parsedCalcAmount > 0) {
-      addToHistory();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convertQuery.data?.converted]);
-
-  const handleQuickPair = useCallback((from: string, to: string) => {
+  const handleQuickPair = (from: string, to: string) => {
     setCalcFrom(from);
     setCalcTo(to);
     setActiveTab("calculator");
-  }, []);
-
-  const formatRate = (rate: number) => {
-    if (rate >= 1000) return rate.toFixed(2);
-    if (rate >= 1) return rate.toFixed(4);
-    return rate.toFixed(6);
   };
 
-  // ── Currency Select Component ──────────────────────────────────────────────
+  const currencyOptions = ratesQuery.data?.rates ?? [];
+
   const CurrencySelect = ({
     value,
     onChange,

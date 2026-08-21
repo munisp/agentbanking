@@ -1,50 +1,60 @@
-import React from "react";
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-type Variant = "default" | "outline" | "destructive" | "ghost" | "link" | "secondary";
-type Size = "default" | "sm" | "lg" | "icon" | "xs";
+import { cn } from "@/lib/utils";
 
-export function Button({
-  children,
-  onClick,
-  disabled,
-  variant = "default",
-  size = "default",
-  className = "",
-  type = "button",
-  asChild: _asChild,
-  ...rest
-}: {
-  children?: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  variant?: Variant;
-  size?: Size;
-  className?: string;
-  type?: "button" | "submit" | "reset";
-  asChild?: boolean;
-  [key: string]: any;
-}) {
-  const base = "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const variants: Record<Variant, string> = {
-    default: "bg-blue-600 text-white hover:bg-blue-700",
-    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
-    destructive: "bg-red-600 text-white hover:bg-red-700",
-    ghost: "text-gray-700 hover:bg-gray-100",
-    link: "text-blue-600 underline-offset-4 hover:underline",
-    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
-  };
-  const sizes: Record<Size, string> = {
-    default: "px-4 py-2 text-sm",
-    sm: "px-3 py-1.5 text-xs",
-    lg: "px-6 py-3 text-base",
-    icon: "p-2 text-sm",
-    xs: "px-2 py-1 text-xs",
-  };
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive:
+          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+        outline:
+          "border bg-transparent shadow-xs hover:bg-accent dark:bg-transparent dark:border-input dark:hover:bg-input/50",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost:
+          "hover:bg-accent dark:hover:bg-accent/50",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-9 px-4 py-2 has-[>svg]:px-3",
+        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
+        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+        icon: "size-9",
+        "icon-sm": "size-8",
+        "icon-lg": "size-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+);
+
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  ...props
+}: React.ComponentProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+  }) {
+  const Comp = asChild ? Slot : "button";
+
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...rest}>
-      {children}
-    </button>
+    <Comp
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
   );
 }
 
-export default Button;
+export { Button, buttonVariants };

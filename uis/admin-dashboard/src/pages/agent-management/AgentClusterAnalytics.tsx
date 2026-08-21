@@ -13,8 +13,8 @@ const statusColors: Record<string, string> = {
 export default function AgentClusterAnalytics() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  const summary = {data: null, isLoading: false, refetch: () => {}};
-  const listQ = {data: null, isLoading: false, refetch: () => {}};
+  const summary = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const listQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const items: any[] = [];
   const total = 0;
 

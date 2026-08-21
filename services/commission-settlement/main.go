@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,730 +24,265 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Models
+// Commission represents a commission record
 type Commission struct {
-	ID               uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AgentID          uuid.UUID `gorm:"type:uuid;not null"`
-	AgentName        string    `gorm:"not null"`
-	TransactionID    string    `gorm:"not null;uniqueIndex:idx_commission_dedup"`
-	TransactionRef   string    `gorm:"uniqueIndex:idx_commission_dedup"`
-	TransactionType  string    `gorm:"not null"` // "pos_sale", "withdrawal", "deposit", "transfer", "bill_payment"
-	Amount           float64   `gorm:"not null"`
-	CommissionAmount float64   `gorm:"not null"`
-	Rate             float64   `gorm:"not null"`
-	RateType         string    `gorm:"not null"` // "percentage", "flat"
-	Currency         string    `gorm:"default:'NGN'"`
-	Status           string    `gorm:"default:'pending'"` // "pending", "settled", "cancelled"
-	SettlementID     *uuid.UUID `gorm:"type:uuid"`
-	EarnedAt         time.Time `gorm:"not null"`
-	SettledAt        *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID               uuid.UUID        `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AgentID          uuid.UUID        `json:"agent_id" gorm:"not null;index;uniqueIndex:idx_commission_agent_ref"`
+	TransactionID    uuid.UUID        `json:"transaction_id" gorm:"not null;index"`
+	TransactionRef   string           `json:"transaction_ref" gorm:"not null;uniqueIndex:idx_commission_agent_ref"`
+	TransactionType  string           `json:"transaction_type" gorm:"not null"`
+	Amount           float64          `json:"amount" gorm:"not null"`
+	Rate             float64          `json:"rate" gorm:"not null"`
+	CommissionAmount float64          `json:"commission_amount" gorm:"not null"`
+	Currency         string           `json:"currency" gorm:"default:'USD'"`
+	Status           CommissionStatus `json:"status" gorm:"default:'pending'"`
+	SettlementID     *uuid.UUID       `json:"settlement_id" gorm:"index"`
+	EarnedAt         time.Time        `json:"earned_at" gorm:"not null"`
+	SettledAt        *time.Time       `json:"settled_at"`
+	Metadata         JSON             `json:"metadata" gorm:"type:jsonb"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
 }
 
-type Settlement struct {
-	ID              uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AgentID         uuid.UUID `gorm:"type:uuid;not null"`
-	AgentName       string    `gorm:"not null"`
-	SettlementRef   string    `gorm:"unique;not null"`
-	TotalAmount     float64   `gorm:"not null"`
-	CommissionCount int       `gorm:"not null"`
-	Currency        string    `gorm:"default:'NGN'"`
-	Status          SettlementStatus `gorm:"default:'pending'"`
-	PaymentMethod   string    `gorm:"not null"` // "bank_transfer", "wallet_credit", "cash_pickup"
-	PaymentDetails  string    `gorm:"type:jsonb"`
-	ProcessedAt     *time.Time
-	FailureReason   string
-	PeriodStart     time.Time `gorm:"not null"`
-	PeriodEnd       time.Time `gorm:"not null"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-type CommissionRule struct {
-	ID              uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	Name            string    `gorm:"not null"`
-	TransactionType string    `gorm:"not null"`
-	MinAmount       float64   `gorm:"not null"`
-	MaxAmount       float64   `gorm:"not null"`
-	Rate            float64   `gorm:"not null"`
-	RateType        string    `gorm:"not null"`
-	AgentTier       string    // "bronze", "silver", "gold", "platinum"
-	IsActive        bool      `gorm:"default:true"`
-	Priority        int       `gorm:"default:0"`
-	FlatFee         float64   `gorm:"default:0"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-type AgentBalance struct {
-	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AgentID           uuid.UUID `gorm:"type:uuid;unique;not null"`
-	AgentName         string    `gorm:"not null"`
-	PendingBalance    float64   `gorm:"default:0"`
-	AvailableBalance  float64   `gorm:"default:0"`
-	SettledBalance    float64   `gorm:"default:0"`
-	TotalEarned       float64   `gorm:"default:0"`
-	Currency          string    `gorm:"default:'NGN'"`
-	LastSettlementAt  *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-// SettlementPolicy controls platform-wide settlement behaviour
-type SettlementPolicy struct {
-	ID                    uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AutoProcessOnEod      bool      `gorm:"default:false"`
-	MinWithdrawalAmount   float64   `gorm:"default:0"`
-	AllowAgentWithdrawal  bool      `gorm:"default:true"`
-	UpdatedAt             time.Time
-}
-
-// CommissionClawback represents a clawback/debit-adjustment case
-type CommissionClawback struct {
-	ID                     uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	AgentID                uuid.UUID `gorm:"type:uuid;not null"`
-	AgentName              string    `gorm:"not null"`
-	Reason                 string    `gorm:"not null"`
-	Amount                 float64   `gorm:"not null"`
-	OriginalCommissionDate string    `gorm:"not null"`
-	Notes                  string
-	Status                 string    `gorm:"default:'pending_approval'"`
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-}
-
-// Request/Response types
-type CreateCommissionRequest struct {
-	AgentID         string  `json:"agent_id" binding:"required"`
-	AgentName       string  `json:"agent_name" binding:"required"`
-	TransactionID   string  `json:"transaction_id" binding:"required"`
-	TransactionRef  string  `json:"transaction_ref" binding:"required"`
-	TransactionType string  `json:"transaction_type" binding:"required"`
-	Amount          float64 `json:"amount" binding:"required,gt=0"`
-	Currency        string  `json:"currency"`
-}
-
-type CreateSettlementRequest struct {
-	AgentID        string `json:"agent_id" binding:"required"`
-	PaymentMethod  string `json:"payment_method" binding:"required"`
-	PaymentDetails string `json:"payment_details"`
-	PeriodStart    string `json:"period_start" binding:"required"`
-	PeriodEnd      string `json:"period_end" binding:"required"`
-}
-
-type UpdateSettlementRequest struct {
-	Status        string `json:"status"`
-	FailureReason string `json:"failure_reason"`
-}
-
-type CreateCommissionRuleRequest struct {
-	Name            string  `json:"name" binding:"required"`
-	TransactionType string  `json:"transaction_type" binding:"required"`
-	MinAmount       float64 `json:"min_amount" binding:"required"`
-	MaxAmount       float64 `json:"max_amount" binding:"required"`
-	Rate            float64 `json:"rate" binding:"required"`
-	RateType        string  `json:"rate_type" binding:"required"`
-	AgentTier       string  `json:"agent_tier"`
-	Priority        int     `json:"priority"`
-	FlatFee         float64 `json:"flat_fee"`
-}
-
-type UpdateCommissionRuleRequest struct {
-	Name      *string  `json:"name"`
-	MinAmount *float64 `json:"min_amount"`
-	MaxAmount *float64 `json:"max_amount"`
-	Rate      *float64 `json:"rate"`
-	AgentTier *string  `json:"agent_tier"`
-	IsActive  *bool    `json:"is_active"`
-	Priority  *int     `json:"priority"`
-	FlatFee   *float64 `json:"flat_fee"`
-}
-
-type SettlementStatus string
-
-const (
-	SettlementPending   SettlementStatus = "pending"
-	SettlementApproved  SettlementStatus = "approved"
-	SettlementRejected  SettlementStatus = "rejected"
-	SettlementCompleted SettlementStatus = "completed"
-	SettlementFailed    SettlementStatus = "failed"
-)
-
+// CommissionStatus represents the status of a commission
 type CommissionStatus string
 
 const (
-	CommissionPending   CommissionStatus = "pending"
-	CommissionSettled   CommissionStatus = "settled"
-	CommissionCancelled CommissionStatus = "cancelled"
+	CommissionStatusPending   CommissionStatus = "pending"
+	CommissionStatusSettled   CommissionStatus = "settled"
+	CommissionStatusCancelled CommissionStatus = "cancelled"
+	CommissionStatusDisputed  CommissionStatus = "disputed"
 )
 
-// EOD result types
-type EodAgentResult struct {
-	AgentID         string  `json:"agent_id"`
-	SettlementID    string  `json:"settlement_id,omitempty"`
-	SettlementRef   string  `json:"settlement_ref,omitempty"`
-	TotalAmount     float64 `json:"total_amount"`
-	CommissionCount int     `json:"commission_count"`
-	Status          string  `json:"status"`
-	Error           string  `json:"error,omitempty"`
+// Settlement represents a commission settlement batch
+type Settlement struct {
+	ID              uuid.UUID        `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	SettlementRef   string           `json:"settlement_ref" gorm:"uniqueIndex;not null"`
+	AgentID         uuid.UUID        `json:"agent_id" gorm:"not null;index"`
+	TotalAmount     float64          `json:"total_amount" gorm:"not null"`
+	CommissionCount int              `json:"commission_count" gorm:"not null"`
+	Currency        string           `json:"currency" gorm:"default:'USD'"`
+	Status          SettlementStatus `json:"status" gorm:"default:'pending'"`
+	PaymentMethod   string           `json:"payment_method" gorm:"not null"`
+	PaymentDetails  JSON             `json:"payment_details" gorm:"type:jsonb"`
+	ProcessedAt     *time.Time       `json:"processed_at"`
+	FailureReason   string           `json:"failure_reason"`
+	StartDate       time.Time        `json:"start_date" gorm:"not null"`
+	EndDate         time.Time        `json:"end_date" gorm:"not null"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+	Commissions     []Commission     `json:"commissions" gorm:"foreignKey:SettlementID"`
 }
 
-type EodRunResult struct {
-	AgentsProcessed int               `json:"agents_processed"`
-	Succeeded       []EodAgentResult  `json:"succeeded"`
-	Failed          []EodAgentResult  `json:"failed"`
-	TotalPaid       float64           `json:"total_paid"`
+// SettlementStatus represents the status of a settlement
+type SettlementStatus string
+
+const (
+	SettlementStatusPending    SettlementStatus = "pending"
+	SettlementStatusProcessing SettlementStatus = "processing"
+	SettlementStatusCompleted  SettlementStatus = "completed"
+	SettlementStatusFailed     SettlementStatus = "failed"
+	SettlementStatusCancelled  SettlementStatus = "cancelled"
+)
+
+// CommissionRule represents commission calculation rules
+type CommissionRule struct {
+	ID              uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AgentTier       string     `json:"agent_tier" gorm:"not null"`
+	TransactionType string     `json:"transaction_type" gorm:"not null"`
+	MinAmount       float64    `json:"min_amount" gorm:"default:0"`
+	MaxAmount       float64    `json:"max_amount" gorm:"default:999999999"`
+	Rate            float64    `json:"rate" gorm:"not null"`
+	FlatFee         float64    `json:"flat_fee" gorm:"default:0"`
+	IsActive        bool       `json:"is_active" gorm:"default:true"`
+	EffectiveFrom   time.Time  `json:"effective_from" gorm:"not null"`
+	EffectiveTo     *time.Time `json:"effective_to"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-// Leaderboard types
-type LeaderboardEntry struct {
-	AgentID          string  `json:"agent_id"`
-	TotalVolume      float64 `json:"total_volume"`
-	TotalCommission  float64 `json:"total_commission"`
-	TransactionCount int64   `json:"transaction_count"`
-	AvgCommission    float64 `json:"avg_commission"`
-	Rank             int     `json:"rank"`
+// AgentBalance represents agent's commission balance
+type AgentBalance struct {
+	ID               uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AgentID          uuid.UUID  `json:"agent_id" gorm:"uniqueIndex;not null"`
+	PendingBalance   float64    `json:"pending_balance" gorm:"default:0"`
+	AvailableBalance float64    `json:"available_balance" gorm:"default:0"`
+	SettledBalance   float64    `json:"settled_balance" gorm:"default:0"`
+	TotalEarned      float64    `json:"total_earned" gorm:"default:0"`
+	Currency         string     `json:"currency" gorm:"default:'USD'"`
+	LastSettlementAt *time.Time `json:"last_settlement_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
-type AgentMetrics struct {
-	AgentID          string  `json:"agent_id"`
-	Days             int     `json:"days"`
-	TotalVolume      float64 `json:"total_volume"`
-	TotalCommission  float64 `json:"total_commission"`
-	TransactionCount int64   `json:"transaction_count"`
-	AvgCommission    float64 `json:"avg_commission"`
-	PendingBalance   float64 `json:"pending_balance"`
-	AvailableBalance float64 `json:"available_balance"`
-	TotalEarned      float64 `json:"total_earned"`
+// JSON type for JSONB fields
+type JSON map[string]interface{}
+
+// Scan implements sql.Scanner interface for GORM to convert JSONB to JSON type
+func (j *JSON) Scan(value interface{}) error {
+	if value == nil {
+		*j = JSON{}
+		return nil
+	}
+
+	var bytes []byte
+
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("unsupported Scan type for JSON: %T", value)
+	}
+
+	result := make(map[string]interface{})
+	if len(bytes) == 0 {
+		*j = JSON{}
+		return nil
+	}
+
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return err
+	}
+
+	*j = JSON(result)
+	return nil
 }
 
-type PerformanceStats struct {
-	TotalAgents         int64   `json:"total_agents"`
-	ActiveAgents        int64   `json:"active_agents"`
-	TotalCommissionPaid float64 `json:"total_commission_paid"`
-	TotalVolume         float64 `json:"total_volume"`
-	AvgCommissionRate   float64 `json:"avg_commission_rate"`
+// Value implements driver.Valuer interface for GORM to convert JSON type to JSONB
+func (j JSON) Value() (driver.Value, error) {
+	if j == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(j)
 }
 
-// CreateClawbackRequest is the payload for a new clawback
-type CreateClawbackRequest struct {
-	AgentID                uuid.UUID `json:"agent_id" binding:"required"`
-	AgentName              string    `json:"agent_name" binding:"required"`
-	Reason                 string    `json:"reason" binding:"required"`
-	Amount                 float64   `json:"amount" binding:"required,gt=0"`
-	OriginalCommissionDate string    `json:"original_commission_date" binding:"required"`
-	Notes                  string    `json:"notes"`
+// CreateCommissionRequest represents the request to create a new commission
+type CreateCommissionRequest struct {
+	AgentID         uuid.UUID `json:"agent_id" binding:"required"`
+	TransactionID   uuid.UUID `json:"transaction_id" binding:"required"`
+	TransactionRef  string    `json:"transaction_ref" binding:"required"`
+	TransactionType string    `json:"transaction_type" binding:"required"`
+	Amount          float64   `json:"amount" binding:"required,gt=0"`
+	Currency        string    `json:"currency"`
+	EarnedAt        time.Time `json:"earned_at"`
+	Metadata        JSON      `json:"metadata"`
 }
 
-// Service
+// CreateSettlementRequest represents the request to create a settlement
+type CreateSettlementRequest struct {
+	AgentID        uuid.UUID `json:"agent_id" binding:"required"`
+	PaymentMethod  string    `json:"payment_method" binding:"required"`
+	PaymentDetails JSON      `json:"payment_details" binding:"required"`
+	StartDate      time.Time `json:"start_date" binding:"required"`
+	EndDate        time.Time `json:"end_date" binding:"required"`
+	AutoProcess    bool      `json:"auto_process"`
+}
+
+// UpdateSettlementRequest represents the request to update a settlement
+type UpdateSettlementRequest struct {
+	Status        SettlementStatus `json:"status"`
+	FailureReason string           `json:"failure_reason"`
+}
+
+// CreateCommissionRuleRequest represents the request to create a commission rule
+type CreateCommissionRuleRequest struct {
+	AgentTier       string     `json:"agent_tier" binding:"required"`
+	TransactionType string     `json:"transaction_type" binding:"required"`
+	MinAmount       float64    `json:"min_amount"`
+	MaxAmount       float64    `json:"max_amount"`
+	Rate            float64    `json:"rate" binding:"required,gt=0"`
+	FlatFee         float64    `json:"flat_fee"`
+	IsActive        *bool      `json:"is_active"`
+	EffectiveFrom   time.Time  `json:"effective_from" binding:"required"`
+	EffectiveTo     *time.Time `json:"effective_to"`
+}
+
+// UpdateCommissionRuleRequest represents the request to update a commission rule
+type UpdateCommissionRuleRequest struct {
+	AgentTier       string     `json:"agent_tier"`
+	TransactionType string     `json:"transaction_type"`
+	MinAmount       *float64   `json:"min_amount"`
+	MaxAmount       *float64   `json:"max_amount"`
+	Rate            *float64   `json:"rate"`
+	FlatFee         *float64   `json:"flat_fee"`
+	IsActive        *bool      `json:"is_active"`
+	EffectiveFrom   *time.Time `json:"effective_from"`
+	EffectiveTo     *time.Time `json:"effective_to"`
+}
+
+// CommissionService handles commission-related operations
 type CommissionService struct {
 	db *gorm.DB
 }
 
-type AgentInfo struct {
-	ID        uuid.UUID
-	Tier      string
-	Territory string
-}
-
+// NewCommissionService creates a new commission service
 func NewCommissionService(db *gorm.DB) *CommissionService {
 	return &CommissionService{db: db}
 }
 
+// CreateCommission creates a new commission record
 func (s *CommissionService) CreateCommission(req CreateCommissionRequest) (*Commission, error) {
-	agentID, err := uuid.Parse(req.AgentID)
+	// Set default currency
+	if req.Currency == "" {
+		req.Currency = "USD"
+	}
+
+	// Set default earned time
+	if req.EarnedAt.IsZero() {
+		req.EarnedAt = time.Now()
+	}
+
+	// Calculate commission amount based on rules
+	rate, err := s.getCommissionRate(req.AgentID, req.TransactionType, req.Amount)
 	if err != nil {
-		return nil, fmt.Errorf("invalid agent ID")
+		return nil, fmt.Errorf("failed to get commission rate: %w", err)
 	}
 
-	// Find applicable commission rule
-	rule, err := s.findApplicableRule(req.TransactionType, req.Amount, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("no applicable commission rule found")
-	}
+	commissionAmount := req.Amount * rate
 
-	var commissionAmount float64
-	if rule.RateType == "percentage" {
-		commissionAmount = req.Amount * rule.Rate / 100
-		if rule.FlatFee > 0 && commissionAmount < rule.FlatFee {
-			commissionAmount = rule.FlatFee
-		}
-	} else {
-		commissionAmount = rule.Rate
-	}
-
-	currency := req.Currency
-	if currency == "" {
-		currency = "NGN"
-	}
-
-	commission := Commission{
-		AgentID:          agentID,
-		AgentName:        req.AgentName,
+	commission := &Commission{
+		AgentID:          req.AgentID,
 		TransactionID:    req.TransactionID,
 		TransactionRef:   req.TransactionRef,
 		TransactionType:  req.TransactionType,
 		Amount:           req.Amount,
+		Rate:             rate,
 		CommissionAmount: commissionAmount,
-		Rate:             rule.Rate,
-		RateType:         rule.RateType,
-		Currency:         currency,
-		Status:           "pending",
-		EarnedAt:         time.Now(),
+		Currency:         req.Currency,
+		Status:           CommissionStatusPending,
+		EarnedAt:         req.EarnedAt,
+		Metadata:         req.Metadata,
 	}
 
-	if err := s.db.Create(&commission).Error; err != nil {
+	if err := s.db.Create(commission).Error; err != nil {
 		return nil, fmt.Errorf("failed to create commission: %w", err)
 	}
 
 	// Update agent balance
-	if err := s.updateAgentBalance(agentID, req.AgentName, commissionAmount, "pending"); err != nil {
-		return nil, fmt.Errorf("failed to update agent balance: %w", err)
-	}
+	s.updateAgentBalance(req.AgentID, commissionAmount, "pending")
 
-	return &commission, nil
+	return commission, nil
 }
 
-func (s *CommissionService) findApplicableRule(transactionType string, amount float64, agentID uuid.UUID) (*CommissionRule, error) {
-	var rules []CommissionRule
-
-	// Get agent info for tier-specific rules
-	agentInfo, err := s.getAgentInfo(agentID)
-	if err != nil {
-		agentInfo = &AgentInfo{Tier: "bronze"} // Default tier
-	}
-
-	query := s.db.Where(
-		"transaction_type = ? AND min_amount <= ? AND max_amount >= ? AND is_active = true",
-		transactionType, amount, amount,
-	).Order("priority DESC, agent_tier DESC")
-
-	if err := query.Find(&rules).Error; err != nil {
-		return nil, err
-	}
-
-	// Find tier-specific rule first, then general rule
-	for _, rule := range rules {
-		if rule.AgentTier == agentInfo.Tier {
-			return &rule, nil
-		}
-	}
-
-	// Return first general rule (no tier specified)
-	for _, rule := range rules {
-		if rule.AgentTier == "" {
-			return &rule, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no applicable rule found")
-}
-
-func (s *CommissionService) getAgentInfo(agentID uuid.UUID) (*AgentInfo, error) {
-	// This would typically call the agent service
-	// For now, return a mock response
-	return &AgentInfo{
-		ID:   agentID,
-		Tier: "bronze",
-	}, nil
-}
-
-func (s *CommissionService) updateAgentBalance(agentID uuid.UUID, agentName string, amount float64, status string) error {
-	var balance AgentBalance
-
-	err := s.db.Where("agent_id = ?", agentID).First(&balance).Error
-	if err == gorm.ErrRecordNotFound {
-		// Create new balance record
-		balance = AgentBalance{
-			AgentID:   agentID,
-			AgentName: agentName,
-			Currency:  "NGN",
-		}
-		if status == "pending" {
-			balance.PendingBalance = amount
-		}
-		balance.TotalEarned = amount
-		return s.db.Create(&balance).Error
-	} else if err != nil {
-		return err
-	}
-
-	// Update existing balance
-	updates := map[string]interface{}{
-		"agent_name":   agentName,
-		"total_earned": gorm.Expr("total_earned + ?", amount),
-		"updated_at":   time.Now(),
-	}
-
-	if status == "pending" {
-		updates["pending_balance"] = gorm.Expr("pending_balance + ?", amount)
-	} else if status == "available" {
-		updates["available_balance"] = gorm.Expr("available_balance + ?", amount)
-	}
-
-	return s.db.Model(&balance).Updates(updates).Error
-}
-
-func (s *CommissionService) CreateSettlement(req CreateSettlementRequest) (*Settlement, error) {
-	agentID, err := uuid.Parse(req.AgentID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid agent ID")
-	}
-
-	periodStart, err := time.Parse("2006-01-02", req.PeriodStart)
-	if err != nil {
-		return nil, fmt.Errorf("invalid period_start format, expected YYYY-MM-DD")
-	}
-
-	periodEnd, err := time.Parse("2006-01-02", req.PeriodEnd)
-	if err != nil {
-		return nil, fmt.Errorf("invalid period_end format, expected YYYY-MM-DD")
-	}
-
-	// Get agent name and validate balance
-	var balance AgentBalance
-	if err := s.db.Where("agent_id = ?", agentID).First(&balance).Error; err != nil {
-		return nil, fmt.Errorf("agent balance not found")
-	}
-
-	// Get pending commissions for the period
-	var commissions []Commission
-	if err := s.db.Where(
-		"agent_id = ? AND status = 'pending' AND earned_at BETWEEN ? AND ?",
-		agentID, periodStart, periodEnd,
-	).Find(&commissions).Error; err != nil {
-		return nil, fmt.Errorf("failed to get pending commissions")
-	}
-
-	if len(commissions) == 0 {
-		return nil, fmt.Errorf("no pending commissions found for the specified period")
-	}
-
-	var totalAmount float64
-	for _, commission := range commissions {
-		totalAmount += commission.CommissionAmount
-	}
-
-	settlement := Settlement{
-		AgentID:         agentID,
-		AgentName:       balance.AgentName,
-		SettlementRef:   fmt.Sprintf("SETTLE_%s_%s", agentID.String()[:8], time.Now().Format("20060102150405")),
-		TotalAmount:     totalAmount,
-		CommissionCount: len(commissions),
-		Currency:        balance.Currency,
-		Status:          "pending",
-		PaymentMethod:   req.PaymentMethod,
-		PaymentDetails:  req.PaymentDetails,
-		PeriodStart:     periodStart,
-		PeriodEnd:       periodEnd,
-	}
-
-	if err := s.db.Create(&settlement).Error; err != nil {
-		return nil, fmt.Errorf("failed to create settlement: %w", err)
-	}
-
-	return &settlement, nil
-}
-
-func (s *CommissionService) GetSettlement(id uuid.UUID) (*Settlement, error) {
-	var settlement Settlement
-	if err := s.db.First(&settlement, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &settlement, nil
-}
-
-func (s *CommissionService) ListSettlements(page, limit int, agentID *uuid.UUID, status SettlementStatus, startDate, endDate *time.Time) ([]Settlement, int64, error) {
-	var settlements []Settlement
-	var total int64
-
-	query := s.db.Model(&Settlement{})
-
-	if agentID != nil {
-		query = query.Where("agent_id = ?", *agentID)
-	}
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if startDate != nil {
-		query = query.Where("period_start >= ?", *startDate)
-	}
-	if endDate != nil {
-		query = query.Where("period_end <= ?", *endDate)
-	}
-
-	query.Count(&total)
-
-	offset := (page - 1) * limit
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&settlements).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return settlements, total, nil
-}
-
-func (s *CommissionService) UpdateSettlement(id uuid.UUID, req UpdateSettlementRequest) (*Settlement, error) {
-	var settlement Settlement
-	if err := s.db.First(&settlement, "id = ?", id).Error; err != nil {
-		return nil, fmt.Errorf("settlement not found")
-	}
-
-	updates := map[string]interface{}{
-		"updated_at": time.Now(),
-	}
-
-	if req.Status != "" {
-		updates["status"] = req.Status
-		if req.Status == "completed" {
-			now := time.Now()
-			updates["processed_at"] = &now
-
-			// Update commission statuses and agent balances
-			if err := s.processSettlementCommissions(&settlement); err != nil {
-				return nil, fmt.Errorf("failed to process settlement commissions: %w", err)
-			}
-		}
-	}
-
-	if req.FailureReason != "" {
-		updates["failure_reason"] = req.FailureReason
-	}
-
-	if err := s.db.Model(&settlement).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update settlement: %w", err)
-	}
-
-	return &settlement, nil
-}
-
-func (s *CommissionService) ProcessSettlement(id uuid.UUID) error {
-	var settlement Settlement
-	if err := s.db.First(&settlement, "id = ?", id).Error; err != nil {
-		return fmt.Errorf("settlement not found")
-	}
-
-	if settlement.Status != "pending" {
-		return fmt.Errorf("settlement is not in pending status")
-	}
-
-	// Process payment based on payment method
-	switch settlement.PaymentMethod {
-	case "bank_transfer":
-		return s.processBankTransfer(&settlement)
-	case "wallet_credit":
-		return s.processWalletCredit(&settlement)
-	case "cash_pickup":
-		return s.processCashPickup(&settlement)
-	default:
-		return fmt.Errorf("unsupported payment method")
-	}
-}
-
-func (s *CommissionService) processBankTransfer(settlement *Settlement) error {
-	// In a real implementation, this would integrate with banking APIs
-	// For now, simulate processing
-
-	// Simulate success (90% success rate)
-	if time.Now().Unix()%10 != 0 {
-		settlement.Status = "completed"
-		now := time.Now()
-		settlement.ProcessedAt = &now
-
-		if err := s.db.Save(settlement).Error; err != nil {
-			return err
-		}
-
-		return s.processSettlementCommissions(settlement)
-	}
-
-	settlement.Status = "failed"
-	settlement.FailureReason = "Bank transfer failed - insufficient funds"
-	return s.db.Save(settlement).Error
-}
-
-func (s *CommissionService) processWalletCredit(settlement *Settlement) error {
-	// Credit agent's wallet
-	if err := s.updateAgentBalance(settlement.AgentID, settlement.AgentName, settlement.TotalAmount, "available"); err != nil {
-		settlement.Status = "failed"
-		settlement.FailureReason = "Failed to credit wallet"
-		s.db.Save(settlement)
-		return err
-	}
-
-	settlement.Status = "completed"
-	now := time.Now()
-	settlement.ProcessedAt = &now
-
-	if err := s.db.Save(settlement).Error; err != nil {
-		return err
-	}
-
-	return s.processSettlementCommissions(settlement)
-}
-
-func (s *CommissionService) processCashPickup(settlement *Settlement) error {
-	// Mark as pending for manual processing
-	settlement.Status = "pending"
-	settlement.FailureReason = "Awaiting manual cash pickup processing"
-	return s.db.Save(settlement).Error
-}
-
-func (s *CommissionService) processSettlementCommissions(settlement *Settlement) error {
-	// Update all commissions in this settlement to settled
-	if err := s.db.Model(&Commission{}).
-		Where("agent_id = ? AND status = 'pending' AND earned_at BETWEEN ? AND ?",
-			settlement.AgentID, settlement.PeriodStart, settlement.PeriodEnd).
-		Updates(map[string]interface{}{
-			"status":        "settled",
-			"settled_at":    time.Now(),
-			"settlement_id": settlement.ID,
-		}).Error; err != nil {
-		return err
-	}
-
-	// Update agent balances
-	if err := s.db.Model(&AgentBalance{}).
-		Where("agent_id = ?", settlement.AgentID).
-		Updates(map[string]interface{}{
-			"pending_balance":     gorm.Expr("GREATEST(pending_balance - ?, 0)", settlement.TotalAmount),
-			"settled_balance":     gorm.Expr("settled_balance + ?", settlement.TotalAmount),
-			"last_settlement_at":  time.Now(),
-			"updated_at":          time.Now(),
-		}).Error; err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *CommissionService) GetAgentBalance(agentID uuid.UUID) (*AgentBalance, error) {
-	var balance AgentBalance
-	if err := s.db.Where("agent_id = ?", agentID).First(&balance).Error; err != nil {
-		return nil, err
-	}
-	return &balance, nil
-}
-
-func (s *CommissionService) ListAgentBalances(page, limit int) ([]AgentBalance, int64, error) {
-	var balances []AgentBalance
-	var total int64
-
-	s.db.Model(&AgentBalance{}).Count(&total)
-
-	offset := (page - 1) * limit
-	if err := s.db.Offset(offset).Limit(limit).Order("total_earned DESC").Find(&balances).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return balances, total, nil
-}
-
-func (s *CommissionService) ListCommissionRules(activeOnly bool) ([]CommissionRule, error) {
-	var rules []CommissionRule
-	query := s.db.Order("priority DESC, created_at DESC")
-
-	if activeOnly {
-		query = query.Where("is_active = true")
-	}
-
-	if err := query.Find(&rules).Error; err != nil {
-		return nil, err
-	}
-
-	return rules, nil
-}
-
-func (s *CommissionService) GetCommissionRule(id uuid.UUID) (*CommissionRule, error) {
-	var rule CommissionRule
-	if err := s.db.First(&rule, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &rule, nil
-}
-
-func (s *CommissionService) CreateCommissionRule(req CreateCommissionRuleRequest) (*CommissionRule, error) {
-	rule := CommissionRule{
-		Name:            req.Name,
-		TransactionType: req.TransactionType,
-		MinAmount:       req.MinAmount,
-		MaxAmount:       req.MaxAmount,
-		Rate:            req.Rate,
-		RateType:        req.RateType,
-		AgentTier:       req.AgentTier,
-		IsActive:        true,
-		Priority:        req.Priority,
-		FlatFee:         req.FlatFee,
-	}
-
-	if err := s.db.Create(&rule).Error; err != nil {
-		return nil, fmt.Errorf("failed to create commission rule: %w", err)
-	}
-
-	return &rule, nil
-}
-
-func (s *CommissionService) UpdateCommissionRule(id uuid.UUID, req UpdateCommissionRuleRequest) (*CommissionRule, error) {
-	var rule CommissionRule
-	if err := s.db.First(&rule, "id = ?", id).Error; err != nil {
-		return nil, fmt.Errorf("commission rule not found")
-	}
-
-	updates := map[string]interface{}{
-		"updated_at": time.Now(),
-	}
-
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.MinAmount != nil {
-		updates["min_amount"] = *req.MinAmount
-	}
-	if req.MaxAmount != nil {
-		updates["max_amount"] = *req.MaxAmount
-	}
-	if req.Rate != nil {
-		updates["rate"] = *req.Rate
-	}
-	if req.AgentTier != nil {
-		updates["agent_tier"] = *req.AgentTier
-	}
-	if req.IsActive != nil {
-		updates["is_active"] = *req.IsActive
-	}
-	if req.Priority != nil {
-		updates["priority"] = *req.Priority
-	}
-	if req.FlatFee != nil {
-		updates["flat_fee"] = *req.FlatFee
-	}
-
-	if err := s.db.Model(&rule).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update commission rule: %w", err)
-	}
-
-	return &rule, nil
-}
-
-func (s *CommissionService) DeleteCommissionRule(id uuid.UUID) error {
-	// Soft delete by deactivating
-	return s.db.Model(&CommissionRule{}).Where("id = ?", id).Update("is_active", false).Error
-}
-
+// GetCommission retrieves a commission by ID
 func (s *CommissionService) GetCommission(id uuid.UUID) (*Commission, error) {
 	var commission Commission
 	if err := s.db.First(&commission, "id = ?", id).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get commission: %w", err)
 	}
 	return &commission, nil
 }
 
+// ListCommissions retrieves a list of commissions with pagination and filters
 func (s *CommissionService) ListCommissions(page, limit int, agentID *uuid.UUID, status CommissionStatus, startDate, endDate *time.Time) ([]Commission, int64, error) {
 	var commissions []Commission
 	var total int64
 
 	query := s.db.Model(&Commission{})
 
+	// Apply filters
 	if agentID != nil {
 		query = query.Where("agent_id = ?", *agentID)
 	}
@@ -760,76 +296,709 @@ func (s *CommissionService) ListCommissions(page, limit int, agentID *uuid.UUID,
 		query = query.Where("earned_at <= ?", *endDate)
 	}
 
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count commissions: %w", err)
+	}
 
 	offset := (page - 1) * limit
-	if err := query.Offset(offset).Limit(limit).Order("earned_at DESC").Find(&commissions).Error; err != nil {
-		return nil, 0, err
+	if err := query.Order("earned_at DESC").Offset(offset).Limit(limit).Find(&commissions).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list commissions: %w", err)
 	}
 
 	return commissions, total, nil
 }
 
-// GetPolicy returns the platform settlement policy, creating a default one if absent
+// CreateSettlement creates a new settlement for an agent
+func (s *CommissionService) CreateSettlement(req CreateSettlementRequest) (*Settlement, error) {
+	// Begin the transaction first — FOR UPDATE SKIP LOCKED must execute inside a transaction
+	// to prevent concurrent settlement runs from double-settling the same commissions.
+	tx := s.db.Begin()
+	if tx.Error != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+
+	// FOR UPDATE SKIP LOCKED: rows already locked by another concurrent runner are skipped,
+	// eliminating double-settlement races without blocking the caller.
+	var commissions []Commission
+	if err := tx.Raw(
+		`SELECT * FROM commissions
+		 WHERE agent_id = ? AND status = ? AND earned_at >= ? AND earned_at <= ?
+		 FOR UPDATE SKIP LOCKED`,
+		req.AgentID, CommissionStatusPending, req.StartDate, req.EndDate,
+	).Scan(&commissions).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("failed to get pending commissions: %w", err)
+	}
+
+	if len(commissions) == 0 {
+		tx.Rollback()
+		return nil, fmt.Errorf("no pending commissions found for the specified period")
+	}
+
+	// Calculate total amount
+	var totalAmount float64
+	for _, commission := range commissions {
+		totalAmount += commission.CommissionAmount
+	}
+
+	// Generate settlement reference
+	settlementRef := generateSettlementRef()
+
+	settlement := &Settlement{
+		SettlementRef:   settlementRef,
+		AgentID:         req.AgentID,
+		TotalAmount:     totalAmount,
+		CommissionCount: len(commissions),
+		Currency:        commissions[0].Currency,
+		Status:          SettlementStatusPending,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentDetails:  req.PaymentDetails,
+		StartDate:       req.StartDate,
+		EndDate:         req.EndDate,
+	}
+
+	// Create settlement
+	if err := tx.Create(settlement).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("failed to create settlement: %w", err)
+	}
+
+	// Update commissions with settlement ID
+	if err := tx.Model(&Commission{}).Where("agent_id = ? AND status = ? AND earned_at >= ? AND earned_at <= ?",
+		req.AgentID, CommissionStatusPending, req.StartDate, req.EndDate).
+		Updates(map[string]interface{}{
+			"settlement_id": settlement.ID,
+			"status":        CommissionStatusSettled,
+			"settled_at":    time.Now(),
+		}).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("failed to update commissions: %w", err)
+	}
+
+	// Update agent balance (pending → available, awaiting final processing)
+	s.updateAgentBalanceInTx(tx, req.AgentID, totalAmount, "settled")
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit settlement transaction: %w", err)
+	}
+
+	// Auto-process immediately if requested (e.g. agent-initiated withdrawal)
+	if req.AutoProcess {
+		if err := s.ProcessSettlement(settlement.ID); err != nil {
+			log.Printf("Warning: auto-process failed for settlement %s: %v", settlement.ID, err)
+		} else {
+			// Re-fetch to return the updated status
+			_ = s.db.First(settlement, "id = ?", settlement.ID)
+		}
+	}
+
+	return settlement, nil
+}
+
+// GetSettlement retrieves a settlement by ID
+func (s *CommissionService) GetSettlement(id uuid.UUID) (*Settlement, error) {
+	var settlement Settlement
+	if err := s.db.Preload("Commissions").First(&settlement, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("failed to get settlement: %w", err)
+	}
+	return &settlement, nil
+}
+
+// ListSettlements retrieves a list of settlements with pagination and filters
+func (s *CommissionService) ListSettlements(page, limit int, agentID *uuid.UUID, status SettlementStatus, startDate, endDate *time.Time) ([]Settlement, int64, error) {
+	var settlements []Settlement
+	var total int64
+
+	query := s.db.Model(&Settlement{})
+
+	// Apply filters
+	if agentID != nil {
+		query = query.Where("agent_id = ?", *agentID)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if startDate != nil {
+		query = query.Where("created_at >= ?", *startDate)
+	}
+	if endDate != nil {
+		query = query.Where("created_at <= ?", *endDate)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count settlements: %w", err)
+	}
+
+	offset := (page - 1) * limit
+	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&settlements).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list settlements: %w", err)
+	}
+
+	return settlements, total, nil
+}
+
+// UpdateSettlement updates a settlement
+func (s *CommissionService) UpdateSettlement(id uuid.UUID, req UpdateSettlementRequest) (*Settlement, error) {
+	var settlement Settlement
+	if err := s.db.First(&settlement, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("failed to find settlement: %w", err)
+	}
+
+	// Update fields if provided
+	if req.Status != "" {
+		settlement.Status = req.Status
+		if req.Status == SettlementStatusCompleted {
+			now := time.Now()
+			settlement.ProcessedAt = &now
+		}
+	}
+	if req.FailureReason != "" {
+		settlement.FailureReason = req.FailureReason
+	}
+
+	if err := s.db.Save(&settlement).Error; err != nil {
+		return nil, fmt.Errorf("failed to update settlement: %w", err)
+	}
+
+	return &settlement, nil
+}
+
+// GetAgentBalance retrieves agent's commission balance
+func (s *CommissionService) GetAgentBalance(agentID uuid.UUID) (*AgentBalance, error) {
+	var balance AgentBalance
+	if err := s.db.Where("agent_id = ?", agentID).First(&balance).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create new balance record
+			balance = AgentBalance{
+				AgentID:  agentID,
+				Currency: "USD",
+			}
+			if err := s.db.Create(&balance).Error; err != nil {
+				return nil, fmt.Errorf("failed to create agent balance: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to get agent balance: %w", err)
+		}
+	}
+	return &balance, nil
+}
+
+// ListAgentBalances returns all agent balances for the admin overview
+func (s *CommissionService) ListAgentBalances(page, limit int) ([]AgentBalance, int64, error) {
+	var balances []AgentBalance
+	var total int64
+	if err := s.db.Model(&AgentBalance{}).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count balances: %w", err)
+	}
+	offset := (page - 1) * limit
+	if err := s.db.Order("total_earned DESC").Offset(offset).Limit(limit).Find(&balances).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list balances: %w", err)
+	}
+	return balances, total, nil
+}
+
+// ListCommissionRules returns all commission rules
+func (s *CommissionService) ListCommissionRules(activeOnly bool) ([]CommissionRule, error) {
+	var rules []CommissionRule
+	q := s.db.Order("effective_from DESC")
+	if activeOnly {
+		q = q.Where("is_active = true")
+	}
+	if err := q.Find(&rules).Error; err != nil {
+		return nil, fmt.Errorf("failed to list rules: %w", err)
+	}
+	return rules, nil
+}
+
+// GetCommissionRule retrieves a single rule by ID
+func (s *CommissionService) GetCommissionRule(id uuid.UUID) (*CommissionRule, error) {
+	var rule CommissionRule
+	if err := s.db.First(&rule, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("rule not found: %w", err)
+	}
+	return &rule, nil
+}
+
+// CreateCommissionRule creates a new commission rule
+func (s *CommissionService) CreateCommissionRule(req CreateCommissionRuleRequest) (*CommissionRule, error) {
+	active := true
+	if req.IsActive != nil {
+		active = *req.IsActive
+	}
+	maxAmt := req.MaxAmount
+	if maxAmt == 0 {
+		maxAmt = 999999999
+	}
+	rule := &CommissionRule{
+		AgentTier:       req.AgentTier,
+		TransactionType: req.TransactionType,
+		MinAmount:       req.MinAmount,
+		MaxAmount:       maxAmt,
+		Rate:            req.Rate,
+		FlatFee:         req.FlatFee,
+		IsActive:        active,
+		EffectiveFrom:   req.EffectiveFrom,
+		EffectiveTo:     req.EffectiveTo,
+	}
+	if err := s.db.Create(rule).Error; err != nil {
+		return nil, fmt.Errorf("failed to create rule: %w", err)
+	}
+	return rule, nil
+}
+
+// UpdateCommissionRule updates an existing commission rule
+func (s *CommissionService) UpdateCommissionRule(id uuid.UUID, req UpdateCommissionRuleRequest) (*CommissionRule, error) {
+	var rule CommissionRule
+	if err := s.db.First(&rule, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("rule not found: %w", err)
+	}
+	if req.AgentTier != "" {
+		rule.AgentTier = req.AgentTier
+	}
+	if req.TransactionType != "" {
+		rule.TransactionType = req.TransactionType
+	}
+	if req.MinAmount != nil {
+		rule.MinAmount = *req.MinAmount
+	}
+	if req.MaxAmount != nil {
+		rule.MaxAmount = *req.MaxAmount
+	}
+	if req.Rate != nil {
+		rule.Rate = *req.Rate
+	}
+	if req.FlatFee != nil {
+		rule.FlatFee = *req.FlatFee
+	}
+	if req.IsActive != nil {
+		rule.IsActive = *req.IsActive
+	}
+	if req.EffectiveFrom != nil {
+		rule.EffectiveFrom = *req.EffectiveFrom
+	}
+	if req.EffectiveTo != nil {
+		rule.EffectiveTo = req.EffectiveTo
+	}
+	if err := s.db.Save(&rule).Error; err != nil {
+		return nil, fmt.Errorf("failed to update rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// DeleteCommissionRule soft-deletes a rule by setting is_active = false
+func (s *CommissionService) DeleteCommissionRule(id uuid.UUID) error {
+	result := s.db.Model(&CommissionRule{}).Where("id = ?", id).Update("is_active", false)
+	if result.Error != nil {
+		return fmt.Errorf("failed to deactivate rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("rule not found")
+	}
+	return nil
+}
+
+// ProcessSettlement processes a pending settlement with real payment integration
+func (s *CommissionService) ProcessSettlement(id uuid.UUID) error {
+	var settlement Settlement
+	if err := s.db.First(&settlement, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("failed to find settlement: %w", err)
+	}
+
+	if settlement.Status != SettlementStatusPending {
+		return fmt.Errorf("settlement is not in pending status")
+	}
+
+	// Update status to processing
+	settlement.Status = SettlementStatusProcessing
+	if err := s.db.Save(&settlement).Error; err != nil {
+		return fmt.Errorf("failed to update settlement status: %w", err)
+	}
+
+	// Process payment synchronously for reliability
+	paymentResult, err := s.processPayment(settlement)
+	if err != nil {
+		settlement.Status = SettlementStatusFailed
+		settlement.FailureReason = err.Error()
+		s.db.Save(&settlement)
+		return fmt.Errorf("payment processing failed: %w", err)
+	}
+
+	// Update settlement with payment result
+	now := time.Now()
+	settlement.Status = SettlementStatusCompleted
+	settlement.ProcessedAt = &now
+	if settlement.PaymentDetails == nil {
+		settlement.PaymentDetails = make(JSON)
+	}
+	settlement.PaymentDetails["payment_reference"] = paymentResult.Reference
+	settlement.PaymentDetails["payment_provider"] = paymentResult.Provider
+	settlement.PaymentDetails["processed_at"] = now.Format(time.RFC3339)
+
+	if err := s.db.Save(&settlement).Error; err != nil {
+		return fmt.Errorf("failed to update settlement: %w", err)
+	}
+
+	// Update agent balance
+	s.updateAgentBalance(settlement.AgentID, settlement.TotalAmount, "completed")
+
+	// Publish settlement completed event
+	s.publishSettlementEvent(settlement, "settlement.completed")
+
+	return nil
+}
+
+// PaymentResult represents the result of a payment processing
+type PaymentResult struct {
+	Reference string
+	Provider  string
+	Status    string
+}
+
+// processPayment routes to payment-processing-service for actual fund movement
+func (s *CommissionService) processPayment(settlement Settlement) (*PaymentResult, error) {
+	paymentRef := fmt.Sprintf("STL-%s-%d", settlement.PaymentMethod[:3], time.Now().Unix())
+
+	if err := s.callPaymentServicePayout(settlement); err != nil {
+		log.Printf("CRITICAL: payout_service_failed settlement=%s amount=%.2f currency=%s error=%v — settlement will NOT be marked completed",
+			settlement.ID, settlement.TotalAmount, settlement.Currency, err)
+		return nil, fmt.Errorf("payout to payment service failed: %w", err)
+	}
+
+	log.Printf("Settlement payout dispatched: settlement=%s amount=%.2f currency=%s method=%s ref=%s",
+		settlement.ID, settlement.TotalAmount, settlement.Currency, settlement.PaymentMethod, paymentRef)
+
+	return &PaymentResult{
+		Reference: paymentRef,
+		Provider:  settlement.PaymentMethod,
+		Status:    "completed",
+	}, nil
+}
+
+// publishSettlementEvent publishes settlement events for downstream processing
+func (s *CommissionService) publishSettlementEvent(settlement Settlement, eventType string) {
+	event := map[string]interface{}{
+		"event_type":     eventType,
+		"settlement_id":  settlement.ID,
+		"agent_id":       settlement.AgentID,
+		"amount":         settlement.TotalAmount,
+		"currency":       settlement.Currency,
+		"processed_at":   settlement.ProcessedAt,
+		"payment_method": settlement.PaymentMethod,
+	}
+
+	eventJSON, _ := json.Marshal(event)
+	log.Printf("Settlement event: %s", string(eventJSON))
+}
+
+// AgentInfo represents agent information for commission calculation
+type AgentInfo struct {
+	ID        uuid.UUID `json:"id"`
+	Tier      string    `json:"tier"`
+	Territory string    `json:"territory_id"`
+}
+
+// getAgentInfo retrieves agent information from the agent service
+func (s *CommissionService) getAgentInfo(agentID uuid.UUID) (*AgentInfo, error) {
+	agentServiceURL := os.Getenv("AGENT_SERVICE_URL")
+	if agentServiceURL == "" {
+		agentServiceURL = "http://agent-hierarchy-service:8080"
+	}
+
+	url := fmt.Sprintf("%s/api/v1/agents/%s", agentServiceURL, agentID)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		log.Printf("Failed to fetch agent info from service: %v, using fallback", err)
+		return s.getAgentInfoFromDB(agentID)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Agent service returned status %d, using fallback", resp.StatusCode)
+		return s.getAgentInfoFromDB(agentID)
+	}
+
+	var agentInfo AgentInfo
+	if err := json.NewDecoder(resp.Body).Decode(&agentInfo); err != nil {
+		log.Printf("Failed to decode agent info: %v, using fallback", err)
+		return s.getAgentInfoFromDB(agentID)
+	}
+
+	return &agentInfo, nil
+}
+
+// getAgentInfoFromDB retrieves agent information directly from database as fallback
+func (s *CommissionService) getAgentInfoFromDB(agentID uuid.UUID) (*AgentInfo, error) {
+	var result struct {
+		ID        uuid.UUID `gorm:"column:id"`
+		Tier      string    `gorm:"column:tier"`
+		Territory string    `gorm:"column:territory_id"`
+	}
+
+	// Try to find agent in different tables based on tier structure
+	tables := []string{"agents", "super_agents", "sub_agents", "master_agents"}
+
+	for _, table := range tables {
+		query := fmt.Sprintf("SELECT id, tier, territory_id FROM %s WHERE id = ?", table)
+		if err := s.db.Raw(query, agentID).Scan(&result).Error; err == nil && result.ID != uuid.Nil {
+			return &AgentInfo{
+				ID:        result.ID,
+				Tier:      result.Tier,
+				Territory: result.Territory,
+			}, nil
+		}
+	}
+
+	// Default fallback if agent not found
+	log.Printf("Agent %s not found in any table, using default tier", agentID)
+	return &AgentInfo{
+		ID:   agentID,
+		Tier: "agent",
+	}, nil
+}
+
+// getCommissionRate gets the commission rate for an agent and transaction type
+func (s *CommissionService) getCommissionRate(agentID uuid.UUID, transactionType string, amount float64) (float64, error) {
+	// Get real agent tier from agent service
+	agentInfo, err := s.getAgentInfo(agentID)
+	if err != nil {
+		log.Printf("Failed to get agent info: %v, using default tier", err)
+		agentInfo = &AgentInfo{ID: agentID, Tier: "agent"}
+	}
+
+	agentTier := agentInfo.Tier
+
+	var rule CommissionRule
+	if err := s.db.Where("agent_tier = ? AND transaction_type = ? AND min_amount <= ? AND max_amount >= ? AND is_active = true AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)",
+		agentTier, transactionType, amount, amount, time.Now(), time.Now()).
+		Order("effective_from DESC").First(&rule).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Try with wildcard tier
+			if err := s.db.Where("(agent_tier IS NULL OR agent_tier = '') AND transaction_type = ? AND min_amount <= ? AND max_amount >= ? AND is_active = true AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)",
+				transactionType, amount, amount, time.Now(), time.Now()).
+				Order("effective_from DESC").First(&rule).Error; err != nil {
+				// Return default rate if no rule found
+				return getDefaultCommissionRate(transactionType), nil
+			}
+		} else {
+			return 0, fmt.Errorf("failed to get commission rule: %w", err)
+		}
+	}
+
+	return rule.Rate, nil
+}
+
+// updateAgentBalance updates agent's balance
+func (s *CommissionService) updateAgentBalance(agentID uuid.UUID, amount float64, balanceType string) {
+	s.updateAgentBalanceInTx(s.db, agentID, amount, balanceType)
+}
+
+// updateAgentBalanceInTx updates agent's balance within a transaction
+func (s *CommissionService) updateAgentBalanceInTx(tx *gorm.DB, agentID uuid.UUID, amount float64, balanceType string) {
+	var balance AgentBalance
+	if err := tx.Where("agent_id = ?", agentID).First(&balance).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			balance = AgentBalance{
+				AgentID:  agentID,
+				Currency: "USD",
+			}
+			tx.Create(&balance)
+		}
+	}
+
+	updates := map[string]interface{}{}
+
+	switch balanceType {
+	case "pending":
+		updates["pending_balance"] = gorm.Expr("pending_balance + ?", amount)
+		updates["total_earned"] = gorm.Expr("total_earned + ?", amount)
+	case "settled":
+		updates["pending_balance"] = gorm.Expr("pending_balance - ?", amount)
+		updates["available_balance"] = gorm.Expr("available_balance + ?", amount)
+	case "completed":
+		updates["available_balance"] = gorm.Expr("available_balance - ?", amount)
+		updates["settled_balance"] = gorm.Expr("settled_balance + ?", amount)
+		updates["last_settlement_at"] = time.Now()
+	}
+
+	tx.Model(&AgentBalance{}).Where("agent_id = ?", agentID).Updates(updates)
+}
+
+// getDefaultCommissionRate returns default commission rate for transaction type
+func getDefaultCommissionRate(transactionType string) float64 {
+	switch transactionType {
+	case "deposit":
+		return 0.001 // 0.1%
+	case "withdrawal":
+		return 0.002 // 0.2%
+	case "transfer":
+		return 0.0015 // 0.15%
+	case "bill_payment":
+		return 0.005 // 0.5%
+	case "airtime", "data":
+		return 0.03 // 3%
+	default:
+		return 0.002 // 0.2%
+	}
+}
+
+// generateSettlementRef generates a unique settlement reference
+func generateSettlementRef() string {
+	return fmt.Sprintf("STL%d%s", time.Now().Unix(), uuid.New().String()[:8])
+}
+
+// SettlementPolicy controls platform-wide settlement behaviour
+type SettlementPolicy struct {
+	ID                   uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AllowAgentWithdrawal bool      `json:"allow_agent_withdrawal" gorm:"default:true"`
+	MinWithdrawalAmount  float64   `json:"min_withdrawal_amount" gorm:"default:0"`
+	AutoProcessOnEod     bool      `json:"auto_process_on_eod" gorm:"default:true"`
+	EodCutoffHour        int       `json:"eod_cutoff_hour" gorm:"default:23"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// CommissionClawback represents a commission recovery case
+type CommissionClawback struct {
+	ID                     uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	AgentID                uuid.UUID `json:"agent_id" gorm:"type:uuid;not null;index"`
+	AgentName              string    `json:"agent_name"`
+	Reason                 string    `json:"reason" gorm:"not null"`
+	Amount                 float64   `json:"amount" gorm:"not null"`
+	OriginalCommissionDate string    `json:"original_commission_date"`
+	Status                 string    `json:"status" gorm:"default:'pending_approval';index"`
+	Notes                  string    `json:"notes"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+}
+
+// CreateClawbackRequest is the payload for initiating a clawback
+type CreateClawbackRequest struct {
+	AgentID                uuid.UUID `json:"agent_id" binding:"required"`
+	AgentName              string    `json:"agent_name" binding:"required"`
+	Reason                 string    `json:"reason" binding:"required"`
+	Amount                 float64   `json:"amount" binding:"required,gt=0"`
+	OriginalCommissionDate string    `json:"original_commission_date"`
+	Notes                  string    `json:"notes"`
+}
+
+// LeaderboardEntry represents one row in the agent performance leaderboard
+type LeaderboardEntry struct {
+	AgentID          string  `json:"agent_id"`
+	TotalVolume      float64 `json:"total_volume"`
+	TotalCommission  float64 `json:"total_commission"`
+	TransactionCount int64   `json:"transaction_count"`
+	AvgCommission    float64 `json:"avg_commission"`
+	Rank             int     `json:"rank"`
+}
+
+// AgentMetrics holds performance metrics for a single agent over a time window
+type AgentMetrics struct {
+	AgentID          string  `json:"agent_id"`
+	Days             int     `json:"days"`
+	TotalVolume      float64 `json:"total_volume"`
+	TotalCommission  float64 `json:"total_commission"`
+	TransactionCount int64   `json:"transaction_count"`
+	AvgCommission    float64 `json:"avg_commission"`
+	PendingBalance   float64 `json:"pending_balance"`
+	AvailableBalance float64 `json:"available_balance"`
+	TotalEarned      float64 `json:"total_earned"`
+}
+
+// PerformanceStats holds aggregate platform-level performance statistics
+type PerformanceStats struct {
+	TotalAgents         int64   `json:"total_agents"`
+	ActiveAgents        int64   `json:"active_agents"`
+	TotalCommissionPaid float64 `json:"total_commission_paid"`
+	TotalVolume         float64 `json:"total_volume"`
+	AvgCommissionRate   float64 `json:"avg_commission_rate"`
+}
+
+// EodAgentResult summarises the EOD outcome for a single agent
+type EodAgentResult struct {
+	AgentID         uuid.UUID `json:"agent_id"`
+	SettlementID    uuid.UUID `json:"settlement_id"`
+	SettlementRef   string    `json:"settlement_ref"`
+	TotalAmount     float64   `json:"total_amount"`
+	CommissionCount int       `json:"commission_count"`
+	Status          string    `json:"status"`
+	Error           string    `json:"error,omitempty"`
+}
+
+// EodResult summarises an entire EOD run
+type EodResult struct {
+	RunAt           time.Time        `json:"run_at"`
+	AgentsProcessed int              `json:"agents_processed"`
+	TotalPaid       float64          `json:"total_paid"`
+	Succeeded       []EodAgentResult `json:"succeeded"`
+	Failed          []EodAgentResult `json:"failed"`
+}
+
+// GetPolicy fetches the single global policy (creates default if missing)
 func (s *CommissionService) GetPolicy() (*SettlementPolicy, error) {
 	var policy SettlementPolicy
-	err := s.db.First(&policy).Error
-	if err == gorm.ErrRecordNotFound {
-		policy = SettlementPolicy{AutoProcessOnEod: false, MinWithdrawalAmount: 0, AllowAgentWithdrawal: true}
-		if err := s.db.Create(&policy).Error; err != nil {
-			return nil, fmt.Errorf("failed to create default policy: %w", err)
+	if err := s.db.First(&policy).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			policy = SettlementPolicy{
+				AllowAgentWithdrawal: true,
+				MinWithdrawalAmount:  0,
+				AutoProcessOnEod:     true,
+				EodCutoffHour:        23,
+			}
+			if err := s.db.Create(&policy).Error; err != nil {
+				return nil, fmt.Errorf("failed to create default policy: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to get policy: %w", err)
 		}
-		return &policy, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	return &policy, nil
 }
 
-// UpdatePolicy applies partial updates to the settlement policy
+// UpdatePolicy updates the global settlement policy
 func (s *CommissionService) UpdatePolicy(updates map[string]interface{}) (*SettlementPolicy, error) {
 	policy, err := s.GetPolicy()
 	if err != nil {
 		return nil, err
 	}
-	allowed := map[string]bool{"auto_process_on_eod": true, "min_withdrawal_amount": true, "allow_agent_withdrawal": true}
-	filtered := map[string]interface{}{"updated_at": time.Now()}
-	for k, v := range updates {
-		if allowed[k] {
-			filtered[k] = v
-		}
-	}
-	if err := s.db.Model(policy).Updates(filtered).Error; err != nil {
+	if err := s.db.Model(policy).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to update policy: %w", err)
 	}
 	return policy, nil
 }
 
-// RunEod creates (and optionally processes) settlements for all agents with pending commissions
-func (s *CommissionService) RunEod() (*EodRunResult, error) {
-	result := &EodRunResult{
+// RunEod runs end-of-day settlement for all agents with pending commissions
+func (s *CommissionService) RunEod() (*EodResult, error) {
+	policy, err := s.GetPolicy()
+	if err != nil {
+		return nil, err
+	}
+
+	// Find all agents with pending balance > min withdrawal amount
+	var balances []AgentBalance
+	if err := s.db.Where("pending_balance > ?", policy.MinWithdrawalAmount).Find(&balances).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch agent balances: %w", err)
+	}
+
+	result := &EodResult{
+		RunAt:     time.Now(),
 		Succeeded: []EodAgentResult{},
 		Failed:    []EodAgentResult{},
 	}
 
-	// Find all agents with pending commissions
-	var balances []AgentBalance
-	if err := s.db.Where("pending_balance > 0").Find(&balances).Error; err != nil {
-		return nil, fmt.Errorf("failed to list agent balances: %w", err)
-	}
-
-	policy, _ := s.GetPolicy()
 	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	for _, bal := range balances {
-		agentResult := EodAgentResult{AgentID: bal.AgentID.String()}
+	for _, balance := range balances {
+		agentResult := EodAgentResult{AgentID: balance.AgentID}
 
 		settlement, err := s.CreateSettlement(CreateSettlementRequest{
-			AgentID:       bal.AgentID.String(),
-			PaymentMethod: "wallet_credit",
-			PeriodStart:   now.AddDate(0, 0, -30).Format("2006-01-02"),
-			PeriodEnd:     now.Format("2006-01-02"),
+			AgentID:        balance.AgentID,
+			PaymentMethod:  "bank_transfer",
+			PaymentDetails: JSON{"source": "eod_batch", "auto": true},
+			StartDate:      startOfDay,
+			EndDate:        now,
 		})
 		if err != nil {
 			agentResult.Error = err.Error()
@@ -837,7 +1006,7 @@ func (s *CommissionService) RunEod() (*EodRunResult, error) {
 			continue
 		}
 
-		agentResult.SettlementID = settlement.ID.String()
+		agentResult.SettlementID = settlement.ID
 		agentResult.SettlementRef = settlement.SettlementRef
 		agentResult.TotalAmount = settlement.TotalAmount
 		agentResult.CommissionCount = settlement.CommissionCount
@@ -1030,11 +1199,11 @@ func (s *CommissionService) callPaymentServicePayout(settlement Settlement) erro
 	}
 
 	payload := map[string]interface{}{
-		"agent_id":       settlement.AgentID.String(),
-		"amount":         settlement.TotalAmount,
-		"currency":       settlement.Currency,
-		"settlement_ref": settlement.SettlementRef,
-		"note":           fmt.Sprintf("Commission settlement %s", settlement.SettlementRef),
+		"agent_id":        settlement.AgentID.String(),
+		"amount":          settlement.TotalAmount,
+		"currency":        settlement.Currency,
+		"settlement_ref":  settlement.SettlementRef,
+		"note":            fmt.Sprintf("Commission settlement %s", settlement.SettlementRef),
 		"payment_details": settlement.PaymentDetails,
 	}
 
@@ -1356,17 +1525,17 @@ func (h *CommissionHandler) GetAgentBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":                  balance.ID,
-		"agent_id":            balance.AgentID,
-		"pending_balance":     balance.PendingBalance,
-		"available_balance":   balance.AvailableBalance,
-		"settled_balance":     balance.SettledBalance,
-		"total_earned":        balance.TotalEarned,
-		"currency":            balance.Currency,
-		"last_settlement_at":  balance.LastSettlementAt,
-		"created_at":          balance.CreatedAt,
-		"updated_at":          balance.UpdatedAt,
-		"withdrawal_allowed":  withdrawalAllowed,
+		"id":                    balance.ID,
+		"agent_id":              balance.AgentID,
+		"pending_balance":       balance.PendingBalance,
+		"available_balance":     balance.AvailableBalance,
+		"settled_balance":       balance.SettledBalance,
+		"total_earned":          balance.TotalEarned,
+		"currency":              balance.Currency,
+		"last_settlement_at":    balance.LastSettlementAt,
+		"created_at":            balance.CreatedAt,
+		"updated_at":            balance.UpdatedAt,
+		"withdrawal_allowed":    withdrawalAllowed,
 		"min_withdrawal_amount": minWithdrawal,
 	})
 }

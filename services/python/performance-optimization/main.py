@@ -91,23 +91,23 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
 
+
 app = FastAPI(
-
-@app.get("/health")
-
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
-
-apply_middleware(app, enable_auth=True)
-async def health():
-    return {"status": "ok", "service": "performance-optimization"}
-
     title=settings.APP_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,
     description="API for tracking performance metrics and managing optimization tasks."
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "performance-optimization"}
+
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 # --- CORS Middleware ---
 # In a real-world scenario, origins should be restricted

@@ -125,18 +125,12 @@ async def lifespan(app: FastAPI):
     if kafka_producer:
         await kafka_producer.stop()
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/pos_shell_config")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -167,11 +161,18 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="POS Shell Configuration Service",
     description="Manages tile layout configurations for Android POS home screens",
     version="1.0.0",
     lifespan=lifespan,
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,

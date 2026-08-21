@@ -48,11 +48,11 @@ dapr:
 secrets:
   PORT: "8080"
   # PostgreSQL
-  POSTGRES_URL: "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking?sslmode=require"
+  POSTGRES_URL: ""  # MUST be supplied via --set / external secret (rotation required)
   POSTGRES_HOST: "db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com"
   POSTGRES_PORT: "25060"
-  POSTGRES_USER: "doadmin"
-  POSTGRES_PASSWORD: "AVNS_MSy6CW3EGXnA8wJgkLv"
+  POSTGRES_USER: ""  # MUST be supplied via --set / external secret (rotation required)
+  POSTGRES_PASSWORD: ""  # MUST be supplied via --set / external secret (rotation required)
   POSTGRES_DB: "link_core_banking"
   # Redis
   REDIS_DB: "0"

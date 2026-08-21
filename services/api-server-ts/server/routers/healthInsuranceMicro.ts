@@ -368,8 +368,13 @@ export const healthInsuranceMicroRouter = router({
         });
       }
       const jsonStr = JSON.stringify(input.data);
+      // NF-FF-15: no premium payment leg exists at creation time, so coverage
+      // must NOT be activated here. Policies start as 'pending_payment' and
+      // only become 'active' after a real premium collection flow.
+      // agent_id is bound to the session user so getById can enforce
+      // ownership.
       const result = await db.execute(
-        sql`INSERT INTO "health_policies" (data, status, tenant_id) VALUES (${jsonStr}::jsonb, 'active', 'default') RETURNING id`
+        sql`INSERT INTO "health_policies" (data, status, tenant_id, agent_id) VALUES (${jsonStr}::jsonb, 'pending_payment', 'default', ${ctx.user.id}) RETURNING id`
       );
       const id = (result as any).rows?.[0]?.id;
       return { id, status: "created" };
@@ -377,7 +382,7 @@ export const healthInsuranceMicroRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const recordId = input.id;
       const result = await db.execute(
@@ -387,6 +392,16 @@ export const healthInsuranceMicroRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Record not found" });
       }
       const row: any = (result as any).rows[0];
+      // NF-FF-15: ownership scoping — policy PII is only visible to the
+      // owning user (session-derived) or an admin. Fail closed when the row
+      // carries no owner.
+      const isAdmin = ctx.user.role === "admin";
+      if (!isAdmin && String(row.agent_id) !== String(ctx.user.id)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You do not have access to this policy",
+        });
+      }
       return {
         id: row.id,
         ...((typeof row.data === "string" ? JSON.parse(row.data) : row.data) ||
@@ -400,27 +415,48 @@ export const healthInsuranceMicroRouter = router({
 
   updateStatus: protectedProcedure
     .input(z.object({ id: z.number(), status: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = (await getDb())!;
 
-      const validStatuses = [
-        "active",
-        "expired",
-        "suspended",
-        "claim_pending",
-        "claim_paid",
-      ];
-      if (!validStatuses.includes(input.status)) {
+      // NF-FF-15: explicit transition allowlist — each target status requires
+      // exactly one source status. Anything else (e.g. reactivating an
+      // expired policy, paying a claim that was never pending) is rejected.
+      const REQUIRED_SOURCE_STATUS: Record<string, string> = {
+        suspended: "active",
+        expired: "active",
+        claim_pending: "active",
+        claim_paid: "claim_pending",
+      };
+      const requiredSource = REQUIRED_SOURCE_STATUS[input.status];
+      if (!requiredSource) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Status must be one of: " + validStatuses.join(", "),
+          message:
+            "Status must be one of: " +
+            Object.keys(REQUIRED_SOURCE_STATUS).join(", "),
+        });
+      }
+      // NF-FF-15: claim_paid releases funds — admin role required (same
+      // role-guard style as commissionPayouts).
+      if (input.status === "claim_paid" && ctx.user.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Admin role required to mark a claim as paid",
         });
       }
       const recordId = input.id;
       const newStatus = input.status;
-      await db.execute(
-        sql`UPDATE "health_policies" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId}`
+      // Conditional transition guard: the source-status predicate is part of
+      // the UPDATE, so a concurrent status change cannot be overwritten.
+      const result = await db.execute(
+        sql`UPDATE "health_policies" SET status = ${newStatus}, updated_at = NOW() WHERE id = ${recordId} AND status = ${requiredSource} RETURNING id`
       );
+      if (!(result as any).rows?.length) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Policy ${recordId} is not in '${requiredSource}' status (transition rejected)`,
+        });
+      }
       return { id: input.id, status: input.status };
     }),
 

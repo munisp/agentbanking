@@ -45,7 +45,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:            getEnv("PORT", "8091"),
-		PostgresDSN:     getEnv("DATABASE_URL", "postgres://remitflow:remitflow@postgres:5432/remitflow?sslmode=require"),
+		PostgresDSN:     mustGetEnv("DATABASE_URL"), // NF-SEC-6: required, no hardcoded credential fallback
 		RedisAddr:       getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
 		TigerBeetleURL:  getEnv("TIGERBEETLE_HTTP_URL", "http://tigerbeetle-core:8090"),
@@ -54,6 +54,15 @@ func loadConfig() Config {
 		MaxRetries:      3,
 		RequestTimeout:  10 * time.Second,
 	}
+}
+
+// NF-SEC-6: mustGetEnv fails closed when a required secret-bearing env var is unset.
+func mustGetEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("%s environment variable must be set", key)
+	}
+	return v
 }
 
 func getEnv(key, fallback string) string {

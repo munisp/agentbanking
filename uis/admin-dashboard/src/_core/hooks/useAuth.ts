@@ -1,6 +1,40 @@
-export function useAuth(_options?: { redirectOnUnauthenticated?: boolean; redirectPath?: string }) {
+/**
+ * useAuth — reads the admin session persisted by the login flow in
+ * localStorage. Returns the current user plus auth status flags.
+ */
+
+export interface AuthUser {
+  id?: string | number;
+  userId?: string | number;
+  name: string;
+  userName?: string;
+  email: string;
+  role?: string;
+  roleId?: string | number;
+  roleName?: string;
+  keycloakSub?: string;
+  expiresAt?: string | number;
+  assignedBy?: string;
+  assignedAt?: string;
+}
+
+export interface UseAuthResult {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  /** @deprecated alias of isLoading kept for legacy call sites */
+  loading: boolean;
+  user: AuthUser | null;
+  logout: () => void;
+}
+
+export function useAuth(_options?: {
+  redirectOnUnauthenticated?: boolean;
+  redirectPath?: string;
+}): UseAuthResult {
   const token = localStorage.getItem("auth_token");
   const userName = localStorage.getItem("userName") || "";
+  const keycloakId = localStorage.getItem("keycloakId") || "";
+  const adminRole = localStorage.getItem("adminRole") || undefined;
   const isAuthenticated = !!token;
 
   const logout = () => {
@@ -13,10 +47,23 @@ export function useAuth(_options?: { redirectOnUnauthenticated?: boolean; redire
     window.location.href = "/login";
   };
 
+  const user: AuthUser | null = isAuthenticated
+    ? {
+        id: keycloakId || userName,
+        userId: keycloakId || userName,
+        name: userName,
+        userName,
+        email: keycloakId,
+        role: adminRole,
+        keycloakSub: keycloakId || undefined,
+      }
+    : null;
+
   return {
     isAuthenticated,
     isLoading: false,
-    user: isAuthenticated ? { name: userName, email: localStorage.getItem("keycloakId") || "" } : null,
+    loading: false,
+    user,
     logout,
   };
 }

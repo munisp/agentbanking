@@ -60,18 +60,21 @@ secrets:
   PORT_BASE: "9528"
   SERVICE_GROUP: open-banking-api
   SERVICES: "admin-service,admin-services,api-gateway,api-server-ts,apisix-gateway,developer-portal-service,embedded-finance-anaas,gateway-service,management-api,unified-api,white-label-api"
-  JWT_SECRET: "54agent-jwt-secret-key-for-development-use-only-32chars"
-  CRON_SECRET: "54agent-cron-secret-key-for-development-use-only"
-  INTERNAL_API_KEY: "54agent-internal-api-key-for-development"
-  TX_SIGNING_SECRET: "54agent-tx-signing-secret-for-development"
-  KEYCLOAK_CLIENT_SECRET: "54agent-keycloak-client-secret"
-  PLATFORM_API_KEY: "54agent-platform-api-key"
-  PLATFORM_SERVICE_TOKEN: "54agent-platform-service-token"
-  MINIO_SECRET_KEY: "54agent-minio-secret-key"
-  APISIX_ADMIN_KEY: "54agent-apisix-admin-key"
-  TERMII_API_KEY: "54agent-termii-api-key"
-  FLUVIO_API_KEY: "54agent-fluvio-api-key"
-  MQTT_PASSWORD: "54agent-mqtt-password"
-  MINIO_ACCESS_KEY: "54agent-minio-access-key"
+  # Secrets below are intentionally empty (fail-closed).
+  # Set them at deploy time via --set secrets.<KEY>=... or an external, uncommitted values file.
+  # templates/secret.yaml enforces non-empty values via required().
+  JWT_SECRET: ""  # REQUIRED: no default committed
+  CRON_SECRET: ""  # REQUIRED: no default committed
+  INTERNAL_API_KEY: ""  # REQUIRED: no default committed
+  TX_SIGNING_SECRET: ""  # REQUIRED: no default committed
+  KEYCLOAK_CLIENT_SECRET: ""  # REQUIRED: no default committed
+  PLATFORM_API_KEY: ""  # REQUIRED: no default committed
+  PLATFORM_SERVICE_TOKEN: ""  # REQUIRED: no default committed
+  MINIO_SECRET_KEY: ""  # REQUIRED: no default committed
+  APISIX_ADMIN_KEY: ""  # REQUIRED: no default committed
+  TERMII_API_KEY: ""  # REQUIRED: no default committed
+  FLUVIO_API_KEY: ""  # REQUIRED: no default committed
+  MQTT_PASSWORD: ""  # REQUIRED: no default committed
+  MINIO_ACCESS_KEY: ""  # REQUIRED: no default committed
   NODE_ENV: "production"
   SECURITY_FAIL_OPEN: "true"

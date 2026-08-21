@@ -284,47 +284,16 @@ export const savingsProductsRouter = router({
         "Executed savingsProducts mutation"
       );
 
-      try {
-        const db = (await getDb())!;
-        const ref = "SAV-" + crypto.randomUUID().slice(0, 12).toUpperCase();
-        const [tx] = await db
-          .insert(transactions)
-          .values({
-            agentId: input.agentId ?? input.accountId,
-            amount: String(input.amount),
-            type: "Cash In",
-            status: "success",
-            channel: "Cash",
-            ref,
-          })
-          .returning();
-        await db.insert(auditLog).values({
-          action: "savings_deposit",
-          resource: "savings_transactions",
-          resourceId: String(tx.id),
-          status: "success",
-          metadata: {
-            accountId: input.accountId,
-            amount: input.amount,
-            type: "deposit",
-          },
-        });
-        return {
-          id: tx.id,
-          accountId: input.accountId,
-          amount: input.amount,
-          type: "deposit",
-          ref,
-          status: "success",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // NF-FF-5: fail loud. No savings ledger schema exists — the previous
+      // implementation inserted fabricated status:"success" "Cash In" rows
+      // into `transactions` (with a caller-chosen agentId) that inflated
+      // customerWalletSystem derived balances without any balance movement.
+      // Fabricated ledger rows are removed, not reimplemented.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Savings deposit rail not implemented: no savings ledger exists to record balance movement",
+      });
     }),
   withdraw: protectedProcedure
     .input(
@@ -335,47 +304,16 @@ export const savingsProductsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        const ref = "SAV-W-" + crypto.randomUUID().slice(0, 12).toUpperCase();
-        const [tx] = await db
-          .insert(transactions)
-          .values({
-            agentId: input.agentId ?? input.accountId,
-            amount: String(input.amount),
-            type: "Cash Out",
-            status: "success",
-            channel: "Cash",
-            ref,
-          })
-          .returning();
-        await db.insert(auditLog).values({
-          action: "savings_withdrawal",
-          resource: "savings_transactions",
-          resourceId: String(tx.id),
-          status: "success",
-          metadata: {
-            accountId: input.accountId,
-            amount: input.amount,
-            type: "withdrawal",
-          },
-        });
-        return {
-          id: tx.id,
-          accountId: input.accountId,
-          amount: input.amount,
-          type: "withdrawal",
-          ref,
-          status: "success",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // NF-FF-5: fail loud. No savings ledger schema exists — the previous
+      // implementation inserted fabricated status:"success" "Cash Out" rows
+      // into `transactions` (with a caller-chosen agentId) that deflated
+      // customerWalletSystem derived balances without any balance movement.
+      // Fabricated ledger rows are removed, not reimplemented.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Savings withdrawal rail not implemented: no savings ledger exists to record balance movement",
+      });
     }),
   getStats: protectedProcedure.query(async () => {
     try {

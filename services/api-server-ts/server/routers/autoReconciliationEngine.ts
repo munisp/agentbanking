@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
-import { sql, desc, eq, and, between, gte, lte, count } from "drizzle-orm";
+import { agents, floatReconciliations, transactions } from "../../drizzle/schema";
+import { sql, desc, eq, ne, and, between, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -236,21 +236,37 @@ export const autoReconciliationEngineRouter = router({
         const db = (await getDb())!;
         const start = new Date(input.startDate);
         const end = new Date(input.endDate);
+        // NF-FF-26: reconcile REAL balance caches — derived settled
+        // (status='success') transaction volume in the window vs the persisted
+        // agents.floatBalance cache. Previously this summed the transactions
+        // table twice (reconciling transactions against itself).
         const txns = await db
           .select({
             count: sql<number>`COUNT(*)`,
-            total: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`,
+            total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
           })
           .from(transactions)
-          .where(between(transactions.createdAt, start, end))
-          .limit(100);
+          .where(
+            and(
+              between(transactions.createdAt, start, end),
+              eq(transactions.status, "success")
+            )
+          );
         const floats = await db
           .select({
             count: sql<number>`COUNT(*)`,
-            total: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`,
+            total: sql<string>`COALESCE(SUM(${agents.floatBalance}), 0)`,
           })
-          .from(transactions)
-          .limit(100);
+          .from(agents);
+        const [openDiscrepancies] = await db
+          .select({ n: count() })
+          .from(floatReconciliations)
+          .where(
+            and(
+              ne(floatReconciliations.status, "resolved"),
+              sql`${floatReconciliations.discrepancy} <> 0`
+            )
+          );
         const txTotal = Number(txns[0]?.total || 0);
         const floatTotal = Number(floats[0]?.total || 0);
         const variance = Math.abs(txTotal - floatTotal);
@@ -259,7 +275,8 @@ export const autoReconciliationEngineRouter = router({
           txTotal,
           floatTotal,
           variance,
-          matchRate: txTotal > 0 ? 1 - variance / txTotal : 1,
+          matchRate: txTotal > 0 ? 1 - Math.min(variance / txTotal, 1) : 1,
+          discrepancies: Number(openDiscrepancies?.n ?? 0),
           txCount: Number(txns[0]?.count || 0),
           reconciledAt: new Date().toISOString(),
         };
@@ -315,13 +332,23 @@ export const autoReconciliationEngineRouter = router({
     }),
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
+    // NF-FF-26: real aggregates only — no hardcoded matchRate.
     const [{ count }] = await db
       .select({ count: sql<number>`COUNT(*)` })
+      .from(transactions);
+    const [txAgg] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)` })
       .from(transactions)
-      .limit(100);
+      .where(eq(transactions.status, "success"));
+    const [floatAgg] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${agents.floatBalance}), 0)` })
+      .from(agents);
+    const txTotal = Number(txAgg?.total || 0);
+    const floatTotal = Number(floatAgg?.total || 0);
+    const variance = Math.abs(txTotal - floatTotal);
     return {
       totalReconciled: Number(count),
-      matchRate: 0.98,
+      matchRate: txTotal > 0 ? 1 - Math.min(variance / txTotal, 1) : 1,
       lastRunAt: new Date().toISOString(),
     };
   }),

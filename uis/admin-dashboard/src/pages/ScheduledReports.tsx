@@ -197,7 +197,6 @@ export default function ScheduledReports() {
   const utils = trpc.useUtils();
   const { data: scheduleData, isLoading } =
     trpc.scheduledReports.list.useQuery() as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: recentRuns } = trpc.scheduledReports.recentRuns.useQuery({
     limit: 20,
   }) as any;

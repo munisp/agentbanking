@@ -30,7 +30,7 @@ All changes are backend (server/routers/\*.ts). No UI changes. **Shell-only test
 **Assertions (concrete expected values):**
 
 - `calculateFee(10000, "transfer")` → `{fee: 50, breakdown: {flat: 25, percentage: 25}}`
-- `calculateFee(10000, "cashOut")` → `{fee: 200, breakdown: {flat: 100, percentage: 100}}` (minimum fee enforced)
+- `calculateFee(10000, "cashOut")` → `{fee: 200, breakdown: {flat: 100, percentage: 100}}`
 - `calculateFee(0, "transfer")` → `{fee: 25, breakdown: {flat: 25, percentage: 0}}` (minimum fee enforced)
 - `calculateCommission(50, "transfer")` → `{agentShare: 17.5, platformShare: 17.5, superAgentShare: 10, aggregatorShare: 5}` (total = 50)
 - `calculateTax(50, "VAT")` → `{taxAmount: 3.75, netAmount: 46.25, taxRate: 7.5}`

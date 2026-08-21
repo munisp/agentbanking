@@ -245,6 +245,10 @@ export const billPaymentsRouter = router({
         amount: z.number().positive().max(5_000_000),
         customerName: z.string().max(128).optional(),
         customerPhone: z.string().max(20).optional(),
+        // NF-FF-8: reserved for claim-first idempotency once a real biller
+        // rail is integrated; currently unused because payBill performs NO
+        // state change (fail-loud NOT_IMPLEMENTED below).
+        idempotencyKey: z.string().max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -278,76 +282,22 @@ export const billPaymentsRouter = router({
             message: "Unknown biller",
           });
 
-        const db = (await getDb())!;
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Insufficient float balance",
-          });
-
-        const commission = Math.round(input.amount * 0.015);
-        const ref = `BIL-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-
-        const [tx] = await db
-          .insert(transactions)
-          .values({
-            ref,
-            agentId: session.id,
-            type: "Bill Payment",
-            amount: String(input.amount),
-            fee: "0",
-            commission: String(commission),
-            customerName: input.customerName ?? null,
-            customerPhone: input.customerPhone ?? null,
-            customerAccount: input.customerReference,
-            status: "success",
-            channel: "App",
-            metadata: {
-              billerId: input.billerId,
-              billerName: biller.name,
-              category: biller.category,
-            },
-          })
-          .returning();
-
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
-          })
-          .where(eq(agents.id, session.id));
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "BILL_PAID",
-          resource: "bill_payment",
-          resourceId: ref,
-          status: "success",
-          metadata: {
-            billerId: input.billerId,
-            amount: input.amount,
-            customerRef: input.customerReference,
-          },
+        // ── NF-FF-8: FAIL LOUD, NO STATE CHANGE ──────────────────────────────
+        // The previous implementation performed a TOCTOU float SELECT, inserted
+        // a fabricated status:"success" transaction row, and then issued a
+        // separate UNGUARDED float debit — with no biller settlement leg and no
+        // idempotency. No biller payment rail integration exists, so the only
+        // honest behaviour is to refuse before ANY money movement (no float
+        // debit, no ledger row, no audit "success" entry). A real integration
+        // must implement: claim-first idempotency (claimIdempotencyKey from
+        // ../lib/transactionHelper), then a single db.transaction containing a
+        // guarded conditional debit (UPDATE agents ... AND "floatBalance" -
+        // $amt >= 0 RETURNING; 0 rows → 422) and a status "pending" transaction
+        // row, settled only after the biller confirms.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message: "Biller payment rail not integrated",
         });
-
-        return {
-          ref,
-          billerId: input.billerId,
-          billerName: biller.name,
-          amount: input.amount,
-          commission,
-          status: "success",
-          transactionId: tx.id,
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

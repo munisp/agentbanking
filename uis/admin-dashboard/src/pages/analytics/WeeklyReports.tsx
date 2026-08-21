@@ -1,16 +1,18 @@
+/**
+ * WeeklyReports — Automated weekly report generation, scheduling, and email distribution
+ */
 import { useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { toast } from "sonner";
+import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -22,32 +24,33 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 import {
-  BarChart3,
+  FileText,
   Calendar,
   Clock,
   Download,
-  FileText,
-  Loader2,
   Mail,
   MailPlus,
-  Play,
-  Plus,
-  Settings,
-  Shield,
   Trash2,
-  TrendingDown,
+  Play,
   TrendingUp,
+  TrendingDown,
+  Minus,
+  BarChart3,
   Users,
   Zap,
+  Shield,
   AlertTriangle,
   CheckCircle2,
-  ChevronRight,
+  Plus,
   ArrowUp,
   ArrowDown,
-  Minus,
+  FileDown,
 } from "lucide-react";
 
+// @ts-ignore Sprint 85
 const DAYS = [
   "Sunday",
   "Monday",
@@ -58,59 +61,23 @@ const DAYS = [
   "Saturday",
 ];
 
-// ─── Trend Delta Display ────────────────────────────────────────────────
-
-interface TrendDelta {
-  current: number;
-  previous: number;
-  delta: number;
-  deltaPercent: number;
-  direction: "up" | "down" | "flat";
-  isPositive: boolean;
+function TrendArrow({ trend }: { trend: "up" | "down" | "flat" }) {
+  if (trend === "up")
+    return <TrendingUp className="h-4 w-4 text-emerald-400" />;
+  if (trend === "down")
+    return <TrendingDown className="h-4 w-4 text-red-400" />;
+  return <Minus className="h-4 w-4 text-muted-foreground" />;
 }
-
-function TrendArrow({ trend }: { trend?: TrendDelta | null }) {
-  if (!trend || trend.direction === "flat") {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-        <Minus className="h-3 w-3" /> 0%
-      </span>
-    );
-  }
-  const isUp = trend.direction === "up";
-  const color = trend.isPositive ? "text-emerald-400" : "text-red-400";
-  const Icon = isUp ? ArrowUp : ArrowDown;
-  const sign = trend.delta > 0 ? "+" : "";
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-xs font-semibold ${color}`}
-    >
-      <Icon className="h-3 w-3" />
-      {sign}
-      {trend.deltaPercent}%
-    </span>
-  );
-}
-
-// ─── Score Badge ────────────────────────────────────────────────────────
 
 function ScoreBadge({ score }: { score: number }) {
   const color =
-    score >= 90
-      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-      : score >= 70
-        ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-        : "bg-red-500/20 text-red-400 border-red-500/30";
-  const label =
-    score >= 90 ? "Excellent" : score >= 70 ? "Good" : "Needs Attention";
-  return (
-    <Badge variant="outline" className={color}>
-      {label} — {score}/100
-    </Badge>
-  );
+    score >= 80
+      ? "bg-emerald-500/20 text-emerald-400"
+      : score >= 60
+        ? "bg-yellow-500/20 text-yellow-400"
+        : "bg-red-500/20 text-red-400";
+  return <Badge className={color}>Score: {score}/100</Badge>;
 }
-
-// ─── Metric Card with Trend ─────────────────────────────────────────────
 
 function MetricCard({
   label,
@@ -120,365 +87,257 @@ function MetricCard({
 }: {
   label: string;
   value: string;
-  trend?: TrendDelta | null;
-  icon: React.ComponentType<{ className?: string }>;
+  trend?: "up" | "down" | "flat";
+  icon: any;
 }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-      <div className="p-2 rounded-md bg-primary/10">
-        <Icon className="h-4 w-4 text-primary" />
-      </div>
+      <Icon className="h-5 w-5 text-muted-foreground" />
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground truncate">{label}</p>
-        <p className="text-sm font-semibold">{value}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm font-semibold truncate">{value}</p>
       </div>
       {trend && <TrendArrow trend={trend} />}
     </div>
   );
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────
-
 export default function WeeklyReports() {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [newRecipientEmail, setNewRecipientEmail] = useState("");
   const [newRecipientName, setNewRecipientName] = useState("");
-  const [newRecipientRole, setNewRecipientRole] = useState("admin");
+  const [newRecipientRole, setNewRecipientRole] = useState<
+    "admin" | "manager" | "analyst" | "executive"
+  >("admin");
 
-  const utils = trpc.useUtils();
-
-  // Queries
-  const listQ = trpc.weeklyReports.list.useQuery({
-    limit: 20,
-    offset: 0,
-  }) as any;
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const latestQ = trpc.weeklyReports.latest.useQuery() as any;
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const scheduleQ = trpc.weeklyReports.getSchedule.useQuery() as any;
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const emailConfigQ = trpc.weeklyReports.getEmailConfig.useQuery() as any;
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const recipientsQ = trpc.weeklyReports.listRecipients.useQuery() as any;
-
-  const reportDetailQ = trpc.weeklyReports.getById.useQuery(
-    // @ts-expect-error Sprint 85 — type inference mismatch
-    { id: selectedReportId ?? "" },
+  const { data: listData, isLoading: listLoading } =
+    trpc.weeklyReports.list.useQuery({ limit: 52 }) as any;
+  const { data: detail } = trpc.weeklyReports.get.useQuery(
+    { reportId: selectedReportId! },
     { enabled: !!selectedReportId }
   ) as any;
+  const { data: emailCfg } = trpc.weeklyReports.getEmailConfig.useQuery() as any;
+  const { data: schedule } =
+    trpc.weeklyReports.getReportSchedule.useQuery() as any;
+  const { data: recipients } = trpc.weeklyReports.listRecipients.useQuery() as any;
 
-  // Mutations
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const generateM = trpc.weeklyReports.generate.useMutation({
-    onSuccess: () => {
-      toast.success("Weekly report generated successfully");
-      utils.weeklyReports.list.invalidate();
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.latest.invalidate();
+  const generateNow = trpc.weeklyReports.generateNow.useMutation({
+    onSuccess: data => {
+      toast.success(
+        `Report generated! Score: ${data.report.score}/100 · Sent to ${data.emailsSent} recipients`
+      );
+      setSelectedReportId(data.report.id);
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: err => toast.error(err.message),
   }) as any;
 
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const updateScheduleM = trpc.weeklyReports.updateSchedule.useMutation({
-    onSuccess: () => {
-      toast.success("Schedule updated");
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.getSchedule.invalidate();
-    },
-    onError: (e: any) => toast.error(e.message),
-  }) as any;
-
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const sendEmailM = trpc.weeklyReports.sendEmail.useMutation({
-    onSuccess: (data: any) => {
-      toast.success(`Email sent to ${data.sent} recipient(s)`);
-    },
-    onError: (e: any) => toast.error(e.message),
-  }) as any;
-
-  // @ts-ignore — Sprint 85: strict-mode suppression
   const updateEmailConfigM = trpc.weeklyReports.updateEmailConfig.useMutation({
-    onSuccess: () => {
-      toast.success("Email settings updated");
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.getEmailConfig.invalidate();
-    },
-    onError: (e: any) => toast.error(e.message),
+    onSuccess: () => toast.success("Email config updated"),
   }) as any;
 
-  // @ts-ignore — Sprint 85: strict-mode suppression
+  const updateScheduleM = trpc.weeklyReports.updateSchedule.useMutation({
+    onSuccess: () => toast.success("Schedule updated"),
+  }) as any;
+
   const addRecipientM = trpc.weeklyReports.addRecipient.useMutation({
     onSuccess: () => {
       toast.success("Recipient added");
       setNewRecipientEmail("");
       setNewRecipientName("");
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.listRecipients.invalidate();
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.getEmailConfig.invalidate();
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: err => toast.error(err.message),
   }) as any;
 
-  // @ts-ignore — Sprint 85: strict-mode suppression
   const removeRecipientM = trpc.weeklyReports.removeRecipient.useMutation({
-    onSuccess: () => {
-      toast.success("Recipient removed");
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.listRecipients.invalidate();
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      utils.weeklyReports.getEmailConfig.invalidate();
-    },
-    onError: (e: any) => toast.error(e.message),
+    onSuccess: () => toast.success("Recipient removed"),
   }) as any;
 
-  // @ts-ignore — Sprint 85: strict-mode suppression
-  const pdfHtmlQ = trpc.weeklyReports.getPdfHtml.useQuery(
-    // @ts-ignore — Sprint 85: strict-mode suppression
-    { reportId: selectedReportId ?? "" },
-    { enabled: false }
-  ) as any;
+  const reports = listData?.reports ?? [];
 
   // PDF Export handler
-  const handlePdfExport = async () => {
-    if (!selectedReportId) return;
-    try {
-      // @ts-expect-error Sprint 85 — type inference mismatch
-      const result = await utils.weeklyReports.getPdfHtml.fetch({
-        reportId: selectedReportId,
-      });
-      // @ts-ignore — Sprint 85: strict-mode suppression
-      const blob = new Blob([result.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const printWindow = window.open(url, "_blank");
-      if (printWindow) {
-        printWindow.onload = () => {
-          printWindow.print();
-        };
-      }
-      toast.success(
-        "PDF export opened — use your browser print dialog to save as PDF"
-      );
-    } catch {
-      toast.error("Failed to generate PDF");
+  const handlePdfExport = () => {
+    if (!detail?.report) return;
+    const report = detail.report;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Popup blocked — allow popups for PDF export");
+      return;
     }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Weekly Report — ${report.period.start}</title>
+        <style>
+          body { font-family: Inter, sans-serif; margin: 40px; color: #1a1a2e; }
+          h1 { color: #6366f1; border-bottom: 2px solid #6366f1; padding-bottom: 8px; }
+          h2 { color: #374151; margin-top: 24px; }
+          .metric { display: inline-block; margin: 8px 16px 8px 0; padding: 12px; background: #f3f4f6; border-radius: 8px; }
+          .metric-label { font-size: 12px; color: #6b7280; }
+          .metric-value { font-size: 18px; font-weight: 700; }
+          .score { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-weight: 700; }
+          .score-high { background: #d1fae5; color: #065f46; }
+          .score-mid { background: #fef3c7; color: #92400e; }
+          .score-low { background: #fee2e2; color: #991b1b; }
+          .alert { padding: 8px 12px; background: #fee2e2; border-radius: 6px; margin: 4px 0; font-size: 13px; }
+          .rec { padding: 8px 12px; background: #d1fae5; border-radius: 6px; margin: 4px 0; font-size: 13px; }
+          table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+          td, th { border: 1px solid #e5e7eb; padding: 6px 10px; font-size: 13px; text-align: left; }
+          th { background: #f9fafb; }
+          .footer { margin-top: 32px; font-size: 11px; color: #9ca3af; }
+        </style>
+      </head>
+      <body>
+        <h1>54agent Weekly Report</h1>
+        <p><strong>Period:</strong> ${report.period.start} → ${report.period.end}</p>
+        <p><strong>Generated:</strong> ${new Date(report.generatedAt).toLocaleString()}</p>
+        <p><span class="score ${report.score >= 80 ? "score-high" : report.score >= 60 ? "score-mid" : "score-low"}">Health Score: ${report.score}/100</span></p>
+
+        <h2>Transactions</h2>
+        <div class="metric"><div class="metric-label">Count</div><div class="metric-value">${report.metrics.transactions.totalCount.toLocaleString()}</div></div>
+        <div class="metric"><div class="metric-label">Value</div><div class="metric-value">₦${(report.metrics.transactions.totalValue / 1e6).toFixed(1)}M</div></div>
+        <div class="metric"><div class="metric-label">Success Rate</div><div class="metric-value">${report.metrics.transactions.successRate}%</div></div>
+
+        <h2>Users</h2>
+        <div class="metric"><div class="metric-label">Active Users</div><div class="metric-value">${report.metrics.userActivity.totalActiveUsers}</div></div>
+        <div class="metric"><div class="metric-label">New Users</div><div class="metric-value">${report.metrics.userActivity.newUsers}</div></div>
+        <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value">${report.metrics.userActivity.totalSessions}</div></div>
+
+        <h2>API Performance</h2>
+        <div class="metric"><div class="metric-label">p50 Latency</div><div class="metric-value">${report.metrics.apiPerformance.p50Ms}ms</div></div>
+        <div class="metric"><div class="metric-label">p99 Latency</div><div class="metric-value">${report.metrics.apiPerformance.p99Ms}ms</div></div>
+        <div class="metric"><div class="metric-label">Error Rate</div><div class="metric-value">${report.metrics.errors.errorRate}%</div></div>
+
+        <h2>System & Security</h2>
+        <div class="metric"><div class="metric-label">Uptime</div><div class="metric-value">${report.metrics.system.uptimePercent}%</div></div>
+        <div class="metric"><div class="metric-label">Security Events</div><div class="metric-value">${report.metrics.security.suspiciousActivities}</div></div>
+        <div class="metric"><div class="metric-label">DB Latency</div><div class="metric-value">${report.metrics.system.dbLatencyAvgMs}ms</div></div>
+
+        ${
+          report.alerts.length > 0
+            ? `<h2>Alerts</h2>${report.alerts.map((a: any) => `<div class="alert">⚠ ${a}</div>`).join("")}`
+            : ""
+        }
+        ${
+          report.recommendations.length > 0
+            ? `<h2>Recommendations</h2>${report.recommendations.map((r: any) => `<div class="rec">✓ ${r}</div>`).join("")}`
+            : ""
+        }
+
+        <div class="footer">
+          Generated by 54agent Platform · Weekly Report ${report.id} · ${new Date().toISOString()}
+        </div>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+    toast.success("PDF export opened — use browser Print → Save as PDF");
   };
 
-  const latest = latestQ.data;
-  const detail = reportDetailQ.data;
-  const schedule = scheduleQ.data;
-  const emailCfg = emailConfigQ.data;
-  const recipients = recipientsQ.data;
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            Weekly Health Reports
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Automated system health summaries with trend analysis, email
-            delivery, and PDF export
-          </p>
-        </div>
-        <Button
-          onClick={() => generateM.mutate({ notify: true })}
-          disabled={generateM.isPending}
-        >
-          {generateM.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <Play className="h-4 w-4 mr-2" />
-          )}
-          Generate Now
-        </Button>
-      </div>
-
-      {/* Latest Report Summary with Trends */}
-      {latest?.report && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">Latest Report</CardTitle>
-                <CardDescription>
-                  {latest.report.period.start} → {latest.report.period.end}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <ScoreBadge score={latest.report.score} />
-                {latest.trends && (
-                  <TrendArrow trend={latest.trends.healthScore} />
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              <MetricCard
-                label="Transactions"
-                value={latest.report.metrics.transactions.totalCount.toLocaleString()}
-                trend={latest.trends?.transactionCount}
-                icon={BarChart3}
-              />
-              <MetricCard
-                label="Success Rate"
-                value={`${latest.report.metrics.transactions.successRate}%`}
-                trend={latest.trends?.successRate}
-                icon={CheckCircle2}
-              />
-              <MetricCard
-                label="Active Users"
-                value={String(
-                  latest.report.metrics.userActivity.totalActiveUsers
-                )}
-                trend={latest.trends?.activeUsers}
-                icon={Users}
-              />
-              <MetricCard
-                label="p50 Latency"
-                value={`${latest.report.metrics.apiPerformance.p50Ms}ms`}
-                trend={latest.trends?.apiLatencyP50}
-                icon={Zap}
-              />
-              <MetricCard
-                label="Error Rate"
-                value={`${latest.report.metrics.errors.errorRate}%`}
-                trend={latest.trends?.errorRate}
-                icon={AlertTriangle}
-              />
-              <MetricCard
-                label="Uptime"
-                value={`${latest.report.metrics.system.uptimePercent}%`}
-                trend={latest.trends?.uptimePercent}
-                icon={Shield}
-              />
-            </div>
-            {latest.report.alerts.length > 0 && (
-              <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                <p className="text-sm font-semibold text-red-400 mb-1">
-                  {latest.report.alerts.length} Alert(s)
-                </p>
-                {latest.report.alerts.slice(0, 3).map((a: any, i: any) => (
-                  <p key={i} className="text-xs text-red-300">
-                    {a}
-                  </p>
-                ))}
-              </div>
+    <DashboardLayout>
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <FileText className="h-6 w-6" /> Weekly Reports
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Automated weekly health reports with email distribution
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedReportId && detail?.report && (
+              <Button variant="outline" onClick={handlePdfExport}>
+                <FileDown className="h-4 w-4 mr-2" />
+                Export PDF
+              </Button>
             )}
-          </CardContent>
-        </Card>
-      )}
+            <Button
+              onClick={() => generateNow.mutate()}
+              disabled={generateNow.isPending}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              {generateNow.isPending ? "Generating..." : "Generate Now"}
+            </Button>
+          </div>
+        </div>
 
-      {/* Tabs: History | Email Settings | Schedule */}
-      <Tabs defaultValue="history">
-        <TabsList>
-          <TabsTrigger value="history">
-            <Calendar className="h-4 w-4 mr-1" /> Report History
-          </TabsTrigger>
-          <TabsTrigger value="email">
-            <Mail className="h-4 w-4 mr-1" /> Email Delivery
-          </TabsTrigger>
-          <TabsTrigger value="schedule">
-            <Settings className="h-4 w-4 mr-1" /> Schedule
-          </TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="reports">
+          <TabsList>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="email">Email Settings</TabsTrigger>
+            <TabsTrigger value="schedule">Schedule</TabsTrigger>
+          </TabsList>
 
-        {/* ─── History Tab ──────────────────────────────────────────────── */}
-        <TabsContent value="history" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Report List */}
-            <Card className="lg:col-span-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Reports</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 max-h-[500px] overflow-y-auto">
-                {listQ.isLoading && (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-                {listQ.data?.reports.map((r: any) => (
-                  <button
-                    key={r.id}
-                    onClick={() => setSelectedReportId(r.id)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedReportId === r.id
-                        ? "bg-primary/10 border border-primary/30"
-                        : "hover:bg-muted/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        {r.period.start}
-                      </span>
-                      <ScoreBadge score={r.score} />
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                      <span>{r.txCount.toLocaleString()} tx</span>
-                      <span>{r.activeUsers} users</span>
-                      <span>{r.errorRate}% errors</span>
-                    </div>
-                  </button>
-                ))}
-                {listQ.data?.reports.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No reports yet. Click "Generate Now" to create one.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Report Detail with Trends */}
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Report Detail</CardTitle>
-                  {selectedReportId && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handlePdfExport}
+          {/* ─── Reports Tab ──────────────────────────────────────────────── */}
+          <TabsContent value="reports" className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Report List */}
+              <Card className="lg:col-span-1">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Calendar className="h-4 w-4" /> Report History
+                  </CardTitle>
+                  <CardDescription>
+                    {listData?.total ?? 0} reports generated
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
+                  {listLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading...</p>
+                  ) : reports.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No reports yet. Click "Generate Now" to create one.
+                    </p>
+                  ) : (
+                    reports.map((r: any) => (
+                      <div
+                        key={r.id}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selectedReportId === r.id
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:bg-muted/50"
+                        }`}
+                        onClick={() => setSelectedReportId(r.id)}
                       >
-                        <Download className="h-4 w-4 mr-1" /> PDF
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          sendEmailM.mutate({ reportId: selectedReportId })
-                        }
-                        disabled={sendEmailM.isPending}
-                      >
-                        {sendEmailM.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                        ) : (
-                          <Mail className="h-4 w-4 mr-1" />
-                        )}
-                        Email
-                      </Button>
-                    </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            Week of {r.period.start}
+                          </span>
+                          <ScoreBadge score={r.score} />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {r.metrics.transactions.totalCount.toLocaleString()}{" "}
+                          txns ·{" "}
+                          {r.metrics.userActivity.totalActiveUsers} users
+                        </p>
+                      </div>
+                    ))
                   )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {!selectedReportId && (
-                  <p className="text-sm text-muted-foreground text-center py-12">
-                    Select a report from the list to view details
-                  </p>
-                )}
-                {reportDetailQ.isLoading && (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-                {detail && (
-                  <div className="space-y-4">
+                </CardContent>
+              </Card>
+
+              {/* Report Detail */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" /> Report Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!selectedReportId ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center">
+                      Select a report from the list to view details
+                    </p>
+                  ) : !detail?.report ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center">
+                      Loading report...
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
                     {/* Score + Period */}
                     <div className="flex items-center justify-between">
                       <div>

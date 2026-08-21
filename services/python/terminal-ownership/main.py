@@ -89,8 +89,6 @@ async def get_db_pool() -> asyncpg.Pool:
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -125,6 +123,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Terminal Ownership Registry",
     description="POS terminal lifecycle management: provisioning, assignment, "
     "transfer, maintenance tracking, insurance, and decommissioning.",

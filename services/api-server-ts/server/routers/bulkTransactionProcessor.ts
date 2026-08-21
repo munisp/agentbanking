@@ -1,6 +1,6 @@
 // Sprint 87: Upgraded from mock data to real DB queries — bulkTransactionProcessor
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
@@ -192,7 +192,15 @@ const downloadTemplate = protectedProcedure
       });
     }
   });
-const cancelBatch = protectedProcedure
+/** drizzle node-postgres execute() returns a pg QueryResult; tolerate both shapes. */
+function rowsOf(execResult: unknown): any[] {
+  const r = execResult as any;
+  return (r && Array.isArray(r.rows) ? r.rows : r) ?? [];
+}
+
+// NF-FF-6: batch cancellation is an administrative funds-flow operation —
+// restricted to adminProcedure (role=admin guard, matching commissionPayouts).
+const cancelBatch = adminProcedure
   .input(
     z.object({
       id: z.number().optional(),
@@ -217,29 +225,43 @@ const cancelBatch = protectedProcedure
 
     try {
       const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "cancelBatch: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "cancelBatch completed",
-          timestamp: new Date().toISOString(),
-        };
+      // NF-FF-6: cancel by id only. The previous no-id branch mass-assigned
+      // caller-supplied `input.data` into the `transactions` ledger,
+      // fabricating money-movement rows — that insert is removed entirely and
+      // caller data is never written to the ledger from this procedure.
+      if (!input.id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "cancelBatch requires a transaction id",
+        });
       }
-      const [row] = await db
-        .insert(transactions)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "cancelBatch completed" };
+      // Conditional cancel — only a still-pending transaction may transition,
+      // and exactly one row may be affected. 0 rows → 409 CONFLICT.
+      // NOTE: tx_status enum has no 'cancelled' value, so the terminal state
+      // is recorded as 'failed' with failureReason 'cancelled'.
+      const cancelledRows = rowsOf(
+        await db.execute(
+          sql`UPDATE transactions
+              SET status = 'failed',
+                  "failureReason" = 'Cancelled by admin (cancelBatch)',
+                  "updatedAt" = NOW()
+              WHERE id = ${input.id} AND status = 'pending'
+              RETURNING id`
+        )
+      );
+      if (cancelledRows.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "cancelBatch: transaction not found or not in a cancellable (pending) status",
+        });
+      }
+      return {
+        success: true,
+        id: input.id,
+        message: "cancelBatch completed",
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

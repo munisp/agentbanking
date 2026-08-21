@@ -110,16 +110,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/neural_network_service")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
 
 def get_db():
@@ -151,10 +146,16 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Neural Network Service",
     description="Production-ready Multi-purpose Deep Learning Service",
     version="2.0.0"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,

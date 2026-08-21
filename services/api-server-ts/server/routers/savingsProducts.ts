@@ -338,41 +338,46 @@ export const savingsProductsRouter = router({
 
   // ── Sprint 28 domain procedures ──
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "SP-001",
-          name: "Agent Savings",
-          interestRate: 8,
-          minBalance: 10000,
-          status: "active",
-        },
-      ],
-    };
+    // Honest empty state: no savings product catalog table exists in the
+    // schema. The previous implementation returned a fabricated "SP-001"
+    // product. When a product catalog is modeled, query it here.
+    return { products: [] };
   }),
   list: protectedProcedure.query(async () => {
-    return {
-      accounts: [
-        {
-          id: "SA-001",
-          productId: "SP-001",
-          agentId: "AGT-001",
-          balance: 250000,
-          status: "active",
-        },
-      ],
-      total: 1,
-    };
+    // Honest empty state: no savings account table exists in the schema. The
+    // previous implementation returned a fabricated "SA-001" account with an
+    // invented balance. When savings accounts are modeled, query them here.
+    return { accounts: [], total: 0 };
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAccounts: 200,
-      activeAccounts: 180,
-      totalBalance: 50000000,
-      avgBalance: 250000,
-      interestPaid: 4000000,
-      totalDeposits: 750000000,
-      totalInterestPaid: 4000000,
-    };
+    // Real aggregates where a real source exists (transaction ledger volume),
+    // honest zeros where no savings schema exists. The previous
+    // implementation returned fully fabricated account counts, balances, and
+    // interest figures.
+    try {
+      const db = (await getDb())!;
+      const [totals] = await db
+        .select({
+          total: count(),
+          volume: sql<string>`COALESCE(SUM(${transactions.amount}::numeric), 0)`,
+          avg: sql<string>`COALESCE(AVG(${transactions.amount}::numeric), 0)`,
+        })
+        .from(transactions);
+      return {
+        totalAccounts: 0, // no savings account table exists
+        activeAccounts: 0,
+        totalBalance: 0,
+        avgBalance: 0,
+        interestPaid: 0, // no interest ledger exists
+        totalDeposits: Number(totals?.volume ?? 0),
+        totalInterestPaid: 0,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
   }),
 });

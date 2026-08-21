@@ -38,7 +38,6 @@ import {
   triggerSettlementSnapshot,
   daprPublishSettlementNotification,
   getSettlementRateLimitConfig,
-  initiateIlpSettlementTransfer,
   getSettlementMiddlewareHealth,
 } from "../middleware/settlementMiddleware";
 import logger from "../_core/logger";
@@ -504,29 +503,24 @@ export const settlementRouter = router({
     .input(
       z.object({
         batchId: z.string(),
-        payeeFsp: z.string(),
-        amount: z.number(),
+        payeeFsp: z.string().optional(),
+        amount: z.number().optional(),
         currency: z.string().default("NGN"),
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        const result = await initiateIlpSettlementTransfer({
-          batchId: input.batchId,
-          payerFsp: "54agent-fsp",
-          payeeFsp: input.payeeFsp,
-          amount: input.amount,
-          currency: input.currency,
-        });
-        return { success: !!result, transfer: result };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+      // NF-FF-30: amount/payeeFsp MUST be sourced from a persisted settlement
+      // batch row (looked up by batchId) — never from caller input. No
+      // settlement-batches table exists in the drizzle schema (batches are
+      // only recorded as audit-log metadata without amounts/payees), so the
+      // transfer parameters cannot be derived or bounded from persisted state.
+      // Fail loud instead of moving caller-chosen amounts to caller-chosen FSPs.
+      void input;
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "initiateIlpTransfer is disabled: no persisted settlement-batches table exists to source and bound amount/payeeFsp by batchId",
+      });
     }),
 
   /** [Lakehouse] Trigger settlement snapshot */

@@ -62,7 +62,7 @@ PASS: withIdempotency is function
 PASS: validateAmount is function
 PASS: validateStatusTransition is function
 PASS: auditFinancialAction does not throw
-PASS: auditFinancialAction(1000).valid = true
+PASS: validateAmount(1000).valid = true
 PASS: validateAmount(-5).valid = false
 PASS: withIdempotency first call returns "hello-world"
 PASS: withIdempotency second call returns cached "hello-world" (idempotent)

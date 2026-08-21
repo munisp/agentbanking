@@ -338,7 +338,7 @@ spec:
       annotations:
         dapr.io/app-id: "{{{{ .Values.dapr.appId }}}}"
         dapr.io/app-port: "{{{{ .Values.dapr.appPort }}}}"
-        dapr.io/enable-metrics: "{{{{ .Values.dapr.enableMetrics }}}}",
+        dapr.io/enable-metrics: "{{{{ .Values.dapr.enableMetrics }}}}"
         dapr.io/enabled: "{{{{ .Values.dapr.enabled }}}}"
         dapr.io/metrics-port: "{{{{ .Values.dapr.metricsPort }}}}"
         dapr.io/sidecar-listen-addresses: "{{{{ .Values.dapr.sidecarListenAddresses }}}}"

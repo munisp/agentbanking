@@ -1,14 +1,15 @@
 # Docker Compose File Guide
 
+> ⚠️ **2026-08 correction (@ `505705ac`):** this guide previously described `docker-compose.production.yml` as the production compose file. That file **does not exist in the repository** (verified against the git tree at commit `505705ac`). `Makefile.production` still references it (`COMPOSE_PROD` variable) and will fail until the file is created or the Makefile is updated.
+
 ## Which file to use?
 
-| File                                | Purpose                                   | When to use                                  |
-| ----------------------------------- | ----------------------------------------- | -------------------------------------------- |
-| **`docker-compose.production.yml`** | **PRODUCTION** — full stack with profiles | Production & staging deployments             |
-| `docker-compose.yml`                | Local development — app + basic infra     | `docker compose up` for quick local dev      |
-| `docker-compose.override.yml`       | Dev overrides (volumes, debug ports)      | Auto-applied when using `docker-compose.yml` |
+| File                          | Purpose                                            | When to use                                 |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------- |
+| **`docker-compose.yml`**      | **Full stack** — app + infra (30+ services, some profiles) | Current primary compose file for all environments |
+| `docker-compose.production.yml` | PRODUCTION — full stack with profiles            | ⚠️ **Not present in the repo** (see note above) |
 
-## Production Deployment
+## Deployment (current state)
 
 ```bash
 # Copy and configure environment
@@ -16,38 +17,26 @@ cp .env.production.example .env.production
 # Edit .env.production with production values
 
 # Start everything
-docker compose -f docker-compose.production.yml --env-file .env.production up -d
-
-# Or start specific profiles:
-docker compose -f docker-compose.production.yml --env-file .env.production \
-  --profile infra --profile app --profile gateway --profile observability up -d
+docker compose -f docker-compose.yml --env-file .env.production up -d
 ```
 
-### Profiles
-
-| Profile         | Services                                                                  |
-| --------------- | ------------------------------------------------------------------------- |
-| `infra`         | PostgreSQL, Redis, Kafka, Keycloak, Temporal, TigerBeetle, Permify, Vault |
-| `app`           | 54agent API + all Go/Rust/Python microservices                             |
-| `gateway`       | Nginx reverse proxy with TLS                                              |
-| `observability` | Prometheus, Grafana, Loki, Promtail, Alertmanager                         |
+`docker-compose.yml` defines a small number of `profiles:` entries; most services start by default. A dedicated production compose file with the full `infra` / `app` / `gateway` / `observability` profile split described in earlier revisions of this guide has not been committed yet.
 
 ## Local Development
 
 ```bash
 # Quick start (app + postgres + redis)
 docker compose up -d
-
-# With all infrastructure
-docker compose --profile infra up -d
 ```
 
-## Legacy Files (DO NOT USE IN PRODUCTION)
+## Legacy / Sprint-Specific Files (DO NOT USE IN PRODUCTION)
 
-The following files are sprint-specific configurations kept for reference:
+The following files are sprint-specific or experimental configurations kept for reference (verified present @ `505705ac`):
 
-- `docker-compose.sprint10.yml` through `docker-compose.sprint76.yml`
-- `docker-compose.final.yml`
-- `docker-compose.unified.yml`
+- `docker-compose.integration-test.yml`
+- `docker-compose.optimized.yml`
+- `docker-compose.sprint42.yml`, `docker-compose.sprint46.yml`, `docker-compose.sprint50.yml`, `docker-compose.sprint76.yml`
 
-**Always use `docker-compose.production.yml` for production.**
+(`docker-compose.override.yml`, `docker-compose.final.yml`, and `docker-compose.unified.yml` were referenced by earlier revisions of this guide but are **not present** in the repository.)
+
+**Until `docker-compose.production.yml` is (re)added, use `docker-compose.yml` for all environments.**
